@@ -60,7 +60,7 @@ export interface Candidate {
 }
 
 export interface TinyHyperGraphWorkingState {
-  portAssignment: Int32Array // RouteId[], -1 means unassigned
+  portAssignment: Int32Array // [RouteId, PrevPortId, NextPortId][], -1 means unassigned
 
   currentRouteId: RouteId | undefined
 
@@ -138,11 +138,31 @@ export class TinyHyperGraphSolver extends BaseSolver {
         f: g + h
       })
     }
-    state.candidates.push(...neighbors)
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
+    const { topology, problem, state } = this
 
+    // Compute cost of port usage in terms of intersections to the region
+    const portIdsInRegion = topology.regionIncidentPorts[currentCandidate.nextRegionId].filter(p => problem.portSectionMask[p] !== 0)
+
+    for (const portId of portIdsInRegion) {
+      const routeId = state.portAssignment[portId * 3]
+      const prevPortId = state.portAssignment[portId * 3 + 1]
+      const nextPortId = state.portAssignment[portId * 3 + 2]
+
+      let segment: [PortId, PortId]
+
+      if (portIdsInRegion.includes(prevPortId)) {
+        segment = [prevPortId, portId]
+      } else {
+        segment = [portId, nextPortId]
+      }
+
+
+
+
+    }
   }
 
   computeH(neighborPortId: PortId): number {
