@@ -1,10 +1,12 @@
-type LesserAngle = number
-type Z1 = number
-type GreaterAngle = number
-type Z2 = number
-type SameLayerIntersectionCount = number
-type CrossingLayerIntersectionCount = number
-type EntryExitLayerChanges = number
+import type {
+  LesserAngle,
+  Z1,
+  GreaterAngle,
+  Z2,
+  SameLayerIntersectionCount,
+  CrossingLayerIntersectionCount,
+  EntryExitLayerChanges,
+} from "./types"
 
 export const countIntersectionsFromAnglePairsDynamic = (
   anglePairs: Array<[LesserAngle, Z1, GreaterAngle, Z2]>,

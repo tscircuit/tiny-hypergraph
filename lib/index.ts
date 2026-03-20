@@ -1,10 +1,7 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
-export type PortId = number
-export type RegionId = number
-export type Integer = number
-export type RouteId = number
+import type { PortId, RegionId, Integer, RouteId } from "./types"
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -150,25 +147,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
     const { topology, problem, state } = this
-
-    // Compute cost of port usage in terms of intersections to the region
-    const portIdsInRegion = topology.regionIncidentPorts[
-      currentCandidate.nextRegionId
-    ].filter((p) => problem.portSectionMask[p] !== 0)
-
-    for (const portId of portIdsInRegion) {
-      const routeId = state.portAssignment[portId * 3]
-      const prevPortId = state.portAssignment[portId * 3 + 1]
-      const nextPortId = state.portAssignment[portId * 3 + 2]
-
-      let segment: [PortId, PortId]
-
-      if (portIdsInRegion.includes(prevPortId)) {
-        segment = [prevPortId, portId]
-      } else {
-        segment = [portId, nextPortId]
-      }
-    }
   }
 
   computeH(neighborPortId: PortId): number {
