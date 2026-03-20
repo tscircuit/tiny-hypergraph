@@ -60,7 +60,11 @@ export interface Candidate {
 }
 
 export interface TinyHyperGraphWorkingState {
-  portAssignment: Int32Array // [RouteId, PrevPortId, NextPortId][], -1 means unassigned
+  // portAssignment[portId] = RouteId, -1 means unassigned
+  portAssignment: Int32Array
+
+  // regionSegments[regionId] = Array<Route Assignment and Two Ports>
+  regionSegments: Array<[RouteId, PortId, PortId][]>
 
   currentRouteId: RouteId | undefined
 
@@ -81,6 +85,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     super()
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
+      regionSegments: Array.from({ length: topology.regionCount }, () => []),
       currentRouteId: undefined,
       unroutedRoutes: [],
       visitedPorts: new Set(),
