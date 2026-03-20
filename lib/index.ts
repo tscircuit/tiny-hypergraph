@@ -85,7 +85,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       unroutedRoutes: [],
       visitedPorts: new Set(),
       candidates: [],
-      goalPortId: -1
+      goalPortId: -1,
     }
   }
 
@@ -102,13 +102,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       state.visitedPorts.clear()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
-      state.candidates = [{
-        nextRegionId: topology.incidentPortRegion[startingPortId][0],
-        portId: startingPortId,
-        f: 0,
-        g: 0,
-        h: 0
-      }]
+      state.candidates = [
+        {
+          nextRegionId: topology.incidentPortRegion[startingPortId][0],
+          portId: startingPortId,
+          f: 0,
+          g: 0,
+          h: 0,
+        },
+      ]
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
     }
 
@@ -122,7 +124,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     state.visitedPorts.add(currentCandidate.portId)
 
-    const neighbors = topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    const neighbors =
+      topology.regionIncidentPorts[currentCandidate.nextRegionId]
     for (const neighborPortId of neighbors) {
       if (state.visitedPorts.has(neighborPortId)) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
@@ -135,7 +138,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         portId: neighborPortId,
         g,
         h,
-        f: g + h
+        f: g + h,
       })
     }
   }
@@ -144,7 +147,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, problem, state } = this
 
     // Compute cost of port usage in terms of intersections to the region
-    const portIdsInRegion = topology.regionIncidentPorts[currentCandidate.nextRegionId].filter(p => problem.portSectionMask[p] !== 0)
+    const portIdsInRegion = topology.regionIncidentPorts[
+      currentCandidate.nextRegionId
+    ].filter((p) => problem.portSectionMask[p] !== 0)
 
     for (const portId of portIdsInRegion) {
       const routeId = state.portAssignment[portId * 3]
@@ -158,10 +163,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       } else {
         segment = [portId, nextPortId]
       }
-
-
-
-
     }
   }
 
