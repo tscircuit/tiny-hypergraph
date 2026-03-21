@@ -218,13 +218,55 @@ const getPortConnectionLabel = (
   return `connects: region-${r1 ?? "?"} <-> region-${r2 ?? "?"}`
 }
 
+const getPortNetLabel = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+  routeId?: RouteId,
+): string | undefined => {
+  if (routeId !== undefined) {
+    return `net: ${solver.problem.routeNet[routeId]}`
+  }
+
+  const assignedRouteId = solver.state.portAssignment[portId]
+  if (assignedRouteId >= 0) {
+    return `net: ${solver.problem.routeNet[assignedRouteId]}`
+  }
+
+  const netIds = new Set<number>()
+  for (
+    let candidateRouteId = 0;
+    candidateRouteId < solver.problem.routeCount;
+    candidateRouteId++
+  ) {
+    if (
+      solver.problem.routeStartPort[candidateRouteId] === portId ||
+      solver.problem.routeEndPort[candidateRouteId] === portId
+    ) {
+      netIds.add(solver.problem.routeNet[candidateRouteId])
+    }
+  }
+
+  if (netIds.size === 0) {
+    return undefined
+  }
+
+  return `net: ${Array.from(netIds)
+    .sort((a, b) => a - b)
+    .join(", ")}`
+}
+
 const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
   `z: ${solver.topology.portZ[portId]}`
 
-const getPortLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
+const getPortLabel = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+  routeId?: RouteId,
+): string =>
   formatLabel(
     getPortIdentifierLabel(solver, portId),
     getPortConnectionLabel(solver, portId),
+    getPortNetLabel(solver, portId, routeId),
   )
 
 const getSegmentStyle = (
@@ -309,6 +351,7 @@ const pushRoutePortZPoints = (
           label: formatLabel(
             `route: ${getRouteLabel(solver, routeId)}`,
             getPortIdentifierLabel(solver, portId),
+            getPortNetLabel(solver, portId, routeId),
             getPortZLabel(solver, portId),
           ),
         })
@@ -430,7 +473,7 @@ const pushCandidates = (
       y: portPoint.y,
       color: isNext ? "green" : "rgba(128, 128, 128, 0.25)",
       label: formatLabel(
-        getPortLabel(solver, candidate.portId),
+        getPortLabel(solver, candidate.portId, routeId),
         getPortZLabel(solver, candidate.portId),
         `g: ${candidate.g.toFixed(2)}`,
         `h: ${candidate.h.toFixed(2)}`,
