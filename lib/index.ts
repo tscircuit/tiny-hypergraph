@@ -228,6 +228,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const segmentIdPart1 = currentCandidate.portId * topology.portCount
     for (const neighborPortId of neighbors) {
+      if (state.portAssignment[neighborPortId] !== -1) continue
       if (state.visitedSegments.has(segmentIdPart1 + neighborPortId)) continue
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
@@ -399,7 +400,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     // NOTE: When ripping, we add the RIP_CONGESTION_REGION_COST to each region
     //       that has been ripped
     for (const { regionId, fromPortId, toPortId } of solvedSegments) {
-      state.regionSegments[regionId].push([currentRouteId, fromPortId, toPortId])
+      state.regionSegments[regionId].push([
+        currentRouteId,
+        fromPortId,
+        toPortId,
+      ])
       state.portAssignment[fromPortId] = currentRouteId
       state.portAssignment[toPortId] = currentRouteId
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
