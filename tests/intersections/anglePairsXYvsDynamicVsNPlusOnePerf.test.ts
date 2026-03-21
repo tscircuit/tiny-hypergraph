@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
-import { countNewIntersections } from "lib/countNewIntersections"
+import {
+  countNewIntersections,
+  createDynamicAnglePairArrays,
+} from "lib/countNewIntersections"
 import { mapPortsToAnglePairs } from "lib/mapPortsToAnglePairs"
 import type { DynamicAnglePair } from "lib/types"
 
@@ -117,22 +120,6 @@ const countIntersectionsFromXY = (
   ]
 }
 
-const toInt32AnglePairs = (anglePairs: AnglePair[]) => {
-  const flattened = new Int32Array(anglePairs.length * 5)
-
-  for (let i = 0; i < anglePairs.length; i++) {
-    const [net, a, z1, b, z2] = anglePairs[i]
-    const offset = i * 5
-    flattened[offset] = net
-    flattened[offset + 1] = a
-    flattened[offset + 2] = z1
-    flattened[offset + 3] = b
-    flattened[offset + 4] = z2
-  }
-
-  return flattened
-}
-
 const combineResult = ([sameLayer, crossingLayer, entryExit]: [
   number,
   number,
@@ -150,7 +137,7 @@ test("anglePairsXYvsDynamicVsNPlusOnePerf", () => {
   const nPlusOneInputs = anglePairsBySample.map((anglePairs) => {
     const existingAnglePairs = anglePairs.slice(0, -1)
     return {
-      existingPairs: toInt32AnglePairs(existingAnglePairs),
+      existingPairs: createDynamicAnglePairArrays(existingAnglePairs),
       newPair: anglePairs[anglePairs.length - 1],
     }
   })

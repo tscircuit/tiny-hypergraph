@@ -10,6 +10,12 @@ export type GreaterAngle = number
 export type Z2 = number
 
 export type DynamicAnglePair = [NetId, LesserAngle, Z1, GreaterAngle, Z2]
+export interface DynamicAnglePairArrays {
+  netIds: Int32Array
+  lesserAngles: Int32Array
+  greaterAngles: Int32Array
+  layerMasks: Int32Array
+}
 
 export type SameLayerIntersectionCount = number
 export type CrossingLayerIntersectionCount = number

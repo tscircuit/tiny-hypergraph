@@ -1,12 +1,37 @@
 import type {
   CrossingLayerIntersectionCount,
   DynamicAnglePair,
+  DynamicAnglePairArrays,
   EntryExitLayerChanges,
   SameLayerIntersectionCount,
 } from "./types"
 
+export const createDynamicAnglePairArrays = (
+  anglePairs: Array<DynamicAnglePair>,
+): DynamicAnglePairArrays => {
+  const netIds = new Int32Array(anglePairs.length)
+  const lesserAngles = new Int32Array(anglePairs.length)
+  const greaterAngles = new Int32Array(anglePairs.length)
+  const layerMasks = new Int32Array(anglePairs.length)
+
+  for (let i = 0; i < anglePairs.length; i++) {
+    const [netId, lesserAngle, z1, greaterAngle, z2] = anglePairs[i]
+    netIds[i] = netId
+    lesserAngles[i] = lesserAngle
+    greaterAngles[i] = greaterAngle
+    layerMasks[i] = (1 << z1) | (1 << z2)
+  }
+
+  return {
+    netIds,
+    lesserAngles,
+    greaterAngles,
+    layerMasks,
+  }
+}
+
 export const countNewIntersections = (
-  existingPairs: Int32Array, // [NetId, LesserAngle, Z1, GreaterAngle, Z2] * existing pair count
+  existingPairs: DynamicAnglePairArrays,
   newPair: DynamicAnglePair,
 ): [
   SameLayerIntersectionCount,
@@ -14,47 +39,27 @@ export const countNewIntersections = (
   EntryExitLayerChanges,
 ] => {
   const [newNet, newLesserAngle, newZ1, newGreaterAngle, newZ2] = newPair
+  const newLayerMask = (1 << newZ1) | (1 << newZ2)
+  const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
 
   let sameLayerIntersectionCount = 0
   let crossingLayerIntersectionCount = 0
   const entryExitLayerChanges = newZ1 !== newZ2 ? 1 : 0
 
-  for (let i = 0; i < existingPairs.length; i += 5) {
-    const [
-      existingNet,
-      existingLesserAngle,
-      existingZ1,
-      existingGreaterAngle,
-      existingZ2,
-    ] = [
-      existingPairs[i],
-      existingPairs[i + 1],
-      existingPairs[i + 2],
-      existingPairs[i + 3],
-      existingPairs[i + 4],
-    ]
+  for (let i = 0; i < netIds.length; i++) {
+    if (newNet === netIds[i]) continue
 
-    if (newNet === existingNet) continue
+    const lesserAngleIsInsideInterval =
+      newLesserAngle < lesserAngles[i] && lesserAngles[i] < newGreaterAngle
+    const greaterAngleIsInsideInterval =
+      newLesserAngle < greaterAngles[i] && greaterAngles[i] < newGreaterAngle
 
-    const intersects =
-      (newLesserAngle < existingLesserAngle &&
-        existingLesserAngle < newGreaterAngle) !==
-      (newLesserAngle < existingGreaterAngle &&
-        existingGreaterAngle < newGreaterAngle)
-        ? 1
-        : 0
+    if (lesserAngleIsInsideInterval === greaterAngleIsInsideInterval) continue
 
-    if (intersects === 0) continue
-
-    if (
-      newZ1 === existingZ1 ||
-      newZ2 === existingZ1 ||
-      newZ1 === existingZ2 ||
-      newZ2 === existingZ2
-    ) {
-      sameLayerIntersectionCount += intersects
+    if ((newLayerMask & layerMasks[i]) !== 0) {
+      sameLayerIntersectionCount++
     } else {
-      crossingLayerIntersectionCount += intersects
+      crossingLayerIntersectionCount++
     }
   }
 
