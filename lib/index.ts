@@ -1,8 +1,20 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
-import type { PortId, RegionId, Integer, RouteId } from "./types"
+import type {
+  PortId,
+  RegionId,
+  Integer,
+  RouteId,
+  DynamicAnglePair,
+  DynamicAnglePairArrays,
+  RegionIntersectionCache,
+  NetId,
+} from "./types"
 import { computePortPositionOnBoundary } from "../hypergraph/lib/topology/utils"
+import type { Region } from "@tscircuit/hypergraph"
+import { countNewIntersections } from "./countNewIntersections"
+import { computeRegionCost } from "./computeRegionCost"
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -14,19 +26,19 @@ export interface TinyHyperGraphTopology {
   /** incidentPortRegion[portId] = list of region ids incident to the port */
   incidentPortRegion: RegionId[][]
 
-  regionWidth?: Float64Array[]
-  regionHeight?: Float64Array[]
-  regionCenterX?: Float64Array[]
-  regionCenterY?: Float64Array[]
+  regionWidth: Float64Array
+  regionHeight: Float64Array
+  regionCenterX: Float64Array
+  regionCenterY: Float64Array
 
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
 
-  /** portAngle[portId] = CCW angle of the port where 0 is the right side, 90 is the top, used for fast intersection calculations */
-  portAngle?: Float64Array[]
-  portX: Float64Array[]
-  portY: Float64Array[]
-  portZ: Int32Array[]
+  /** portAngle[portId] = CCW angle of the port where 0 is the right side, 9000 is the top, used for fast intersection calculations */
+  portAngle: Int32Array
+  portX: Float64Array
+  portY: Float64Array
+  portZ: Int32Array
 
   portMetadata?: any[]
 }
@@ -42,6 +54,9 @@ export interface TinyHyperGraphProblem {
   /** routeStartRegion[routeId] = list of port ids at the start of the route */
   routeStartPort: Int32Array // PortId[]
   routeEndPort: Int32Array // PortId[]
+
+  // routeNet[routeId] = net id of the route
+  routeNet: Int32Array // NetId[]
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -71,6 +86,10 @@ export interface TinyHyperGraphWorkingState {
   // regionSegments[regionId] = Array<Route Assignment and Two Ports>
   regionSegments: Array<[RouteId, PortId, PortId][]>
 
+  // regionIntersectionCache[regionId] = DynamicAnglePairArrays
+  regionIntersectionCaches: RegionIntersectionCache[]
+
+  currentRouteNetId: NetId | undefined
   currentRouteId: RouteId | undefined
 
   unroutedRoutes: RouteId[]
@@ -93,7 +112,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
+      regionIntersectionCaches: Array.from(
+        { length: topology.regionCount },
+        () => ({
+          netIds: new Int32Array(0),
+          lesserAngles: new Int32Array(0),
+          greaterAngles: new Int32Array(0),
+          layerMasks: new Int32Array(0),
+          existingCrossingLayerIntersections: 0,
+          existingSameLayerIntersections: 0,
+          existingEntryExitLayerChanges: 0,
+          existingRegionCost: 0,
+        }),
+      ),
       currentRouteId: undefined,
+      currentRouteNetId: undefined,
       unroutedRoutes: [],
       visitedPorts: new Set(),
       candidates: [],
@@ -138,6 +171,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
 
       state.currentRouteId = state.unroutedRoutes.shift()
+      state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
       state.visitedPorts.clear()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
@@ -169,6 +203,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (state.visitedPorts.has(neighborPortId)) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
+      if (neighborPortId === state.goalPortId) {
+        this.onPathFound(currentCandidate)
+        return
+      }
+
       const g = this.computeG(currentCandidate, neighborPortId)
       const h = this.computeH(neighborPortId)
 
@@ -182,8 +221,50 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  onPathFound(finalCandidate: Candidate) {
+    const { topology, problem, state } = this
+    // TODO if there were rips for this candidate, perform the rips etc.
+    // TODO update the region cache to incorporate the new path and rips
+    // TODO update the segments for involved regions
+    state.currentRouteId = undefined
+  }
+
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
     const { topology, problem, state } = this
+
+    const nextRegionId = currentCandidate.nextRegionId
+
+    const regionCache = state.regionIntersectionCaches[nextRegionId]
+
+    const a = topology.portAngle[currentCandidate.portId]
+    const z1 = topology.portZ[currentCandidate.portId]
+    const b = topology.portAngle[neighborPortId]
+    const z2 = topology.portZ[neighborPortId]
+
+    let newPair: DynamicAnglePair
+    if (a < b) {
+      newPair = [state.currentRouteNetId!, a, z1, b, z2]
+    } else {
+      newPair = [state.currentRouteNetId!, b, z2, a, z1]
+    }
+
+    const [
+      newSameLayerIntersections,
+      newCrossLayerIntersections,
+      newEntryExitLayerChanges,
+    ] = countNewIntersections(regionCache, newPair)
+
+    const newRegionCost =
+      computeRegionCost(
+        topology.regionWidth[nextRegionId],
+        topology.regionHeight[nextRegionId],
+        regionCache.existingSameLayerIntersections + newSameLayerIntersections,
+        regionCache.existingCrossingLayerIntersections +
+          newCrossLayerIntersections,
+        regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
+      ) - regionCache.existingRegionCost
+
+    return currentCandidate.g + newRegionCost
   }
 
   computeH(neighborPortId: PortId): number {

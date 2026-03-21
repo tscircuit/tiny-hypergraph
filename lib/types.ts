@@ -17,6 +17,13 @@ export interface DynamicAnglePairArrays {
   layerMasks: Int32Array
 }
 
+export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  existingSameLayerIntersections: Integer
+  existingCrossingLayerIntersections: Integer
+  existingEntryExitLayerChanges: Integer
+  existingRegionCost: number
+}
+
 export type SameLayerIntersectionCount = number
 export type CrossingLayerIntersectionCount = number
 export type EntryExitLayerChanges = number
