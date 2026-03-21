@@ -104,6 +104,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   problemSetup: TinyHyperGraphProblemSetup
 
+  DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+
   constructor(
     public topology: TinyHyperGraphTopology,
     public problem: TinyHyperGraphProblem,
@@ -152,7 +154,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const dx = portX[portId] - endX
         const dy = portY[portId] - endY
         portDistanceToEndOfRoute[portId * problem.routeCount + routeId] =
-          Math.hypot(dx, dy)
+          Math.hypot(dx, dy) * DISTANCE_TO_COST
       }
     }
 
