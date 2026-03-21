@@ -109,6 +109,11 @@ export interface TinyHyperGraphWorkingState {
   goalPortId: PortId
 
   ripCount: number
+
+  ripSegmentCongestionCost: Map<SegmentId, number>
+
+  /** ripPortCongestionCost[portId] = congestion cost */
+  ripPortCongestionCost: Float64Array
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -119,7 +124,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_THRESHOLD_START = 0.3
   RIP_THRESHOLD_END = 0.8
-  RIP_THRESHOLD_RAMP_ATTEMPTS = 10
+  RIP_THRESHOLD_RAMP_ATTEMPTS = 20
+
+  RIP_CONGESTION_SEGMENT_COST = 0.05
+  RIP_CONGESTION_PORT_COST = 0.05
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -149,6 +157,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       candidates: [],
       goalPortId: -1,
       ripCount: 0,
+      ripSegmentCongestionCost: new Map(),
+      ripPortCongestionCost: new Float64Array(topology.portCount).fill(0),
     }
     this.problemSetup = this.computeProblemSetup()
   }
@@ -268,8 +278,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     // TODO if there were rips for this candidate, perform the rips etc.
     // NOTE: When we're ripping, we rip a region until it's g cost is less
-    //       than the threshold, selecting traces at random. We never rip the
-    //       trace we just routed
+    //       than the threshold, selecting routes at random. We never rip the
+    //       route we just solved
+    // NOTE: When ripping, we add the RIP_CONGESTION_SEGMENT_COST to each segment
+    //       that has been ripped
+    // NOTE: When ripping, we add the RIP_CONGESTION_PORT_COST to each port
+    //       that has been ripped
     // TODO update the region cache to incorporate the new path and rips
     // TODO update the segments for involved regions
     state.currentRouteId = undefined
@@ -310,7 +324,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
       ) - regionCache.existingRegionCost
 
-    return currentCandidate.g + newRegionCost
+    return (
+      currentCandidate.g +
+      newRegionCost +
+      (state.ripSegmentCongestionCost.get(
+        currentCandidate.portId * topology.portCount + neighborPortId,
+      ) ?? 0) +
+      state.ripPortCongestionCost[neighborPortId]
+    )
   }
 
   computeH(neighborPortId: PortId): number {
