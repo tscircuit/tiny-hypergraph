@@ -35,6 +35,11 @@ const getRouteColor = (
   return `hsla(${hue}, 70%, 50%, ${alpha})`
 }
 
+const getRouteNetLabel = (
+  solver: TinyHyperGraphSolver,
+  routeId: RouteId,
+): string => `net: ${solver.problem.routeNet[routeId]}`
+
 const getRegionBounds = (solver: TinyHyperGraphSolver, regionId: RegionId) => {
   const regionMetadata = solver.topology.regionMetadata?.[regionId]
   const polygon = regionMetadata?.polygon
@@ -77,6 +82,17 @@ const getRegionCenter = (solver: TinyHyperGraphSolver, regionId: RegionId) => ({
   x: solver.topology.regionCenterX[regionId],
   y: solver.topology.regionCenterY[regionId],
 })
+
+const getRegionCostLabel = (
+  solver: TinyHyperGraphSolver,
+  regionId: RegionId,
+): string => {
+  const regionCost =
+    solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+  const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
+
+  return `region-${regionId}\ncost: ${(regionCost + congestionCost).toFixed(3)}`
+}
 
 const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   x: solver.topology.portX[portId],
@@ -171,6 +187,35 @@ const pushInitialRouteHints = (
   }
 }
 
+const pushRouteEndpoints = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
+    const startPortId = solver.problem.routeStartPort[routeId]
+    const endPortId = solver.problem.routeEndPort[routeId]
+    const startPoint = getPortPoint(solver, startPortId)
+    const endPoint = getPortPoint(solver, endPortId)
+    const routeColor = getRouteColor(solver, routeId)
+    const routeLabel = getRouteLabel(solver, routeId)
+    const routeNetLabel = getRouteNetLabel(solver, routeId)
+
+    graphics.points.push({
+      x: startPoint.x - 0.1,
+      y: startPoint.y + 0.1,
+      color: routeColor,
+      label: `${routeLabel}\n${routeNetLabel}\nstart`,
+    })
+
+    graphics.points.push({
+      x: endPoint.x - 0.1,
+      y: endPoint.y + 0.1,
+      color: routeColor,
+      label: `${routeLabel}\n${routeNetLabel}\nend`,
+    })
+  }
+}
+
 const pushActiveRoute = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
@@ -190,20 +235,6 @@ const pushActiveRoute = (
     strokeColor: routeColor,
     strokeDash: "10 5",
     label: routeLabel,
-  })
-
-  graphics.points.push({
-    x: startPoint.x - 0.1,
-    y: startPoint.y + 0.1,
-    color: routeColor,
-    label: `${routeLabel}\nstart`,
-  })
-
-  graphics.points.push({
-    x: endPoint.x - 0.1,
-    y: endPoint.y + 0.1,
-    color: routeColor,
-    label: `${routeLabel}\nend`,
   })
 }
 
@@ -301,9 +332,12 @@ export const visualizeTinyHyperGraph = (
         width: Math.max(width - 0.1, 0.05),
         height: Math.max(height - 0.1, 0.05),
         fill,
+        label: getRegionCostLabel(solver, regionId),
       })
     }
   }
+
+  pushRouteEndpoints(solver, graphics)
 
   if (solver.iterations === 0) {
     for (const polygon of graphics.polygons) {

@@ -1,4 +1,4 @@
-const viaSize = 0.4
+const viaSize = 0.6
 const viaSizeSq = viaSize ** 2
 
 export const computeRegionCost = (

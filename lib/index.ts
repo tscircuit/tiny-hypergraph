@@ -110,10 +110,8 @@ export interface TinyHyperGraphWorkingState {
 
   ripCount: number
 
-  ripSegmentCongestionCost: Map<SegmentId, number>
-
-  /** ripPortCongestionCost[portId] = congestion cost */
-  ripPortCongestionCost: Float64Array
+  /** regionCongestionCost[regionId] = congestion cost */
+  regionCongestionCost: Float64Array
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -126,8 +124,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 20
 
-  RIP_CONGESTION_SEGMENT_COST = 0.05
-  RIP_CONGESTION_PORT_COST = 0.05
+  RIP_CONGESTION_REGION_COST = 0.05
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -157,8 +154,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       candidates: [],
       goalPortId: -1,
       ripCount: 0,
-      ripSegmentCongestionCost: new Map(),
-      ripPortCongestionCost: new Float64Array(topology.portCount).fill(0),
+      regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
     }
     this.problemSetup = this.computeProblemSetup()
   }
@@ -271,8 +267,125 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  buildDynamicAnglePair(port1Id: PortId, port2Id: PortId): DynamicAnglePair {
+    const { topology, state } = this
+    const angle1 = topology.portAngle[port1Id]
+    const angle2 = topology.portAngle[port2Id]
+    const z1 = topology.portZ[port1Id]
+    const z2 = topology.portZ[port2Id]
+
+    if (angle1 < angle2) {
+      return [state.currentRouteNetId!, angle1, z1, angle2, z2]
+    }
+
+    return [state.currentRouteNetId!, angle2, z2, angle1, z1]
+  }
+
+  appendSegmentToRegionCache(
+    regionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ) {
+    const { topology, state } = this
+    const regionCache = state.regionIntersectionCaches[regionId]
+    const newPair = this.buildDynamicAnglePair(port1Id, port2Id)
+    const [
+      newSameLayerIntersections,
+      newCrossLayerIntersections,
+      newEntryExitLayerChanges,
+    ] = countNewIntersections(regionCache, newPair)
+    const [netId, lesserAngle, z1, greaterAngle, z2] = newPair
+    const nextLength = regionCache.netIds.length + 1
+
+    const netIds = new Int32Array(nextLength)
+    netIds.set(regionCache.netIds)
+    netIds[nextLength - 1] = netId
+
+    const lesserAngles = new Int32Array(nextLength)
+    lesserAngles.set(regionCache.lesserAngles)
+    lesserAngles[nextLength - 1] = lesserAngle
+
+    const greaterAngles = new Int32Array(nextLength)
+    greaterAngles.set(regionCache.greaterAngles)
+    greaterAngles[nextLength - 1] = greaterAngle
+
+    const layerMasks = new Int32Array(nextLength)
+    layerMasks.set(regionCache.layerMasks)
+    layerMasks[nextLength - 1] = (1 << z1) | (1 << z2)
+
+    const existingSameLayerIntersections =
+      regionCache.existingSameLayerIntersections + newSameLayerIntersections
+    const existingCrossingLayerIntersections =
+      regionCache.existingCrossingLayerIntersections +
+      newCrossLayerIntersections
+    const existingEntryExitLayerChanges =
+      regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
+
+    state.regionIntersectionCaches[regionId] = {
+      netIds,
+      lesserAngles,
+      greaterAngles,
+      layerMasks,
+      existingSameLayerIntersections,
+      existingCrossingLayerIntersections,
+      existingEntryExitLayerChanges,
+      existingRegionCost: computeRegionCost(
+        topology.regionWidth[regionId],
+        topology.regionHeight[regionId],
+        existingSameLayerIntersections,
+        existingCrossingLayerIntersections,
+        existingEntryExitLayerChanges,
+      ),
+    }
+  }
+
+  getSolvedPathSegments(finalCandidate: Candidate): Array<{
+    regionId: RegionId
+    fromPortId: PortId
+    toPortId: PortId
+  }> {
+    const { state } = this
+    const candidatePath: Candidate[] = []
+    let cursor: Candidate | undefined = finalCandidate
+
+    while (cursor) {
+      candidatePath.unshift(cursor)
+      cursor = cursor.prevCandidate
+    }
+
+    const solvedSegments: Array<{
+      regionId: RegionId
+      fromPortId: PortId
+      toPortId: PortId
+    }> = []
+
+    for (let i = 1; i < candidatePath.length; i++) {
+      solvedSegments.push({
+        regionId: candidatePath[i - 1].nextRegionId,
+        fromPortId: candidatePath[i - 1].portId,
+        toPortId: candidatePath[i].portId,
+      })
+    }
+
+    const lastCandidate = candidatePath[candidatePath.length - 1]
+    if (lastCandidate && lastCandidate.portId !== state.goalPortId) {
+      solvedSegments.push({
+        regionId: lastCandidate.nextRegionId,
+        fromPortId: lastCandidate.portId,
+        toPortId: state.goalPortId,
+      })
+    }
+
+    return solvedSegments
+  }
+
   onPathFound(finalCandidate: Candidate) {
-    const { topology, problem, state } = this
+    const { state } = this
+    const currentRouteId = state.currentRouteId
+
+    if (currentRouteId === undefined) return
+
+    const solvedSegments = this.getSolvedPathSegments(finalCandidate)
 
     const currentRipThreshold =
       this.RIP_THRESHOLD_START +
@@ -283,12 +396,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     // NOTE: When we're ripping, we rip a region until it's g cost is less
     //       than the threshold, selecting routes at random. We never rip the
     //       route we just solved
-    // NOTE: When ripping, we add the RIP_CONGESTION_SEGMENT_COST to each segment
+    // NOTE: When ripping, we add the RIP_CONGESTION_REGION_COST to each region
     //       that has been ripped
-    // NOTE: When ripping, we add the RIP_CONGESTION_PORT_COST to each port
-    //       that has been ripped
-    // TODO update the region cache to incorporate the new path and rips
-    // TODO update the segments for involved regions
+    for (const { regionId, fromPortId, toPortId } of solvedSegments) {
+      state.regionSegments[regionId].push([currentRouteId, fromPortId, toPortId])
+      state.portAssignment[fromPortId] = currentRouteId
+      state.portAssignment[toPortId] = currentRouteId
+      this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+    }
+
+    state.candidates = []
+    state.currentRouteNetId = undefined
     state.currentRouteId = undefined
   }
 
@@ -299,17 +417,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
 
-    const a = topology.portAngle[currentCandidate.portId]
-    const z1 = topology.portZ[currentCandidate.portId]
-    const b = topology.portAngle[neighborPortId]
-    const z2 = topology.portZ[neighborPortId]
-
-    let newPair: DynamicAnglePair
-    if (a < b) {
-      newPair = [state.currentRouteNetId!, a, z1, b, z2]
-    } else {
-      newPair = [state.currentRouteNetId!, b, z2, a, z1]
-    }
+    const newPair = this.buildDynamicAnglePair(
+      currentCandidate.portId,
+      neighborPortId,
+    )
 
     const [
       newSameLayerIntersections,
@@ -330,10 +441,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
-      (state.ripSegmentCongestionCost.get(
-        currentCandidate.portId * topology.portCount + neighborPortId,
-      ) ?? 0) +
-      state.ripPortCongestionCost[neighborPortId]
+      state.regionCongestionCost[nextRegionId]
     )
   }
 
