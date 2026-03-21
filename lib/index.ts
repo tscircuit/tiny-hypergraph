@@ -115,6 +115,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
 
+  COST_TRIGGERING_RIP_START = 0.3
+  COST_TRIGGERING_RIP_END = 0.8
+  COST_TRIGGERING_RIP_ATTEMPTS_UNTIL_END = 10
+
   constructor(
     public topology: TinyHyperGraphTopology,
     public problem: TinyHyperGraphProblem,
