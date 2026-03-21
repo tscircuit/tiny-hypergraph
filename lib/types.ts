@@ -7,6 +7,9 @@ export type NetId = number
 /** SegmentIds are computed via port1Id * portCount + port2Id */
 export type SegmentId = number
 
+/** A lossy hash on a segment id, can be used for congestion where an erroneous collision is not too bad */
+export type LossySegmentIdHash = number
+
 export type LesserAngle = number
 export type Z1 = number
 export type GreaterAngle = number

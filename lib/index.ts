@@ -232,6 +232,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const segmentIdPart1 = currentCandidate.portId * topology.portCount
     for (const neighborPortId of neighbors) {
       if (state.visitedSegments.has(segmentIdPart1 + neighborPortId)) continue
+      if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       if (neighborPortId === state.goalPortId) {
@@ -246,9 +247,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         topology.incidentPortRegion[neighborPortId][0] ===
         currentCandidate.nextRegionId
           ? topology.incidentPortRegion[neighborPortId][1]
-          : topology.incidentPortRegion[neighborPortId][1]
+          : topology.incidentPortRegion[neighborPortId][0]
 
       const newCandidate = {
+        lastRegionId: currentCandidate.nextRegionId,
         nextRegionId,
         portId: neighborPortId,
         g,
