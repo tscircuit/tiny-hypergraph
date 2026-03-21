@@ -1,15 +1,15 @@
+import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
-import { test, expect } from "bun:test"
 import { mapPortsToAnglePairs } from "lib/mapPortsToAnglePairs"
 
 const sample = [
   [
-    { x: 0, y: 0.5, z: 0 },
-    { x: 1, y: 0.5, z: 0 },
+    { x: 0, y: 0.5, z: 0, net: 0 },
+    { x: 1, y: 0.5, z: 0, net: 0 },
   ],
   [
-    { x: 0, y: 0, z: 0 },
-    { x: 1, y: 1, z: 0 },
+    { x: 0, y: 0, z: 0, net: 1 },
+    { x: 1, y: 1, z: 0, net: 1 },
   ],
 ]
 

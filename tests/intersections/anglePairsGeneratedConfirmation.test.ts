@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
 import { mapPortsToAnglePairs } from "lib/mapPortsToAnglePairs"
 
-type Port = { x: number; y: number; z: number }
+type Port = { x: number; y: number; z: number; net: number }
 type Segment = [Port, Port]
 
 const CENTER = { x: 0, y: 0 }
@@ -44,7 +44,6 @@ const generateSample = (random: () => number): Segment[] => {
       return {
         x: Math.cos(angle),
         y: Math.sin(angle),
-        z: randomInt(random, 0, 3),
       }
     }),
     random,
@@ -52,7 +51,11 @@ const generateSample = (random: () => number): Segment[] => {
 
   const segments: Segment[] = []
   for (let i = 0; i < points.length; i += 2) {
-    segments.push([points[i], points[i + 1]])
+    const net = randomInt(random, 0, 3)
+    segments.push([
+      { ...points[i], z: randomInt(random, 0, 3), net },
+      { ...points[i + 1], z: randomInt(random, 0, 3), net },
+    ])
   }
 
   return segments
@@ -91,6 +94,7 @@ const countIntersectionsFromXY = (
 
     for (let u = i + 1; u < sample.length; u++) {
       const [c, d] = sample[u]
+      if (a.net === c.net) continue
       if (!segmentsIntersectInXY([a, b], [c, d])) continue
 
       if (a.z === c.z || b.z === c.z || a.z === d.z || b.z === d.z) {

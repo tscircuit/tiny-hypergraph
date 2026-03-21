@@ -1,12 +1,8 @@
 import type {
-  LesserAngle,
-  Z1,
-  GreaterAngle,
-  Z2,
-  SameLayerIntersectionCount,
   CrossingLayerIntersectionCount,
-  EntryExitLayerChanges,
   DynamicAnglePair,
+  EntryExitLayerChanges,
+  SameLayerIntersectionCount,
 } from "./types"
 
 export const countIntersectionsFromAnglePairsDynamic = (
@@ -35,7 +31,7 @@ export const countIntersectionsFromAnglePairsDynamic = (
 
   let entryExitChanges = 0
   for (let i = 0; i < anglePairs.length; i++) {
-    const [, z1, , z2] = anglePairs[i]
+    const [, , z1, , z2] = anglePairs[i]
     if (z1 !== z2) {
       entryExitChanges++
     }

@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
 import { countNewIntersections } from "lib/countNewIntersections"
 import { mapPortsToAnglePairs } from "lib/mapPortsToAnglePairs"
+import type { DynamicAnglePair } from "lib/types"
 
-type Port = { x: number; y: number; z: number }
+type Port = { x: number; y: number; z: number; net: number }
 type Segment = [Port, Port]
-type AnglePair = [number, number, number, number]
+type AnglePair = DynamicAnglePair
 
 const CENTER = { x: 0, y: 0 }
 const SAMPLE_COUNT = 10_000
@@ -48,7 +49,6 @@ const generateSample = (random: () => number): Segment[] => {
       return {
         x: Math.cos(angle),
         y: Math.sin(angle),
-        z: randomInt(random, 0, 3),
       }
     }),
     random,
@@ -56,7 +56,11 @@ const generateSample = (random: () => number): Segment[] => {
 
   const segments: Segment[] = []
   for (let i = 0; i < points.length; i += 2) {
-    segments.push([points[i], points[i + 1]])
+    const net = randomInt(random, 0, 3)
+    segments.push([
+      { ...points[i], z: randomInt(random, 0, 3), net },
+      { ...points[i + 1], z: randomInt(random, 0, 3), net },
+    ])
   }
 
   return segments
@@ -95,6 +99,7 @@ const countIntersectionsFromXY = (
 
     for (let u = i + 1; u < sample.length; u++) {
       const [c, d] = sample[u]
+      if (a.net === c.net) continue
       if (!segmentsIntersectInXY([a, b], [c, d])) continue
 
       if (a.z === c.z || b.z === c.z || a.z === d.z || b.z === d.z) {
@@ -112,16 +117,17 @@ const countIntersectionsFromXY = (
   ]
 }
 
-const toFloat64AnglePairs = (anglePairs: AnglePair[]) => {
-  const flattened = new Float64Array(anglePairs.length * 4)
+const toInt32AnglePairs = (anglePairs: AnglePair[]) => {
+  const flattened = new Int32Array(anglePairs.length * 5)
 
   for (let i = 0; i < anglePairs.length; i++) {
-    const [a, z1, b, z2] = anglePairs[i]
-    const offset = i * 4
-    flattened[offset] = a
-    flattened[offset + 1] = z1
-    flattened[offset + 2] = b
-    flattened[offset + 3] = z2
+    const [net, a, z1, b, z2] = anglePairs[i]
+    const offset = i * 5
+    flattened[offset] = net
+    flattened[offset + 1] = a
+    flattened[offset + 2] = z1
+    flattened[offset + 3] = b
+    flattened[offset + 4] = z2
   }
 
   return flattened
@@ -144,7 +150,7 @@ test("anglePairsXYvsDynamicVsNPlusOnePerf", () => {
   const nPlusOneInputs = anglePairsBySample.map((anglePairs) => {
     const existingAnglePairs = anglePairs.slice(0, -1)
     return {
-      existingPairs: toFloat64AnglePairs(existingAnglePairs),
+      existingPairs: toInt32AnglePairs(existingAnglePairs),
       newPair: anglePairs[anglePairs.length - 1],
     }
   })

@@ -2,11 +2,7 @@ import type {
   CrossingLayerIntersectionCount,
   DynamicAnglePair,
   EntryExitLayerChanges,
-  GreaterAngle,
-  LesserAngle,
   SameLayerIntersectionCount,
-  Z1,
-  Z2,
 } from "./types"
 
 export const countNewIntersections = (
@@ -23,7 +19,7 @@ export const countNewIntersections = (
   let crossingLayerIntersectionCount = 0
   const entryExitLayerChanges = newZ1 !== newZ2 ? 1 : 0
 
-  for (let i = 0; i < existingPairs.length; i += 4) {
+  for (let i = 0; i < existingPairs.length; i += 5) {
     const [
       existingNet,
       existingLesserAngle,
