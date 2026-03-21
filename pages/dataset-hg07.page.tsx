@@ -1,6 +1,6 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Debugger } from "./components/Debugger"
 
 const datasetModule = datasetHg07 as Record<string, unknown> & {
@@ -15,8 +15,53 @@ const datasetModule = datasetHg07 as Record<string, unknown> & {
   }
 }
 
+const SAMPLE_HASH_PARAM = "sample"
+
+const clampSampleIndex = (sampleIndex: number) =>
+  Math.min(
+    Math.max(Number.isFinite(sampleIndex) ? sampleIndex : 0, 0),
+    datasetModule.manifest.sampleCount - 1,
+  )
+
+const getSampleIndexFromHash = () => {
+  if (typeof window === "undefined") return 0
+
+  const hashParams = new URLSearchParams(window.location.hash.slice(1))
+  const sampleNumber = Number(hashParams.get(SAMPLE_HASH_PARAM))
+
+  if (!Number.isFinite(sampleNumber)) return 0
+  return clampSampleIndex(sampleNumber - 1)
+}
+
+const setSampleIndexInHash = (sampleIndex: number) => {
+  if (typeof window === "undefined") return
+
+  const url = new URL(window.location.href)
+  const hashParams = new URLSearchParams(url.hash.slice(1))
+  hashParams.set(SAMPLE_HASH_PARAM, String(sampleIndex + 1))
+  url.hash = hashParams.toString()
+
+  window.history.replaceState(window.history.state, "", url)
+}
+
 export default function DatasetHg07Page() {
-  const [selectedSampleIndex, setSelectedSampleIndex] = useState(0)
+  const [selectedSampleIndex, setSelectedSampleIndex] = useState(
+    getSampleIndexFromHash,
+  )
+
+  useEffect(() => {
+    const syncSelectedSampleFromHash = () => {
+      setSelectedSampleIndex(getSampleIndexFromHash())
+    }
+
+    window.addEventListener("hashchange", syncSelectedSampleFromHash)
+    return () =>
+      window.removeEventListener("hashchange", syncSelectedSampleFromHash)
+  }, [])
+
+  useEffect(() => {
+    setSampleIndexInHash(selectedSampleIndex)
+  }, [selectedSampleIndex])
 
   const selectedSampleMeta =
     datasetModule.manifest.samples[selectedSampleIndex] ??
@@ -37,12 +82,9 @@ export default function DatasetHg07Page() {
             max={datasetModule.manifest.sampleCount}
             value={selectedSampleIndex + 1}
             onChange={(event: any) => {
-              const rawIndex = Number(event.currentTarget.value) - 1
-              const clampedIndex = Math.min(
-                Math.max(Number.isFinite(rawIndex) ? rawIndex : 0, 0),
-                datasetModule.manifest.sampleCount - 1,
+              setSelectedSampleIndex(
+                clampSampleIndex(Number(event.currentTarget.value) - 1),
               )
-              setSelectedSampleIndex(clampedIndex)
             }}
           />
         </label>

@@ -5,6 +5,10 @@ import type { PortId, RegionId, RouteId } from "./types"
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
 const PORT_LAYER_CIRCLE_OFFSET = 0.01
+const REGION_RECT_GAP = 0.05
+
+const formatLabel = (...lines: Array<string | undefined>) =>
+  lines.filter((line): line is string => Boolean(line)).join("\n")
 
 const getRouteLabel = (
   solver: TinyHyperGraphSolver,
@@ -92,7 +96,11 @@ const getRegionCostLabel = (
     solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
   const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
 
-  return `region-${regionId}\ncost: ${(regionCost + congestionCost).toFixed(3)}\ncongestion: ${congestionCost.toFixed(3)}`
+  return formatLabel(
+    `region: region-${regionId}`,
+    `cost: ${(regionCost + congestionCost).toFixed(3)}`,
+    `congestion: ${congestionCost.toFixed(3)}`,
+  )
 }
 
 const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
@@ -110,15 +118,33 @@ const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
   }
 }
 
-const getPortLabel = (solver: TinyHyperGraphSolver, portId: PortId): string => {
+const getPortIdentifierLabel = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+): string => {
+  const rawPortId = solver.topology.portMetadata?.[portId]?.portId
+
+  return `port: ${rawPortId ?? `port-${portId}`}`
+}
+
+const getPortConnectionLabel = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+): string => {
   const r1 = solver.topology.incidentPortRegion[portId]?.[0]
   const r2 = solver.topology.incidentPortRegion[portId]?.[1]
 
-  return `connects region-${r1 ?? "?"} <-> region-${r2 ?? "?"}`
+  return `connects: region-${r1 ?? "?"} <-> region-${r2 ?? "?"}`
 }
 
 const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
   `z: ${solver.topology.portZ[portId]}`
+
+const getPortLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
+  formatLabel(
+    getPortIdentifierLabel(solver, portId),
+    getPortConnectionLabel(solver, portId),
+  )
 
 const getSegmentStyle = (
   solver: TinyHyperGraphSolver,
@@ -162,9 +188,47 @@ const pushSolvedRegionSegments = (
     for (const [routeId, port1Id, port2Id] of regionSegments) {
       graphics.lines.push({
         points: [getPortPoint(solver, port1Id), getPortPoint(solver, port2Id)],
-        label: `${getRouteLabel(solver, routeId)} @ region-${regionId}`,
+        label: formatLabel(
+          `route: ${getRouteLabel(solver, routeId)}`,
+          `region: region-${regionId}`,
+        ),
         ...getSegmentStyle(solver, routeId, port1Id, port2Id),
       })
+    }
+  }
+}
+
+const pushRoutePortZPoints = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  const seenRoutePorts = new Set<string>()
+
+  for (
+    let regionId = 0;
+    regionId < solver.state.regionSegments.length;
+    regionId++
+  ) {
+    const regionSegments = solver.state.regionSegments[regionId] ?? []
+
+    for (const [routeId, port1Id, port2Id] of regionSegments) {
+      for (const portId of [port1Id, port2Id]) {
+        const key = `${routeId}:${portId}`
+        if (seenRoutePorts.has(key)) continue
+        seenRoutePorts.add(key)
+
+        const portPoint = getPortPoint(solver, portId)
+        graphics.points.push({
+          x: portPoint.x + 0.08,
+          y: portPoint.y - 0.08,
+          color: getRouteColor(solver, routeId, 1),
+          label: formatLabel(
+            `route: ${getRouteLabel(solver, routeId)}`,
+            getPortIdentifierLabel(solver, portId),
+            getPortZLabel(solver, portId),
+          ),
+        })
+      }
     }
   }
 }
@@ -216,14 +280,26 @@ const pushRouteEndpoints = (
       x: startPoint.x - 0.1,
       y: startPoint.y + 0.1,
       color: routeColor,
-      label: `${routeLabel}\n${routeNetLabel}\nstart\n${getPortZLabel(solver, startPortId)}`,
+      label: formatLabel(
+        `route: ${routeLabel}`,
+        routeNetLabel,
+        "endpoint: start",
+        getPortIdentifierLabel(solver, startPortId),
+        getPortZLabel(solver, startPortId),
+      ),
     })
 
     graphics.points.push({
       x: endPoint.x - 0.1,
       y: endPoint.y + 0.1,
       color: routeColor,
-      label: `${routeLabel}\n${routeNetLabel}\nend\n${getPortZLabel(solver, endPortId)}`,
+      label: formatLabel(
+        `route: ${routeLabel}`,
+        routeNetLabel,
+        "endpoint: end",
+        getPortIdentifierLabel(solver, endPortId),
+        getPortZLabel(solver, endPortId),
+      ),
     })
   }
 }
@@ -269,12 +345,13 @@ const pushCandidates = (
       x: portPoint.x,
       y: portPoint.y,
       color: isNext ? "green" : "rgba(128, 128, 128, 0.25)",
-      label: [
+      label: formatLabel(
         getPortLabel(solver, candidate.portId),
+        getPortZLabel(solver, candidate.portId),
         `g: ${candidate.g.toFixed(2)}`,
         `h: ${candidate.h.toFixed(2)}`,
         `f: ${candidate.f.toFixed(2)}`,
-      ].join("\n"),
+      ),
     })
   }
 
@@ -341,8 +418,8 @@ export const visualizeTinyHyperGraph = (
     } else {
       graphics.rects.push({
         center,
-        width: Math.max(width - 0.1, 0.05),
-        height: Math.max(height - 0.1, 0.05),
+        width: Math.max(width - REGION_RECT_GAP, 0.05),
+        height: Math.max(height - REGION_RECT_GAP, 0.05),
         fill,
         label: getRegionCostLabel(solver, regionId),
       })
@@ -372,7 +449,10 @@ export const visualizeTinyHyperGraph = (
           solver.topology.portZ[portId] > 0
             ? "rgba(52, 152, 219, 0.55)"
             : "rgba(128, 128, 128, 0.5)",
-        label: getPortLabel(solver, portId),
+        label: formatLabel(
+          getPortLabel(solver, portId),
+          getPortZLabel(solver, portId),
+        ),
       })
 
       const [region1Id, region2Id] =
@@ -392,6 +472,7 @@ export const visualizeTinyHyperGraph = (
     pushInitialRouteHints(solver, graphics)
   } else {
     pushSolvedRegionSegments(solver, graphics)
+    pushRoutePortZPoints(solver, graphics)
     pushActiveRoute(solver, graphics)
     pushCandidates(solver, graphics)
   }
