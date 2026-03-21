@@ -1,5 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import { computeRegionCost } from "./computeRegionCost"
 import { countNewIntersections } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
@@ -77,6 +78,7 @@ export interface TinyHyperGraphTopology {
   portZ: Int32Array
 
   portMetadata?: any[]
+  portSerializedIds?: string[]
 }
 export interface TinyHyperGraphProblem {
   routeCount: number
@@ -627,5 +629,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override visualize(): GraphicsObject {
     return visualizeTinyGraph(this)
+  }
+
+  override getOutput() {
+    return convertToSerializedHyperGraph(this)
   }
 }

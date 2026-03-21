@@ -5,6 +5,24 @@ import type {
   TinyHyperGraphTopology,
 } from "../index"
 
+const addSerializedRegionIdToMetadata = (
+  region: SerializedHyperGraph["regions"][number],
+) => {
+  const metadata =
+    region.d && typeof region.d === "object" && !Array.isArray(region.d)
+      ? { ...region.d }
+      : { value: region.d }
+
+  Object.defineProperty(metadata, "serializedRegionId", {
+    value: region.regionId,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+
+  return metadata
+}
+
 const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
   const bounds = region.d?.bounds
   if (bounds) {
@@ -307,13 +325,16 @@ export const loadSerializedHyperGraph = (
     regionHeight,
     regionCenterX,
     regionCenterY,
-    regionMetadata: serializedHyperGraph.regions.map((region) => region.d),
+    regionMetadata: serializedHyperGraph.regions.map((region) =>
+      addSerializedRegionIdToMetadata(region),
+    ),
     portAngleForRegion1,
     portAngleForRegion2,
     portX,
     portY,
     portZ,
     portMetadata: serializedHyperGraph.ports.map((port) => port.d),
+    portSerializedIds: serializedHyperGraph.ports.map((port) => port.portId),
   }
 
   const problem: TinyHyperGraphProblem = {
