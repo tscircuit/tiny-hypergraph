@@ -15,6 +15,7 @@ import { computePortPositionOnBoundary } from "../hypergraph/lib/topology/utils"
 import type { Region } from "@tscircuit/hypergraph"
 import { countNewIntersections } from "./countNewIntersections"
 import { computeRegionCost } from "./computeRegionCost"
+import { range } from "./utils"
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -45,7 +46,10 @@ export interface TinyHyperGraphTopology {
 export interface TinyHyperGraphProblem {
   routeCount: number
 
-  /** portSectionMask[portId] = true if port in section  */
+  /**
+   * portSectionMask[portId] = true if port in section
+   * Only ports within a section can be explored to solve the problem
+   **/
   portSectionMask: Int8Array // boolean[], length: portCount
 
   /** routeMetadata[routeId] = metadata for the route */
@@ -94,7 +98,9 @@ export interface TinyHyperGraphWorkingState {
 
   unroutedRoutes: RouteId[]
 
-  visitedPorts: Set<PortId>
+  // visitedPorts[PortId] = 1 if visited, otherwise 0
+  visitedPorts: Int32Array
+
   candidates: Candidate[]
 
   goalPortId: PortId
@@ -129,8 +135,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ),
       currentRouteId: undefined,
       currentRouteNetId: undefined,
-      unroutedRoutes: [],
-      visitedPorts: new Set(),
+      unroutedRoutes: range(problem.routeCount),
+      visitedPorts: new Int32Array(topology.portCount).fill(0),
       candidates: [],
       goalPortId: -1,
     }
@@ -175,7 +181,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
-      state.visitedPorts.clear()
+      state.visitedPorts.fill(0)
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidates = [
         {
@@ -197,12 +203,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    state.visitedPorts.add(currentCandidate.portId)
+    state.visitedPorts[currentCandidate.portId] = 1
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
+
     for (const neighborPortId of neighbors) {
-      if (state.visitedPorts.has(neighborPortId)) continue
+      if (state.visitedPorts[neighborPortId] === 1) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       if (neighborPortId === state.goalPortId) {

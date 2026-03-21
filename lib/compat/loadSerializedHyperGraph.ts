@@ -1,4 +1,5 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+
 export const loadSerializedHyperGraph = (
   serializedHyperGraph: SerializedHyperGraph,
 ): {
