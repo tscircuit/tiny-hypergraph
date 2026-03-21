@@ -2,6 +2,9 @@
   "name": "tiny-hypergraph",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "start": "cosmos"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
     "@tscircuit/hypergraph": "^0.0.71",

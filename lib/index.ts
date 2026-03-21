@@ -107,6 +107,8 @@ export interface TinyHyperGraphWorkingState {
   candidates: Candidate[]
 
   goalPortId: PortId
+
+  ripCount: number
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -115,9 +117,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
 
-  COST_TRIGGERING_RIP_START = 0.3
-  COST_TRIGGERING_RIP_END = 0.8
-  COST_TRIGGERING_RIP_ATTEMPTS_UNTIL_END = 10
+  RIP_THRESHOLD_START = 0.3
+  RIP_THRESHOLD_END = 0.8
+  RIP_THRESHOLD_RAMP_ATTEMPTS = 10
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -146,6 +148,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       visitedSegments: new Set(),
       candidates: [],
       goalPortId: -1,
+      ripCount: 0,
     }
     this.problemSetup = this.computeProblemSetup()
   }
@@ -257,7 +260,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   onPathFound(finalCandidate: Candidate) {
     const { topology, problem, state } = this
+
+    const currentRipThreshold =
+      this.RIP_THRESHOLD_START +
+      (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) *
+        Math.max(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
+
     // TODO if there were rips for this candidate, perform the rips etc.
+    // NOTE: When we're ripping, we rip a region until it's g cost is less
+    //       than the threshold, selecting traces at random. We never rip the
+    //       trace we just routed
     // TODO update the region cache to incorporate the new path and rips
     // TODO update the segments for involved regions
     state.currentRouteId = undefined
