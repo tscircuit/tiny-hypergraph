@@ -78,6 +78,8 @@ export interface Candidate {
   portId: PortId
   nextRegionId: RegionId
 
+  prevCandidate?: Candidate
+
   f: number
   g: number
   h: number
@@ -220,13 +222,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const g = this.computeG(currentCandidate, neighborPortId)
       const h = this.computeH(neighborPortId)
 
-      state.candidates.push({
-        nextRegionId: topology.incidentPortRegion[neighborPortId][0],
+      let nextRegionId =
+        topology.incidentPortRegion[neighborPortId][0] ===
+        currentCandidate.nextRegionId
+          ? topology.incidentPortRegion[neighborPortId][1]
+          : topology.incidentPortRegion[neighborPortId][1]
+
+      const newCandidate = {
+        nextRegionId,
         portId: neighborPortId,
         g,
         h,
         f: g + h,
-      })
+        prevCandidate: currentCandidate,
+      }
+
+      if (neighborPortId === state.goalPortId) {
+        this.onPathFound(newCandidate)
+        return
+      }
+
+      state.candidates.push(newCandidate)
     }
   }
 
