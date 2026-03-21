@@ -7,8 +7,11 @@
     "@tscircuit/hypergraph": "^0.0.71",
     "@tscircuit/solver-utils": "^0.0.16",
     "@types/bun": "latest",
+    "cosmos": "^0.1.2",
     "graphics-debug": "^0.0.87",
-    "stack-svgs": "^0.0.1"
+    "react-cosmos-plugin-vite": "^7.2.0",
+    "stack-svgs": "^0.0.1",
+    "vite": "^8.0.1"
   },
   "peerDependencies": {
     "typescript": "^5"
