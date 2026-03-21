@@ -11,7 +11,6 @@ import type {
   RegionId,
   RegionIntersectionCache,
   RouteId,
-  SegmentId,
 } from "./types"
 import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
@@ -138,8 +137,6 @@ export interface TinyHyperGraphWorkingState {
 
   unroutedRoutes: RouteId[]
 
-  visitedSegments: Set<SegmentId>
-
   candidateQueue: MinHeap<Candidate>
   candidateBestCostByHopId: Float64Array
 
@@ -183,7 +180,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentRouteId: undefined,
       currentRouteNetId: undefined,
       unroutedRoutes: range(problem.routeCount),
-      visitedSegments: new Set(),
       candidateQueue: new MinHeap([], compareCandidatesByF),
       candidateBestCostByHopId: new Float64Array(
         topology.portCount * topology.regionCount,
@@ -245,7 +241,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
-      state.visitedSegments.clear()
       state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidateQueue.clear()
@@ -283,12 +278,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    state.visitedSegments.add(currentCandidate.segmentId)
-
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
-    const segmentIdPart1 = currentCandidate.portId * topology.portCount
     for (const neighborPortId of neighbors) {
       const assignedRouteId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -303,7 +295,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
       if (assignedRouteId !== -1) continue
-      if (state.visitedSegments.has(segmentIdPart1 + neighborPortId)) continue
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
@@ -513,7 +504,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       range(problem.routeCount),
       state.ripCount,
     )
-    state.visitedSegments.clear()
     state.candidateQueue.clear()
     state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
     state.goalPortId = -1

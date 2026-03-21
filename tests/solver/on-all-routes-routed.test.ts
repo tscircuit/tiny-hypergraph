@@ -76,7 +76,6 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
   solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
   solver.state.regionCongestionCost[1] = 0.2
-  solver.state.visitedSegments.add(3)
   solver.state.candidateQueue = new MinHeap(
     [
       {
@@ -117,7 +116,6 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   )
   expect(solver.state.currentRouteId).toBeUndefined()
   expect(solver.state.currentRouteNetId).toBeUndefined()
-  expect(solver.state.visitedSegments.size).toBe(0)
   expect(solver.state.candidateQueue.toArray()).toEqual([])
   expect(solver.state.goalPortId).toBe(-1)
 })
