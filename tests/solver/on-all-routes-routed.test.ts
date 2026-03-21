@@ -93,9 +93,11 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.failed).toBe(false)
   expect(solver.state.ripCount).toBe(1)
   expect(solver.state.regionCongestionCost[0]).toBe(
-    solver.RIP_CONGESTION_REGION_COST,
+    0.5 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
   )
-  expect(solver.state.regionCongestionCost[1]).toBe(0.2)
+  expect(solver.state.regionCongestionCost[1]).toBe(
+    0.2 + 0.1 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
+  )
   expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
   expect(
     solver.state.regionSegments.map((segments) => segments.length),

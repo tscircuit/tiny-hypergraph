@@ -92,7 +92,7 @@ const getRegionCostLabel = (
     solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
   const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
 
-  return `region-${regionId}\ncost: ${(regionCost + congestionCost).toFixed(3)}`
+  return `region-${regionId}\ncost: ${(regionCost + congestionCost).toFixed(3)}\ncongestion: ${congestionCost.toFixed(3)}`
 }
 
 const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
@@ -113,11 +113,12 @@ const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
 const getPortLabel = (solver: TinyHyperGraphSolver, portId: PortId): string => {
   const r1 = solver.topology.incidentPortRegion[portId]?.[0]
   const r2 = solver.topology.incidentPortRegion[portId]?.[1]
-  const rawPortId = solver.topology.portMetadata?.[portId]?.portId
 
-  if (rawPortId) return rawPortId
-  return `${r1 ?? "?"}-${r2 ?? "?"}`
+  return `connects region-${r1 ?? "?"} <-> region-${r2 ?? "?"}`
 }
+
+const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
+  `z: ${solver.topology.portZ[portId]}`
 
 const getSegmentStyle = (
   solver: TinyHyperGraphSolver,
@@ -215,14 +216,14 @@ const pushRouteEndpoints = (
       x: startPoint.x - 0.1,
       y: startPoint.y + 0.1,
       color: routeColor,
-      label: `${routeLabel}\n${routeNetLabel}\nstart`,
+      label: `${routeLabel}\n${routeNetLabel}\nstart\n${getPortZLabel(solver, startPortId)}`,
     })
 
     graphics.points.push({
       x: endPoint.x - 0.1,
       y: endPoint.y + 0.1,
       color: routeColor,
-      label: `${routeLabel}\n${routeNetLabel}\nend`,
+      label: `${routeLabel}\n${routeNetLabel}\nend\n${getPortZLabel(solver, endPortId)}`,
     })
   }
 }

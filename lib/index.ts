@@ -155,7 +155,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 20
 
-  RIP_CONGESTION_REGION_COST = 0.05
+  RIP_CONGESTION_REGION_COST_FACTOR = 0.05
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -435,11 +435,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
 
     const ripRegionIds: RegionId[] = []
+    const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
 
       if (regionCost > currentRipThreshold) {
@@ -460,8 +462,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    for (const regionId of ripRegionIds) {
-      state.regionCongestionCost[regionId] += this.RIP_CONGESTION_REGION_COST
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      state.regionCongestionCost[regionId] +=
+        regionCosts[regionId] * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
 
     state.ripCount += 1
