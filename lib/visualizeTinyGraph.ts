@@ -4,6 +4,7 @@ import type { PortId, RegionId, RouteId } from "./types"
 
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
+const PORT_LAYER_CIRCLE_OFFSET = 0.01
 
 const getRouteLabel = (
   solver: TinyHyperGraphSolver,
@@ -98,6 +99,16 @@ const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   x: solver.topology.portX[portId],
   y: solver.topology.portY[portId],
 })
+
+const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
+  const portPoint = getPortPoint(solver, portId)
+  const layerOffset = solver.topology.portZ[portId] * PORT_LAYER_CIRCLE_OFFSET
+
+  return {
+    x: portPoint.x + layerOffset,
+    y: portPoint.y + layerOffset,
+  }
+}
 
 const getPortLabel = (solver: TinyHyperGraphSolver, portId: PortId): string => {
   const r1 = solver.topology.incidentPortRegion[portId]?.[0]
@@ -354,7 +365,7 @@ export const visualizeTinyHyperGraph = (
       const portPoint = getPortPoint(solver, portId)
 
       graphics.circles.push({
-        center: portPoint,
+        center: getPortCircleCenter(solver, portId),
         radius: 0.05,
         fill:
           solver.topology.portZ[portId] > 0

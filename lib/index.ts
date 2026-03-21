@@ -1,22 +1,53 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { visualizeTinyGraph } from "./visualizeTinyGraph"
+import { computeRegionCost } from "./computeRegionCost"
+import { countNewIntersections } from "./countNewIntersections"
 import type {
+  DynamicAnglePair,
+  NetId,
   PortId,
   RegionId,
-  Integer,
-  RouteId,
-  DynamicAnglePair,
-  DynamicAnglePairArrays,
   RegionIntersectionCache,
-  NetId,
+  RouteId,
   SegmentId,
 } from "./types"
-import { computePortPositionOnBoundary } from "../hypergraph/lib/topology/utils"
-import type { Region } from "@tscircuit/hypergraph"
-import { countNewIntersections } from "./countNewIntersections"
-import { computeRegionCost } from "./computeRegionCost"
 import { range } from "./utils"
+import { visualizeTinyGraph } from "./visualizeTinyGraph"
+
+const createEmptyRegionIntersectionCache = (): RegionIntersectionCache => ({
+  netIds: new Int32Array(0),
+  lesserAngles: new Int32Array(0),
+  greaterAngles: new Int32Array(0),
+  layerMasks: new Int32Array(0),
+  existingCrossingLayerIntersections: 0,
+  existingSameLayerIntersections: 0,
+  existingEntryExitLayerChanges: 0,
+  existingRegionCost: 0,
+})
+
+const createMulberry32 = (seed: number) => {
+  let state = seed >>> 0
+
+  return () => {
+    state += 0x6d2b79f5
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const shuffleRouteIds = (routeIds: RouteId[], seed: number): RouteId[] => {
+  const shuffled = [...routeIds]
+  const random = createMulberry32(seed)
+
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+
+  return shuffled
+}
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -136,16 +167,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
       regionIntersectionCaches: Array.from(
         { length: topology.regionCount },
-        () => ({
-          netIds: new Int32Array(0),
-          lesserAngles: new Int32Array(0),
-          greaterAngles: new Int32Array(0),
-          layerMasks: new Int32Array(0),
-          existingCrossingLayerIntersections: 0,
-          existingSameLayerIntersections: 0,
-          existingEntryExitLayerChanges: 0,
-          existingRegionCost: 0,
-        }),
+        () => createEmptyRegionIntersectionCache(),
       ),
       currentRouteId: undefined,
       currentRouteNetId: undefined,
@@ -190,7 +212,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (state.currentRouteId === undefined) {
       if (state.unroutedRoutes.length === 0) {
-        this.solved = true
+        this.onAllRoutesRouted()
         return
       }
 
@@ -228,20 +250,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const segmentIdPart1 = currentCandidate.portId * topology.portCount
     for (const neighborPortId of neighbors) {
+      if (neighborPortId === state.goalPortId) {
+        this.onPathFound(currentCandidate)
+        return
+      }
       if (state.portAssignment[neighborPortId] !== -1) continue
       if (state.visitedSegments.has(segmentIdPart1 + neighborPortId)) continue
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
-      if (neighborPortId === state.goalPortId) {
-        this.onPathFound(currentCandidate)
-        return
-      }
-
       const g = this.computeG(currentCandidate, neighborPortId)
       const h = this.computeH(neighborPortId)
 
-      let nextRegionId =
+      const nextRegionId =
         topology.incidentPortRegion[neighborPortId][0] ===
         currentCandidate.nextRegionId
           ? topology.incidentPortRegion[neighborPortId][1]
@@ -380,20 +401,76 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return solvedSegments
   }
 
+  resetRoutingStateForRerip() {
+    const { topology, problem, state } = this
+
+    state.portAssignment.fill(-1)
+    state.regionSegments = Array.from(
+      { length: topology.regionCount },
+      () => [],
+    )
+    state.regionIntersectionCaches = Array.from(
+      { length: topology.regionCount },
+      () => createEmptyRegionIntersectionCache(),
+    )
+    state.currentRouteNetId = undefined
+    state.currentRouteId = undefined
+    state.unroutedRoutes = shuffleRouteIds(
+      range(problem.routeCount),
+      state.ripCount,
+    )
+    state.visitedSegments.clear()
+    state.candidates = []
+    state.goalPortId = -1
+  }
+
   onAllRoutesRouted() {
+    const { topology, state } = this
+    const ripThresholdProgress =
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS <= 0
+        ? 1
+        : Math.min(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
     const currentRipThreshold =
       this.RIP_THRESHOLD_START +
-      (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) *
-        Math.max(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
+      (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
 
-    // TODO check the cost of each region, if all regions are below the
-    // currentRipThreshold then we're done and we can mark this.solved = true
-    // If there's even one region that is > currentRipThreshold, we restart
-    // the entire solver, zero'ing out everything accept the congestion costs
-    // and shuffle the unroutedRoutes
-    // When ripping, we add the RIP_CONGESTION_REGION_COST to each region
-    //       that has regionCost > currentRipThreshold
-    //
+    const ripRegionIds: RegionId[] = []
+    let maxRegionCost = 0
+
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      const regionCost =
+        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      maxRegionCost = Math.max(maxRegionCost, regionCost)
+
+      if (regionCost > currentRipThreshold) {
+        ripRegionIds.push(regionId)
+      }
+    }
+
+    this.stats = {
+      ...this.stats,
+      currentRipThreshold,
+      hotRegionCount: ripRegionIds.length,
+      maxRegionCost,
+      ripCount: state.ripCount,
+    }
+
+    if (ripRegionIds.length === 0) {
+      this.solved = true
+      return
+    }
+
+    for (const regionId of ripRegionIds) {
+      state.regionCongestionCost[regionId] += this.RIP_CONGESTION_REGION_COST
+    }
+
+    state.ripCount += 1
+    this.resetRoutingStateForRerip()
+    this.stats = {
+      ...this.stats,
+      ripCount: state.ripCount,
+      reripRegionCount: ripRegionIds.length,
+    }
   }
 
   onPathFound(finalCandidate: Candidate) {
@@ -421,7 +498,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
-    const { topology, problem, state } = this
+    const { topology, state } = this
 
     const nextRegionId = currentCandidate.nextRegionId
 
