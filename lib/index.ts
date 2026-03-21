@@ -216,6 +216,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
     }
 
+    state.candidates.sort((a, b) => b.f - a.f)
     const currentCandidate = state.candidates.pop()
 
     if (!currentCandidate) {
