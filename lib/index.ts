@@ -161,6 +161,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.05
 
+  override MAX_ITERATIONS = 1e6
+
   constructor(
     public topology: TinyHyperGraphTopology,
     public problem: TinyHyperGraphProblem,

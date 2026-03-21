@@ -4,12 +4,36 @@ import type { PortId, RegionId, RouteId } from "./types"
 
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
+const TRANSITION_CROSSING_DASH = "2 4 2"
 const PORT_LAYER_CIRCLE_OFFSET = 0.01
 const PORT_LAYER_POINT_OFFSET = 0.002
 const REGION_RECT_GAP = 0.05
+const HOT_REGION_FILL = { r: 255, g: 64, b: 64, a: 0.72 }
+
+type RgbaColor = {
+  r: number
+  g: number
+  b: number
+  a: number
+}
 
 const formatLabel = (...lines: Array<string | undefined>) =>
   lines.filter((line): line is string => Boolean(line)).join("\n")
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+
+const mixColorChannel = (from: number, to: number, amount: number) =>
+  Math.round(from + (to - from) * amount)
+
+const mixColor = (base: RgbaColor, overlay: RgbaColor, amount: number) => ({
+  r: mixColorChannel(base.r, overlay.r, amount),
+  g: mixColorChannel(base.g, overlay.g, amount),
+  b: mixColorChannel(base.b, overlay.b, amount),
+  a: Number((base.a + (overlay.a - base.a) * amount).toFixed(3)),
+})
+
+const toRgbaString = ({ r, g, b, a }: RgbaColor) =>
+  `rgba(${r}, ${g}, ${b}, ${a})`
 
 const getRouteLabel = (
   solver: TinyHyperGraphSolver,
@@ -93,15 +117,61 @@ const getRegionCostLabel = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
 ): string => {
-  const regionCost =
-    solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+  const regionCache = solver.state.regionIntersectionCaches[regionId]
+  const regionCost = getRegionDisplayCost(solver, regionId)
   const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
 
   return formatLabel(
     `region: region-${regionId}`,
-    `cost: ${(regionCost + congestionCost).toFixed(3)}`,
+    `cost: ${regionCost.toFixed(3)}`,
     `congestion: ${congestionCost.toFixed(3)}`,
+    `same layer X: ${regionCache?.existingSameLayerIntersections ?? 0}`,
+    `trans X: ${regionCache?.existingCrossingLayerIntersections ?? 0}`,
+    `entry exit X: ${regionCache?.existingEntryExitLayerChanges ?? 0}`,
   )
+}
+
+const getRegionDisplayCost = (
+  solver: TinyHyperGraphSolver,
+  regionId: RegionId,
+): number =>
+  (solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0) +
+  (solver.state.regionCongestionCost[regionId] ?? 0)
+
+const getBaseRegionFillColor = (
+  solver: TinyHyperGraphSolver,
+  regionId: RegionId,
+): RgbaColor => {
+  const regionMetadata = solver.topology.regionMetadata?.[regionId]
+
+  if (regionMetadata?.isConnectionRegion) {
+    return { r: 255, g: 100, b: 255, a: 0.6 }
+  }
+
+  if (regionMetadata?.isThroughJumper) {
+    return { r: 100, g: 200, b: 100, a: 0.5 }
+  }
+
+  if (regionMetadata?.isPad) {
+    return { r: 255, g: 200, b: 100, a: 0.5 }
+  }
+
+  if (regionMetadata?.layer === "bottom") {
+    return { r: 52, g: 152, b: 219, a: 0.08 }
+  }
+
+  return { r: 200, g: 200, b: 255, a: 0.1 }
+}
+
+const getRegionRectFill = (
+  solver: TinyHyperGraphSolver,
+  regionId: RegionId,
+): string => {
+  const baseFill = getBaseRegionFillColor(solver, regionId)
+  const cost = clamp01(getRegionDisplayCost(solver, regionId))
+  const redness = Math.pow(cost, 0.8)
+
+  return toRgbaString(mixColor(baseFill, HOT_REGION_FILL, redness))
 }
 
 const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
@@ -176,7 +246,7 @@ const getSegmentStyle = (
   if (z1 !== z2) {
     return {
       strokeColor: "rgba(22, 160, 133, 0.95)",
-      strokeDash: "2 2",
+      strokeDash: TRANSITION_CROSSING_DASH,
     }
   }
 
@@ -416,25 +486,16 @@ export const visualizeTinyHyperGraph = (
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
 
-    let fill = "rgba(200, 200, 255, 0.1)"
-    if (regionMetadata?.isConnectionRegion) {
-      fill = "rgba(255, 100, 255, 0.6)"
-    } else if (regionMetadata?.isThroughJumper) {
-      fill = "rgba(100, 200, 100, 0.5)"
-    } else if (regionMetadata?.isPad) {
-      fill = "rgba(255, 200, 100, 0.5)"
-    } else if (regionMetadata?.layer === "bottom") {
-      fill = "rgba(52, 152, 219, 0.08)"
-    }
+    const baseFill = toRgbaString(getBaseRegionFillColor(solver, regionId))
 
     if (Array.isArray(polygon) && polygon.length >= 3) {
-      graphics.polygons.push({ points: polygon, fill })
+      graphics.polygons.push({ points: polygon, fill: baseFill })
     } else {
       graphics.rects.push({
         center,
         width: Math.max(width - REGION_RECT_GAP, 0.05),
         height: Math.max(height - REGION_RECT_GAP, 0.05),
-        fill,
+        fill: getRegionRectFill(solver, regionId),
         label: getRegionCostLabel(solver, regionId),
       })
     }

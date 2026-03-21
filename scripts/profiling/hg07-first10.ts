@@ -20,6 +20,7 @@ type ProfileRow = {
   circuit: string
   ms: number
   iterations: number
+  ripsUsed: number
   referenceSteps: number
   solved: boolean
 }
@@ -30,6 +31,7 @@ const sampleMetas = datasetModule.manifest.samples.slice(0, 10)
 const rows: ProfileRow[] = []
 let totalMs = 0
 let totalIterations = 0
+let totalRipsUsed = 0
 let totalReferenceSteps = 0
 let failedSampleCount = 0
 
@@ -49,6 +51,7 @@ for (const sampleMeta of sampleMetas) {
     circuit: sampleMeta.circuitId,
     ms: elapsedMs,
     iterations: solver.iterations,
+    ripsUsed: solver.state.ripCount,
     referenceSteps: sampleMeta.stepsToPortPointSolve,
     solved: solver.solved && !solver.failed,
   }
@@ -56,6 +59,7 @@ for (const sampleMeta of sampleMetas) {
   rows.push(row)
   totalMs += elapsedMs
   totalIterations += row.iterations
+  totalRipsUsed += row.ripsUsed
   totalReferenceSteps += row.referenceSteps
 
   if (!row.solved) {
@@ -68,6 +72,7 @@ const roundedRows = rows.map((row) => ({
   circuit: row.circuit,
   ms: Number(row.ms.toFixed(2)),
   iterations: row.iterations,
+  ripsUsed: row.ripsUsed,
   referenceSteps: row.referenceSteps,
   solved: row.solved,
 }))
@@ -83,6 +88,10 @@ console.log(
       totalIterations,
       averageIterations: Number(
         (totalIterations / Math.max(rows.length, 1)).toFixed(1),
+      ),
+      totalRipsUsed,
+      averageRipsUsed: Number(
+        (totalRipsUsed / Math.max(rows.length, 1)).toFixed(1),
       ),
       totalReferenceSteps,
     },
