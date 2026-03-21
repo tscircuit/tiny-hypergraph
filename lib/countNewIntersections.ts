@@ -1,10 +1,4 @@
-import type {
-  CrossingLayerIntersectionCount,
-  DynamicAnglePair,
-  DynamicAnglePairArrays,
-  EntryExitLayerChanges,
-  SameLayerIntersectionCount,
-} from "./types"
+import type { DynamicAnglePair, DynamicAnglePairArrays } from "./types"
 
 export const createDynamicAnglePairArrays = (
   anglePairs: Array<DynamicAnglePair>,
@@ -33,11 +27,7 @@ export const createDynamicAnglePairArrays = (
 export const countNewIntersections = (
   existingPairs: DynamicAnglePairArrays,
   newPair: DynamicAnglePair,
-): [
-  SameLayerIntersectionCount,
-  CrossingLayerIntersectionCount,
-  EntryExitLayerChanges,
-] => {
+): [number, number, number] => {
   const [newNet, newLesserAngle, newZ1, newGreaterAngle, newZ2] = newPair
   const newLayerMask = (1 << newZ1) | (1 << newZ2)
   const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs

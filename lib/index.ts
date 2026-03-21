@@ -31,6 +31,8 @@ export interface TinyHyperGraphTopology {
   portMetadata?: any[]
 }
 export interface TinyHyperGraphProblem {
+  routeCount: number
+
   /** portSectionMask[portId] = true if port in section  */
   portSectionMask: Int8Array // boolean[], length: portCount
 
@@ -163,13 +165,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   computeH(neighborPortId: PortId): number {
-    const nx = this.topology.portX[neighborPortId]
-    const ny = this.topology.portY[neighborPortId]
-
-    const gx = this.topology.portX[this.state.goalPortId]
-    const gy = this.topology.portY[this.state.goalPortId]
-
-    return Math.sqrt((nx - gx) ** 2 + (ny - gy) ** 2)
+    this.problemSetup.portDistanceToEndOfRoute[
+      neighborPortId * this.problem.routeCount + state.currentRouteId!
+    ]
   }
 
   override visualize(): GraphicsObject {
