@@ -4,6 +4,7 @@ import {
   TinyHyperGraphSolver,
   type TinyHyperGraphTopology,
 } from "lib/index"
+import { MinHeap } from "lib/MinHeap"
 import type { RegionIntersectionCache } from "lib/types"
 
 const createRegionCache = (
@@ -75,16 +76,19 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
   solver.state.regionCongestionCost[1] = 0.2
   solver.state.visitedSegments.add(3)
-  solver.state.candidates = [
-    {
-      nextRegionId: 0,
-      portId: 1,
-      segmentId: 1,
-      f: 1,
-      g: 0.5,
-      h: 0.5,
-    },
-  ]
+  solver.state.candidateQueue = new MinHeap(
+    [
+      {
+        nextRegionId: 0,
+        portId: 1,
+        segmentId: 1,
+        f: 1,
+        g: 0.5,
+        h: 0.5,
+      },
+    ],
+    (left, right) => left.f - right.f,
+  )
   solver.state.goalPortId = 3
 
   solver.step()
@@ -113,7 +117,7 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.state.currentRouteId).toBeUndefined()
   expect(solver.state.currentRouteNetId).toBeUndefined()
   expect(solver.state.visitedSegments.size).toBe(0)
-  expect(solver.state.candidates).toEqual([])
+  expect(solver.state.candidateQueue.toArray()).toEqual([])
   expect(solver.state.goalPortId).toBe(-1)
 })
 
@@ -121,8 +125,8 @@ test("completed routing is accepted once all region costs are under the threshol
   const solver = createTestSolver()
 
   solver.state.unroutedRoutes = []
-  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
-  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.02)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.01)
 
   solver.step()
 

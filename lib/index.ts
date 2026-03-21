@@ -2,6 +2,7 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { computeRegionCost } from "./computeRegionCost"
 import { countNewIntersections } from "./countNewIntersections"
+import { MinHeap } from "./MinHeap"
 import type {
   DynamicAnglePair,
   NetId,
@@ -135,7 +136,7 @@ export interface TinyHyperGraphWorkingState {
 
   visitedSegments: Set<SegmentId>
 
-  candidates: Candidate[]
+  candidateQueue: MinHeap<Candidate>
 
   goalPortId: PortId
 
@@ -144,6 +145,9 @@ export interface TinyHyperGraphWorkingState {
   /** regionCongestionCost[regionId] = congestion cost */
   regionCongestionCost: Float64Array
 }
+
+const compareCandidatesByF = (left: Candidate, right: Candidate) =>
+  left.f - right.f
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
@@ -173,7 +177,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentRouteNetId: undefined,
       unroutedRoutes: range(problem.routeCount),
       visitedSegments: new Set(),
-      candidates: [],
+      candidateQueue: new MinHeap([], compareCandidatesByF),
       goalPortId: -1,
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
@@ -221,21 +225,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       state.visitedSegments.clear()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
-      state.candidates = [
-        {
-          nextRegionId: topology.incidentPortRegion[startingPortId][0],
-          portId: startingPortId,
-          f: 0,
-          g: 0,
-          h: 0,
-          segmentId: 0,
-        },
-      ]
+      state.candidateQueue.clear()
+      state.candidateQueue.queue({
+        nextRegionId: topology.incidentPortRegion[startingPortId][0],
+        portId: startingPortId,
+        f: 0,
+        g: 0,
+        h: 0,
+        segmentId: 0,
+      })
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
     }
 
-    state.candidates.sort((a, b) => b.f - a.f)
-    const currentCandidate = state.candidates.pop()
+    const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
       this.failed = true
@@ -269,7 +271,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           : topology.incidentPortRegion[neighborPortId][0]
 
       const newCandidate = {
-        lastRegionId: currentCandidate.nextRegionId,
+        prevRegionId: currentCandidate.nextRegionId,
         nextRegionId,
         portId: neighborPortId,
         g,
@@ -285,7 +287,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      state.candidates.push(newCandidate)
+      state.candidateQueue.queue(newCandidate)
     }
   }
 
@@ -420,7 +422,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.ripCount,
     )
     state.visitedSegments.clear()
-    state.candidates = []
+    state.candidateQueue.clear()
     state.goalPortId = -1
   }
 
@@ -495,7 +497,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
 
-    state.candidates = []
+    state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
   }

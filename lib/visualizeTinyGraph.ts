@@ -5,6 +5,7 @@ import type { PortId, RegionId, RouteId } from "./types"
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
 const PORT_LAYER_CIRCLE_OFFSET = 0.01
+const PORT_LAYER_POINT_OFFSET = 0.002
 const REGION_RECT_GAP = 0.05
 
 const formatLabel = (...lines: Array<string | undefined>) =>
@@ -108,6 +109,16 @@ const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   y: solver.topology.portY[portId],
 })
 
+const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
+  const portPoint = getPortPoint(solver, portId)
+  const layerOffset = solver.topology.portZ[portId] * PORT_LAYER_POINT_OFFSET
+
+  return {
+    x: portPoint.x + layerOffset,
+    y: portPoint.y + layerOffset,
+  }
+}
+
 const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
   const portPoint = getPortPoint(solver, portId)
   const layerOffset = solver.topology.portZ[portId] * PORT_LAYER_CIRCLE_OFFSET
@@ -187,7 +198,10 @@ const pushSolvedRegionSegments = (
 
     for (const [routeId, port1Id, port2Id] of regionSegments) {
       graphics.lines.push({
-        points: [getPortPoint(solver, port1Id), getPortPoint(solver, port2Id)],
+        points: [
+          getPortRenderPoint(solver, port1Id),
+          getPortRenderPoint(solver, port2Id),
+        ],
         label: formatLabel(
           `route: ${getRouteLabel(solver, routeId)}`,
           `region: region-${regionId}`,
@@ -217,10 +231,10 @@ const pushRoutePortZPoints = (
         if (seenRoutePorts.has(key)) continue
         seenRoutePorts.add(key)
 
-        const portPoint = getPortPoint(solver, portId)
+        const portPoint = getPortRenderPoint(solver, portId)
         graphics.points.push({
-          x: portPoint.x + 0.08,
-          y: portPoint.y - 0.08,
+          x: portPoint.x,
+          y: portPoint.y,
           color: getRouteColor(solver, routeId, 1),
           label: formatLabel(
             `route: ${getRouteLabel(solver, routeId)}`,
@@ -240,8 +254,8 @@ const pushInitialRouteHints = (
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
     const startPortId = solver.problem.routeStartPort[routeId]
     const endPortId = solver.problem.routeEndPort[routeId]
-    const startPoint = getPortPoint(solver, startPortId)
-    const endPoint = getPortPoint(solver, endPortId)
+    const startPoint = getPortRenderPoint(solver, startPortId)
+    const endPoint = getPortRenderPoint(solver, endPortId)
     const midPoint = {
       x: (startPoint.x + endPoint.x) / 2,
       y: (startPoint.y + endPoint.y) / 2,
@@ -270,15 +284,15 @@ const pushRouteEndpoints = (
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
     const startPortId = solver.problem.routeStartPort[routeId]
     const endPortId = solver.problem.routeEndPort[routeId]
-    const startPoint = getPortPoint(solver, startPortId)
-    const endPoint = getPortPoint(solver, endPortId)
+    const startPoint = getPortRenderPoint(solver, startPortId)
+    const endPoint = getPortRenderPoint(solver, endPortId)
     const routeColor = getRouteColor(solver, routeId)
     const routeLabel = getRouteLabel(solver, routeId)
     const routeNetLabel = getRouteNetLabel(solver, routeId)
 
     graphics.points.push({
-      x: startPoint.x - 0.1,
-      y: startPoint.y + 0.1,
+      x: startPoint.x,
+      y: startPoint.y,
       color: routeColor,
       label: formatLabel(
         `route: ${routeLabel}`,
@@ -290,8 +304,8 @@ const pushRouteEndpoints = (
     })
 
     graphics.points.push({
-      x: endPoint.x - 0.1,
-      y: endPoint.y + 0.1,
+      x: endPoint.x,
+      y: endPoint.y,
       color: routeColor,
       label: formatLabel(
         `route: ${routeLabel}`,
@@ -313,8 +327,8 @@ const pushActiveRoute = (
 
   const startPortId = solver.problem.routeStartPort[routeId]
   const endPortId = solver.problem.routeEndPort[routeId]
-  const startPoint = getPortPoint(solver, startPortId)
-  const endPoint = getPortPoint(solver, endPortId)
+  const startPoint = getPortRenderPoint(solver, startPortId)
+  const endPoint = getPortRenderPoint(solver, endPortId)
   const routeColor = getRouteColor(solver, routeId)
   const routeLabel = getRouteLabel(solver, routeId)
 
@@ -330,7 +344,7 @@ const pushCandidates = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
 ) => {
-  const candidates = solver.state.candidates.slice(-10).reverse()
+  const candidates = solver.state.candidateQueue.toArray().slice(-10).reverse()
 
   for (
     let candidateIndex = 0;
@@ -338,7 +352,7 @@ const pushCandidates = (
     candidateIndex++
   ) {
     const candidate = candidates[candidateIndex]
-    const portPoint = getPortPoint(solver, candidate.portId)
+    const portPoint = getPortRenderPoint(solver, candidate.portId)
     const isNext = candidateIndex === 0
 
     graphics.points.push({
@@ -363,7 +377,7 @@ const pushCandidates = (
   let cursor: typeof nextCandidate | undefined = nextCandidate
 
   while (cursor) {
-    activePath.unshift(getPortPoint(solver, cursor.portId))
+    activePath.unshift(getPortRenderPoint(solver, cursor.portId))
     cursor = cursor.prevCandidate
   }
 
@@ -440,7 +454,7 @@ export const visualizeTinyHyperGraph = (
 
   if (solver.iterations === 0) {
     for (let portId = 0; portId < solver.topology.portCount; portId++) {
-      const portPoint = getPortPoint(solver, portId)
+      const portPoint = getPortRenderPoint(solver, portId)
 
       graphics.circles.push({
         center: getPortCircleCenter(solver, portId),
