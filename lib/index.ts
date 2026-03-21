@@ -60,8 +60,8 @@ export interface TinyHyperGraphProblem {
 }
 
 export interface TinyHyperGraphProblemSetup {
-  // portDistanceToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
-  portDistanceToEndOfRoute: Float64Array
+  // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
+  portHCostToEndOfRoute: Float64Array
 }
 
 export interface TinyHyperGraphSolution {
@@ -141,7 +141,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, problem } = this
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
-    const portDistanceToEndOfRoute = new Float64Array(
+    const portHCostToEndOfRoute = new Float64Array(
       topology.portCount * problem.routeCount,
     )
 
@@ -153,13 +153,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       for (let portId = 0; portId < topology.portCount; portId++) {
         const dx = portX[portId] - endX
         const dy = portY[portId] - endY
-        portDistanceToEndOfRoute[portId * problem.routeCount + routeId] =
-          Math.hypot(dx, dy) * DISTANCE_TO_COST
+        portHCostToEndOfRoute[portId * problem.routeCount + routeId] =
+          Math.hypot(dx, dy) * this.DISTANCE_TO_COST
       }
     }
 
     return {
-      portDistanceToEndOfRoute,
+      portHCostToEndOfRoute,
     }
   }
 
@@ -270,7 +270,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   computeH(neighborPortId: PortId): number {
-    return this.problemSetup.portDistanceToEndOfRoute[
+    return this.problemSetup.portHCostToEndOfRoute[
       neighborPortId * this.problem.routeCount + this.state.currentRouteId!
     ]
   }
