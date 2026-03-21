@@ -196,7 +196,8 @@ export const loadSerializedHyperGraph = (
     regionCenterY[regionIndex] = geometry.centerY
   })
 
-  const portAngle = new Int32Array(portCount)
+  const portAngleForRegion1 = new Int32Array(portCount)
+  const portAngleForRegion2 = new Int32Array(portCount)
   const portX = new Float64Array(portCount)
   const portY = new Float64Array(portCount)
   const portZ = new Int32Array(portCount)
@@ -215,9 +216,13 @@ export const loadSerializedHyperGraph = (
     portX[portIndex] = Number(port.d?.x ?? 0)
     portY[portIndex] = Number(port.d?.y ?? 0)
     portZ[portIndex] = Number(port.d?.z ?? 0)
-    portAngle[portIndex] = computePortAngle(
+    portAngleForRegion1[portIndex] = computePortAngle(
       port,
       serializedHyperGraph.regions[region1Index],
+    )
+    portAngleForRegion2[portIndex] = computePortAngle(
+      port,
+      serializedHyperGraph.regions[region2Index],
     )
   })
 
@@ -303,7 +308,8 @@ export const loadSerializedHyperGraph = (
     regionCenterX,
     regionCenterY,
     regionMetadata: serializedHyperGraph.regions.map((region) => region.d),
-    portAngle,
+    portAngleForRegion1,
+    portAngleForRegion2,
     portX,
     portY,
     portZ,

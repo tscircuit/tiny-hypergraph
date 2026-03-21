@@ -457,7 +457,11 @@ const pushCandidates = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
 ) => {
-  const candidates = solver.state.candidateQueue.toArray().slice(-10).reverse()
+  const routeId = solver.state.currentRouteId
+  const candidates = solver.state.candidateQueue
+    .toArray()
+    .sort((left, right) => left.f - right.f)
+    .slice(0, 10)
 
   for (
     let candidateIndex = 0;
@@ -485,7 +489,6 @@ const pushCandidates = (
   const nextCandidate = candidates[0]
   if (!nextCandidate) return
 
-  const routeId = solver.state.currentRouteId
   const activePath: { x: number; y: number }[] = []
   let cursor: typeof nextCandidate | undefined = nextCandidate
 

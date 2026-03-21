@@ -3,6 +3,7 @@ export type RegionId = number
 export type Integer = number
 export type RouteId = number
 export type NetId = number
+export type HopId = number
 
 /** SegmentIds are computed via port1Id * portCount + port2Id */
 export type SegmentId = number
