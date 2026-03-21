@@ -380,6 +380,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return solvedSegments
   }
 
+  onAllRoutesRouted() {
+    const currentRipThreshold =
+      this.RIP_THRESHOLD_START +
+      (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) *
+        Math.max(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
+
+    // TODO check the cost of each region, if all regions are below the
+    // currentRipThreshold then we're done and we can mark this.solved = true
+    // If there's even one region that is > currentRipThreshold, we restart
+    // the entire solver, zero'ing out everything accept the congestion costs
+    // and shuffle the unroutedRoutes
+    // When ripping, we add the RIP_CONGESTION_REGION_COST to each region
+    //       that has regionCost > currentRipThreshold
+    //
+  }
+
   onPathFound(finalCandidate: Candidate) {
     const { state } = this
     const currentRouteId = state.currentRouteId
@@ -388,17 +404,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
 
-    const currentRipThreshold =
-      this.RIP_THRESHOLD_START +
-      (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) *
-        Math.max(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
-
-    // TODO if there were rips for this candidate, perform the rips etc.
-    // NOTE: When we're ripping, we rip a region until it's g cost is less
-    //       than the threshold, selecting routes at random. We never rip the
-    //       route we just solved
-    // NOTE: When ripping, we add the RIP_CONGESTION_REGION_COST to each region
-    //       that has been ripped
     for (const { regionId, fromPortId, toPortId } of solvedSegments) {
       state.regionSegments[regionId].push([
         currentRouteId,
