@@ -2,6 +2,7 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
 import type { PortId, RegionId, Integer, RouteId } from "./types"
+import { computePortPositionOnBoundary } from "../hypergraph/lib/topology/utils"
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -41,6 +42,11 @@ export interface TinyHyperGraphProblem {
   routeEndPort: Int32Array // PortId[]
 }
 
+export interface TinyHyperGraphProblemSetup {
+  // portDistanceToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
+  portDistanceToEndOfRoute: Float64Array
+}
+
 export interface TinyHyperGraphSolution {
   /** solvedRoutePathSegments[routeId] = list of segments, each segment is an ordered list of port ids in the route */
   solvedRoutePathSegments: Array<[PortId, PortId][]>
@@ -75,6 +81,8 @@ export interface TinyHyperGraphWorkingState {
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
+  problemSetup: TinyHyperGraphProblemSetup
+
   constructor(
     public topology: TinyHyperGraphTopology,
     public problem: TinyHyperGraphProblem,
@@ -89,6 +97,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       candidates: [],
       goalPortId: -1,
     }
+    this.problemSetup = this.computeProblemSetup()
+  }
+
+  computeProblemSetup(): TinyHyperGraphProblemSetup {
+    // TODO
   }
 
   override _step() {
