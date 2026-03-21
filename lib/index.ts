@@ -10,6 +10,7 @@ import type {
   DynamicAnglePairArrays,
   RegionIntersectionCache,
   NetId,
+  SegmentId,
 } from "./types"
 import { computePortPositionOnBoundary } from "../hypergraph/lib/topology/utils"
 import type { Region } from "@tscircuit/hypergraph"
@@ -79,6 +80,7 @@ export interface Candidate {
   nextRegionId: RegionId
 
   prevCandidate?: Candidate
+  segmentId: SegmentId
 
   f: number
   g: number
@@ -100,8 +102,7 @@ export interface TinyHyperGraphWorkingState {
 
   unroutedRoutes: RouteId[]
 
-  // visitedPorts[PortId] = 1 if visited, otherwise 0
-  visitedPorts: Int32Array
+  visitedSegments: Set<SegmentId>
 
   candidates: Candidate[]
 
@@ -138,7 +139,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentRouteId: undefined,
       currentRouteNetId: undefined,
       unroutedRoutes: range(problem.routeCount),
-      visitedPorts: new Int32Array(topology.portCount).fill(0),
+      visitedSegments: new Set(),
       candidates: [],
       goalPortId: -1,
     }
@@ -183,7 +184,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
-      state.visitedPorts.fill(0)
+      state.visitedSegments.clear()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidates = [
         {
@@ -192,6 +193,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           f: 0,
           g: 0,
           h: 0,
+          segmentId: 0,
         },
       ]
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
@@ -205,13 +207,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    state.visitedPorts[currentCandidate.portId] = 1
+    state.visitedSegments.add(currentCandidate.segmentId)
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
+    const segmentIdPart1 = currentCandidate.portId * topology.portCount
     for (const neighborPortId of neighbors) {
-      if (state.visitedPorts[neighborPortId] === 1) continue
+      if (state.visitedSegments.has(segmentIdPart1 + neighborPortId)) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       if (neighborPortId === state.goalPortId) {
@@ -234,6 +237,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         g,
         h,
         f: g + h,
+        segmentId:
+          currentCandidate.portId * topology.portCount + neighborPortId,
         prevCandidate: currentCandidate,
       }
 

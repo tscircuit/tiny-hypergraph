@@ -4,6 +4,9 @@ export type Integer = number
 export type RouteId = number
 export type NetId = number
 
+/** SegmentIds are computed via port1Id * portCount + port2Id */
+export type SegmentId = number
+
 export type LesserAngle = number
 export type Z1 = number
 export type GreaterAngle = number
