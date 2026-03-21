@@ -11,9 +11,9 @@ export const computeRegionCost = (
   const area = regionWidth * regionHeight
 
   const estViasRequired =
-    numSameLayerIntersections * 0.8 +
-    numCrossLayerIntersections * 0.4 +
-    numEntryExitChanges * 0.3
+    numSameLayerIntersections * 2 +
+    numCrossLayerIntersections * 1 +
+    numEntryExitChanges * 1
 
   return (estViasRequired * viaSizeSq) / area
 }

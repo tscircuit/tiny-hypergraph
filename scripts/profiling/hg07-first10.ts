@@ -21,9 +21,6 @@ type ProfileRow = {
   ms: number
   iterations: number
   referenceSteps: number
-  maxCandidates: number
-  candidatePushes: number
-  candidatePops: number
   solved: boolean
 }
 
@@ -34,7 +31,6 @@ const rows: ProfileRow[] = []
 let totalMs = 0
 let totalIterations = 0
 let totalReferenceSteps = 0
-let maxCandidatesSeen = 0
 let failedSampleCount = 0
 
 for (const sampleMeta of sampleMetas) {
@@ -54,9 +50,6 @@ for (const sampleMeta of sampleMetas) {
     ms: elapsedMs,
     iterations: solver.iterations,
     referenceSteps: sampleMeta.stepsToPortPointSolve,
-    maxCandidates: solver.candidateQueueProfile.maxSize,
-    candidatePushes: solver.candidateQueueProfile.pushes,
-    candidatePops: solver.candidateQueueProfile.pops,
     solved: solver.solved && !solver.failed,
   }
 
@@ -64,7 +57,6 @@ for (const sampleMeta of sampleMetas) {
   totalMs += elapsedMs
   totalIterations += row.iterations
   totalReferenceSteps += row.referenceSteps
-  maxCandidatesSeen = Math.max(maxCandidatesSeen, row.maxCandidates)
 
   if (!row.solved) {
     failedSampleCount += 1
@@ -77,16 +69,11 @@ const roundedRows = rows.map((row) => ({
   ms: Number(row.ms.toFixed(2)),
   iterations: row.iterations,
   referenceSteps: row.referenceSteps,
-  maxCandidates: row.maxCandidates,
-  candidatePushes: row.candidatePushes,
-  candidatePops: row.candidatePops,
   solved: row.solved,
 }))
 
 console.log("hg-07 first 10 solve profile")
-console.log(
-  `queue=${rows[0] ? "min-heap" : "n/a"} samples=${rows.length} failed=${failedSampleCount}`,
-)
+console.log(`samples=${rows.length} failed=${failedSampleCount}`)
 console.table(roundedRows)
 console.log(
   JSON.stringify(
@@ -98,7 +85,6 @@ console.log(
         (totalIterations / Math.max(rows.length, 1)).toFixed(1),
       ),
       totalReferenceSteps,
-      maxCandidatesSeen,
     },
     null,
     2,
