@@ -115,7 +115,6 @@ export interface Candidate {
   nextRegionId: RegionId
 
   prevCandidate?: Candidate
-  segmentId: SegmentId
 
   f: number
   g: number
@@ -161,7 +160,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 20
 
-  RIP_CONGESTION_REGION_COST_FACTOR = 0.05
+  RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
 
@@ -255,7 +254,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         f: 0,
         g: 0,
         h: 0,
-        segmentId: 0,
       })
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
     }
