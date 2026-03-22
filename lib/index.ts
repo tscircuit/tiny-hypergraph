@@ -4,6 +4,7 @@ import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyper
 import { computeRegionCost } from "./computeRegionCost"
 import { countNewIntersections } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
+import { shuffle } from "./shuffle"
 import type {
   DynamicAnglePair,
   HopId,
@@ -26,30 +27,6 @@ const createEmptyRegionIntersectionCache = (): RegionIntersectionCache => ({
   existingEntryExitLayerChanges: 0,
   existingRegionCost: 0,
 })
-
-const createMulberry32 = (seed: number) => {
-  let state = seed >>> 0
-
-  return () => {
-    state += 0x6d2b79f5
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-const shuffleRouteIds = (routeIds: RouteId[], seed: number): RouteId[] => {
-  const shuffled = [...routeIds]
-  const random = createMulberry32(seed)
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-
-  return shuffled
-}
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -535,10 +512,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffleRouteIds(
-      range(problem.routeCount),
-      state.ripCount,
-    )
+    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
     state.candidateQueue.clear()
     state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
     state.goalPortId = -1
@@ -554,7 +528,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.RIP_THRESHOLD_START +
       (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
 
-    const ripRegionIds: RegionId[] = []
+    const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
 
@@ -565,19 +539,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
       maxRegionCost = Math.max(maxRegionCost, regionCost)
 
       if (regionCost > currentRipThreshold) {
-        ripRegionIds.push(regionId)
+        regionIdsOverCostThreshold.push(regionId)
       }
     }
 
     this.stats = {
       ...this.stats,
       currentRipThreshold,
-      hotRegionCount: ripRegionIds.length,
+      hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
       ripCount: state.ripCount,
     }
 
-    if (ripRegionIds.length === 0) {
+    if (regionIdsOverCostThreshold.length === 0) {
       this.solved = true
       return
     }
@@ -592,7 +566,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
-      reripRegionCount: ripRegionIds.length,
+      reripRegionCount: regionIdsOverCostThreshold.length,
     }
   }
 
