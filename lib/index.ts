@@ -257,8 +257,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
-      this.failed = true
-      this.error = "No candidates left"
+      this.onOutOfCandidates()
       return
     }
 
@@ -567,6 +566,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ...this.stats,
       ripCount: state.ripCount,
       reripRegionCount: regionIdsOverCostThreshold.length,
+    }
+  }
+
+  onOutOfCandidates() {
+    const { topology, state } = this
+
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      const regionCost =
+        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      state.regionCongestionCost[regionId] +=
+        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+    }
+
+    state.ripCount += 1
+    this.resetRoutingStateForRerip()
+    this.stats = {
+      ...this.stats,
+      ripCount: state.ripCount,
+      reripReason: "out_of_candidates",
     }
   }
 
