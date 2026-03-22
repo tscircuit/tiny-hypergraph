@@ -5,6 +5,48 @@ import type {
   TinyHyperGraphTopology,
 } from "../index"
 
+const isFullObstacleRegion = (
+  region: SerializedHyperGraph["regions"][number],
+) => region.d?._containsObstacle === true && region.d?._containsTarget !== true
+
+const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+  const removedRegionIds = new Set(
+    serializedHyperGraph.regions
+      .filter(isFullObstacleRegion)
+      .map((region) => region.regionId),
+  )
+
+  if (removedRegionIds.size === 0) {
+    return serializedHyperGraph
+  }
+
+  const filteredPorts = serializedHyperGraph.ports.filter(
+    (port) =>
+      !removedRegionIds.has(port.region1Id) &&
+      !removedRegionIds.has(port.region2Id),
+  )
+
+  const invalidConnection = (serializedHyperGraph.connections ?? []).find(
+    (connection) =>
+      removedRegionIds.has(connection.startRegionId) ||
+      removedRegionIds.has(connection.endRegionId),
+  )
+
+  if (invalidConnection) {
+    throw new Error(
+      `Connection "${invalidConnection.connectionId}" references full-obstacle region`,
+    )
+  }
+
+  return {
+    ...serializedHyperGraph,
+    regions: serializedHyperGraph.regions.filter(
+      (region) => !removedRegionIds.has(region.regionId),
+    ),
+    ports: filteredPorts,
+  }
+}
+
 const addSerializedRegionIdToMetadata = (
   region: SerializedHyperGraph["regions"][number],
 ) => {
@@ -187,29 +229,30 @@ export const loadSerializedHyperGraph = (
   problem: TinyHyperGraphProblem
   solution: TinyHyperGraphSolution
 } => {
+  const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
   const regionIdToIndex = new Map<string, number>()
   const portIdToIndex = new Map<string, number>()
   const portById = new Map<string, SerializedHyperGraph["ports"][number]>()
   const solvedRouteByConnectionId = new Map(
-    (serializedHyperGraph.solvedRoutes ?? []).map((route) => [
+    (filteredHyperGraph.solvedRoutes ?? []).map((route) => [
       route.connection.connectionId,
       route,
     ]),
   )
 
-  serializedHyperGraph.regions.forEach((region, regionIndex) => {
+  filteredHyperGraph.regions.forEach((region, regionIndex) => {
     regionIdToIndex.set(region.regionId, regionIndex)
   })
 
-  serializedHyperGraph.ports.forEach((port, portIndex) => {
+  filteredHyperGraph.ports.forEach((port, portIndex) => {
     portIdToIndex.set(port.portId, portIndex)
     portById.set(port.portId, port)
   })
 
-  const regionCount = serializedHyperGraph.regions.length
-  const portCount = serializedHyperGraph.ports.length
+  const regionCount = filteredHyperGraph.regions.length
+  const portCount = filteredHyperGraph.ports.length
 
-  const regionIncidentPorts = serializedHyperGraph.regions.map((region) =>
+  const regionIncidentPorts = filteredHyperGraph.regions.map((region) =>
     region.pointIds
       .map((portId) => portIdToIndex.get(portId))
       .filter((portIndex): portIndex is number => portIndex !== undefined),
@@ -223,8 +266,9 @@ export const loadSerializedHyperGraph = (
   const regionHeight = new Float64Array(regionCount)
   const regionCenterX = new Float64Array(regionCount)
   const regionCenterY = new Float64Array(regionCount)
+  const regionNetId = new Int32Array(regionCount).fill(-1)
 
-  serializedHyperGraph.regions.forEach((region, regionIndex) => {
+  filteredHyperGraph.regions.forEach((region, regionIndex) => {
     const geometry = getRegionGeometry(region)
     regionWidth[regionIndex] = geometry.width
     regionHeight[regionIndex] = geometry.height
@@ -238,7 +282,7 @@ export const loadSerializedHyperGraph = (
   const portY = new Float64Array(portCount)
   const portZ = new Int32Array(portCount)
 
-  serializedHyperGraph.ports.forEach((port, portIndex) => {
+  filteredHyperGraph.ports.forEach((port, portIndex) => {
     const region1Index = regionIdToIndex.get(port.region1Id)
     const region2Index = regionIdToIndex.get(port.region2Id)
 
@@ -254,20 +298,55 @@ export const loadSerializedHyperGraph = (
     portZ[portIndex] = Number(port.d?.z ?? 0)
     portAngleForRegion1[portIndex] = computePortAngle(
       port,
-      serializedHyperGraph.regions[region1Index],
+      filteredHyperGraph.regions[region1Index],
     )
     portAngleForRegion2[portIndex] = computePortAngle(
       port,
-      serializedHyperGraph.regions[region2Index],
+      filteredHyperGraph.regions[region2Index],
     )
   })
 
-  const connections = serializedHyperGraph.connections ?? []
+  const connections = filteredHyperGraph.connections ?? []
+  const netIdToIndex = new Map<string, number>()
+  let nextNetIndex = 0
+  const getNetIndex = (connection: (typeof connections)[number]) => {
+    const netId =
+      connection.mutuallyConnectedNetworkId ?? connection.connectionId
+    let netIndex = netIdToIndex.get(netId)
+    if (netIndex === undefined) {
+      netIndex = nextNetIndex++
+      netIdToIndex.set(netId, netIndex)
+    }
+    return netIndex
+  }
+
+  const assignRegionNet = (regionId: string, netIndex: number) => {
+    const regionIndex = regionIdToIndex.get(regionId)
+    if (regionIndex === undefined) {
+      throw new Error(`Connection references missing region "${regionId}"`)
+    }
+
+    const existingNetIndex = regionNetId[regionIndex]
+    if (existingNetIndex !== -1 && existingNetIndex !== netIndex) {
+      throw new Error(
+        `Region "${regionId}" is assigned to multiple nets (${existingNetIndex}, ${netIndex})`,
+      )
+    }
+
+    regionNetId[regionIndex] = netIndex
+  }
+
+  connections.forEach((connection) => {
+    const netIndex = getNetIndex(connection)
+    assignRegionNet(connection.startRegionId, netIndex)
+    assignRegionNet(connection.endRegionId, netIndex)
+  })
+
   const routableConnections = connections
     .map((connection) => {
       const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
       const sharedPortIds = getSharedPortIdsForConnection(
-        serializedHyperGraph,
+        filteredHyperGraph,
         connection,
       )
 
@@ -288,18 +367,15 @@ export const loadSerializedHyperGraph = (
   const routeEndPort = new Int32Array(routeCount)
   const routeNet = new Int32Array(routeCount)
 
-  const netIdToIndex = new Map<string, number>()
-  let nextNetIndex = 0
-
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
     const fallbackStartPortId = getCentermostPortIdForRegion(
-      serializedHyperGraph.regions.find(
+      filteredHyperGraph.regions.find(
         (region) => region.regionId === connection.startRegionId,
       ),
       portById,
     )
     const fallbackEndPortId = getCentermostPortIdForRegion(
-      serializedHyperGraph.regions.find(
+      filteredHyperGraph.regions.find(
         (region) => region.regionId === connection.endRegionId,
       ),
       portById,
@@ -324,14 +400,7 @@ export const loadSerializedHyperGraph = (
     routeStartPort[routeIndex] = startPortIndex
     routeEndPort[routeIndex] = endPortIndex
 
-    const netId =
-      connection.mutuallyConnectedNetworkId ?? connection.connectionId
-    let netIndex = netIdToIndex.get(netId)
-    if (netIndex === undefined) {
-      netIndex = nextNetIndex++
-      netIdToIndex.set(netId, netIndex)
-    }
-    routeNet[routeIndex] = netIndex
+    routeNet[routeIndex] = getNetIndex(connection)
   })
 
   const topology: TinyHyperGraphTopology = {
@@ -343,7 +412,7 @@ export const loadSerializedHyperGraph = (
     regionHeight,
     regionCenterX,
     regionCenterY,
-    regionMetadata: serializedHyperGraph.regions.map((region) =>
+    regionMetadata: filteredHyperGraph.regions.map((region) =>
       addSerializedRegionIdToMetadata(region),
     ),
     portAngleForRegion1,
@@ -351,7 +420,7 @@ export const loadSerializedHyperGraph = (
     portX,
     portY,
     portZ,
-    portMetadata: serializedHyperGraph.ports.map((port) =>
+    portMetadata: filteredHyperGraph.ports.map((port) =>
       addSerializedPortIdToMetadata(port),
     ),
   }
@@ -363,6 +432,7 @@ export const loadSerializedHyperGraph = (
     routeStartPort,
     routeEndPort,
     routeNet,
+    regionNetId,
   }
 
   const solution: TinyHyperGraphSolution = {

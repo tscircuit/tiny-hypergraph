@@ -97,6 +97,8 @@ export interface TinyHyperGraphProblem {
 
   // routeNet[routeId] = net id of the route
   routeNet: Int32Array // NetId[]
+  /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
+  regionNetId: Int32Array
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -244,8 +246,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidateQueue.clear()
+      const startingIncidentRegions =
+        topology.incidentPortRegion[startingPortId] ?? []
       const startingNextRegionId =
-        topology.incidentPortRegion[startingPortId][0]
+        startingIncidentRegions.find(
+          (regionId) => problem.regionNetId[regionId] === -1,
+        ) ??
+        startingIncidentRegions.find(
+          (regionId) =>
+            problem.regionNetId[regionId] === state.currentRouteNetId,
+        ) ??
+        startingIncidentRegions[0]
+
+      if (startingNextRegionId === undefined) {
+        this.failed = true
+        this.error = `Start port ${startingPortId} has no incident regions`
+        return
+      }
+
       state.candidateBestCostByHopId[
         this.getHopId(startingPortId, startingNextRegionId)
       ] = 0
@@ -277,6 +295,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
+    if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
+      return
+    }
+
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
@@ -305,6 +327,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         currentCandidate.nextRegionId
           ? topology.incidentPortRegion[neighborPortId][1]
           : topology.incidentPortRegion[neighborPortId][0]
+
+      if (
+        nextRegionId === undefined ||
+        this.isRegionReservedForDifferentNet(nextRegionId)
+      ) {
+        continue
+      }
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -348,6 +377,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return false
+  }
+
+  isRegionReservedForDifferentNet(regionId: RegionId): boolean {
+    const reservedNetId = this.problem.regionNetId[regionId]
+    return (
+      reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
+    )
   }
 
   getPortAngleInRegion(portId: PortId, regionId: RegionId): number {
