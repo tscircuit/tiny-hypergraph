@@ -120,9 +120,12 @@ const getRegionCostLabel = (
   const regionCache = solver.state.regionIntersectionCaches[regionId]
   const regionCost = getRegionDisplayCost(solver, regionId)
   const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
+  const regionNetId = solver.problem.regionNetId[regionId]
+  const regionNetLabel = regionNetId === -1 ? "free" : `${regionNetId}`
 
   return formatLabel(
     `region: region-${regionId}`,
+    `net: ${regionNetLabel}`,
     `cost: ${regionCost.toFixed(3)}`,
     `congestion: ${congestionCost.toFixed(3)}`,
     `same layer X: ${regionCache?.existingSameLayerIntersections ?? 0}`,
