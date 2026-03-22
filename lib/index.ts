@@ -26,6 +26,7 @@ const createEmptyRegionIntersectionCache = (): RegionIntersectionCache => ({
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
   existingRegionCost: 0,
+  existingSegmentCount: 0,
 })
 
 export interface TinyHyperGraphTopology {
@@ -138,7 +139,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
-  RIP_THRESHOLD_RAMP_ATTEMPTS = 20
+  RIP_THRESHOLD_RAMP_ATTEMPTS = 50
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
@@ -438,6 +439,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newCrossLayerIntersections
     const existingEntryExitLayerChanges =
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
+    const existingSegmentCount = lesserAngles.length
 
     state.regionIntersectionCaches[regionId] = {
       netIds,
@@ -447,12 +449,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       existingSameLayerIntersections,
       existingCrossingLayerIntersections,
       existingEntryExitLayerChanges,
+      existingSegmentCount,
       existingRegionCost: computeRegionCost(
         topology.regionWidth[regionId],
         topology.regionHeight[regionId],
         existingSameLayerIntersections,
         existingCrossingLayerIntersections,
         existingEntryExitLayerChanges,
+        existingSegmentCount,
       ),
     }
   }
@@ -550,7 +554,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: state.ripCount,
     }
 
-    if (regionIdsOverCostThreshold.length === 0) {
+    if (
+      regionIdsOverCostThreshold.length === 0 ||
+      state.ripCount === this.RIP_THRESHOLD_RAMP_ATTEMPTS
+    ) {
       this.solved = true
       return
     }
@@ -639,6 +646,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingCrossingLayerIntersections +
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
+        regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 
     return (
