@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import {
+  type Candidate,
   type TinyHyperGraphProblem,
   TinyHyperGraphSolver,
   type TinyHyperGraphTopology,
@@ -18,6 +19,7 @@ const createRegionCache = (
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
   existingRegionCost,
+  existingSegmentCount: 0,
 })
 
 const createTestSolver = () => {
@@ -48,7 +50,6 @@ const createTestSolver = () => {
     regionHeight: new Float64Array(regionCount).fill(1),
     regionCenterX: new Float64Array(regionCount).fill(0),
     regionCenterY: new Float64Array(regionCount).fill(0),
-    regionNetId: new Int32Array(regionCount).fill(-1),
     portAngleForRegion1: new Int32Array(portCount),
     portAngleForRegion2: new Int32Array(portCount),
     portX,
@@ -78,12 +79,11 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
   solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
   solver.state.regionCongestionCost[1] = 0.2
-  solver.state.candidateQueue = new MinHeap(
+  solver.state.candidateQueue = new MinHeap<Candidate>(
     [
       {
         nextRegionId: 0,
         portId: 1,
-        segmentId: 1,
         f: 1,
         g: 0.5,
         h: 0.5,

@@ -1,6 +1,6 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
-import { useEffect, useState } from "react"
+import { type ChangeEvent, useEffect, useState } from "react"
 import { Debugger } from "./components/Debugger"
 
 const datasetModule = datasetHg07 as Record<string, unknown> & {
@@ -81,7 +81,7 @@ export default function DatasetHg07Page() {
             min={1}
             max={datasetModule.manifest.sampleCount}
             value={selectedSampleIndex + 1}
-            onChange={(event: any) => {
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
               setSelectedSampleIndex(
                 clampSampleIndex(Number(event.currentTarget.value) - 1),
               )
