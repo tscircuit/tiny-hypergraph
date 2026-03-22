@@ -5,14 +5,48 @@ import type {
   TinyHyperGraphTopology,
 } from "../index"
 
+const getSerializedRegionNetId = (
+  region: SerializedHyperGraph["regions"][number],
+) => {
+  const netId =
+    typeof region.d?.netId === "number"
+      ? region.d.netId
+      : typeof region.d?.NetId === "number"
+        ? region.d.NetId
+        : undefined
+
+  return Number.isFinite(netId) ? netId : undefined
+}
+
 const isFullObstacleRegion = (
   region: SerializedHyperGraph["regions"][number],
-) => region.d?._containsObstacle === true && region.d?._containsTarget !== true
+) => {
+  if (region.d?._containsObstacle !== true) {
+    return false
+  }
+
+  if (region.d?._containsTarget !== true) {
+    return true
+  }
+
+  const netId = getSerializedRegionNetId(region)
+  return netId === undefined || netId === -1
+}
 
 const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+  const connectedRegionIds = new Set<string>()
+  for (const connection of serializedHyperGraph.connections ?? []) {
+    connectedRegionIds.add(connection.startRegionId)
+    connectedRegionIds.add(connection.endRegionId)
+  }
+
   const removedRegionIds = new Set(
     serializedHyperGraph.regions
-      .filter(isFullObstacleRegion)
+      .filter(
+        (region) =>
+          isFullObstacleRegion(region) &&
+          !connectedRegionIds.has(region.regionId),
+      )
       .map((region) => region.regionId),
   )
 
