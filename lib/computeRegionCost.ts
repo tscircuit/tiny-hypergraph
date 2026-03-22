@@ -1,5 +1,6 @@
 const viaSize = 0.45
 const viaSizeSq = viaSize ** 2
+const traceWidth = 0.1
 
 export const computeRegionCost = (
   regionWidth: number,
@@ -7,6 +8,7 @@ export const computeRegionCost = (
   numSameLayerIntersections: number,
   numCrossLayerIntersections: number,
   numEntryExitChanges: number,
+  traceCount: number,
 ) => {
   const area = regionWidth * regionHeight
 
@@ -15,5 +17,7 @@ export const computeRegionCost = (
     numCrossLayerIntersections * 1 +
     numEntryExitChanges * 1
 
-  return (estViasRequired * viaSizeSq) / area
+  const traceCountMult = 1 + traceCount / 5
+
+  return (estViasRequired * viaSizeSq * traceCountMult) / area
 }

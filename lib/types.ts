@@ -29,6 +29,7 @@ export interface RegionIntersectionCache extends DynamicAnglePairArrays {
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer
   existingRegionCost: number
+  existingSegmentCount: number
 }
 
 export type SameLayerIntersectionCount = number
