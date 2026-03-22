@@ -23,6 +23,24 @@ const addSerializedRegionIdToMetadata = (
   return metadata
 }
 
+const addSerializedPortIdToMetadata = (
+  port: SerializedHyperGraph["ports"][number],
+) => {
+  const metadata =
+    port.d && typeof port.d === "object" && !Array.isArray(port.d)
+      ? { ...port.d }
+      : { value: port.d }
+
+  Object.defineProperty(metadata, "serializedPortId", {
+    value: port.portId,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+
+  return metadata
+}
+
 const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
   const bounds = region.d?.bounds
   if (bounds) {
@@ -333,8 +351,9 @@ export const loadSerializedHyperGraph = (
     portX,
     portY,
     portZ,
-    portMetadata: serializedHyperGraph.ports.map((port) => port.d),
-    portSerializedIds: serializedHyperGraph.ports.map((port) => port.portId),
+    portMetadata: serializedHyperGraph.ports.map((port) =>
+      addSerializedPortIdToMetadata(port),
+    ),
   }
 
   const problem: TinyHyperGraphProblem = {

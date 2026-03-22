@@ -203,7 +203,8 @@ const getPortIdentifierLabel = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
 ): string => {
-  const rawPortId = solver.topology.portMetadata?.[portId]?.portId
+  const metadata = solver.topology.portMetadata?.[portId]
+  const rawPortId = metadata?.serializedPortId ?? metadata?.portId
 
   return `port: ${rawPortId ?? `port-${portId}`}`
 }

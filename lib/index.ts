@@ -78,7 +78,6 @@ export interface TinyHyperGraphTopology {
   portZ: Int32Array
 
   portMetadata?: any[]
-  portSerializedIds?: string[]
 }
 export interface TinyHyperGraphProblem {
   routeCount: number

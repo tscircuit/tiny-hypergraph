@@ -54,11 +54,6 @@ const getSerializedPortId = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
 ): string => {
-  const serializedId = solver.topology.portSerializedIds?.[portId]
-  if (typeof serializedId === "string") {
-    return serializedId
-  }
-
   const metadata = solver.topology.portMetadata?.[portId]
   if (isRecord(metadata)) {
     if (typeof metadata.serializedPortId === "string") {
