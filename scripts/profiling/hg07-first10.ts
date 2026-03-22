@@ -47,12 +47,18 @@ const computeDatasetMaxRegionCost = (
     ]),
   )
 
-  serializedHyperGraph.regions.forEach((region, regionIndex) => {
-    regionIdToIndex.set(region.regionId, regionIndex)
+  topology.regionMetadata?.forEach((metadata, regionIndex) => {
+    const serializedRegionId = metadata?.serializedRegionId
+    if (typeof serializedRegionId === "string") {
+      regionIdToIndex.set(serializedRegionId, regionIndex)
+    }
   })
 
-  serializedHyperGraph.ports.forEach((port, portIndex) => {
-    portIdToIndex.set(port.portId, portIndex)
+  topology.portMetadata?.forEach((metadata, portIndex) => {
+    const serializedPortId = metadata?.serializedPortId
+    if (typeof serializedPortId === "string") {
+      portIdToIndex.set(serializedPortId, portIndex)
+    }
   })
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
