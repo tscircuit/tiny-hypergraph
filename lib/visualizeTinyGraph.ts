@@ -118,7 +118,7 @@ const getRegionCostLabel = (
   regionId: RegionId,
 ): string => {
   const regionCache = solver.state.regionIntersectionCaches[regionId]
-  const regionCost = getRegionDisplayCost(solver, regionId)
+  const regionCost = regionCache?.existingRegionCost ?? 0
   const congestionCost = solver.state.regionCongestionCost[regionId] ?? 0
   const regionNetId = solver.problem.regionNetId[regionId]
   const regionNetLabel = regionNetId === -1 ? "free" : `${regionNetId}`
@@ -133,13 +133,6 @@ const getRegionCostLabel = (
     `entry exit X: ${regionCache?.existingEntryExitLayerChanges ?? 0}`,
   )
 }
-
-const getRegionDisplayCost = (
-  solver: TinyHyperGraphSolver,
-  regionId: RegionId,
-): number =>
-  (solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0) +
-  (solver.state.regionCongestionCost[regionId] ?? 0)
 
 const getBaseRegionFillColor = (
   solver: TinyHyperGraphSolver,
@@ -171,7 +164,9 @@ const getRegionRectFill = (
   regionId: RegionId,
 ): string => {
   const baseFill = getBaseRegionFillColor(solver, regionId)
-  const cost = clamp01(getRegionDisplayCost(solver, regionId))
+  const cost = clamp01(
+    solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0,
+  )
   const redness = Math.pow(cost, 0.8)
 
   return toRgbaString(mixColor(baseFill, HOT_REGION_FILL, redness))
