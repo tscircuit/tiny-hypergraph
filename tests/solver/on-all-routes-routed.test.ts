@@ -48,6 +48,7 @@ const createTestSolver = () => {
     regionHeight: new Float64Array(regionCount).fill(1),
     regionCenterX: new Float64Array(regionCount).fill(0),
     regionCenterY: new Float64Array(regionCount).fill(0),
+    regionNetId: new Int32Array(regionCount).fill(-1),
     portAngleForRegion1: new Int32Array(portCount),
     portAngleForRegion2: new Int32Array(portCount),
     portX,
@@ -61,6 +62,7 @@ const createTestSolver = () => {
     routeStartPort,
     routeEndPort,
     routeNet,
+    regionNetId: new Int32Array(regionCount).fill(-1),
   }
 
   return new TinyHyperGraphSolver(topology, problem)

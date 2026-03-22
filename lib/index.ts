@@ -4,6 +4,7 @@ import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyper
 import { computeRegionCost } from "./computeRegionCost"
 import { countNewIntersections } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
+import { shuffle } from "./shuffle"
 import type {
   DynamicAnglePair,
   HopId,
@@ -26,30 +27,6 @@ const createEmptyRegionIntersectionCache = (): RegionIntersectionCache => ({
   existingEntryExitLayerChanges: 0,
   existingRegionCost: 0,
 })
-
-const createMulberry32 = (seed: number) => {
-  let state = seed >>> 0
-
-  return () => {
-    state += 0x6d2b79f5
-    let t = state
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-const shuffleRouteIds = (routeIds: RouteId[], seed: number): RouteId[] => {
-  const shuffled = [...routeIds]
-  const random = createMulberry32(seed)
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-
-  return shuffled
-}
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -97,6 +74,8 @@ export interface TinyHyperGraphProblem {
 
   // routeNet[routeId] = net id of the route
   routeNet: Int32Array // NetId[]
+  /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
+  regionNetId: Int32Array
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -244,8 +223,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidateQueue.clear()
+      const startingIncidentRegions =
+        topology.incidentPortRegion[startingPortId] ?? []
       const startingNextRegionId =
-        topology.incidentPortRegion[startingPortId][0]
+        startingIncidentRegions.find(
+          (regionId) => problem.regionNetId[regionId] === -1,
+        ) ??
+        startingIncidentRegions.find(
+          (regionId) =>
+            problem.regionNetId[regionId] === state.currentRouteNetId,
+        ) ??
+        startingIncidentRegions[0]
+
+      if (startingNextRegionId === undefined) {
+        this.failed = true
+        this.error = `Start port ${startingPortId} has no incident regions`
+        return
+      }
+
       state.candidateBestCostByHopId[
         this.getHopId(startingPortId, startingNextRegionId)
       ] = 0
@@ -262,8 +257,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
-      this.failed = true
-      this.error = "No candidates left"
+      this.onOutOfCandidates()
       return
     }
 
@@ -274,6 +268,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (
       currentCandidate.g > state.candidateBestCostByHopId[currentCandidateHopId]
     ) {
+      return
+    }
+
+    if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
       return
     }
 
@@ -305,6 +303,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         currentCandidate.nextRegionId
           ? topology.incidentPortRegion[neighborPortId][1]
           : topology.incidentPortRegion[neighborPortId][0]
+
+      if (
+        nextRegionId === undefined ||
+        this.isRegionReservedForDifferentNet(nextRegionId)
+      ) {
+        continue
+      }
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -348,6 +353,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return false
+  }
+
+  isRegionReservedForDifferentNet(regionId: RegionId): boolean {
+    const reservedNetId = this.problem.regionNetId[regionId]
+    return (
+      reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
+    )
   }
 
   getPortAngleInRegion(portId: PortId, regionId: RegionId): number {
@@ -499,10 +511,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffleRouteIds(
-      range(problem.routeCount),
-      state.ripCount,
-    )
+    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
     state.candidateQueue.clear()
     state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
     state.goalPortId = -1
@@ -518,7 +527,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.RIP_THRESHOLD_START +
       (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
 
-    const ripRegionIds: RegionId[] = []
+    const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
 
@@ -529,19 +538,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
       maxRegionCost = Math.max(maxRegionCost, regionCost)
 
       if (regionCost > currentRipThreshold) {
-        ripRegionIds.push(regionId)
+        regionIdsOverCostThreshold.push(regionId)
       }
     }
 
     this.stats = {
       ...this.stats,
       currentRipThreshold,
-      hotRegionCount: ripRegionIds.length,
+      hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
       ripCount: state.ripCount,
     }
 
-    if (ripRegionIds.length === 0) {
+    if (regionIdsOverCostThreshold.length === 0) {
       this.solved = true
       return
     }
@@ -556,7 +565,26 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
-      reripRegionCount: ripRegionIds.length,
+      reripRegionCount: regionIdsOverCostThreshold.length,
+    }
+  }
+
+  onOutOfCandidates() {
+    const { topology, state } = this
+
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      const regionCost =
+        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      state.regionCongestionCost[regionId] +=
+        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+    }
+
+    state.ripCount += 1
+    this.resetRoutingStateForRerip()
+    this.stats = {
+      ...this.stats,
+      ripCount: state.ripCount,
+      reripReason: "out_of_candidates",
     }
   }
 
