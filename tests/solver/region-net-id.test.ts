@@ -17,6 +17,7 @@ const createRegionCache = (
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
   existingRegionCost,
+  existingSegmentCount: 0,
 })
 
 test("solver does not traverse regions reserved for a different net", () => {

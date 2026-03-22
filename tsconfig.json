@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     // Environment setup & latest features
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "allowJs": true,
+    "baseUrl": ".",
+    "types": ["bun-types"],
 
     "paths": {
       "lib/*": ["./lib/*"]
@@ -30,5 +31,13 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["hypergraph"]
+  "include": [
+    "cosmos.decorator.tsx",
+    "lib/**/*.ts",
+    "pages/**/*.tsx",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "vite.config.ts"
+  ],
+  "exclude": ["hypergraph", "node_modules"]
 }

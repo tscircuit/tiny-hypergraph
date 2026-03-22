@@ -48,7 +48,7 @@ test("sample002 keeps region-80 labels consistent and avoids shared ports across
   expect(region80Cache.existingSameLayerIntersections).toBe(0)
 
   const graphics = solver.visualize()
-  const region80Rect = graphics.rects.find((rect) =>
+  const region80Rect = (graphics.rects ?? []).find((rect) =>
     rect.label?.includes("region: region-80"),
   )
 

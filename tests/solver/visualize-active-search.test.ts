@@ -20,7 +20,7 @@ test("visualize renders an active search iteration without throwing", () => {
 
   const graphics = solver.visualize()
 
-  expect(graphics.rects.length).toBeGreaterThan(0)
-  expect(graphics.points.length).toBeGreaterThan(0)
-  expect(graphics.lines.length).toBeGreaterThan(0)
+  expect((graphics.rects ?? []).length).toBeGreaterThan(0)
+  expect((graphics.points ?? []).length).toBeGreaterThan(0)
+  expect((graphics.lines ?? []).length).toBeGreaterThan(0)
 })

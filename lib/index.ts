@@ -319,8 +319,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         g,
         h,
         f: g + h,
-        segmentId:
-          currentCandidate.portId * topology.portCount + neighborPortId,
         prevCandidate: currentCandidate,
       }
 
