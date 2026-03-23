@@ -467,6 +467,9 @@ export const loadSerializedHyperGraph = (
     routeEndPort,
     routeNet,
     regionNetId,
+    congestionWindowSize: 7,
+    congestionCostFactor: 1,
+    congestionFalloff: 1,
   }
 
   const solution: TinyHyperGraphSolution = {
