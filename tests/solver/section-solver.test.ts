@@ -108,6 +108,49 @@ test("section solver visualize highlights the section without idle gray port-reg
   expect(graphics.title).toContain("sectionPorts=")
 })
 
+test("section solver constructor options propagate to the inner section search solver", () => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    sectionSolverFixtureGraph,
+  )
+  problem.portSectionMask = createSectionSolverFixturePortMask(topology)
+
+  const sectionSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+    {
+      DISTANCE_TO_COST: 0.2,
+      RIP_THRESHOLD_START: 0.11,
+      RIP_THRESHOLD_END: 0.22,
+      RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
+      RIP_CONGESTION_REGION_COST_FACTOR: 0.33,
+      MAX_ITERATIONS: 4567,
+      MAX_RIPS: 8,
+      MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 3,
+      EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: 2,
+    },
+  )
+
+  sectionSolver.setup()
+
+  expect(sectionSolver.DISTANCE_TO_COST).toBe(0.2)
+  expect(sectionSolver.sectionSolver?.DISTANCE_TO_COST).toBe(0.2)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.11)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(0.22)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(9)
+  expect(sectionSolver.sectionSolver?.RIP_CONGESTION_REGION_COST_FACTOR).toBe(
+    0.33,
+  )
+  expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
+  expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(8)
+  expect(
+    sectionSolver.sectionSolver?.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
+  ).toBe(3)
+  expect(
+    sectionSolver.sectionSolver?.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+  ).toBe(2)
+})
+
 test("section pipeline visualize renders the input graph at iteration zero", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: sectionSolverFixtureGraph,

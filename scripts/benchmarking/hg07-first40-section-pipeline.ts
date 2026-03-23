@@ -3,7 +3,35 @@ import {
   runSectionSolverBenchmark,
 } from "./hg07-section-benchmark"
 
-const result = runSectionSolverBenchmark()
+const formatPct = (value: number) => `${value.toFixed(1)}%`
+const formatSeconds = (value: number) => `${(value / 1000).toFixed(1)}s`
+const IMPROVEMENT_EPSILON = 1e-9
+
+console.log("running hg-07 first 40 repeated section pipeline benchmark")
+
+const result = runSectionSolverBenchmark({}, {
+  onProgress: ({
+    row,
+    completedSamples,
+    totalSamples,
+    progressPct,
+    successPct,
+    improvedSampleCount,
+    unchangedSampleCount,
+    failedSampleCount,
+    elapsedMs,
+  }) => {
+    const outcome = row.failed
+      ? "failed"
+      : row.delta > IMPROVEMENT_EPSILON
+        ? `improved delta=${row.delta.toFixed(3)}`
+        : "unchanged"
+
+    console.log(
+      `[${completedSamples}/${totalSamples} ${formatPct(progressPct)}] success=${formatPct(successPct)} improved=${improvedSampleCount} unchanged=${unchangedSampleCount} failed=${failedSampleCount} last=${row.sample} ${outcome} elapsed=${formatSeconds(elapsedMs)}`,
+    )
+  },
+})
 
 console.log("hg-07 first 40 repeated section pipeline benchmark")
 console.log(

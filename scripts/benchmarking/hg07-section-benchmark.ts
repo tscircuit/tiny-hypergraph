@@ -125,6 +125,22 @@ export type SectionSolverBenchmarkResult = {
   summary: SectionSolverBenchmarkSummary
 }
 
+export type SectionSolverBenchmarkProgress = {
+  row: BenchmarkRow
+  completedSamples: number
+  totalSamples: number
+  progressPct: number
+  successPct: number
+  improvedSampleCount: number
+  unchangedSampleCount: number
+  failedSampleCount: number
+  elapsedMs: number
+}
+
+type SectionSolverBenchmarkOptions = {
+  onProgress?: (progress: SectionSolverBenchmarkProgress) => void
+}
+
 const datasetModule = datasetHg07 as DatasetModule
 
 const allCandidateFamilies: CandidateFamily[] = [
@@ -506,6 +522,7 @@ const round = (value: number, digits = 3) =>
 
 export const runSectionSolverBenchmark = (
   inputConfig: Partial<SectionSolverBenchmarkConfig> = {},
+  options: SectionSolverBenchmarkOptions = {},
 ): SectionSolverBenchmarkResult => {
   const config: SectionSolverBenchmarkConfig = {
     ...defaultSectionSolverBenchmarkConfig,
@@ -588,6 +605,20 @@ export const runSectionSolverBenchmark = (
         winningCandidateLabel,
         winningCandidateFamily,
       })
+      options.onProgress?.({
+        row: benchmarkRows[benchmarkRows.length - 1]!,
+        completedSamples: benchmarkRows.length,
+        totalSamples: sampleMetas.length,
+        progressPct: (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
+        successPct:
+          (improvedSampleCount /
+            Math.max(benchmarkRows.length - failedSampleCount, 1)) *
+          100,
+        improvedSampleCount,
+        unchangedSampleCount,
+        failedSampleCount,
+        elapsedMs: performance.now() - benchmarkStartTime,
+      })
     } catch (error) {
       failedSampleCount += 1
       benchmarkRows.push({
@@ -600,6 +631,20 @@ export const runSectionSolverBenchmark = (
         activeRouteCount: 0,
         failed: true,
         error: String(error),
+      })
+      options.onProgress?.({
+        row: benchmarkRows[benchmarkRows.length - 1]!,
+        completedSamples: benchmarkRows.length,
+        totalSamples: sampleMetas.length,
+        progressPct: (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
+        successPct:
+          (improvedSampleCount /
+            Math.max(benchmarkRows.length - failedSampleCount, 1)) *
+          100,
+        improvedSampleCount,
+        unchangedSampleCount,
+        failedSampleCount,
+        elapsedMs: performance.now() - benchmarkStartTime,
       })
     }
   }
