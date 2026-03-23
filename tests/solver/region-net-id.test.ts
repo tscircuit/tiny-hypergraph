@@ -65,8 +65,6 @@ test("solver does not traverse regions reserved for a different net", () => {
   expect(solver.state.currentRouteId).toBeUndefined()
   expect(solver.state.currentRouteNetId).toBeUndefined()
   expect(solver.state.candidateQueue.length).toBe(0)
-  expect(solver.state.regionCongestionCost[0]).toBe(
-    0.5 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
-  )
+  expect(solver.state.regionCongestionCost[0]).toBeCloseTo(0.5)
   expect(solver.stats.reripReason).toBe("out_of_candidates")
 })

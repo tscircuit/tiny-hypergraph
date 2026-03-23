@@ -22,7 +22,9 @@ const createRegionCache = (
   existingSegmentCount: 0,
 })
 
-const createTestSolver = () => {
+const createTestSolver = (
+  problemOverrides: Partial<TinyHyperGraphProblem> = {},
+) => {
   const portCount = 4
   const regionCount = 2
   const routeCount = 3
@@ -64,6 +66,7 @@ const createTestSolver = () => {
     routeEndPort,
     routeNet,
     regionNetId: new Int32Array(regionCount).fill(-1),
+    ...problemOverrides,
   }
 
   return new TinyHyperGraphSolver(topology, problem)
@@ -98,12 +101,8 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.solved).toBe(false)
   expect(solver.failed).toBe(false)
   expect(solver.state.ripCount).toBe(1)
-  expect(solver.state.regionCongestionCost[0]).toBe(
-    0.5 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
-  )
-  expect(solver.state.regionCongestionCost[1]).toBe(
-    0.2 + 0.1 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
-  )
+  expect(solver.state.regionCongestionCost[0]).toBeCloseTo(0.25)
+  expect(solver.state.regionCongestionCost[1]).toBeCloseTo(0.15)
   expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
   expect(
     solver.state.regionSegments.map((segments) => segments.length),
@@ -135,4 +134,29 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(solver.failed).toBe(false)
   expect(solver.state.ripCount).toBe(0)
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
+})
+
+test("computeG applies congestion falloff using remainingRoutes / totalRoutes", () => {
+  const solver = createTestSolver({
+    congestionCostFactor: 2,
+    congestionFalloff: 0.5,
+  })
+
+  solver.state.currentRouteId = 0
+  solver.state.currentRouteNetId = 0
+  solver.state.unroutedRoutes = [1, 2]
+  solver.state.regionCongestionCost[0] = 1.2
+
+  const g = solver.computeG(
+    {
+      nextRegionId: 0,
+      portId: 0,
+      f: 0,
+      g: 1,
+      h: 0,
+    },
+    1,
+  )
+
+  expect(g).toBeCloseTo(2.6)
 })

@@ -104,6 +104,9 @@ test("loadSerializedHyperGraph removes full-obstacle regions and attached ports"
   expect(problem.regionNetId[startRegionId]).toBe(problem.routeNet[0])
   expect(problem.regionNetId[endRegionId]).toBe(problem.routeNet[0])
   expect(problem.regionNetId[freeRegionId]).toBe(-1)
+  expect(problem.congestionWindowSize).toBe(7)
+  expect(problem.congestionCostFactor).toBe(1)
+  expect(problem.congestionFalloff).toBe(0.75)
 })
 
 test("loadSerializedHyperGraph removes obstacle-target regions without a usable net id", () => {
