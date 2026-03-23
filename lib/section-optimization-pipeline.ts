@@ -101,6 +101,13 @@ export class TinyHyperGraphSectionOptimizationPipelineSolver extends BasePipelin
           solution: instance
             .getSolver<TinyHyperGraphPipelineSolveStage>("initialSolver")!
             .getSolution(),
+          regionCosts: Float64Array.from(
+            instance
+              .getSolver<TinyHyperGraphPipelineSolveStage>("initialSolver")!
+              .solver.state.regionIntersectionCaches.map(
+                (regionCache) => regionCache.existingRegionCost,
+              ),
+          ),
           options: instance.inputProblem.sectionSolverOptions,
         },
       ],

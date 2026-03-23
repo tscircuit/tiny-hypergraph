@@ -27,6 +27,13 @@ type ProfileRow = {
   solved: boolean
 }
 
+const getNumericArg = (flagName: string, fallback: number) => {
+  const arg = Bun.argv.find((value) => value.startsWith(`${flagName}=`))
+  const value = arg ? Number.parseInt(arg.slice(flagName.length + 1), 10) : NaN
+
+  return Number.isFinite(value) ? value : fallback
+}
+
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
     (maxCost, regionCache) => Math.max(maxCost, regionCache.existingRegionCost),
@@ -115,7 +122,14 @@ const computeDatasetMaxRegionCost = (
 }
 
 const datasetModule = datasetHg07 as DatasetModule
-const sampleMetas = datasetModule.manifest.samples.slice(0, 10)
+const requestedSampleCount = getNumericArg("--sample-count", 10)
+const sampleCount = Number.isFinite(requestedSampleCount)
+  ? Math.max(
+      1,
+      Math.min(datasetModule.manifest.samples.length, requestedSampleCount),
+    )
+  : 10
+const sampleMetas = datasetModule.manifest.samples.slice(0, sampleCount)
 
 const rows: ProfileRow[] = []
 let totalMs = 0
@@ -125,45 +139,64 @@ let totalReferenceSteps = 0
 let maxDatasetRegionCost = 0
 let maxTinyRegionCost = 0
 let failedSampleCount = 0
+let loadFailureCount = 0
 
 for (const sampleMeta of sampleMetas) {
-  const serializedHyperGraph = datasetModule[
-    sampleMeta.sampleName
-  ] as SerializedHyperGraph
-  const datasetMaxRegionCost = computeDatasetMaxRegionCost(serializedHyperGraph)
-  const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
-  const solver = new TinyHyperGraphSolver(topology, problem)
+  try {
+    const serializedHyperGraph = datasetModule[
+      sampleMeta.sampleName
+    ] as SerializedHyperGraph
+    const datasetMaxRegionCost =
+      computeDatasetMaxRegionCost(serializedHyperGraph)
+    const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
+    const solver = new TinyHyperGraphSolver(topology, problem)
 
-  const startTime = performance.now()
-  solver.solve()
-  const elapsedMs = performance.now() - startTime
-  const tinyMaxRegionCost = getMaxRegionCost(solver)
+    const startTime = performance.now()
+    solver.solve()
+    const elapsedMs = performance.now() - startTime
+    const tinyMaxRegionCost = getMaxRegionCost(solver)
 
-  const row: ProfileRow = {
-    sample: sampleMeta.sampleName,
-    circuit: sampleMeta.circuitId,
-    ms: elapsedMs,
-    iterations: solver.iterations,
-    ripsUsed: solver.state.ripCount,
-    datasetMaxRegionCost,
-    tinyMaxRegionCost,
-    referenceSteps: sampleMeta.stepsToPortPointSolve,
-    solved: solver.solved && !solver.failed,
-  }
+    const row: ProfileRow = {
+      sample: sampleMeta.sampleName,
+      circuit: sampleMeta.circuitId,
+      ms: elapsedMs,
+      iterations: solver.iterations,
+      ripsUsed: solver.state.ripCount,
+      datasetMaxRegionCost,
+      tinyMaxRegionCost,
+      referenceSteps: sampleMeta.stepsToPortPointSolve,
+      solved: solver.solved && !solver.failed,
+    }
 
-  rows.push(row)
-  totalMs += elapsedMs
-  totalIterations += row.iterations
-  totalRipsUsed += row.ripsUsed
-  totalReferenceSteps += row.referenceSteps
-  maxDatasetRegionCost = Math.max(
-    maxDatasetRegionCost,
-    row.datasetMaxRegionCost,
-  )
-  maxTinyRegionCost = Math.max(maxTinyRegionCost, row.tinyMaxRegionCost)
+    rows.push(row)
+    totalMs += elapsedMs
+    totalIterations += row.iterations
+    totalRipsUsed += row.ripsUsed
+    totalReferenceSteps += row.referenceSteps
+    maxDatasetRegionCost = Math.max(
+      maxDatasetRegionCost,
+      row.datasetMaxRegionCost,
+    )
+    maxTinyRegionCost = Math.max(maxTinyRegionCost, row.tinyMaxRegionCost)
 
-  if (!row.solved) {
+    if (!row.solved) {
+      failedSampleCount += 1
+    }
+  } catch (error) {
+    loadFailureCount += 1
     failedSampleCount += 1
+
+    rows.push({
+      sample: sampleMeta.sampleName,
+      circuit: sampleMeta.circuitId,
+      ms: 0,
+      iterations: 0,
+      ripsUsed: 0,
+      datasetMaxRegionCost: Number.NaN,
+      tinyMaxRegionCost: Number.NaN,
+      referenceSteps: sampleMeta.stepsToPortPointSolve,
+      solved: false,
+    })
   }
 }
 
@@ -179,12 +212,15 @@ const roundedRows = rows.map((row) => ({
   solved: row.solved,
 }))
 
-console.log("hg-07 first 10 solve profile")
-console.log(`samples=${rows.length} failed=${failedSampleCount}`)
+console.log("hg-07 solve profile")
+console.log(
+  `samples=${rows.length} failed=${failedSampleCount} loadFailures=${loadFailureCount}`,
+)
 console.table(roundedRows)
 console.log(
   JSON.stringify(
     {
+      sampleCount,
       totalMs: Number(totalMs.toFixed(2)),
       averageMs: Number((totalMs / Math.max(rows.length, 1)).toFixed(2)),
       totalIterations,
@@ -196,6 +232,7 @@ console.log(
         (totalRipsUsed / Math.max(rows.length, 1)).toFixed(1),
       ),
       totalReferenceSteps,
+      loadFailureCount,
       maxDatasetRegionCost: Number(maxDatasetRegionCost.toFixed(3)),
       maxTinyRegionCost: Number(maxTinyRegionCost.toFixed(3)),
     },

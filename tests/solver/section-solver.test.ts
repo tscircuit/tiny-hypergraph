@@ -28,6 +28,11 @@ test("section solver improves sample003 without a serialized graph roundtrip", (
     topology,
     problem,
     solution: initialSolver.getSolution(),
+    regionCosts: Float64Array.from(
+      initialSolver.state.regionIntersectionCaches.map(
+        (regionCache) => regionCache.existingRegionCost,
+      ),
+    ),
     options: {
       attemptsPerSection: 3,
       maxSectionsToTry: 20,
@@ -39,9 +44,7 @@ test("section solver improves sample003 without a serialized graph roundtrip", (
   expect(sectionSolver.solved).toBe(true)
   expect(sectionSolver.failed).toBe(false)
 
-  const optimizedMaxRegionCost = getMaxRegionCost(
-    sectionSolver.currentSolutionSolver,
-  )
+  const optimizedMaxRegionCost = sectionSolver.getCurrentMaxRegionCost()
 
   expect(optimizedMaxRegionCost).toBeLessThan(initialMaxRegionCost)
 })
@@ -74,9 +77,7 @@ test("section optimization pipeline reuses topology/problem and never serializes
   expect(pipeline.getStageOutput("initialSolver")).toBeUndefined()
 
   const initialMaxRegionCost = getMaxRegionCost(initialSolver!)
-  const optimizedMaxRegionCost = getMaxRegionCost(
-    sectionSolver!.currentSolutionSolver,
-  )
+  const optimizedMaxRegionCost = sectionSolver!.getCurrentMaxRegionCost()
 
   expect(optimizedMaxRegionCost).toBeLessThanOrEqual(initialMaxRegionCost)
   expect(optimizedState?.topology).toBe(topology)

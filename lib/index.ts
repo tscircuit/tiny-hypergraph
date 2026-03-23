@@ -240,6 +240,35 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  resetForFreshSolve() {
+    const { state, topology } = this
+
+    this.solved = false
+    this.failed = false
+    this.error = null
+    this.iterations = 0
+    this.progress = 0
+    this.stats = {}
+    this.timeToSolve = undefined
+
+    state.portAssignment.fill(-1)
+    for (const segments of state.regionSegments) {
+      segments.length = 0
+    }
+    state.regionIntersectionCaches = Array.from(
+      { length: topology.regionCount },
+      () => createEmptyRegionIntersectionCache(),
+    )
+    state.currentRouteId = undefined
+    state.currentRouteNetId = undefined
+    state.unroutedRoutes = this.getRouteOrderForRipCount(0)
+    state.candidateQueue.clear()
+    state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
+    state.goalPortId = -1
+    state.ripCount = 0
+    state.regionCongestionCost.fill(0)
+  }
+
   override _step() {
     const { problem, topology, state } = this
 
