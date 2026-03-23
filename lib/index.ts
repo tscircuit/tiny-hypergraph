@@ -81,7 +81,7 @@ export interface TinyHyperGraphProblem {
   congestionWindowSize?: number
   /** Scalar applied to the congestion contribution. Defaults to 1. */
   congestionCostFactor?: number
-  /** Fraction of congestion discounted based on remaining routes. Defaults to 1. */
+  /** Fraction of congestion discounted based on remaining routes. Defaults to 0.75. */
   congestionFalloff?: number
 }
 
@@ -229,10 +229,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   getCongestionFalloff(): number {
-    const congestionFalloff = this.problem.congestionFalloff ?? 1
+    const congestionFalloff = this.problem.congestionFalloff ?? 0.75
     return Number.isFinite(congestionFalloff)
       ? Math.min(1, Math.max(0, congestionFalloff))
-      : 1
+      : 0.75
   }
 
   seedCongestionHistoryFromCurrentCostsIfNeeded() {
