@@ -22,6 +22,8 @@ type ProfileRow = {
   circuit: string
   initialMs: number
   sectionMs: number
+  initialAvgRegionCost: number
+  optimizedAvgRegionCost: number
   initialMaxRegionCost: number
   optimizedMaxRegionCost: number
   improved: boolean
@@ -78,6 +80,16 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
     0,
   )
 
+const getAverageRegionCost = (regionCosts: ArrayLike<number>) => {
+  let totalRegionCost = 0
+
+  for (let regionIndex = 0; regionIndex < regionCosts.length; regionIndex++) {
+    totalRegionCost += regionCosts[regionIndex] ?? 0
+  }
+
+  return totalRegionCost / Math.max(1, regionCosts.length)
+}
+
 const datasetModule = datasetHg07 as DatasetModule
 const requestedSampleCount = getNumericArg("--sample-count", 20)
 const sampleCount = Number.isFinite(requestedSampleCount)
@@ -131,6 +143,8 @@ for (const sampleMeta of sampleMetas) {
         circuit: sampleMeta.circuitId,
         initialMs,
         sectionMs: 0,
+        initialAvgRegionCost: Number.NaN,
+        optimizedAvgRegionCost: Number.NaN,
         initialMaxRegionCost: Number.NaN,
         optimizedMaxRegionCost: Number.NaN,
         improved: false,
@@ -141,8 +155,15 @@ for (const sampleMeta of sampleMetas) {
       continue
     }
 
+    const initialRegionCosts = Float64Array.from(
+      initialSolver.state.regionIntersectionCaches.map(
+        (regionCache) => regionCache.existingRegionCost,
+      ),
+    )
+    const initialAvgRegionCost = getAverageRegionCost(initialRegionCosts)
     const initialMaxRegionCost = getMaxRegionCost(initialSolver)
 
+    let optimizedAvgRegionCost = initialAvgRegionCost
     let optimizedMaxRegionCost = initialMaxRegionCost
     let solved = pipeline.solved && !pipeline.failed
 
@@ -150,6 +171,9 @@ for (const sampleMeta of sampleMetas) {
       sectionFailureCount += 1
       solved = false
     } else {
+      optimizedAvgRegionCost = getAverageRegionCost(
+        sectionSolver.getCurrentRegionCosts(),
+      )
       optimizedMaxRegionCost = sectionSolver.getCurrentMaxRegionCost()
     }
 
@@ -163,6 +187,8 @@ for (const sampleMeta of sampleMetas) {
       circuit: sampleMeta.circuitId,
       initialMs,
       sectionMs,
+      initialAvgRegionCost,
+      optimizedAvgRegionCost,
       initialMaxRegionCost,
       optimizedMaxRegionCost,
       improved,
@@ -203,6 +229,8 @@ for (const sampleMeta of sampleMetas) {
       circuit: sampleMeta.circuitId,
       initialMs: 0,
       sectionMs: 0,
+      initialAvgRegionCost: Number.NaN,
+      optimizedAvgRegionCost: Number.NaN,
       initialMaxRegionCost: Number.NaN,
       optimizedMaxRegionCost: Number.NaN,
       improved: false,
@@ -218,6 +246,8 @@ const roundedRows = rows.map((row) => ({
   circuit: row.circuit,
   initialMs: Number(row.initialMs.toFixed(2)),
   sectionMs: Number(row.sectionMs.toFixed(2)),
+  initialAvgRegionCost: Number(row.initialAvgRegionCost.toFixed(3)),
+  optimizedAvgRegionCost: Number(row.optimizedAvgRegionCost.toFixed(3)),
   initialMaxRegionCost: Number(row.initialMaxRegionCost.toFixed(3)),
   optimizedMaxRegionCost: Number(row.optimizedMaxRegionCost.toFixed(3)),
   improved: row.improved,

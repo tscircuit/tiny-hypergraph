@@ -85,6 +85,14 @@ export interface TinyHyperGraphProblem {
   regionSectionMask?: Int8Array
   /** shuffleSeed changes the route order for seeded solve attempts */
   shuffleSeed?: number
+  /** Rolling congestion average window size. Defaults to 5. */
+  congestionAvgWindowSize?: number
+  /** Weight applied to congestion while evaluating candidates. Defaults to 1. */
+  congestionWeight?: number
+  /** Fraction of congestion discounted by remaining-route progress. Defaults to 1. */
+  congestionFalloff?: number
+  /** Optional initial congestion map used to bias the first solve attempt. */
+  initialRegionCongestionCost?: Float64Array
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -140,6 +148,8 @@ export interface TinyHyperGraphWorkingState {
 
   /** regionCongestionCost[regionId] = congestion cost */
   regionCongestionCost: Float64Array
+  /** Recent congestion snapshots used to compute a rolling average. */
+  regionCongestionHistory: Float64Array[]
 }
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -154,8 +164,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
-
-  RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
 
@@ -182,11 +190,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       goalPortId: -1,
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
+      regionCongestionHistory: [],
     }
     if (typeof options.maxIterations === "number") {
       this.MAX_ITERATIONS = options.maxIterations
     }
     this.problemSetup = this.computeProblemSetup()
+    this.initializeRegionCongestionState()
   }
 
   getRouteOrderForRipCount(ripCount: number): RouteId[] {
@@ -240,6 +250,87 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  getCongestionAvgWindowSize(): number {
+    const configuredWindowSize = Math.floor(
+      this.problem.congestionAvgWindowSize ?? 5,
+    )
+    return configuredWindowSize > 0 ? configuredWindowSize : 5
+  }
+
+  getCongestionWeight(): number {
+    const configuredWeight = this.problem.congestionWeight ?? 1
+    return Number.isFinite(configuredWeight) ? Math.max(0, configuredWeight) : 1
+  }
+
+  getCongestionFalloff(): number {
+    const configuredFalloff = this.problem.congestionFalloff ?? 1
+    if (!Number.isFinite(configuredFalloff)) {
+      return 1
+    }
+    return Math.min(1, Math.max(0, configuredFalloff))
+  }
+
+  getCongestionContribution(regionId: RegionId): number {
+    const congestion = this.state.regionCongestionCost[regionId] ?? 0
+    const totalRoutes = Math.max(1, this.problem.routeCount)
+    const remainingRoutes = Math.max(0, this.state.unroutedRoutes.length)
+    const congestionFalloff = this.getCongestionFalloff()
+    const effectiveCongestion =
+      congestion -
+      congestion * congestionFalloff * (remainingRoutes / totalRoutes)
+
+    return Math.max(0, effectiveCongestion)
+  }
+
+  initializeRegionCongestionState() {
+    const { topology, problem, state } = this
+    const initialRegionCongestionCost = problem.initialRegionCongestionCost
+
+    state.regionCongestionHistory = []
+    state.regionCongestionCost.fill(0)
+
+    if (!initialRegionCongestionCost) {
+      return
+    }
+
+    const initialCongestionSnapshot = new Float64Array(topology.regionCount)
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      initialCongestionSnapshot[regionId] =
+        initialRegionCongestionCost[regionId] ?? 0
+    }
+
+    state.regionCongestionHistory.push(initialCongestionSnapshot)
+    state.regionCongestionCost.set(initialCongestionSnapshot)
+  }
+
+  pushRegionCongestionSnapshot(regionCosts: ArrayLike<number>) {
+    const { topology, state } = this
+    const congestionSnapshot = new Float64Array(topology.regionCount)
+
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      congestionSnapshot[regionId] = regionCosts[regionId] ?? 0
+    }
+
+    state.regionCongestionHistory.push(congestionSnapshot)
+
+    const congestionAvgWindowSize = this.getCongestionAvgWindowSize()
+    while (state.regionCongestionHistory.length > congestionAvgWindowSize) {
+      state.regionCongestionHistory.shift()
+    }
+
+    state.regionCongestionCost.fill(0)
+    for (const previousSnapshot of state.regionCongestionHistory) {
+      for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+        state.regionCongestionCost[regionId] += previousSnapshot[regionId] ?? 0
+      }
+    }
+
+    const historyLength = Math.max(1, state.regionCongestionHistory.length)
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      state.regionCongestionCost[regionId] /= historyLength
+    }
+  }
+
   resetForFreshSolve() {
     const { state, topology } = this
 
@@ -266,7 +357,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
     state.goalPortId = -1
     state.ripCount = 0
-    state.regionCongestionCost.fill(0)
+    this.initializeRegionCongestionState()
   }
 
   override _step() {
@@ -608,7 +699,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
     state.goalPortId = -1
     state.ripCount = 0
-    state.regionCongestionCost.fill(0)
+    this.initializeRegionCongestionState()
 
     const routeSegmentsByRoute = getRouteSegmentsByRouteFromSolution(
       this.topology,
@@ -678,10 +769,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      state.regionCongestionCost[regionId] +=
-        regionCosts[regionId] * this.RIP_CONGESTION_REGION_COST_FACTOR
-    }
+    this.pushRegionCongestionSnapshot(regionCosts)
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
@@ -694,13 +782,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   onOutOfCandidates() {
     const { topology, state } = this
+    const regionCosts = new Float64Array(topology.regionCount)
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
+      regionCosts[regionId] =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
-      state.regionCongestionCost[regionId] +=
-        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
+    this.pushRegionCongestionSnapshot(regionCosts)
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
@@ -768,7 +856,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
-      state.regionCongestionCost[nextRegionId]
+      this.getCongestionContribution(nextRegionId) * this.getCongestionWeight()
     )
   }
 

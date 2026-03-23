@@ -21,7 +21,7 @@ interface SectionRouteSlice {
 interface SectionCandidate {
   seedRegionId: RegionId
   regionIds: RegionId[]
-  currentMaxRegionCost: number
+  currentCostSnapshot: SectionCostSnapshot
 }
 
 interface SectionSubProblem {
@@ -59,29 +59,109 @@ export interface TinyHyperGraphSectionSolverOutput {
   solution: TinyHyperGraphSolution
 }
 
-const getMaxRegionCostForRegionIds = (
+interface SectionCostSnapshot {
+  maxRegionCost: number
+  totalRegionCost: number
+  weightedRegionCost: number
+}
+
+const getSectionCostSnapshotForRegionIds = (
   regionIds: RegionId[],
   regionCosts: ArrayLike<number>,
-) =>
-  regionIds.reduce(
-    (maxCost, regionId) => Math.max(maxCost, regionCosts[regionId] ?? 0),
-    0,
-  )
-
-const getMaxRegionCostFromIntersectionCaches = (
-  regionIds: RegionId[],
-  regionIntersectionCaches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"],
-) => {
-  let maxCost = 0
+): SectionCostSnapshot => {
+  let maxRegionCost = 0
+  let totalRegionCost = 0
+  let weightedRegionCost = 0
 
   for (const regionId of regionIds) {
-    maxCost = Math.max(
-      maxCost,
-      regionIntersectionCaches[regionId]?.existingRegionCost ?? 0,
-    )
+    const regionCost = regionCosts[regionId] ?? 0
+    maxRegionCost = Math.max(maxRegionCost, regionCost)
+    totalRegionCost += regionCost
+    weightedRegionCost += regionCost ** 2
   }
 
-  return maxCost
+  return {
+    maxRegionCost,
+    totalRegionCost,
+    weightedRegionCost,
+  }
+}
+
+const getSectionCostSnapshotFromIntersectionCaches = (
+  regionIds: RegionId[],
+  regionIntersectionCaches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"],
+) =>
+  getSectionCostSnapshotForRegionIds(
+    regionIds,
+    regionIds.map(
+      (regionId) => regionIntersectionCaches[regionId]?.existingRegionCost ?? 0,
+    ),
+  )
+
+const isSectionCostSnapshotBetter = (
+  candidateCostSnapshot: SectionCostSnapshot,
+  currentCostSnapshot: SectionCostSnapshot,
+) => {
+  const epsilon = 1e-9
+
+  if (
+    candidateCostSnapshot.maxRegionCost <
+    currentCostSnapshot.maxRegionCost - epsilon
+  ) {
+    return true
+  }
+  if (
+    candidateCostSnapshot.maxRegionCost >
+    currentCostSnapshot.maxRegionCost + epsilon
+  ) {
+    return false
+  }
+
+  if (
+    candidateCostSnapshot.totalRegionCost <
+    currentCostSnapshot.totalRegionCost - epsilon
+  ) {
+    return true
+  }
+  if (
+    candidateCostSnapshot.totalRegionCost >
+    currentCostSnapshot.totalRegionCost + epsilon
+  ) {
+    return false
+  }
+
+  return (
+    candidateCostSnapshot.weightedRegionCost <
+    currentCostSnapshot.weightedRegionCost - epsilon
+  )
+}
+
+const seededRandom = (seed: number) => {
+  let state = seed
+  return () => {
+    state = state + 0x6d2b79f5
+    let t = state
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const cloneInitialRegionCongestionCost = (
+  regionCount: number,
+  initialRegionCongestionCost?: Float64Array,
+) => {
+  if (!initialRegionCongestionCost) {
+    return undefined
+  }
+
+  const clonedRegionCongestionCost = new Float64Array(regionCount)
+  for (let regionId = 0; regionId < regionCount; regionId++) {
+    clonedRegionCongestionCost[regionId] =
+      initialRegionCongestionCost[regionId] ?? 0
+  }
+
+  return clonedRegionCongestionCost
 }
 
 const buildRegionNeighbors = (
@@ -133,6 +213,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   currentSolutionSolver?: TinyHyperGraphSolver
   currentRegionCosts: Float64Array
   regionNeighbors: Array<RegionId[]>
+  seedRegionAttemptCounts: Uint16Array
   attemptedSectionKeys = new Set<string>()
   attemptedSectionRegionIdSets: Array<Set<RegionId>> = []
   sectionAttemptCount = 0
@@ -168,6 +249,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
           ),
         )
     this.regionNeighbors = buildRegionNeighbors(input.topology)
+    this.seedRegionAttemptCounts = new Uint16Array(input.topology.regionCount)
     this.sectionWaveCount = 1
     this.updateStats()
   }
@@ -181,6 +263,97 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     solver.solved = true
     solver.failed = false
     return solver
+  }
+
+  buildAttemptProblemConfig({
+    sectionProblem,
+    attemptSeed,
+    attemptIndex,
+    regionIds,
+    currentCostSnapshot,
+  }: {
+    sectionProblem: TinyHyperGraphProblem
+    attemptSeed: number
+    attemptIndex: number
+    regionIds: RegionId[]
+    currentCostSnapshot: SectionCostSnapshot
+  }) {
+    const regionCount = this.input.topology.regionCount
+    const baseCongestionAvgWindowSize = Math.max(
+      1,
+      Math.floor(sectionProblem.congestionAvgWindowSize ?? 5),
+    )
+    const baseCongestionWeight = Math.max(
+      0,
+      sectionProblem.congestionWeight ?? 1,
+    )
+    const baseCongestionFalloff = Math.min(
+      1,
+      Math.max(0, sectionProblem.congestionFalloff ?? 1),
+    )
+
+    if (attemptIndex === 0) {
+      return {
+        shuffleSeed: attemptSeed,
+        congestionAvgWindowSize: baseCongestionAvgWindowSize,
+        congestionWeight: baseCongestionWeight,
+        congestionFalloff: baseCongestionFalloff,
+        initialRegionCongestionCost: cloneInitialRegionCongestionCost(
+          regionCount,
+          sectionProblem.initialRegionCongestionCost,
+        ),
+      }
+    }
+
+    const random = seededRandom(attemptSeed)
+    const minWindowSize = Math.max(
+      1,
+      Math.floor(baseCongestionAvgWindowSize / 2),
+    )
+    const maxWindowSize = Math.max(
+      minWindowSize,
+      baseCongestionAvgWindowSize * 2,
+    )
+    const minCongestionWeight = Math.max(0.05, baseCongestionWeight * 0.25)
+    const maxCongestionWeight = Math.max(
+      minCongestionWeight,
+      baseCongestionWeight * 2.5,
+    )
+    const minCongestionFalloff = Math.max(0, baseCongestionFalloff * 0.25)
+    const maxCongestionFalloff = Math.max(
+      minCongestionFalloff,
+      Math.min(1, baseCongestionFalloff * 1.25),
+    )
+    const randomizedInitialRegionCongestionCost = new Float64Array(regionCount)
+    randomizedInitialRegionCongestionCost.set(
+      cloneInitialRegionCongestionCost(
+        regionCount,
+        sectionProblem.initialRegionCongestionCost,
+      ) ?? new Float64Array(regionCount),
+    )
+
+    const congestionJitterScale = Math.max(
+      0.01,
+      currentCostSnapshot.maxRegionCost * 0.5,
+    )
+    for (const regionId of regionIds) {
+      randomizedInitialRegionCongestionCost[regionId] +=
+        random() * congestionJitterScale
+    }
+
+    return {
+      shuffleSeed: attemptSeed,
+      congestionAvgWindowSize:
+        minWindowSize +
+        Math.floor(random() * (maxWindowSize - minWindowSize + 1)),
+      congestionWeight:
+        minCongestionWeight +
+        random() * (maxCongestionWeight - minCongestionWeight),
+      congestionFalloff:
+        minCongestionFalloff +
+        random() * (maxCongestionFalloff - minCongestionFalloff),
+      initialRegionCongestionCost: randomizedInitialRegionCongestionCost,
+    }
   }
 
   getCurrentRegionCosts() {
@@ -228,18 +401,16 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
   getNextSectionCandidate(): SectionCandidate | undefined {
     const regionCosts = this.getCurrentRegionCosts()
-    const sortedRegionIds = Array.from(regionCosts, (cost, regionId) => ({
-      regionId,
-      cost,
-    }))
-      .sort((left, right) => right.cost - left.cost)
-      .map(({ regionId }) => regionId)
+    let bestCandidate: SectionCandidate | undefined
+    let bestCandidatePriority = 0
 
-    for (const seedRegionId of sortedRegionIds) {
-      const currentMaxRegionCost = regionCosts[seedRegionId] ?? 0
-      if (currentMaxRegionCost <= 0) {
-        return undefined
-      }
+    for (
+      let seedRegionId = 0;
+      seedRegionId < regionCosts.length;
+      seedRegionId++
+    ) {
+      const seedRegionCost = regionCosts[seedRegionId] ?? 0
+      if (seedRegionCost <= 0) continue
 
       const regionIds = this.getExpandedSectionRegionIds(seedRegionId)
       const sectionKey = getSectionKey(regionIds)
@@ -257,19 +428,31 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         continue
       }
 
-      this.attemptedSectionKeys.add(sectionKey)
-      this.attemptedSectionRegionIdSets.push(new Set(regionIds))
-      return {
+      const currentCostSnapshot = getSectionCostSnapshotForRegionIds(
+        regionIds,
+        regionCosts,
+      )
+      if (currentCostSnapshot.maxRegionCost <= 0) continue
+
+      const seedAttemptCount = this.seedRegionAttemptCounts[seedRegionId] ?? 0
+      const candidatePriority =
+        currentCostSnapshot.weightedRegionCost / (seedAttemptCount + 1) ** 2
+
+      if (candidatePriority <= bestCandidatePriority) continue
+
+      bestCandidatePriority = candidatePriority
+      bestCandidate = {
         seedRegionId,
         regionIds,
-        currentMaxRegionCost: getMaxRegionCostForRegionIds(
-          regionIds,
-          regionCosts,
-        ),
+        currentCostSnapshot,
       }
     }
 
-    return undefined
+    if (!bestCandidate) return undefined
+
+    this.attemptedSectionKeys.add(getSectionKey(bestCandidate.regionIds))
+    this.attemptedSectionRegionIdSets.push(new Set(bestCandidate.regionIds))
+    return bestCandidate
   }
 
   buildSectionSubProblem(regionIds: RegionId[]): SectionSubProblem {
@@ -293,47 +476,52 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
     this.currentSolution.solvedRoutePathSegments.forEach(
       (pathSegments, routeId) => {
-        let sectionStartSegmentIndex: number | undefined
+        // Re-route the whole section-touching span as one unit so routes that
+        // leave and re-enter the section can be repaired together.
+        let firstSectionSegmentIndex: number | undefined
+        let lastSectionSegmentIndex: number | undefined
 
         for (
           let segmentIndex = 0;
-          segmentIndex <= pathSegments.length;
+          segmentIndex < pathSegments.length;
           segmentIndex++
         ) {
           const isInsideSection =
-            segmentIndex < pathSegments.length &&
             sectionRegionMask[routeRegionIds[routeId]?.[segmentIndex] ?? -1] ===
-              1
+            1
 
-          if (isInsideSection && sectionStartSegmentIndex === undefined) {
-            sectionStartSegmentIndex = segmentIndex
-            continue
+          if (!isInsideSection) continue
+
+          if (firstSectionSegmentIndex === undefined) {
+            firstSectionSegmentIndex = segmentIndex
           }
-
-          if (isInsideSection || sectionStartSegmentIndex === undefined) {
-            continue
-          }
-
-          const startSegmentIndex = sectionStartSegmentIndex
-          const endSegmentIndex = segmentIndex - 1
-          const startPortId = pathSegments[startSegmentIndex]?.[0]
-          const endPortId = pathSegments[endSegmentIndex]?.[1]
-
-          if (startPortId !== undefined && endPortId !== undefined) {
-            sectionPortMask[startPortId] = 1
-            sectionPortMask[endPortId] = 1
-            routeSlices.push({
-              localRouteId: routeSlices.length,
-              originalRouteId: routeId,
-              startPortId,
-              endPortId,
-              startSegmentIndex,
-              endSegmentIndex,
-            })
-          }
-
-          sectionStartSegmentIndex = undefined
+          lastSectionSegmentIndex = segmentIndex
         }
+
+        if (
+          firstSectionSegmentIndex === undefined ||
+          lastSectionSegmentIndex === undefined
+        ) {
+          return
+        }
+
+        const startPortId = pathSegments[firstSectionSegmentIndex]?.[0]
+        const endPortId = pathSegments[lastSectionSegmentIndex]?.[1]
+
+        if (startPortId === undefined || endPortId === undefined) {
+          return
+        }
+
+        sectionPortMask[startPortId] = 1
+        sectionPortMask[endPortId] = 1
+        routeSlices.push({
+          localRouteId: routeSlices.length,
+          originalRouteId: routeId,
+          startPortId,
+          endPortId,
+          startSegmentIndex: firstSectionSegmentIndex,
+          endSegmentIndex: lastSectionSegmentIndex,
+        })
       },
     )
 
@@ -362,6 +550,13 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         ),
         regionNetId: new Int32Array(problem.regionNetId),
         shuffleSeed: problem.shuffleSeed,
+        congestionAvgWindowSize: problem.congestionAvgWindowSize,
+        congestionWeight: problem.congestionWeight,
+        congestionFalloff: problem.congestionFalloff,
+        initialRegionCongestionCost: cloneInitialRegionCongestionCost(
+          topology.regionCount,
+          problem.initialRegionCongestionCost,
+        ),
       },
       routeSlices,
     }
@@ -446,11 +641,12 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   }
 
   tryOptimizeSection(sectionCandidate: SectionCandidate) {
-    const { regionIds, seedRegionId, currentMaxRegionCost } = sectionCandidate
+    const { regionIds, seedRegionId, currentCostSnapshot } = sectionCandidate
     const buildStart = performance.now()
     const { sectionProblem, routeSlices } =
       this.buildSectionSubProblem(regionIds)
     this.buildSectionSubProblemMs += performance.now() - buildStart
+    this.seedRegionAttemptCounts[seedRegionId] += 1
 
     if (routeSlices.length === 0) {
       return
@@ -462,7 +658,22 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         (sectionProblem.shuffleSeed ?? 7) +
         this.sectionWaveCount * 7919 +
         seedRegionId * 1009,
+      congestionFalloff: sectionProblem.congestionFalloff,
+      initialRegionCongestionCost: cloneInitialRegionCongestionCost(
+        this.input.topology.regionCount,
+        sectionProblem.initialRegionCongestionCost,
+      ),
     }
+    Object.assign(
+      attemptProblem,
+      this.buildAttemptProblemConfig({
+        sectionProblem,
+        attemptSeed: attemptProblem.shuffleSeed ?? 0,
+        attemptIndex: 0,
+        regionIds,
+        currentCostSnapshot,
+      }),
+    )
     const sectionSolver = new TinyHyperGraphSolver(
       this.input.topology,
       attemptProblem,
@@ -472,18 +683,29 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     )
 
     let bestSubSolution: TinyHyperGraphSolution | undefined
-    let bestMaxRegionCost = currentMaxRegionCost
+    let bestCostSnapshot = currentCostSnapshot
+    let bestSectionRegionCosts: Float64Array | undefined
 
     for (
       let attemptIndex = 0;
       attemptIndex < this.ATTEMPTS_PER_SECTION;
       attemptIndex++
     ) {
-      attemptProblem.shuffleSeed =
+      const attemptSeed =
         (sectionProblem.shuffleSeed ?? 7) +
         this.sectionWaveCount * 7919 +
         seedRegionId * 1009 +
         attemptIndex
+      Object.assign(
+        attemptProblem,
+        this.buildAttemptProblemConfig({
+          sectionProblem,
+          attemptSeed,
+          attemptIndex,
+          regionIds,
+          currentCostSnapshot,
+        }),
+      )
 
       if (attemptIndex > 0) {
         sectionSolver.resetForFreshSolve()
@@ -498,20 +720,32 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       }
 
       const scoreStart = performance.now()
-      const candidateMaxRegionCost = getMaxRegionCostFromIntersectionCaches(
-        regionIds,
-        sectionSolver.state.regionIntersectionCaches,
-      )
+      const candidateCostSnapshot =
+        getSectionCostSnapshotFromIntersectionCaches(
+          regionIds,
+          sectionSolver.state.regionIntersectionCaches,
+        )
 
-      if (candidateMaxRegionCost < bestMaxRegionCost) {
+      if (
+        isSectionCostSnapshotBetter(candidateCostSnapshot, bestCostSnapshot)
+      ) {
         bestSubSolution = sectionSolver.getSolution()
-        bestMaxRegionCost = candidateMaxRegionCost
+        bestCostSnapshot = candidateCostSnapshot
+        // The accepted merge must reuse the costs from the winning attempt,
+        // not whatever the final shuffle happened to produce.
+        bestSectionRegionCosts = Float64Array.from(
+          regionIds.map(
+            (regionId) =>
+              sectionSolver.state.regionIntersectionCaches[regionId]
+                ?.existingRegionCost ?? 0,
+          ),
+        )
       }
 
       this.candidateScoreMs += performance.now() - scoreStart
     }
 
-    if (bestSubSolution) {
+    if (bestSubSolution && bestSectionRegionCosts) {
       const mergeStart = performance.now()
       this.currentSolution = this.mergeSectionSolution(
         this.currentSolution,
@@ -521,10 +755,11 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       this.mergeSectionSolutionMs += performance.now() - mergeStart
 
       const reloadStart = performance.now()
-      for (const regionId of regionIds) {
+      for (let regionIndex = 0; regionIndex < regionIds.length; regionIndex++) {
+        const regionId = regionIds[regionIndex]
+        if (regionId === undefined) continue
         this.currentRegionCosts[regionId] =
-          sectionSolver.state.regionIntersectionCaches[regionId]
-            ?.existingRegionCost ?? 0
+          bestSectionRegionCosts[regionIndex] ?? 0
       }
       this.currentSolutionSolver = undefined
       this.reloadMergedSolutionMs += performance.now() - reloadStart
@@ -537,6 +772,14 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
   updateStats() {
     const regionCosts = this.getCurrentRegionCosts()
+    const totalRegionCost = Array.from(regionCosts).reduce(
+      (sum, regionCost) => sum + regionCost,
+      0,
+    )
+    const weightedRegionCost = Array.from(regionCosts).reduce(
+      (sum, regionCost) => sum + regionCost ** 2,
+      0,
+    )
 
     this.stats = {
       ...this.stats,
@@ -548,6 +791,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         (maxCost, regionCost) => Math.max(maxCost, regionCost),
         0,
       ),
+      totalRegionCost: Number(totalRegionCost.toFixed(6)),
+      weightedRegionCost: Number(weightedRegionCost.toFixed(6)),
       buildSectionSubProblemMs: Number(
         this.buildSectionSubProblemMs.toFixed(2),
       ),
