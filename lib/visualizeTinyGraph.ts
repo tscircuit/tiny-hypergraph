@@ -17,6 +17,14 @@ type RgbaColor = {
   a: number
 }
 
+export interface TinyHyperGraphVisualizationOptions {
+  highlightSectionMask?: boolean
+  sectionPortMask?: Int8Array
+  showIdlePortRegionConnectors?: boolean
+  showInitialRouteHints?: boolean
+  showOnlySectionPortsOnIdle?: boolean
+}
+
 const formatLabel = (...lines: Array<string | undefined>) =>
   lines.filter((line): line is string => Boolean(line)).join("\n")
 
@@ -268,6 +276,55 @@ const getPortLabel = (
     getPortNetLabel(solver, portId, routeId),
   )
 
+const getHighlightedSectionPortMask = (
+  solver: TinyHyperGraphSolver,
+  options?: TinyHyperGraphVisualizationOptions,
+) => {
+  if (!options?.highlightSectionMask) {
+    return undefined
+  }
+
+  const sectionPortMask =
+    options.sectionPortMask ?? solver.problem.portSectionMask
+  if (sectionPortMask.length !== solver.topology.portCount) {
+    return undefined
+  }
+
+  let sectionPortCount = 0
+  let outsideSectionPortCount = 0
+
+  for (let portId = 0; portId < sectionPortMask.length; portId++) {
+    if (sectionPortMask[portId] === 1) {
+      sectionPortCount += 1
+    } else {
+      outsideSectionPortCount += 1
+    }
+  }
+
+  if (sectionPortCount === 0 || outsideSectionPortCount === 0) {
+    return undefined
+  }
+
+  return sectionPortMask
+}
+
+const getSectionRegionIds = (
+  solver: TinyHyperGraphSolver,
+  sectionPortMask: Int8Array,
+) => {
+  const sectionRegionIds = new Set<RegionId>()
+
+  for (let portId = 0; portId < sectionPortMask.length; portId++) {
+    if (sectionPortMask[portId] !== 1) continue
+
+    for (const regionId of solver.topology.incidentPortRegion[portId] ?? []) {
+      sectionRegionIds.add(regionId)
+    }
+  }
+
+  return sectionRegionIds
+}
+
 const getSegmentStyle = (
   solver: TinyHyperGraphSolver,
   routeId: RouteId,
@@ -507,8 +564,67 @@ const pushCandidates = (
   }
 }
 
+const pushSectionMaskOverlay = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+  sectionPortMask: Int8Array,
+) => {
+  const sectionRegionIds = getSectionRegionIds(solver, sectionPortMask)
+  const sectionStroke = "rgba(245, 158, 11, 0.95)"
+  const sectionFill = "rgba(245, 158, 11, 0.08)"
+
+  for (const regionId of sectionRegionIds) {
+    const regionMetadata = solver.topology.regionMetadata?.[regionId]
+    const polygon = regionMetadata?.polygon
+    const bounds = getRegionBounds(solver, regionId)
+    const center = getRegionCenter(solver, regionId)
+    const width = bounds.maxX - bounds.minX
+    const height = bounds.maxY - bounds.minY
+    const label = formatLabel(
+      "section region",
+      getRegionCostLabel(solver, regionId),
+    )
+
+    if (Array.isArray(polygon) && polygon.length >= 3) {
+      graphics.polygons.push({
+        points: polygon,
+        fill: sectionFill,
+        stroke: sectionStroke,
+        strokeWidth: 2,
+        label,
+      })
+    } else {
+      graphics.rects.push({
+        center,
+        width: Math.max(width - REGION_RECT_GAP, 0.05),
+        height: Math.max(height - REGION_RECT_GAP, 0.05),
+        fill: sectionFill,
+        stroke: sectionStroke,
+        label,
+      })
+    }
+  }
+
+  for (let portId = 0; portId < sectionPortMask.length; portId++) {
+    if (sectionPortMask[portId] !== 1) continue
+
+    graphics.circles.push({
+      center: getPortCircleCenter(solver, portId),
+      radius: 0.07,
+      fill: "rgba(251, 191, 36, 0.18)",
+      stroke: sectionStroke,
+      label: formatLabel(
+        getPortLabel(solver, portId),
+        getPortZLabel(solver, portId),
+        "section port",
+      ),
+    })
+  }
+}
+
 export const visualizeTinyHyperGraph = (
   solver: TinyHyperGraphSolver,
+  options: TinyHyperGraphVisualizationOptions = {},
 ): GraphicsObject => {
   const graphics: Required<GraphicsObject> = {
     arrows: [],
@@ -522,6 +638,7 @@ export const visualizeTinyHyperGraph = (
     title: "Tiny HyperGraph",
     coordinateSystem: "cartesian",
   }
+  const sectionPortMask = getHighlightedSectionPortMask(solver, options)
 
   for (let regionId = 0; regionId < solver.topology.regionCount; regionId++) {
     const regionMetadata = solver.topology.regionMetadata?.[regionId]
@@ -560,6 +677,11 @@ export const visualizeTinyHyperGraph = (
 
   if (solver.iterations === 0) {
     for (let portId = 0; portId < solver.topology.portCount; portId++) {
+      const isSectionPort = sectionPortMask?.[portId] === 1
+      if (options.showOnlySectionPortsOnIdle && !isSectionPort) {
+        continue
+      }
+
       const portPoint = getPortRenderPoint(solver, portId)
 
       graphics.circles.push({
@@ -577,7 +699,13 @@ export const visualizeTinyHyperGraph = (
 
       const [region1Id, region2Id] =
         solver.topology.incidentPortRegion[portId] ?? []
-      if (region1Id === undefined || region2Id === undefined) continue
+      if (
+        options.showIdlePortRegionConnectors === false ||
+        region1Id === undefined ||
+        region2Id === undefined
+      ) {
+        continue
+      }
 
       graphics.lines.push({
         points: [
@@ -589,7 +717,9 @@ export const visualizeTinyHyperGraph = (
       })
     }
 
-    pushInitialRouteHints(solver, graphics)
+    if (options.showInitialRouteHints !== false) {
+      pushInitialRouteHints(solver, graphics)
+    }
   } else {
     pushSolvedRegionSegments(solver, graphics)
     pushRoutePortZPoints(solver, graphics)
@@ -597,15 +727,28 @@ export const visualizeTinyHyperGraph = (
     pushCandidates(solver, graphics)
   }
 
+  if (sectionPortMask) {
+    pushSectionMaskOverlay(solver, graphics, sectionPortMask)
+  }
+
   const pendingCount =
     solver.state.unroutedRoutes.length +
     (solver.state.currentRouteId === undefined ? 0 : 1)
+  const sectionPortCount = sectionPortMask
+    ? sectionPortMask.reduce(
+        (count, inSection) => count + Number(inSection === 1),
+        0,
+      )
+    : 0
   graphics.title = [
     "Tiny HyperGraph",
     `iter=${solver.iterations}`,
     `pending=${pendingCount}`,
+    sectionPortMask ? `sectionPorts=${sectionPortCount}` : undefined,
     solver.failed ? "failed" : solver.solved ? "solved" : "running",
-  ].join(" | ")
+  ]
+    .filter(Boolean)
+    .join(" | ")
 
   return graphics
 }
