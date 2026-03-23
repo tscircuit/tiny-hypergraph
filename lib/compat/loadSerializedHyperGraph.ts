@@ -397,6 +397,7 @@ export const loadSerializedHyperGraph = (
 
   const routeCount = routableConnections.length
   const portSectionMask = new Int8Array(portCount).fill(1)
+  const regionSectionMask = new Int8Array(regionCount).fill(1)
   const routeStartPort = new Int32Array(routeCount)
   const routeEndPort = new Int32Array(routeCount)
   const routeNet = new Int32Array(routeCount)
@@ -462,6 +463,7 @@ export const loadSerializedHyperGraph = (
   const problem: TinyHyperGraphProblem = {
     routeCount,
     portSectionMask,
+    regionSectionMask,
     routeMetadata: routableConnections.map(({ connection }) => connection),
     routeStartPort,
     routeEndPort,
@@ -488,6 +490,30 @@ export const loadSerializedHyperGraph = (
           }
         }
         return segments
+      },
+    ),
+    solvedRouteRegionIds: routableConnections.map(
+      ({ connection, solvedRoute: route }) => {
+        if (!route) return []
+
+        const traversedRegionIds: number[] = []
+        for (let i = 1; i < route.path.length; i++) {
+          const previousStep = route.path[i - 1]
+          const currentStep = route.path[i]
+          const regionId =
+            currentStep?.lastRegionId ?? previousStep?.nextRegionId ?? undefined
+
+          if (typeof regionId !== "string") {
+            continue
+          }
+
+          const regionIndex = regionIdToIndex.get(regionId)
+          if (regionIndex !== undefined) {
+            traversedRegionIds.push(regionIndex)
+          }
+        }
+
+        return traversedRegionIds
       },
     ),
   }

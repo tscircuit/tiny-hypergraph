@@ -52,3 +52,29 @@ const solvedGraph = convertToSerializedHyperGraph(solver)
 ```
 
 The converter expects the solver to be fully solved and not failed.
+
+### Run section optimization as a pipeline
+
+Section optimization is intended to run as a second stage on the same
+`topology` and `problem`, reusing the in-memory graph instead of converting
+through `SerializedHyperGraph` between stages.
+
+```ts
+import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
+import { TinyHyperGraphSectionOptimizationPipelineSolver } from "lib/section-optimization-pipeline"
+
+const { topology, problem } = loadSerializedHyperGraph(inputGraph)
+
+const pipeline = new TinyHyperGraphSectionOptimizationPipelineSolver({
+  topology,
+  problem,
+})
+
+pipeline.solve()
+
+const optimizedState = pipeline.getOutput()
+```
+
+If you already have an in-memory `solution`, you can still call
+`TinyHyperGraphSectionSolver` directly with `{ topology, problem, solution }`.
+If you want deterministic seeded route shuffling, set `problem.shuffleSeed`.
