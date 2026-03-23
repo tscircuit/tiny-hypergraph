@@ -1,7 +1,7 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { type ChangeEvent, useEffect, useState } from "react"
-import { Debugger } from "./components/Debugger"
+import { Debugger, type DebuggerProps } from "./Debugger"
 
 const datasetModule = datasetHg07 as Record<string, unknown> & {
   manifest: {
@@ -44,7 +44,9 @@ const setSampleIndexInHash = (sampleIndex: number) => {
   window.history.replaceState(window.history.state, "", url)
 }
 
-export default function DatasetHg07Page() {
+export const DatasetHg07Page = ({
+  createSolver,
+}: Pick<DebuggerProps, "createSolver">) => {
   const [selectedSampleIndex, setSelectedSampleIndex] = useState(
     getSampleIndexFromHash,
   )
@@ -123,6 +125,7 @@ export default function DatasetHg07Page() {
         <Debugger
           key={selectedSampleMeta.sampleName}
           serializedHyperGraph={selectedSample}
+          createSolver={createSolver}
         />
       </div>
     </div>

@@ -32,6 +32,10 @@ const getRouteSegmentKeysFromSolution = (
       .sort(),
   )
 
+const getRouteRegionIdsFromSolution = (
+  solution: ReturnType<typeof loadSerializedHyperGraph>["solution"],
+) => solution.solvedRouteRegionIds
+
 test("solver getOutput serializes a solved graph that round-trips through compat loading", () => {
   const serializedHyperGraph = datasetHg07.sample002 as SerializedHyperGraph
   const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
@@ -61,5 +65,8 @@ test("solver getOutput serializes a solved graph that round-trips through compat
   )
   expect(getRouteSegmentKeysFromSolution(roundTripped.solution)).toEqual(
     getRouteSegmentKeysFromSolver(solver),
+  )
+  expect(getRouteRegionIdsFromSolution(roundTripped.solution)).toEqual(
+    solver.getSolution().solvedRouteRegionIds,
   )
 })

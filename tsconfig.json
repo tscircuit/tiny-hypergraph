@@ -39,5 +39,5 @@
     "tests/**/*.ts",
     "vite.config.ts"
   ],
-  "exclude": ["hypergraph", "node_modules"]
+  "exclude": ["hypergraph", "node_modules", "tscircuit-autorouter"]
 }
