@@ -1,5 +1,8 @@
 export * from "./core"
 export {
+  applySectionSolverCacheReverseTransform,
+  clearTinyHyperGraphSectionSolverCache,
+  getTinyHyperGraphSectionSolverCacheStats,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionSolverOptions,
 } from "./section-solver"
