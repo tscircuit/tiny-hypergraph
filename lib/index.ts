@@ -2,6 +2,7 @@ export * from "./core"
 export {
   applySectionSolverCacheReverseTransform,
   clearTinyHyperGraphSectionSolverCache,
+  getSectionSolverScoreCacheEntry,
   getTinyHyperGraphSectionSolverCacheStats,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionSolverOptions,

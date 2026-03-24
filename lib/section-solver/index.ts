@@ -21,16 +21,20 @@ import type {
 } from "../types"
 import { visualizeTinyGraph } from "../visualizeTinyGraph"
 import {
+  createSectionSolverScoreCacheKey,
   createSectionSolverCacheContext,
   createSectionSolverCacheEntry,
   getSectionSolverCacheEntry,
   getTinyHyperGraphSectionSolverCacheStats,
-  hydrateSectionSolverCacheEntry,
+  hydrateSectionSolverCacheEntrySolution,
+  recordSectionSolverCacheTiming,
   recordSectionSolverCacheLookup,
   setSectionSolverCacheEntry,
+  setSectionSolverScoreCacheEntry,
 } from "./cache"
 export {
   clearTinyHyperGraphSectionSolverCache,
+  getSectionSolverScoreCacheEntry,
   getTinyHyperGraphSectionSolverCacheStats,
   toActualPoint as applySectionSolverCacheReverseTransform,
 } from "./cache"
@@ -775,8 +779,14 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   optimizedSolver?: TinyHyperGraphSolver
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
+  sectionScoreCacheKey?: string
   sectionCacheContext?: ReturnType<typeof createSectionSolverCacheContext>
   sectionCacheHydrated = false
+  preparedSectionProblem?: TinyHyperGraphProblem
+  preparedRoutePlans?: SectionRoutePlan[]
+  preparedActiveRouteIds?: RouteId[]
+  preparedRoutePlanBuildMs = 0
+  preparedCacheContextBuildMs = 0
 
   ENABLE_CACHE = true
   DISTANCE_TO_COST = 0.05
@@ -826,14 +836,96 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.MAX_RIPS = Math.min(this.MAX_RIPS, 20)
   }
 
-  override _setup() {
+  prepareSectionSolveState() {
     this.applySectionRipPolicy()
-    this.sectionCacheHydrated = false
 
-    const { sectionProblem, routePlans, activeRouteIds } =
-      createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
+    if (
+      !this.preparedSectionProblem ||
+      !this.preparedRoutePlans ||
+      !this.preparedActiveRouteIds
+    ) {
+      const routePlanBuildStartTime = performance.now()
+      const { sectionProblem, routePlans, activeRouteIds } =
+        createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
+
+      this.preparedSectionProblem = sectionProblem
+      this.preparedRoutePlans = routePlans
+      this.preparedActiveRouteIds = activeRouteIds
+      this.preparedRoutePlanBuildMs =
+        performance.now() - routePlanBuildStartTime
+    }
+
+    const sectionProblem = this.preparedSectionProblem
+    const routePlans = this.preparedRoutePlans
+    const activeRouteIds = this.preparedActiveRouteIds
 
     this.activeRouteIds = activeRouteIds
+
+    if (this.ENABLE_CACHE) {
+      if (!this.sectionScoreCacheKey) {
+        const cacheContextBuildStartTime = performance.now()
+        this.sectionScoreCacheKey = createSectionSolverScoreCacheKey({
+          topology: this.topology,
+          problem: sectionProblem,
+          sectionRegionIds: this.sectionRegionIds,
+          routePlans,
+          activeRouteIds,
+          baselineRegionCosts:
+            this.baselineSolver.state.regionIntersectionCaches.map(
+              (regionCache) => regionCache.existingRegionCost,
+            ),
+          policy: {
+            DISTANCE_TO_COST: this.DISTANCE_TO_COST,
+            RIP_THRESHOLD_START: this.RIP_THRESHOLD_START,
+            RIP_THRESHOLD_END: this.RIP_THRESHOLD_END,
+            RIP_THRESHOLD_RAMP_ATTEMPTS: this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+            RIP_CONGESTION_REGION_COST_FACTOR:
+              this.RIP_CONGESTION_REGION_COST_FACTOR,
+            MAX_ITERATIONS: this.MAX_ITERATIONS,
+            MAX_RIPS: this.MAX_RIPS,
+            MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
+              this.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
+            EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
+              this.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+          },
+        })
+        this.preparedCacheContextBuildMs =
+          performance.now() - cacheContextBuildStartTime
+        recordSectionSolverCacheTiming({
+          contextBuildMs: this.preparedCacheContextBuildMs,
+        })
+      }
+    } else {
+      this.sectionScoreCacheKey = undefined
+      this.sectionCacheContext = undefined
+      this.preparedCacheContextBuildMs = 0
+    }
+
+    this.stats = {
+      ...this.stats,
+      sectionRoutePlanBuildMs: this.preparedRoutePlanBuildMs,
+      sectionCacheContextBuildMs: this.preparedCacheContextBuildMs,
+    }
+
+    return {
+      sectionProblem,
+      routePlans,
+      activeRouteIds,
+      scoreCacheKey: this.sectionScoreCacheKey,
+      cacheContext: this.sectionCacheContext,
+    }
+  }
+
+  override _setup() {
+    this.sectionCacheHydrated = false
+
+    const {
+      sectionProblem,
+      routePlans,
+      activeRouteIds,
+      scoreCacheKey,
+      cacheContext,
+    } = this.prepareSectionSolveState()
 
     if (activeRouteIds.length === 0) {
       this.optimizedSolver = this.baselineSolver
@@ -862,77 +954,115 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     )
     this.activeSubSolver = this.sectionSolver
 
-    const cacheContext = this.ENABLE_CACHE
-      ? createSectionSolverCacheContext({
-          topology: this.topology,
-          problem: sectionProblem,
-          sectionRegionIds: this.sectionRegionIds,
-          routePlans,
-          activeRouteIds,
-          baselineRegionCosts:
-            this.baselineSolver.state.regionIntersectionCaches.map(
-              (regionCache) => regionCache.existingRegionCost,
-            ),
-          policy: {
-            DISTANCE_TO_COST: this.sectionSolver.DISTANCE_TO_COST,
-            RIP_THRESHOLD_START: this.sectionSolver.RIP_THRESHOLD_START,
-            RIP_THRESHOLD_END: this.sectionSolver.RIP_THRESHOLD_END,
-            RIP_THRESHOLD_RAMP_ATTEMPTS:
-              this.sectionSolver.RIP_THRESHOLD_RAMP_ATTEMPTS,
-            RIP_CONGESTION_REGION_COST_FACTOR:
-              this.sectionSolver.RIP_CONGESTION_REGION_COST_FACTOR,
-            MAX_ITERATIONS: this.sectionSolver.MAX_ITERATIONS,
-            MAX_RIPS: this.sectionSolver.MAX_RIPS,
-            MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
-              this.sectionSolver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
-            EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
-              this.sectionSolver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
-          },
-        })
-      : undefined
-    this.sectionCacheContext = cacheContext
-
     let cacheStatus = "miss"
     let cacheHit = false
 
-    if (cacheContext) {
-      const cachedEntry = getSectionSolverCacheEntry(cacheContext.key)
+    if (this.ENABLE_CACHE && !cacheContext && scoreCacheKey) {
+      const cacheContextBuildStartTime = performance.now()
+      this.sectionCacheContext = createSectionSolverCacheContext({
+        topology: this.topology,
+        problem: sectionProblem,
+        sectionRegionIds: this.sectionRegionIds,
+        routePlans,
+        activeRouteIds,
+        baselineRegionCosts:
+          this.baselineSolver.state.regionIntersectionCaches.map(
+            (regionCache) => regionCache.existingRegionCost,
+          ),
+        policy: {
+          DISTANCE_TO_COST: this.DISTANCE_TO_COST,
+          RIP_THRESHOLD_START: this.RIP_THRESHOLD_START,
+          RIP_THRESHOLD_END: this.RIP_THRESHOLD_END,
+          RIP_THRESHOLD_RAMP_ATTEMPTS: this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+          RIP_CONGESTION_REGION_COST_FACTOR:
+            this.RIP_CONGESTION_REGION_COST_FACTOR,
+          MAX_ITERATIONS: this.MAX_ITERATIONS,
+          MAX_RIPS: this.MAX_RIPS,
+          MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
+            this.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
+          EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
+            this.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+        },
+      })
+      const fullCacheContextBuildMs =
+        performance.now() - cacheContextBuildStartTime
+      recordSectionSolverCacheTiming({
+        contextBuildMs: fullCacheContextBuildMs,
+      })
+      this.stats = {
+        ...this.stats,
+        fullCacheContextBuildMs,
+      }
+    }
+
+    const effectiveCacheContext = this.sectionCacheContext
+
+    if (effectiveCacheContext) {
+      const cachedEntry = getSectionSolverCacheEntry(effectiveCacheContext.key)
 
       if (!cachedEntry) {
         recordSectionSolverCacheLookup("miss")
       } else {
         try {
-          const hydratedRegionSegments = hydrateSectionSolverCacheEntry(
+          if (!cachedEntry.optimized) {
+            recordSectionSolverCacheLookup("hit")
+            this.optimizedSolver = this.baselineSolver
+            this.sectionCacheHydrated = true
+            this.activeSubSolver = undefined
+            this.stats = {
+              ...this.stats,
+              sectionBaselineMaxRegionCost:
+                this.sectionBaselineSummary.maxRegionCost,
+              sectionBaselineTotalRegionCost:
+                this.sectionBaselineSummary.totalRegionCost,
+              effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
+              effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
+              effectiveMaxRips: this.MAX_RIPS,
+              activeRouteCount: this.activeRouteIds.length,
+              initialMaxRegionCost: this.baselineSummary.maxRegionCost,
+              initialTotalRegionCost: this.baselineSummary.totalRegionCost,
+              finalMaxRegionCost: this.baselineSummary.maxRegionCost,
+              finalTotalRegionCost: this.baselineSummary.totalRegionCost,
+              optimized: false,
+              cacheHit: true,
+              cacheStatus: "hit",
+              cacheScaleBucket: effectiveCacheContext.transform.scaleBucket,
+              cacheRotationQuarterTurns:
+                effectiveCacheContext.transform.rotationQuarterTurns,
+              cacheEntries: getTinyHyperGraphSectionSolverCacheStats().entries,
+            }
+            this.solved = true
+            return
+          }
+
+          const cacheHydrationStartTime = performance.now()
+          const hydratedSolution = hydrateSectionSolverCacheEntrySolution(
             cachedEntry,
-            cacheContext,
-            this.baselineSolver.state.regionSegments,
+            effectiveCacheContext,
+            this.initialSolution,
           )
-          const hydratedSolver = createSolvedSolverFromRegionSegments(
+          const cacheHydrationMs = performance.now() - cacheHydrationStartTime
+          const hydratedSolverBuildStartTime = performance.now()
+          const hydratedSolver = createSolvedSolverFromSolution(
             this.topology,
             this.problem,
-            hydratedRegionSegments,
+            hydratedSolution,
             getTinyHyperGraphSolverOptions(this),
           )
-
-          // Validate both route connectivity and output replay fidelity before
-          // accepting the cached section state, then use the replayed solution
-          // as the authoritative cached result.
-          const hydratedOutput = hydratedSolver.getOutput()
-          const replay = loadSerializedHyperGraph(hydratedOutput)
-          const replayedSolver = createSolvedSolverFromSolution(
-            replay.topology,
-            replay.problem,
-            replay.solution,
-            getTinyHyperGraphSolverOptions(this),
+          const hydratedSummary = summarizeRegionIntersectionCaches(
+            hydratedSolver.state.regionIntersectionCaches,
           )
-          const replayedSummary = summarizeRegionIntersectionCaches(
-            replayedSolver.state.regionIntersectionCaches,
-          )
-          const replayedOptimized =
-            compareRegionCostSummaries(replayedSummary, this.baselineSummary) < 0
+          const cacheHydratedSolverBuildMs =
+            performance.now() - hydratedSolverBuildStartTime
+          const hydratedOptimized =
+            compareRegionCostSummaries(hydratedSummary, this.baselineSummary) < 0
 
+          recordSectionSolverCacheTiming({
+            hydrateSolutionMs: cacheHydrationMs,
+            hydratedSolverBuildMs: cacheHydratedSolverBuildMs,
+          })
           recordSectionSolverCacheLookup("hit")
-          this.optimizedSolver = replayedSolver
+          this.optimizedSolver = hydratedSolver
           this.sectionCacheHydrated = true
           this.activeSubSolver = undefined
           this.stats = {
@@ -947,15 +1077,17 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
             activeRouteCount: this.activeRouteIds.length,
             initialMaxRegionCost: this.baselineSummary.maxRegionCost,
             initialTotalRegionCost: this.baselineSummary.totalRegionCost,
-            finalMaxRegionCost: replayedSummary.maxRegionCost,
-            finalTotalRegionCost: replayedSummary.totalRegionCost,
-            optimized: replayedOptimized,
+            finalMaxRegionCost: hydratedSummary.maxRegionCost,
+            finalTotalRegionCost: hydratedSummary.totalRegionCost,
+            optimized: hydratedOptimized,
             cacheHit: true,
             cacheStatus: "hit",
-            cacheScaleBucket: cacheContext.transform.scaleBucket,
+            cacheScaleBucket: effectiveCacheContext.transform.scaleBucket,
             cacheRotationQuarterTurns:
-              cacheContext.transform.rotationQuarterTurns,
+              effectiveCacheContext.transform.rotationQuarterTurns,
             cacheEntries: getTinyHyperGraphSectionSolverCacheStats().entries,
+            cacheHydrationMs,
+            cacheHydratedSolverBuildMs,
           }
           this.solved = true
           return
@@ -984,9 +1116,9 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       effectiveMaxRips: this.MAX_RIPS,
       cacheHit,
       cacheStatus,
-      cacheScaleBucket: cacheContext?.transform.scaleBucket ?? null,
+      cacheScaleBucket: effectiveCacheContext?.transform.scaleBucket ?? null,
       cacheRotationQuarterTurns:
-        cacheContext?.transform.rotationQuarterTurns ?? null,
+        effectiveCacheContext?.transform.rotationQuarterTurns ?? null,
       cacheEntries: getTinyHyperGraphSectionSolverCacheStats().entries,
     }
   }
@@ -1023,23 +1155,84 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     const candidateSummary = summarizeRegionIntersectionCaches(
       candidateSolver.state.regionIntersectionCaches,
     )
-    const optimized =
+    let optimized =
       compareRegionCostSummaries(candidateSummary, this.baselineSummary) < 0
+    let selectedSolver: TinyHyperGraphSolver = optimized
+      ? candidateSolver
+      : this.baselineSolver
+    let finalSummary = optimized ? candidateSummary : this.baselineSummary
+    let validatedReplayTopology: TinyHyperGraphTopology | undefined
+    let validatedReplaySolution: TinyHyperGraphSolution | undefined
 
-    this.optimizedSolver = optimized ? candidateSolver : this.baselineSolver
+    if (this.ENABLE_CACHE && optimized) {
+      const storeValidationStartTime = performance.now()
+      const validatedOutput = candidateSolver.getOutput()
+      const replay = loadSerializedHyperGraph(validatedOutput)
+      const replayedSolver = createSolvedSolverFromSolution(
+        replay.topology,
+        replay.problem,
+        replay.solution,
+        getTinyHyperGraphSolverOptions(this),
+      )
+      const replayedSummary = summarizeRegionIntersectionCaches(
+        replayedSolver.state.regionIntersectionCaches,
+      )
 
-    const finalSummary = optimized ? candidateSummary : this.baselineSummary
+      selectedSolver = replayedSolver
+      finalSummary = replayedSummary
+      validatedReplayTopology = replay.topology
+      validatedReplaySolution = replay.solution
+      const cacheStoreValidationMs =
+        performance.now() - storeValidationStartTime
+      recordSectionSolverCacheTiming({
+        storeValidationMs: cacheStoreValidationMs,
+      })
+      this.stats = {
+        ...this.stats,
+        cacheStoreValidationMs,
+      }
+      optimized =
+        compareRegionCostSummaries(replayedSummary, this.baselineSummary) < 0
+
+      if (!optimized) {
+        selectedSolver = this.baselineSolver
+        finalSummary = this.baselineSummary
+        validatedReplayTopology = undefined
+        validatedReplaySolution = undefined
+      }
+    }
+
+    this.optimizedSolver = selectedSolver
+
+    if (this.ENABLE_CACHE && this.sectionScoreCacheKey && !this.sectionCacheHydrated) {
+      setSectionSolverScoreCacheEntry(this.sectionScoreCacheKey, {
+        optimized,
+        finalSummary,
+      })
+    }
 
     if (this.ENABLE_CACHE && this.sectionCacheContext && !this.sectionCacheHydrated) {
+      const storeEntryBuildStartTime = performance.now()
       setSectionSolverCacheEntry(
         this.sectionCacheContext.key,
         createSectionSolverCacheEntry({
           context: this.sectionCacheContext,
-          finalRegionSegments: this.optimizedSolver.state.regionSegments,
+          currentTopology: this.topology,
+          replayTopology: validatedReplayTopology ?? this.topology,
+          finalSolution: validatedReplaySolution ?? this.initialSolution,
           optimized,
           finalSummary,
         }),
       )
+      const cacheStoreEntryBuildMs =
+        performance.now() - storeEntryBuildStartTime
+      recordSectionSolverCacheTiming({
+        storeEntryBuildMs: cacheStoreEntryBuildMs,
+      })
+      this.stats = {
+        ...this.stats,
+        cacheStoreEntryBuildMs,
+      }
     }
 
     this.stats = {

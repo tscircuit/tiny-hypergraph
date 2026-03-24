@@ -31,6 +31,11 @@ type ModeSummary = {
   cacheRejectedHits: number
   cacheStores: number
   cacheHitRate: string
+  cacheContextBuildSeconds: number
+  cacheHydrateSeconds: number
+  cacheHydratedSolverBuildSeconds: number
+  cacheStoreValidationSeconds: number
+  cacheStoreEntryBuildSeconds: number
 }
 
 const datasetModule = datasetHg07 as DatasetModule
@@ -132,6 +137,22 @@ const runMode = ({
     cacheRejectedHits,
     cacheStores,
     cacheHitRate: formatRate(cacheHits, cacheLookups),
+    cacheContextBuildSeconds: round(
+      (afterStats.contextBuildMs - beforeStats.contextBuildMs) / 1000,
+    ),
+    cacheHydrateSeconds: round(
+      (afterStats.hydrateSolutionMs - beforeStats.hydrateSolutionMs) / 1000,
+    ),
+    cacheHydratedSolverBuildSeconds: round(
+      (afterStats.hydratedSolverBuildMs - beforeStats.hydratedSolverBuildMs) /
+        1000,
+    ),
+    cacheStoreValidationSeconds: round(
+      (afterStats.storeValidationMs - beforeStats.storeValidationMs) / 1000,
+    ),
+    cacheStoreEntryBuildSeconds: round(
+      (afterStats.storeEntryBuildMs - beforeStats.storeEntryBuildMs) / 1000,
+    ),
   }
 }
 
