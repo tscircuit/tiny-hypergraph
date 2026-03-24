@@ -354,26 +354,30 @@ export const loadSerializedHyperGraph = (
     return netIndex
   }
 
+  const regionNetCandidates = Array.from(
+    { length: regionCount },
+    () => new Set<number>(),
+  )
+
   const assignRegionNet = (regionId: string, netIndex: number) => {
     const regionIndex = regionIdToIndex.get(regionId)
     if (regionIndex === undefined) {
       throw new Error(`Connection references missing region "${regionId}"`)
     }
 
-    const existingNetIndex = regionNetId[regionIndex]
-    if (existingNetIndex !== -1 && existingNetIndex !== netIndex) {
-      throw new Error(
-        `Region "${regionId}" is assigned to multiple nets (${existingNetIndex}, ${netIndex})`,
-      )
-    }
-
-    regionNetId[regionIndex] = netIndex
+    regionNetCandidates[regionIndex]!.add(netIndex)
   }
 
   connections.forEach((connection) => {
     const netIndex = getNetIndex(connection)
     assignRegionNet(connection.startRegionId, netIndex)
     assignRegionNet(connection.endRegionId, netIndex)
+  })
+
+  regionNetCandidates.forEach((candidateNetIndexes, regionIndex) => {
+    if (candidateNetIndexes.size === 1) {
+      regionNetId[regionIndex] = [...candidateNetIndexes][0]!
+    }
   })
 
   const routableConnections = connections
