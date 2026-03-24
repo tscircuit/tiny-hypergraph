@@ -6,8 +6,8 @@
     "start": "cosmos",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
-    "benchmark:section40": "bun run scripts/benchmarking/hg07-first40-section-pipeline.ts",
-    "benchmark:section40:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts"
+    "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
+    "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",

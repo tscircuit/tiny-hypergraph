@@ -77,7 +77,24 @@ type PipelineBenchmarkSummary = {
 
 const datasetModule = datasetHg07 as DatasetModule
 const IMPROVEMENT_EPSILON = 1e-9
-const SAMPLE_COUNT = 40
+
+const parseLimitArg = () => {
+  const limitIndex = process.argv.findIndex((arg) => arg === "--limit")
+  if (limitIndex === -1) {
+    return datasetModule.manifest.sampleCount
+  }
+
+  const rawLimit = process.argv[limitIndex + 1]
+  const parsedLimit = Number(rawLimit)
+
+  if (!rawLimit || !Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+    throw new Error(`Invalid --limit value: ${rawLimit ?? "<missing>"}`)
+  }
+
+  return Math.min(Math.floor(parsedLimit), datasetModule.manifest.sampleCount)
+}
+
+const sampleCount = parseLimitArg()
 
 const formatPct = (value: number) => `${value.toFixed(1)}%`
 const formatSeconds = (value: number) => `${(value / 1000).toFixed(2)}s`
@@ -145,10 +162,10 @@ const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
   }))
 
 console.log(
-  "running hg-07 first 40 section pipeline benchmark (solveGraph -> optimizeSection)",
+  `running hg-07 section pipeline benchmark (solveGraph -> optimizeSection) sampleCount=${sampleCount}/${datasetModule.manifest.sampleCount}`,
 )
 
-const sampleMetas = datasetModule.manifest.samples.slice(0, SAMPLE_COUNT)
+const sampleMetas = datasetModule.manifest.samples.slice(0, sampleCount)
 const rows: PipelineBenchmarkRow[] = []
 let improvedSampleCount = 0
 let unchangedSampleCount = 0
@@ -442,7 +459,7 @@ const performanceSummaryRows = [
   },
 ]
 
-console.log("hg-07 first 40 section pipeline benchmark")
+console.log("hg-07 section pipeline benchmark")
 console.log(
   `samples=${summary.samples} improved=${summary.improvedSampleCount} unchanged=${summary.unchangedSampleCount} regressed=${summary.regressedSampleCount} failed=${summary.failedSampleCount}`,
 )
