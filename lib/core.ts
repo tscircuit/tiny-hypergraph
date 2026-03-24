@@ -17,17 +17,18 @@ import type {
 import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
-export const createEmptyRegionIntersectionCache = (): RegionIntersectionCache => ({
-  netIds: new Int32Array(0),
-  lesserAngles: new Int32Array(0),
-  greaterAngles: new Int32Array(0),
-  layerMasks: new Int32Array(0),
-  existingCrossingLayerIntersections: 0,
-  existingSameLayerIntersections: 0,
-  existingEntryExitLayerChanges: 0,
-  existingRegionCost: 0,
-  existingSegmentCount: 0,
-})
+export const createEmptyRegionIntersectionCache =
+  (): RegionIntersectionCache => ({
+    netIds: new Int32Array(0),
+    lesserAngles: new Int32Array(0),
+    greaterAngles: new Int32Array(0),
+    layerMasks: new Int32Array(0),
+    existingCrossingLayerIntersections: 0,
+    existingSameLayerIntersections: 0,
+    existingEntryExitLayerChanges: 0,
+    existingRegionCost: 0,
+    existingSegmentCount: 0,
+  })
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -214,6 +215,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
+    console.log("options", options)
     applyTinyHyperGraphSolverOptions(this, options)
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
@@ -631,8 +633,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (
       regionIdsOverCostThreshold.length === 0 ||
-      state.ripCount === this.RIP_THRESHOLD_RAMP_ATTEMPTS
+      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
     ) {
+      console.log(
+        "marking solved after",
+        state.ripCount,
+        "rips",
+        `(${this.RIP_THRESHOLD_RAMP_ATTEMPTS})`,
+      )
       this.solved = true
       return
     }

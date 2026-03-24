@@ -1,2 +1,10 @@
 export * from "./core"
-export * from "./section-solver"
+export {
+  TinyHyperGraphSectionSolver,
+  type TinyHyperGraphSectionSolverOptions,
+} from "./section-solver"
+export {
+  TinyHyperGraphSectionPipelineSolver,
+  type TinyHyperGraphSectionMaskContext,
+  type TinyHyperGraphSectionPipelineInput,
+} from "./section-solver/TinyHyperGraphSectionPipelineSolver"
