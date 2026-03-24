@@ -1,5 +1,16 @@
 export * from "./core"
 export {
+  applySectionSolverCacheReverseTransform,
+  advanceTinyHyperGraphSectionSolverCacheGeneration,
+  clearTinyHyperGraphSectionSolverCache,
+  createSectionSolverLossyScoreCacheKey,
+  createSectionSolverLossyScoreDescriptor,
+  getSectionSolverLossyDescriptorDistance,
+  getSectionSolverLossyScoreKeyStats,
+  getSectionSolverScoreCacheKeyStats,
+  getSectionSolverScoreCacheEntry,
+  setSectionSolverLossyScoreKeyObservationEnabled,
+  getTinyHyperGraphSectionSolverCacheStats,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionSolverOptions,
 } from "./section-solver"

@@ -11,7 +11,10 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
-import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import {
+  getSectionSolverScoreCacheEntry,
+  TinyHyperGraphSectionSolver,
+} from "./index"
 
 /**
  * Candidate section families used by the automatic section-mask search.
@@ -81,25 +84,37 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
 
 const IMPROVEMENT_EPSILON = 1e-9
 
+const hashInt8Array = (values: Int8Array) => {
+  let hash = 2166136261
+
+  for (let index = 0; index < values.length; index++) {
+    hash ^= values[index]! + 257
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return hash >>> 0
+}
+
+const areInt8ArraysEqual = (left: Int8Array, right: Int8Array) => {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
     (maxRegionCost, regionIntersectionCache) =>
       Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
     0,
   )
-
-const getSerializedOutputMaxRegionCost = (
-  serializedHyperGraph: SerializedHyperGraph,
-) => {
-  const replay = loadSerializedHyperGraph(serializedHyperGraph)
-  const replayedSolver = new TinyHyperGraphSectionSolver(
-    replay.topology,
-    replay.problem,
-    replay.solution,
-  )
-
-  return getMaxRegionCost(replayedSolver.baselineSolver)
-}
 
 const getAdjacentRegionIds = (
   topology: TinyHyperGraphTopology,
@@ -256,7 +271,7 @@ const findBestAutomaticSectionMask = (
   let candidateInitMs = 0
   let candidateSolveMs = 0
   let candidateReplayScoreMs = 0
-  const seenPortSectionMasks = new Set<string>()
+  const seenPortSectionMasks = new Map<number, Int8Array[]>()
 
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
@@ -273,30 +288,22 @@ const findBestAutomaticSectionMask = (
       ),
     )
     generatedCandidateCount += 1
-    const portSectionMaskKey = candidateProblem.portSectionMask.join(",")
+    const portSectionMaskHash = hashInt8Array(candidateProblem.portSectionMask)
+    const existingMasksForHash = seenPortSectionMasks.get(portSectionMaskHash) ?? []
 
-    if (seenPortSectionMasks.has(portSectionMaskKey)) {
+    if (
+      existingMasksForHash.some((seenMask) =>
+        areInt8ArraysEqual(seenMask, candidateProblem.portSectionMask),
+      )
+    ) {
       duplicateCandidateCount += 1
       continue
     }
 
-    seenPortSectionMasks.add(portSectionMaskKey)
+    existingMasksForHash.push(new Int8Array(candidateProblem.portSectionMask))
+    seenPortSectionMasks.set(portSectionMaskHash, existingMasksForHash)
 
     try {
-      const eligibilityStartTime = performance.now()
-      const activeRouteIds = getActiveSectionRouteIds(
-        topology,
-        candidateProblem,
-        solution,
-      )
-      candidateEligibilityMs += performance.now() - eligibilityStartTime
-
-      if (activeRouteIds.length === 0) {
-        continue
-      }
-
-      candidateCount += 1
-
       const candidateInitStartTime = performance.now()
       const sectionSolver = new TinyHyperGraphSectionSolver(
         topology,
@@ -304,7 +311,37 @@ const findBestAutomaticSectionMask = (
         solution,
         sectionSolverOptions,
       )
+      const preparedState = sectionSolver.prepareSectionSolveState()
       candidateInitMs += performance.now() - candidateInitStartTime
+
+      const eligibilityStartTime = performance.now()
+      if (preparedState.activeRouteIds.length === 0) {
+        candidateEligibilityMs += performance.now() - eligibilityStartTime
+        continue
+      }
+      candidateEligibilityMs += performance.now() - eligibilityStartTime
+
+      candidateCount += 1
+
+      const cachedScore = preparedState.scoreCacheKey
+        ? getSectionSolverScoreCacheEntry(preparedState.scoreCacheKey)
+        : undefined
+
+      if (cachedScore) {
+        const finalMaxRegionCost = cachedScore.entry.finalSummary.maxRegionCost
+
+        if (finalMaxRegionCost >= bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
+          continue
+        }
+
+        if (cachedScore.fromPreviousGeneration) {
+          bestFinalMaxRegionCost = finalMaxRegionCost
+          bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
+          winningCandidateLabel = candidate.label
+          winningCandidateFamily = candidate.family
+          continue
+        }
+      }
 
       const candidateSolveStartTime = performance.now()
       sectionSolver.solve()
@@ -321,21 +358,12 @@ const findBestAutomaticSectionMask = (
 
       if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
         const candidateReplayScoreStartTime = performance.now()
-        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
-          sectionSolver.getOutput(),
-        )
         candidateReplayScoreMs +=
           performance.now() - candidateReplayScoreStartTime
-
-        if (
-          replayedFinalMaxRegionCost <
-          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
-        ) {
-          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
-          bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
-          winningCandidateLabel = candidate.label
-          winningCandidateFamily = candidate.family
-        }
+        bestFinalMaxRegionCost = finalMaxRegionCost
+        bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
+        winningCandidateLabel = candidate.label
+        winningCandidateFamily = candidate.family
       }
     } catch {
       // Skip invalid section masks that split a route into multiple spans.
