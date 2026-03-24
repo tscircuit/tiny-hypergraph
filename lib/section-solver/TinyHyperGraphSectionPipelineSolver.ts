@@ -45,7 +45,9 @@ type AutomaticSectionSearchResult = {
   portSectionMask: Int8Array
   baselineMaxRegionCost: number
   finalMaxRegionCost: number
+  generatedCandidateCount: number
   candidateCount: number
+  duplicateCandidateCount: number
   totalMs: number
   baselineEvaluationMs: number
   candidateEligibilityMs: number
@@ -62,10 +64,10 @@ const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
-  RIP_THRESHOLD_RAMP_ATTEMPTS: 50,
+  RIP_THRESHOLD_RAMP_ATTEMPTS: 16,
   RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
   MAX_ITERATIONS: 1e6,
-  MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: Number.POSITIVE_INFINITY,
+  MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 6,
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
 }
 
@@ -247,11 +249,14 @@ const findBestAutomaticSectionMask = (
   let bestPortSectionMask = new Int8Array(topology.portCount)
   let winningCandidateLabel: string | undefined
   let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
+  let generatedCandidateCount = 0
   let candidateCount = 0
+  let duplicateCandidateCount = 0
   let candidateEligibilityMs = 0
   let candidateInitMs = 0
   let candidateSolveMs = 0
   let candidateReplayScoreMs = 0
+  const seenPortSectionMasks = new Set<string>()
 
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
@@ -267,6 +272,15 @@ const findBestAutomaticSectionMask = (
         candidate.portSelectionRule,
       ),
     )
+    generatedCandidateCount += 1
+    const portSectionMaskKey = candidateProblem.portSectionMask.join(",")
+
+    if (seenPortSectionMasks.has(portSectionMaskKey)) {
+      duplicateCandidateCount += 1
+      continue
+    }
+
+    seenPortSectionMasks.add(portSectionMaskKey)
 
     try {
       const eligibilityStartTime = performance.now()
@@ -300,18 +314,28 @@ const findBestAutomaticSectionMask = (
         continue
       }
 
-      const candidateReplayScoreStartTime = performance.now()
-      const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
-        sectionSolver.getOutput(),
+      const finalMaxRegionCost = Number(
+        sectionSolver.stats.finalMaxRegionCost ??
+          getMaxRegionCost(sectionSolver.getSolvedSolver()),
       )
-      candidateReplayScoreMs +=
-        performance.now() - candidateReplayScoreStartTime
 
       if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
-        bestFinalMaxRegionCost = finalMaxRegionCost
-        bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
-        winningCandidateLabel = candidate.label
-        winningCandidateFamily = candidate.family
+        const candidateReplayScoreStartTime = performance.now()
+        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
+          sectionSolver.getOutput(),
+        )
+        candidateReplayScoreMs +=
+          performance.now() - candidateReplayScoreStartTime
+
+        if (
+          replayedFinalMaxRegionCost <
+          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
+        ) {
+          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
+          bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
+          winningCandidateLabel = candidate.label
+          winningCandidateFamily = candidate.family
+        }
       }
     } catch {
       // Skip invalid section masks that split a route into multiple spans.
@@ -322,7 +346,9 @@ const findBestAutomaticSectionMask = (
     portSectionMask: bestPortSectionMask,
     baselineMaxRegionCost,
     finalMaxRegionCost: bestFinalMaxRegionCost,
+    generatedCandidateCount,
     candidateCount,
+    duplicateCandidateCount,
     totalMs: performance.now() - searchStartTime,
     baselineEvaluationMs,
     candidateEligibilityMs,
@@ -443,7 +469,11 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
             searchResult.winningCandidateFamily
           this.stats = {
             ...this.stats,
+            sectionSearchGeneratedCandidateCount:
+              searchResult.generatedCandidateCount,
             sectionSearchCandidateCount: searchResult.candidateCount,
+            sectionSearchDuplicateCandidateCount:
+              searchResult.duplicateCandidateCount,
             sectionSearchBaselineMaxRegionCost:
               searchResult.baselineMaxRegionCost,
             sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,

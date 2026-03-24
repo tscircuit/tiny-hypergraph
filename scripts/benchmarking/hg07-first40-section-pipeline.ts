@@ -29,7 +29,9 @@ type PipelineBenchmarkRow = {
   optimized: boolean
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: string
+  sectionSearchGeneratedCandidateCount: number
   sectionSearchCandidateCount: number
+  sectionSearchDuplicateCandidateCount: number
   solveGraphMs: number
   sectionSearchMs: number
   sectionSearchBaselineEvaluationMs: number
@@ -62,7 +64,9 @@ type PipelineBenchmarkSummary = {
   totalPipelineSeconds: string
   averagePipelineSeconds: string
   averageSectionSearchSeconds: string
+  totalGeneratedCandidateCount: number
   totalCandidateCount: number
+  totalDuplicateCandidateCount: number
   averageAttemptedSectionSolves: string
   averageCandidateSeconds: string
   totalCandidateSolveSeconds: string
@@ -112,7 +116,9 @@ const formatImprovementRows = (rows: PipelineBenchmarkRow[]) =>
     finalMaxRegionCost: round(row.finalMaxRegionCost),
     delta: round(row.delta, 6),
     activeRouteCount: row.activeRouteCount,
+    generatedCandidateCount: row.sectionSearchGeneratedCandidateCount,
     candidateCount: row.sectionSearchCandidateCount,
+    duplicateCandidateCount: row.sectionSearchDuplicateCandidateCount,
     selectedCandidate: row.selectedSectionCandidateLabel ?? null,
     family: row.selectedSectionCandidateFamily ?? null,
     pipelineSeconds: formatSecondsCell(row.pipelineMs),
@@ -128,7 +134,9 @@ const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
     optimizeSectionStageSeconds: formatSecondsCell(row.optimizeSectionStageMs),
     baselineReplaySeconds: formatSecondsCell(row.baselineReplayMs),
     finalReplaySeconds: formatSecondsCell(row.finalReplayMs),
+    generatedCandidateCount: row.sectionSearchGeneratedCandidateCount,
     candidateCount: row.sectionSearchCandidateCount,
+    duplicateCandidateCount: row.sectionSearchDuplicateCandidateCount,
     avgCandidateSeconds:
       row.sectionSearchCandidateCount > 0
         ? formatSecondsCell(row.sectionSearchMs / row.sectionSearchCandidateCount)
@@ -153,7 +161,9 @@ let totalOptimizeSectionStageMs = 0
 let totalBaselineReplayMs = 0
 let totalFinalReplayMs = 0
 let totalPipelineMs = 0
+let totalGeneratedCandidateCount = 0
 let totalCandidateCount = 0
+let totalDuplicateCandidateCount = 0
 let totalCandidateSolveMs = 0
 let totalCandidateReplayScoreMs = 0
 let totalCandidateInitMs = 0
@@ -215,6 +225,12 @@ for (const sampleMeta of sampleMetas) {
     const sectionSearchCandidateCount = Number(
       pipelineSolver.stats.sectionSearchCandidateCount ?? 0,
     )
+    const sectionSearchGeneratedCandidateCount = Number(
+      pipelineSolver.stats.sectionSearchGeneratedCandidateCount ?? 0,
+    )
+    const sectionSearchDuplicateCandidateCount = Number(
+      pipelineSolver.stats.sectionSearchDuplicateCandidateCount ?? 0,
+    )
     const sectionSearchBaselineEvaluationMs = Number(
       pipelineSolver.stats.sectionSearchBaselineEvaluationMs ?? 0,
     )
@@ -239,7 +255,9 @@ for (const sampleMeta of sampleMetas) {
     totalBaselineReplayMs += baselineReplayMs
     totalFinalReplayMs += finalReplayMs
     totalPipelineMs += pipelineMs
+    totalGeneratedCandidateCount += sectionSearchGeneratedCandidateCount
     totalCandidateCount += sectionSearchCandidateCount
+    totalDuplicateCandidateCount += sectionSearchDuplicateCandidateCount
     totalCandidateSolveMs += sectionSearchCandidateSolveMs
     totalCandidateReplayScoreMs += sectionSearchCandidateReplayScoreMs
     totalCandidateInitMs += sectionSearchCandidateInitMs
@@ -264,7 +282,9 @@ for (const sampleMeta of sampleMetas) {
       selectedSectionCandidateLabel: pipelineSolver.selectedSectionCandidateLabel,
       selectedSectionCandidateFamily:
         pipelineSolver.selectedSectionCandidateFamily,
+      sectionSearchGeneratedCandidateCount,
       sectionSearchCandidateCount,
+      sectionSearchDuplicateCandidateCount,
       solveGraphMs,
       sectionSearchMs,
       sectionSearchBaselineEvaluationMs,
@@ -300,7 +320,9 @@ for (const sampleMeta of sampleMetas) {
       delta: Number.NaN,
       activeRouteCount: 0,
       optimized: false,
+      sectionSearchGeneratedCandidateCount: 0,
       sectionSearchCandidateCount: 0,
+      sectionSearchDuplicateCandidateCount: 0,
       solveGraphMs: 0,
       sectionSearchMs: 0,
       sectionSearchBaselineEvaluationMs: 0,
@@ -343,7 +365,9 @@ const summary: PipelineBenchmarkSummary = {
   averageSectionSearchSeconds: formatSeconds(
     totalSectionSearchMs / solvedSampleCount,
   ),
+  totalGeneratedCandidateCount,
   totalCandidateCount,
+  totalDuplicateCandidateCount,
   averageAttemptedSectionSolves: (
     totalCandidateCount / solvedSampleCount
   ).toFixed(2),
@@ -392,7 +416,15 @@ const performanceSummaryRows = [
     key: "averageSectionSearchSeconds",
     value: summary.averageSectionSearchSeconds,
   },
+  {
+    key: "totalGeneratedCandidateCount",
+    value: String(summary.totalGeneratedCandidateCount),
+  },
   { key: "totalCandidateCount", value: String(summary.totalCandidateCount) },
+  {
+    key: "totalDuplicateCandidateCount",
+    value: String(summary.totalDuplicateCandidateCount),
+  },
   {
     key: "averageAttemptedSectionSolves",
     value: summary.averageAttemptedSectionSolves,
