@@ -388,6 +388,39 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
 
+  fallbackToSolveGraphOutput(error: unknown) {
+    const solveGraphOutput =
+      this.getStageOutput<SerializedHyperGraph>("solveGraph")
+
+    if (!solveGraphOutput) {
+      throw error
+    }
+
+    const stageName = "optimizeSection"
+    const now = performance.now()
+
+    this.pipelineOutputs[stageName] = solveGraphOutput
+    this.startTimeOfStage[stageName] ??= now
+    this.endTimeOfStage[stageName] = now
+    this.timeSpentOnStage[stageName] ??= 0
+    this.activeSubSolver = null
+    this.selectedSectionMask = new Int8Array()
+    this.selectedSectionCandidateLabel = undefined
+    this.selectedSectionCandidateFamily = undefined
+    this.stats = {
+      ...this.stats,
+      optimizeSectionFallback: true,
+      optimizeSectionFallbackReason: String(error),
+      selectedSectionCandidateLabel: null,
+      selectedSectionCandidateFamily: null,
+      sectionMaskPortCount: 0,
+    }
+    this.currentPipelineStageIndex += 1
+    if (!this.pipelineDef[this.currentPipelineStageIndex]) {
+      this.solved = true
+    }
+  }
+
   override pipelineDef = [
     {
       solverName: "solveGraph",
@@ -534,6 +567,39 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     }
 
     return super.visualize()
+  }
+
+  override _step() {
+    const currentStageName = this.getCurrentStageName()
+
+    if (currentStageName === "optimizeSection") {
+      if (this.activeSubSolver) {
+        try {
+          super._step()
+        } catch (error) {
+          this.fallbackToSolveGraphOutput(error)
+        }
+
+        if (this.failed) {
+          const error = this.error
+          this.failed = false
+          this.error = null
+          this.fallbackToSolveGraphOutput(error)
+        }
+
+        return
+      }
+
+      try {
+        super._step()
+      } catch (error) {
+        this.fallbackToSolveGraphOutput(error)
+      }
+
+      return
+    }
+
+    super._step()
   }
 
   override getOutput() {

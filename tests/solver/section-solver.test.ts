@@ -4,14 +4,15 @@ import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
-  type TinyHyperGraphSolver,
+  TinyHyperGraphSolver,
+  type TinyHyperGraphSolver as TinyHyperGraphSolverType,
 } from "lib/index"
 import {
   createSectionSolverFixturePortMask,
   sectionSolverFixtureGraph,
 } from "tests/fixtures/section-solver.fixture"
 
-const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
+const getMaxRegionCost = (solver: TinyHyperGraphSolverType) =>
   solver.state.regionIntersectionCaches.reduce(
     (maxRegionCost, regionIntersectionCache) =>
       Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
@@ -215,4 +216,42 @@ test("section pipeline searches multiple masks and commits an improving output o
   expect(
     getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
   ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
+})
+
+test("section pipeline falls back to solveGraph output when replay loading the section stage input is invalid", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: sectionSolverFixtureGraph,
+  })
+  const { topology, problem } = loadSerializedHyperGraph(sectionSolverFixtureGraph)
+  const internalPipelineSolver = pipelineSolver as TinyHyperGraphSectionPipelineSolver & {
+    solveGraph?: TinyHyperGraphSolver
+    pipelineOutputs: Record<string, ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>
+    currentPipelineStageIndex: number
+  }
+
+  internalPipelineSolver.solveGraph = new TinyHyperGraphSolver(topology, problem)
+  internalPipelineSolver.pipelineOutputs.solveGraph = datasetHg07.sample065 as ReturnType<
+    TinyHyperGraphSectionSolver["getOutput"]
+  >
+  internalPipelineSolver.currentPipelineStageIndex = 1
+
+  expect(() => pipelineSolver.step()).not.toThrow()
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.optimizeSectionFallback).toBe(true)
+  expect(String(pipelineSolver.stats.optimizeSectionFallbackReason)).toContain(
+    'Region "cmn_133" is assigned to multiple nets',
+  )
+
+  const solveGraphOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "solveGraph",
+    )
+  const optimizeSectionOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(solveGraphOutput).toBeDefined()
+  expect(optimizeSectionOutput).toEqual(solveGraphOutput)
 })
