@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
   TinyHyperGraphSectionPipelineSolver,
@@ -26,6 +27,19 @@ const getSolvedRoutePortIds = (
       solvedRoute.path.map((candidate) => candidate.portId),
     ]),
   )
+
+const getSerializedOutputMaxRegionCost = (
+  serializedHyperGraph: ReturnType<TinyHyperGraphSectionSolver["getOutput"]>,
+) => {
+  const replay = loadSerializedHyperGraph(serializedHyperGraph)
+  const replayedSolver = new TinyHyperGraphSectionSolver(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+  )
+
+  return getMaxRegionCost(replayedSolver.baselineSolver)
+}
 
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
   const { topology, problem, solution } = loadSerializedHyperGraph(
@@ -163,4 +177,35 @@ test("section pipeline visualize renders the input graph at iteration zero", () 
   )
   expect((graphics.circles ?? []).length).toBeGreaterThan(0)
   expect(graphics.title).toContain("iter=0")
+})
+
+test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(1)
+  expect(pipelineSolver.selectedSectionCandidateLabel).toBeDefined()
+  expect(
+    [...(pipelineSolver.selectedSectionMask ?? [])].some((value) => value === 1),
+  ).toBe(true)
+
+  const solveGraphOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "solveGraph",
+    )
+  const optimizeSectionOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(solveGraphOutput).toBeDefined()
+  expect(optimizeSectionOutput).toBeDefined()
+  expect(
+    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
+  ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
 })

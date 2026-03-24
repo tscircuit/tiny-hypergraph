@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
-import { TinyHyperGraphSolver } from "lib/index"
+import { TinyHyperGraphSectionSolver, TinyHyperGraphSolver } from "lib/index"
+import { ambiguousRouteOutputFixture } from "tests/fixtures/ambiguous-route-output.fixture"
 
 const getRouteSegmentKeysFromSolver = (solver: TinyHyperGraphSolver) => {
   const routeSegmentKeys = Array.from(
@@ -30,6 +31,13 @@ const getRouteSegmentKeysFromSolution = (
         [port1Id, port2Id].sort((a, b) => a - b).join(":"),
       )
       .sort(),
+  )
+
+const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
+  solver.state.regionIntersectionCaches.reduce(
+    (maxRegionCost, regionIntersectionCache) =>
+      Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
+    0,
   )
 
 test("solver getOutput serializes a solved graph that round-trips through compat loading", () => {
@@ -62,4 +70,41 @@ test("solver getOutput serializes a solved graph that round-trips through compat
   expect(getRouteSegmentKeysFromSolution(roundTripped.solution)).toEqual(
     getRouteSegmentKeysFromSolver(solver),
   )
+
+  const replayedSolver = new TinyHyperGraphSectionSolver(
+    roundTripped.topology,
+    roundTripped.problem,
+    roundTripped.solution,
+  )
+
+  expect(getMaxRegionCost(replayedSolver.baselineSolver)).toBeCloseTo(
+    getMaxRegionCost(solver),
+    10,
+  )
+})
+
+test("serialized solved route replay preserves explicit traversed region ids", () => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    ambiguousRouteOutputFixture,
+  )
+  const replayedSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+  )
+
+  expect(solution.solvedRoutePathRegionIds?.[0]).toEqual([1, 2, 2])
+  expect(
+    replayedSolver.baselineSolver.state.regionSegments[1]?.map(
+      ([routeId, fromPortId, toPortId]) => [routeId, fromPortId, toPortId],
+    ),
+  ).toEqual([[0, 0, 1]])
+  expect(
+    replayedSolver.baselineSolver.state.regionSegments[2]?.map(
+      ([routeId, fromPortId, toPortId]) => [routeId, fromPortId, toPortId],
+    ),
+  ).toEqual([
+    [0, 1, 2],
+    [0, 2, 3],
+  ])
 })

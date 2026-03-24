@@ -469,27 +469,58 @@ export const loadSerializedHyperGraph = (
     regionNetId,
   }
 
+  const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =
+    []
+  const solvedRoutePathRegionIds: NonNullable<
+    TinyHyperGraphSolution["solvedRoutePathRegionIds"]
+  > = []
+
+  for (const { solvedRoute: route } of routableConnections) {
+    if (!route) {
+      solvedRoutePathSegments.push([])
+      solvedRoutePathRegionIds.push([])
+      continue
+    }
+
+    const segments: Array<[number, number]> = []
+    const segmentRegionIds: Array<number | undefined> = []
+
+    for (let i = 1; i < route.path.length; i++) {
+      const fromCandidate = route.path[i - 1]
+      const toCandidate = route.path[i]
+      const fromPortId = fromCandidate?.portId
+      const toPortId = toCandidate?.portId
+      const fromPortIndex =
+        fromPortId !== undefined ? portIdToIndex.get(fromPortId) : undefined
+      const toPortIndex =
+        toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
+
+      if (fromPortIndex === undefined || toPortIndex === undefined) {
+        continue
+      }
+
+      const serializedRegionId =
+        typeof fromCandidate?.nextRegionId === "string"
+          ? fromCandidate.nextRegionId
+          : typeof toCandidate?.lastRegionId === "string"
+            ? toCandidate.lastRegionId
+            : undefined
+
+      segments.push([fromPortIndex, toPortIndex])
+      segmentRegionIds.push(
+        serializedRegionId !== undefined
+          ? regionIdToIndex.get(serializedRegionId)
+          : undefined,
+      )
+    }
+
+    solvedRoutePathSegments.push(segments)
+    solvedRoutePathRegionIds.push(segmentRegionIds)
+  }
+
   const solution: TinyHyperGraphSolution = {
-    solvedRoutePathSegments: routableConnections.map(
-      ({ connection, solvedRoute: route }) => {
-        if (!route) return []
-
-        const segments: Array<[number, number]> = []
-        for (let i = 1; i < route.path.length; i++) {
-          const fromPortId = route.path[i - 1]?.portId
-          const toPortId = route.path[i]?.portId
-          const fromPortIndex =
-            fromPortId !== undefined ? portIdToIndex.get(fromPortId) : undefined
-          const toPortIndex =
-            toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
-
-          if (fromPortIndex !== undefined && toPortIndex !== undefined) {
-            segments.push([fromPortIndex, toPortIndex])
-          }
-        }
-        return segments
-      },
-    ),
+    solvedRoutePathSegments,
+    solvedRoutePathRegionIds,
   }
 
   return { topology, problem, solution }

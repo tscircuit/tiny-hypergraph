@@ -89,6 +89,13 @@ export interface TinyHyperGraphProblemSetup {
 export interface TinyHyperGraphSolution {
   /** solvedRoutePathSegments[routeId] = list of segments, each segment is an ordered list of port ids in the route */
   solvedRoutePathSegments: Array<[PortId, PortId][]>
+  /**
+   * solvedRoutePathRegionIds[routeId][segmentIndex] = explicit region id for
+   * solvedRoutePathSegments[routeId][segmentIndex], when known from serialized
+   * route data. This preserves exact routed regions for replay instead of
+   * inferring from the port pair.
+   */
+  solvedRoutePathRegionIds?: Array<Array<RegionId | undefined>>
 }
 
 export interface RegionCostSummary {

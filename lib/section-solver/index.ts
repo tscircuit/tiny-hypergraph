@@ -28,7 +28,11 @@ interface SolvedStateSnapshot {
 
 interface SectionRoutePlan {
   routeId: RouteId
-  fixedSegments: Array<[PortId, PortId]>
+  fixedSegments: Array<{
+    regionId: RegionId
+    fromPortId: PortId
+    toPortId: PortId
+  }>
   activeStartPortId?: PortId
   activeEndPortId?: PortId
   forcedStartRegionId?: RegionId
@@ -166,18 +170,26 @@ const getSharedRegionIdForPorts = (
   return sharedRegionId
 }
 
-const getOrderedRoutePortIds = (
+const getOrderedRoutePath = (
+  topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
   routeId: RouteId,
-): PortId[] => {
+): {
+  orderedPortIds: PortId[]
+  orderedRegionIds: RegionId[]
+} => {
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
+  const routeSegmentRegionIds = solution.solvedRoutePathRegionIds?.[routeId] ?? []
   const startPortId = problem.routeStartPort[routeId]
   const endPortId = problem.routeEndPort[routeId]
 
   if (routeSegments.length === 0) {
     if (startPortId === endPortId) {
-      return [startPortId]
+      return {
+        orderedPortIds: [startPortId],
+        orderedRegionIds: [],
+      }
     }
 
     throw new Error(`Route ${routeId} does not have an existing solved path`)
@@ -189,6 +201,7 @@ const getOrderedRoutePortIds = (
       segmentIndex: number
       fromPortId: PortId
       toPortId: PortId
+      regionId?: RegionId
     }>
   >()
 
@@ -197,6 +210,7 @@ const getOrderedRoutePortIds = (
       segmentIndex,
       fromPortId,
       toPortId,
+      regionId: routeSegmentRegionIds[segmentIndex],
     }
 
     const fromSegments = segmentsByPort.get(fromPortId) ?? []
@@ -209,6 +223,7 @@ const getOrderedRoutePortIds = (
   })
 
   const orderedPortIds = [startPortId]
+  const orderedRegionIds: RegionId[] = []
   const usedSegmentIndices = new Set<number>()
   let currentPortId = startPortId
   let previousPortId: PortId | undefined
@@ -239,6 +254,14 @@ const getOrderedRoutePortIds = (
         : nextSegment.fromPortId
 
     usedSegmentIndices.add(nextSegment.segmentIndex)
+    orderedRegionIds.push(
+      nextSegment.regionId ??
+        getSharedRegionIdForPorts(
+          topology,
+          nextSegment.fromPortId,
+          nextSegment.toPortId,
+        ),
+    )
     orderedPortIds.push(nextPortId)
     previousPortId = currentPortId
     currentPortId = nextPortId
@@ -248,7 +271,10 @@ const getOrderedRoutePortIds = (
     throw new Error(`Route ${routeId} contains disconnected solved segments`)
   }
 
-  return orderedPortIds
+  return {
+    orderedPortIds,
+    orderedRegionIds,
+  }
 }
 
 const applyRouteSegmentsToSolver = (
@@ -319,11 +345,16 @@ const createSolvedSolverFromSolution = (
   )
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-    const orderedPortIds = getOrderedRoutePortIds(problem, solution, routeId)
+    const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
+      topology,
+      problem,
+      solution,
+      routeId,
+    )
     for (let portIndex = 1; portIndex < orderedPortIds.length; portIndex++) {
       const fromPortId = orderedPortIds[portIndex - 1]!
       const toPortId = orderedPortIds[portIndex]!
-      const regionId = getSharedRegionIdForPorts(topology, fromPortId, toPortId)
+      const regionId = orderedRegionIds[portIndex - 1]!
       routeSegmentsByRegion[regionId]!.push([routeId, fromPortId, toPortId])
     }
   }
@@ -358,7 +389,12 @@ const createSectionRoutePlans = (
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
     const routePlan = routePlans[routeId]!
-    const orderedPortIds = getOrderedRoutePortIds(problem, solution, routeId)
+    const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
+      topology,
+      problem,
+      solution,
+      routeId,
+    )
     const maskedRuns: Array<{ startIndex: number; endIndex: number }> = []
     let currentRunStartIndex: number | undefined
 
@@ -386,10 +422,11 @@ const createSectionRoutePlans = (
 
     if (maskedRuns.length === 0) {
       for (let portIndex = 1; portIndex < orderedPortIds.length; portIndex++) {
-        routePlan.fixedSegments.push([
-          orderedPortIds[portIndex - 1]!,
-          orderedPortIds[portIndex]!,
-        ])
+        routePlan.fixedSegments.push({
+          regionId: orderedRegionIds[portIndex - 1]!,
+          fromPortId: orderedPortIds[portIndex - 1]!,
+          toPortId: orderedPortIds[portIndex]!,
+        })
       }
       continue
     }
@@ -412,10 +449,11 @@ const createSectionRoutePlans = (
     }
 
     for (let portIndex = 1; portIndex <= activeStartIndex; portIndex++) {
-      routePlan.fixedSegments.push([
-        orderedPortIds[portIndex - 1]!,
-        orderedPortIds[portIndex]!,
-      ])
+      routePlan.fixedSegments.push({
+        regionId: orderedRegionIds[portIndex - 1]!,
+        fromPortId: orderedPortIds[portIndex - 1]!,
+        toPortId: orderedPortIds[portIndex]!,
+      })
     }
 
     for (
@@ -423,19 +461,16 @@ const createSectionRoutePlans = (
       portIndex < orderedPortIds.length;
       portIndex++
     ) {
-      routePlan.fixedSegments.push([
-        orderedPortIds[portIndex - 1]!,
-        orderedPortIds[portIndex]!,
-      ])
+      routePlan.fixedSegments.push({
+        regionId: orderedRegionIds[portIndex - 1]!,
+        fromPortId: orderedPortIds[portIndex - 1]!,
+        toPortId: orderedPortIds[portIndex]!,
+      })
     }
 
     routePlan.activeStartPortId = orderedPortIds[activeStartIndex]
     routePlan.activeEndPortId = orderedPortIds[activeEndIndex]
-    routePlan.forcedStartRegionId = getSharedRegionIdForPorts(
-      topology,
-      orderedPortIds[activeStartIndex]!,
-      orderedPortIds[activeStartIndex + 1]!,
-    )
+    routePlan.forcedStartRegionId = orderedRegionIds[activeStartIndex]
     routeStartPort[routeId] = routePlan.activeStartPortId
     routeEndPort[routeId] = routePlan.activeEndPortId
     activeRouteIds.push(routeId)
@@ -489,13 +524,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   applyFixedSegments() {
     for (const routePlan of this.routePlans) {
-      for (const [fromPortId, toPortId] of routePlan.fixedSegments) {
-        const regionId = getSharedRegionIdForPorts(
-          this.topology,
-          fromPortId,
-          toPortId,
-        )
-
+      for (const { regionId, fromPortId, toPortId } of routePlan.fixedSegments) {
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,

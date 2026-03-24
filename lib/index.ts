@@ -5,6 +5,8 @@ export {
 } from "./section-solver"
 export {
   TinyHyperGraphSectionPipelineSolver,
+  type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSectionMaskContext,
   type TinyHyperGraphSectionPipelineInput,
+  type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
