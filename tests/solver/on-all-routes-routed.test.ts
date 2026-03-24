@@ -22,7 +22,9 @@ const createRegionCache = (
   existingSegmentCount: 0,
 })
 
-const createTestSolver = () => {
+const createTestSolver = (
+  options?: ConstructorParameters<typeof TinyHyperGraphSolver>[2],
+) => {
   const portCount = 4
   const regionCount = 2
   const routeCount = 3
@@ -66,7 +68,7 @@ const createTestSolver = () => {
     regionNetId: new Int32Array(regionCount).fill(-1),
   }
 
-  return new TinyHyperGraphSolver(topology, problem)
+  return new TinyHyperGraphSolver(topology, problem, options)
 }
 
 test("completed routing rerips when a region exceeds the current threshold", () => {
@@ -135,4 +137,23 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(solver.failed).toBe(false)
   expect(solver.state.ripCount).toBe(0)
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
+})
+
+test("constructor options override snake-case hyperparameters before setup", () => {
+  const solver = createTestSolver({
+    DISTANCE_TO_COST: 0.25,
+    RIP_THRESHOLD_START: 0.12,
+    RIP_THRESHOLD_END: 0.34,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 7,
+    RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
+    MAX_ITERATIONS: 1234,
+  })
+
+  expect(solver.DISTANCE_TO_COST).toBe(0.25)
+  expect(solver.RIP_THRESHOLD_START).toBe(0.12)
+  expect(solver.RIP_THRESHOLD_END).toBe(0.34)
+  expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)
+  expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
+  expect(solver.MAX_ITERATIONS).toBe(1234)
+  expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })

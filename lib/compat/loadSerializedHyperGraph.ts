@@ -354,26 +354,30 @@ export const loadSerializedHyperGraph = (
     return netIndex
   }
 
+  const regionNetCandidates = Array.from(
+    { length: regionCount },
+    () => new Set<number>(),
+  )
+
   const assignRegionNet = (regionId: string, netIndex: number) => {
     const regionIndex = regionIdToIndex.get(regionId)
     if (regionIndex === undefined) {
       throw new Error(`Connection references missing region "${regionId}"`)
     }
 
-    const existingNetIndex = regionNetId[regionIndex]
-    if (existingNetIndex !== -1 && existingNetIndex !== netIndex) {
-      throw new Error(
-        `Region "${regionId}" is assigned to multiple nets (${existingNetIndex}, ${netIndex})`,
-      )
-    }
-
-    regionNetId[regionIndex] = netIndex
+    regionNetCandidates[regionIndex]!.add(netIndex)
   }
 
   connections.forEach((connection) => {
     const netIndex = getNetIndex(connection)
     assignRegionNet(connection.startRegionId, netIndex)
     assignRegionNet(connection.endRegionId, netIndex)
+  })
+
+  regionNetCandidates.forEach((candidateNetIndexes, regionIndex) => {
+    if (candidateNetIndexes.size === 1) {
+      regionNetId[regionIndex] = [...candidateNetIndexes][0]!
+    }
   })
 
   const routableConnections = connections
@@ -469,27 +473,58 @@ export const loadSerializedHyperGraph = (
     regionNetId,
   }
 
+  const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =
+    []
+  const solvedRoutePathRegionIds: NonNullable<
+    TinyHyperGraphSolution["solvedRoutePathRegionIds"]
+  > = []
+
+  for (const { solvedRoute: route } of routableConnections) {
+    if (!route) {
+      solvedRoutePathSegments.push([])
+      solvedRoutePathRegionIds.push([])
+      continue
+    }
+
+    const segments: Array<[number, number]> = []
+    const segmentRegionIds: Array<number | undefined> = []
+
+    for (let i = 1; i < route.path.length; i++) {
+      const fromCandidate = route.path[i - 1]
+      const toCandidate = route.path[i]
+      const fromPortId = fromCandidate?.portId
+      const toPortId = toCandidate?.portId
+      const fromPortIndex =
+        fromPortId !== undefined ? portIdToIndex.get(fromPortId) : undefined
+      const toPortIndex =
+        toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
+
+      if (fromPortIndex === undefined || toPortIndex === undefined) {
+        continue
+      }
+
+      const serializedRegionId =
+        typeof fromCandidate?.nextRegionId === "string"
+          ? fromCandidate.nextRegionId
+          : typeof toCandidate?.lastRegionId === "string"
+            ? toCandidate.lastRegionId
+            : undefined
+
+      segments.push([fromPortIndex, toPortIndex])
+      segmentRegionIds.push(
+        serializedRegionId !== undefined
+          ? regionIdToIndex.get(serializedRegionId)
+          : undefined,
+      )
+    }
+
+    solvedRoutePathSegments.push(segments)
+    solvedRoutePathRegionIds.push(segmentRegionIds)
+  }
+
   const solution: TinyHyperGraphSolution = {
-    solvedRoutePathSegments: routableConnections.map(
-      ({ connection, solvedRoute: route }) => {
-        if (!route) return []
-
-        const segments: Array<[number, number]> = []
-        for (let i = 1; i < route.path.length; i++) {
-          const fromPortId = route.path[i - 1]?.portId
-          const toPortId = route.path[i]?.portId
-          const fromPortIndex =
-            fromPortId !== undefined ? portIdToIndex.get(fromPortId) : undefined
-          const toPortIndex =
-            toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
-
-          if (fromPortIndex !== undefined && toPortIndex !== undefined) {
-            segments.push([fromPortIndex, toPortIndex])
-          }
-        }
-        return segments
-      },
-    ),
+    solvedRoutePathSegments,
+    solvedRoutePathRegionIds,
   }
 
   return { topology, problem, solution }
