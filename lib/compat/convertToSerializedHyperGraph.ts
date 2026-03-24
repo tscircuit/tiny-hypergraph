@@ -187,46 +187,77 @@ const getOrderedRoutePath = (
     segmentsByPort.set(routeSegment.toPortId, toPortSegments)
   })
 
-  const orderedPortIds = [startPortId]
-  const orderedRegionIds: RegionId[] = []
   const usedSegmentIndices = new Set<number>()
-  let currentPortId = startPortId
-  let previousPortId: PortId | undefined
+  const stackPortIds = [startPortId]
+  const stackIncomingSegmentIndices: Array<number | undefined> = [undefined]
+  const reverseTrailPortIds: PortId[] = []
+  const reverseTrailIncomingSegmentIndices: Array<number | undefined> = []
 
-  while (currentPortId !== endPortId) {
-    const nextSegments = (segmentsByPort.get(currentPortId) ?? []).filter(
-      (routeSegment) => {
-        if (usedSegmentIndices.has(routeSegment.segmentIndex)) return false
-
-        const nextPortId =
-          routeSegment.fromPortId === currentPortId
-            ? routeSegment.toPortId
-            : routeSegment.fromPortId
-
-        return nextPortId !== previousPortId
-      },
+  while (stackPortIds.length > 0) {
+    const currentPortId = stackPortIds[stackPortIds.length - 1]!
+    const nextSegment = (segmentsByPort.get(currentPortId) ?? []).find(
+      (routeSegment) => !usedSegmentIndices.has(routeSegment.segmentIndex),
     )
 
-    if (nextSegments.length !== 1) {
+    if (nextSegment) {
+      usedSegmentIndices.add(nextSegment.segmentIndex)
+      stackPortIds.push(
+        nextSegment.fromPortId === currentPortId
+          ? nextSegment.toPortId
+          : nextSegment.fromPortId,
+      )
+      stackIncomingSegmentIndices.push(nextSegment.segmentIndex)
+      continue
+    }
+
+    reverseTrailPortIds.push(stackPortIds.pop()!)
+    reverseTrailIncomingSegmentIndices.push(stackIncomingSegmentIndices.pop())
+  }
+
+  if (usedSegmentIndices.size !== routeSegments.length) {
+    throw new Error(`Route ${routeId} contains disconnected solved segments`)
+  }
+
+  const orderedPortIds = reverseTrailPortIds.reverse()
+  const orderedRegionIds: RegionId[] = []
+  const orderedSegmentIndices = reverseTrailIncomingSegmentIndices
+    .reverse()
+    .slice(1)
+
+  if (
+    orderedPortIds[0] !== startPortId ||
+    orderedPortIds[orderedPortIds.length - 1] !== endPortId
+  ) {
+    throw new Error(
+      `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
+    )
+  }
+
+  for (let segmentOffset = 0; segmentOffset < orderedSegmentIndices.length; segmentOffset++) {
+    const segmentIndex = orderedSegmentIndices[segmentOffset]
+    if (segmentIndex === undefined) {
+      throw new Error(`Route ${routeId} contains an invalid ordered segment`)
+    }
+    const nextSegment = routeSegments[segmentIndex]!
+    const currentPortId = orderedPortIds[segmentOffset]!
+    const nextPortId = orderedPortIds[segmentOffset + 1]!
+    if (
+      !(
+        (nextSegment.fromPortId === currentPortId &&
+          nextSegment.toPortId === nextPortId) ||
+        (nextSegment.toPortId === currentPortId &&
+          nextSegment.fromPortId === nextPortId)
+      )
+    ) {
       throw new Error(
         `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
       )
     }
 
-    const nextSegment = nextSegments[0]!
-    const nextPortId =
-      nextSegment.fromPortId === currentPortId
-        ? nextSegment.toPortId
-        : nextSegment.fromPortId
-
-    usedSegmentIndices.add(nextSegment.segmentIndex)
     orderedRegionIds.push(nextSegment.regionId)
-    orderedPortIds.push(nextPortId)
-    previousPortId = currentPortId
-    currentPortId = nextPortId
   }
 
-  if (usedSegmentIndices.size !== routeSegments.length) {
+  if (orderedRegionIds.length !== routeSegments.length) {
     throw new Error(`Route ${routeId} contains disconnected solved segments`)
   }
 
