@@ -222,7 +222,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
-    console.log("options", options)
     applyTinyHyperGraphSolverOptions(this, options)
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
@@ -642,12 +641,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
     ) {
-      console.log(
-        "marking solved after",
-        state.ripCount,
-        "rips",
-        `(${this.RIP_THRESHOLD_RAMP_ATTEMPTS})`,
-      )
       this.solved = true
       return
     }

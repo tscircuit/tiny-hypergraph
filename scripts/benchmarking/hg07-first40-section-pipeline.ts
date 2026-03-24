@@ -27,8 +27,19 @@ type PipelineBenchmarkRow = {
   delta: number
   activeRouteCount: number
   optimized: boolean
+  selectedSectionCandidateLabel?: string
+  selectedSectionCandidateFamily?: string
+  sectionSearchCandidateCount: number
   solveGraphMs: number
-  optimizeSectionMs: number
+  sectionSearchMs: number
+  sectionSearchBaselineEvaluationMs: number
+  sectionSearchCandidateEligibilityMs: number
+  sectionSearchCandidateInitMs: number
+  sectionSearchCandidateSolveMs: number
+  sectionSearchCandidateReplayScoreMs: number
+  optimizeSectionStageMs: number
+  baselineReplayMs: number
+  finalReplayMs: number
   pipelineMs: number
   failed?: boolean
   error?: string
@@ -42,10 +53,21 @@ type PipelineBenchmarkSummary = {
   failedSampleCount: number
   totalDelta: number
   avgMaxRegionDelta: number
-  elapsedMs: number
-  totalSolveGraphMs: number
-  totalOptimizeSectionMs: number
-  totalPipelineMs: number
+  elapsedSeconds: string
+  totalSolveGraphSeconds: string
+  totalSectionSearchSeconds: string
+  totalOptimizeSectionStageSeconds: string
+  totalBaselineReplaySeconds: string
+  totalFinalReplaySeconds: string
+  totalPipelineSeconds: string
+  averagePipelineSeconds: string
+  averageSectionSearchSeconds: string
+  totalCandidateCount: number
+  averageCandidateSeconds: string
+  totalCandidateSolveSeconds: string
+  totalCandidateReplayScoreSeconds: string
+  totalCandidateInitSeconds: string
+  totalCandidateEligibilitySeconds: string
 }
 
 const datasetModule = datasetHg07 as DatasetModule
@@ -53,28 +75,11 @@ const IMPROVEMENT_EPSILON = 1e-9
 const SAMPLE_COUNT = 40
 
 const formatPct = (value: number) => `${value.toFixed(1)}%`
-const formatSeconds = (value: number) => `${(value / 1000).toFixed(1)}s`
+const formatSeconds = (value: number) => `${(value / 1000).toFixed(2)}s`
 const round = (value: number, digits = 3) => Number(value.toFixed(digits))
-
-const runWithoutSolverDebugLogs = <T>(fn: () => T): T => {
-  const originalLog = console.log
-  console.log = (...args: unknown[]) => {
-    if (
-      args[0] === "options" ||
-      args[0] === "marking solved after"
-    ) {
-      return
-    }
-
-    originalLog(...args)
-  }
-
-  try {
-    return fn()
-  } finally {
-    console.log = originalLog
-  }
-}
+const roundSeconds = (valueMs: number, digits = 2) =>
+  Number((valueMs / 1000).toFixed(digits))
+const formatSecondsCell = (valueMs: number) => `${(valueMs / 1000).toFixed(2)}s`
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -86,7 +91,7 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
 ) =>
-  runWithoutSolverDebugLogs(() => {
+  (() => {
     const { topology, problem, solution } =
       loadSerializedHyperGraph(serializedHyperGraph)
     const replaySolver = new TinyHyperGraphSectionSolver(
@@ -96,26 +101,38 @@ const getSerializedOutputMaxRegionCost = (
     )
 
     return getMaxRegionCost(replaySolver.baselineSolver)
-  })
+  })()
 
-const formatRows = (rows: PipelineBenchmarkRow[]) =>
+const formatImprovementRows = (rows: PipelineBenchmarkRow[]) =>
   rows.map((row) => ({
     sample: row.sample,
     circuit: row.circuit,
-    baselineMaxRegionCost: Number.isFinite(row.baselineMaxRegionCost)
-      ? round(row.baselineMaxRegionCost)
-      : null,
-    finalMaxRegionCost: Number.isFinite(row.finalMaxRegionCost)
-      ? round(row.finalMaxRegionCost)
-      : null,
-    delta: Number.isFinite(row.delta) ? round(row.delta, 6) : null,
+    baselineMaxRegionCost: round(row.baselineMaxRegionCost),
+    finalMaxRegionCost: round(row.finalMaxRegionCost),
+    delta: round(row.delta, 6),
     activeRouteCount: row.activeRouteCount,
-    optimized: row.optimized,
-    solveGraphMs: round(row.solveGraphMs, 2),
-    optimizeSectionMs: round(row.optimizeSectionMs, 2),
-    pipelineMs: round(row.pipelineMs, 2),
-    failed: row.failed ?? false,
-    error: row.error ?? null,
+    candidateCount: row.sectionSearchCandidateCount,
+    selectedCandidate: row.selectedSectionCandidateLabel ?? null,
+    family: row.selectedSectionCandidateFamily ?? null,
+    pipelineSeconds: formatSecondsCell(row.pipelineMs),
+  }))
+
+const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
+  rows.map((row) => ({
+    sample: row.sample,
+    circuit: row.circuit,
+    pipelineSeconds: formatSecondsCell(row.pipelineMs),
+    solveGraphSeconds: formatSecondsCell(row.solveGraphMs),
+    sectionSearchSeconds: formatSecondsCell(row.sectionSearchMs),
+    optimizeSectionStageSeconds: formatSecondsCell(row.optimizeSectionStageMs),
+    baselineReplaySeconds: formatSecondsCell(row.baselineReplayMs),
+    finalReplaySeconds: formatSecondsCell(row.finalReplayMs),
+    candidateCount: row.sectionSearchCandidateCount,
+    avgCandidateSeconds:
+      row.sectionSearchCandidateCount > 0
+        ? formatSecondsCell(row.sectionSearchMs / row.sectionSearchCandidateCount)
+        : "0.00s",
+    candidateSolveSeconds: formatSecondsCell(row.sectionSearchCandidateSolveMs),
   }))
 
 console.log(
@@ -130,8 +147,16 @@ let regressedSampleCount = 0
 let failedSampleCount = 0
 let totalDelta = 0
 let totalSolveGraphMs = 0
-let totalOptimizeSectionMs = 0
+let totalSectionSearchMs = 0
+let totalOptimizeSectionStageMs = 0
+let totalBaselineReplayMs = 0
+let totalFinalReplayMs = 0
 let totalPipelineMs = 0
+let totalCandidateCount = 0
+let totalCandidateSolveMs = 0
+let totalCandidateReplayScoreMs = 0
+let totalCandidateInitMs = 0
+let totalCandidateEligibilityMs = 0
 const benchmarkStartTime = performance.now()
 
 for (const sampleMeta of sampleMetas) {
@@ -144,7 +169,7 @@ for (const sampleMeta of sampleMetas) {
     const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
       serializedHyperGraph,
     })
-    runWithoutSolverDebugLogs(() => pipelineSolver.solve())
+    pipelineSolver.solve()
 
     if (pipelineSolver.failed) {
       throw new Error(
@@ -172,20 +197,52 @@ for (const sampleMeta of sampleMetas) {
       )
     }
 
+    const baselineReplayStartTime = performance.now()
     const baselineMaxRegionCost =
       getSerializedOutputMaxRegionCost(solveGraphOutput)
+    const baselineReplayMs = performance.now() - baselineReplayStartTime
+
+    const finalReplayStartTime = performance.now()
     const finalMaxRegionCost =
       getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+    const finalReplayMs = performance.now() - finalReplayStartTime
     const delta = baselineMaxRegionCost - finalMaxRegionCost
     const optimized = delta > IMPROVEMENT_EPSILON
     const solveGraphMs = stageStats.solveGraph?.timeSpent ?? 0
-    const optimizeSectionMs = stageStats.optimizeSection?.timeSpent ?? 0
+    const optimizeSectionStageMs = stageStats.optimizeSection?.timeSpent ?? 0
+    const sectionSearchMs = Number(pipelineSolver.stats.sectionSearchMs ?? 0)
+    const sectionSearchCandidateCount = Number(
+      pipelineSolver.stats.sectionSearchCandidateCount ?? 0,
+    )
+    const sectionSearchBaselineEvaluationMs = Number(
+      pipelineSolver.stats.sectionSearchBaselineEvaluationMs ?? 0,
+    )
+    const sectionSearchCandidateEligibilityMs = Number(
+      pipelineSolver.stats.sectionSearchCandidateEligibilityMs ?? 0,
+    )
+    const sectionSearchCandidateInitMs = Number(
+      pipelineSolver.stats.sectionSearchCandidateInitMs ?? 0,
+    )
+    const sectionSearchCandidateSolveMs = Number(
+      pipelineSolver.stats.sectionSearchCandidateSolveMs ?? 0,
+    )
+    const sectionSearchCandidateReplayScoreMs = Number(
+      pipelineSolver.stats.sectionSearchCandidateReplayScoreMs ?? 0,
+    )
     const pipelineMs = performance.now() - sampleStartTime
 
     totalDelta += delta
     totalSolveGraphMs += solveGraphMs
-    totalOptimizeSectionMs += optimizeSectionMs
+    totalSectionSearchMs += sectionSearchMs
+    totalOptimizeSectionStageMs += optimizeSectionStageMs
+    totalBaselineReplayMs += baselineReplayMs
+    totalFinalReplayMs += finalReplayMs
     totalPipelineMs += pipelineMs
+    totalCandidateCount += sectionSearchCandidateCount
+    totalCandidateSolveMs += sectionSearchCandidateSolveMs
+    totalCandidateReplayScoreMs += sectionSearchCandidateReplayScoreMs
+    totalCandidateInitMs += sectionSearchCandidateInitMs
+    totalCandidateEligibilityMs += sectionSearchCandidateEligibilityMs
 
     if (optimized) {
       improvedSampleCount += 1
@@ -203,8 +260,20 @@ for (const sampleMeta of sampleMetas) {
       delta,
       activeRouteCount: sectionSolver.activeRouteIds.length,
       optimized,
+      selectedSectionCandidateLabel: pipelineSolver.selectedSectionCandidateLabel,
+      selectedSectionCandidateFamily:
+        pipelineSolver.selectedSectionCandidateFamily,
+      sectionSearchCandidateCount,
       solveGraphMs,
-      optimizeSectionMs,
+      sectionSearchMs,
+      sectionSearchBaselineEvaluationMs,
+      sectionSearchCandidateEligibilityMs,
+      sectionSearchCandidateInitMs,
+      sectionSearchCandidateSolveMs,
+      sectionSearchCandidateReplayScoreMs,
+      optimizeSectionStageMs,
+      baselineReplayMs,
+      finalReplayMs,
       pipelineMs,
     }
     rows.push(row)
@@ -230,8 +299,17 @@ for (const sampleMeta of sampleMetas) {
       delta: Number.NaN,
       activeRouteCount: 0,
       optimized: false,
+      sectionSearchCandidateCount: 0,
       solveGraphMs: 0,
-      optimizeSectionMs: 0,
+      sectionSearchMs: 0,
+      sectionSearchBaselineEvaluationMs: 0,
+      sectionSearchCandidateEligibilityMs: 0,
+      sectionSearchCandidateInitMs: 0,
+      sectionSearchCandidateSolveMs: 0,
+      sectionSearchCandidateReplayScoreMs: 0,
+      optimizeSectionStageMs: 0,
+      baselineReplayMs: 0,
+      finalReplayMs: 0,
       pipelineMs: performance.now() - sampleStartTime,
       failed: true,
       error: String(error),
@@ -253,49 +331,87 @@ const summary: PipelineBenchmarkSummary = {
   failedSampleCount,
   totalDelta: round(totalDelta, 8),
   avgMaxRegionDelta: round(totalDelta / solvedSampleCount, 8),
-  elapsedMs: round(performance.now() - benchmarkStartTime, 2),
-  totalSolveGraphMs: round(totalSolveGraphMs, 2),
-  totalOptimizeSectionMs: round(totalOptimizeSectionMs, 2),
-  totalPipelineMs: round(totalPipelineMs, 2),
+  elapsedSeconds: formatSeconds(performance.now() - benchmarkStartTime),
+  totalSolveGraphSeconds: formatSeconds(totalSolveGraphMs),
+  totalSectionSearchSeconds: formatSeconds(totalSectionSearchMs),
+  totalOptimizeSectionStageSeconds: formatSeconds(totalOptimizeSectionStageMs),
+  totalBaselineReplaySeconds: formatSeconds(totalBaselineReplayMs),
+  totalFinalReplaySeconds: formatSeconds(totalFinalReplayMs),
+  totalPipelineSeconds: formatSeconds(totalPipelineMs),
+  averagePipelineSeconds: formatSeconds(totalPipelineMs / solvedSampleCount),
+  averageSectionSearchSeconds: formatSeconds(
+    totalSectionSearchMs / solvedSampleCount,
+  ),
+  totalCandidateCount,
+  averageCandidateSeconds:
+    totalCandidateCount > 0
+      ? formatSeconds(totalSectionSearchMs / totalCandidateCount)
+      : "0.00s",
+  totalCandidateSolveSeconds: formatSeconds(totalCandidateSolveMs),
+  totalCandidateReplayScoreSeconds: formatSeconds(
+    totalCandidateReplayScoreMs,
+  ),
+  totalCandidateInitSeconds: formatSeconds(totalCandidateInitMs),
+  totalCandidateEligibilitySeconds: formatSeconds(
+    totalCandidateEligibilityMs,
+  ),
 }
 
 const topImprovedRows = rows
   .filter((row) => Number.isFinite(row.delta) && row.delta > IMPROVEMENT_EPSILON)
   .sort((left, right) => right.delta - left.delta)
   .slice(0, 10)
-  .map((row) => ({
-    sample: row.sample,
-    circuit: row.circuit,
-    delta: round(row.delta, 6),
-    baselineMaxRegionCost: round(row.baselineMaxRegionCost),
-    finalMaxRegionCost: round(row.finalMaxRegionCost),
-    activeRouteCount: row.activeRouteCount,
-    solveGraphMs: round(row.solveGraphMs, 2),
-    optimizeSectionMs: round(row.optimizeSectionMs, 2),
-  }))
+const slowestRows = rows
+  .filter((row) => !row.failed)
+  .sort((left, right) => right.pipelineMs - left.pipelineMs)
+  .slice(0, 10)
 
 const topRegressedRows = rows
   .filter((row) => Number.isFinite(row.delta) && row.delta < -IMPROVEMENT_EPSILON)
   .sort((left, right) => left.delta - right.delta)
   .slice(0, 10)
-  .map((row) => ({
-    sample: row.sample,
-    circuit: row.circuit,
-    delta: round(row.delta, 6),
-    baselineMaxRegionCost: round(row.baselineMaxRegionCost),
-    finalMaxRegionCost: round(row.finalMaxRegionCost),
-    activeRouteCount: row.activeRouteCount,
-    solveGraphMs: round(row.solveGraphMs, 2),
-    optimizeSectionMs: round(row.optimizeSectionMs, 2),
-  }))
+const performanceSummaryRows = [
+  { key: "totalPipelineSeconds", value: summary.totalPipelineSeconds },
+  { key: "solveGraphSeconds", value: summary.totalSolveGraphSeconds },
+  { key: "sectionSearchSeconds", value: summary.totalSectionSearchSeconds },
+  {
+    key: "optimizeSectionStageSeconds",
+    value: summary.totalOptimizeSectionStageSeconds,
+  },
+  {
+    key: "baselineReplaySeconds",
+    value: summary.totalBaselineReplaySeconds,
+  },
+  { key: "finalReplaySeconds", value: summary.totalFinalReplaySeconds },
+  { key: "averagePipelineSeconds", value: summary.averagePipelineSeconds },
+  {
+    key: "averageSectionSearchSeconds",
+    value: summary.averageSectionSearchSeconds,
+  },
+  { key: "totalCandidateCount", value: String(summary.totalCandidateCount) },
+  { key: "averageCandidateSeconds", value: summary.averageCandidateSeconds },
+  { key: "candidateInitSeconds", value: summary.totalCandidateInitSeconds },
+  { key: "candidateSolveSeconds", value: summary.totalCandidateSolveSeconds },
+  {
+    key: "candidateReplayScoreSeconds",
+    value: summary.totalCandidateReplayScoreSeconds,
+  },
+  {
+    key: "candidateEligibilitySeconds",
+    value: summary.totalCandidateEligibilitySeconds,
+  },
+]
 
 console.log("hg-07 first 40 section pipeline benchmark")
 console.log(
   `samples=${summary.samples} improved=${summary.improvedSampleCount} unchanged=${summary.unchangedSampleCount} regressed=${summary.regressedSampleCount} failed=${summary.failedSampleCount}`,
 )
-console.table(formatRows(rows))
 console.log("top improvements")
-console.table(topImprovedRows)
+console.table(formatImprovementRows(topImprovedRows))
+console.log("slowest samples")
+console.table(formatPerformanceRows(slowestRows))
+console.log("performance summary")
+console.table(performanceSummaryRows)
 console.log("top regressions")
-console.table(topRegressedRows)
+console.table(formatImprovementRows(topRegressedRows))
 console.log(JSON.stringify(summary, null, 2))

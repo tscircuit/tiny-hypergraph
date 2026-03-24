@@ -32,12 +32,18 @@ type AutomaticSectionSearchResult = {
   baselineMaxRegionCost: number
   finalMaxRegionCost: number
   candidateCount: number
+  totalMs: number
+  baselineEvaluationMs: number
+  candidateEligibilityMs: number
+  candidateInitMs: number
+  candidateSolveMs: number
+  candidateReplayScoreMs: number
   winningCandidateLabel?: string
   winningCandidateFamily?: TinyHyperGraphSectionCandidateFamily
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
-  RIP_THRESHOLD_RAMP_ATTEMPTS: 50,
+  RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
@@ -49,8 +55,7 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   MAX_ITERATIONS: 1e6,
   MAX_RIPS: Number.POSITIVE_INFINITY,
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: Number.POSITIVE_INFINITY,
-  EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
-    Number.POSITIVE_INFINITY,
+  EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
 }
 
 const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
@@ -212,6 +217,8 @@ const findBestAutomaticSectionMask = (
   searchConfig: TinyHyperGraphSectionPipelineSearchConfig | undefined,
   sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
 ): AutomaticSectionSearchResult => {
+  const searchStartTime = performance.now()
+  const baselineEvaluationStartTime = performance.now()
   const baselineSectionSolver = new TinyHyperGraphSectionSolver(
     topology,
     problem,
@@ -221,12 +228,18 @@ const findBestAutomaticSectionMask = (
   const baselineMaxRegionCost = getMaxRegionCost(
     baselineSectionSolver.baselineSolver,
   )
+  const baselineEvaluationMs =
+    performance.now() - baselineEvaluationStartTime
 
   let bestFinalMaxRegionCost = baselineMaxRegionCost
   let bestPortSectionMask = new Int8Array(topology.portCount)
   let winningCandidateLabel: string | undefined
   let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
   let candidateCount = 0
+  let candidateEligibilityMs = 0
+  let candidateInitMs = 0
+  let candidateSolveMs = 0
+  let candidateReplayScoreMs = 0
 
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
@@ -244,11 +257,13 @@ const findBestAutomaticSectionMask = (
     )
 
     try {
+      const eligibilityStartTime = performance.now()
       const activeRouteIds = getActiveSectionRouteIds(
         topology,
         candidateProblem,
         solution,
       )
+      candidateEligibilityMs += performance.now() - eligibilityStartTime
 
       if (activeRouteIds.length === 0) {
         continue
@@ -256,21 +271,28 @@ const findBestAutomaticSectionMask = (
 
       candidateCount += 1
 
+      const candidateInitStartTime = performance.now()
       const sectionSolver = new TinyHyperGraphSectionSolver(
         topology,
         candidateProblem,
         solution,
         sectionSolverOptions,
       )
+      candidateInitMs += performance.now() - candidateInitStartTime
+
+      const candidateSolveStartTime = performance.now()
       sectionSolver.solve()
+      candidateSolveMs += performance.now() - candidateSolveStartTime
 
       if (sectionSolver.failed || !sectionSolver.solved) {
         continue
       }
 
+      const candidateReplayScoreStartTime = performance.now()
       const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
         sectionSolver.getOutput(),
       )
+      candidateReplayScoreMs += performance.now() - candidateReplayScoreStartTime
 
       if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
         bestFinalMaxRegionCost = finalMaxRegionCost
@@ -288,6 +310,12 @@ const findBestAutomaticSectionMask = (
     baselineMaxRegionCost,
     finalMaxRegionCost: bestFinalMaxRegionCost,
     candidateCount,
+    totalMs: performance.now() - searchStartTime,
+    baselineEvaluationMs,
+    candidateEligibilityMs,
+    candidateInitMs,
+    candidateSolveMs,
+    candidateReplayScoreMs,
     winningCandidateLabel,
     winningCandidateFamily,
   }
@@ -413,6 +441,15 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
               searchResult.winningCandidateLabel ?? null,
             selectedSectionCandidateFamily:
               searchResult.winningCandidateFamily ?? null,
+            sectionSearchMs: searchResult.totalMs,
+            sectionSearchBaselineEvaluationMs:
+              searchResult.baselineEvaluationMs,
+            sectionSearchCandidateEligibilityMs:
+              searchResult.candidateEligibilityMs,
+            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+            sectionSearchCandidateReplayScoreMs:
+              searchResult.candidateReplayScoreMs,
           }
 
           return searchResult.portSectionMask
