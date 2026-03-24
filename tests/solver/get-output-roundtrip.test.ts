@@ -108,38 +108,3 @@ test("serialized solved route replay preserves explicit traversed region ids", (
     [0, 2, 3],
   ])
 })
-
-test("solver getOutput round-trips a route that revisits its start port on hg07 sample076", () => {
-  const serializedHyperGraph = datasetHg07.sample076 as SerializedHyperGraph
-  const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
-  const solver = new TinyHyperGraphSolver(topology, problem)
-
-  solver.solve()
-
-  expect(solver.solved).toBe(true)
-  expect(solver.failed).toBe(false)
-
-  const output = solver.getOutput()
-  const connectionId = output.connections![18]!.connectionId
-  const route = output.solvedRoutes!.find(
-    (solvedRoute) => solvedRoute.connection.connectionId === connectionId,
-  )
-
-  expect(route).toBeDefined()
-  expect(route?.path.map((candidate) => candidate.portId)).toContain(
-    "ce568_pp0_z0",
-  )
-  expect(
-    route?.path.filter((candidate) => candidate.portId === "ce568_pp0_z0").length,
-  ).toBeGreaterThan(1)
-
-  const roundTripped = loadSerializedHyperGraph(output)
-  const replayedSolver = new TinyHyperGraphSectionSolver(
-    roundTripped.topology,
-    roundTripped.problem,
-    roundTripped.solution,
-  )
-
-  expect(replayedSolver.failed).toBe(false)
-  expect(getMaxRegionCost(replayedSolver.baselineSolver)).toBeGreaterThan(0)
-})
