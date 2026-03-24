@@ -141,6 +141,26 @@ const summarizeRegionIntersectionCaches = (
   }
 }
 
+const summarizeRegionIntersectionCachesForRegionIds = (
+  regionIntersectionCaches: ArrayLike<RegionIntersectionCache>,
+  regionIds: RegionId[],
+): RegionCostSummary => {
+  let maxRegionCost = 0
+  let totalRegionCost = 0
+
+  for (const regionId of regionIds) {
+    const regionCost =
+      regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    maxRegionCost = Math.max(maxRegionCost, regionCost)
+    totalRegionCost += regionCost
+  }
+
+  return {
+    maxRegionCost,
+    totalRegionCost,
+  }
+}
+
 const compareRegionCostSummaries = (
   left: RegionCostSummary,
   right: RegionCostSummary,
@@ -497,6 +517,25 @@ export const getActiveSectionRouteIds = (
   solution: TinyHyperGraphSolution,
 ) => createSectionRoutePlans(topology, problem, solution).activeRouteIds
 
+const getSectionRegionIds = (
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+): RegionId[] => {
+  const sectionRegionIds = new Set<RegionId>()
+
+  for (let portId = 0; portId < problem.portSectionMask.length; portId++) {
+    if (problem.portSectionMask[portId] !== 1) {
+      continue
+    }
+
+    for (const regionId of topology.incidentPortRegion[portId] ?? []) {
+      sectionRegionIds.add(regionId)
+    }
+  }
+
+  return [...sectionRegionIds]
+}
+
 class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   bestSnapshot?: SolvedStateSnapshot
   bestSummary?: RegionCostSummary
@@ -710,6 +749,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 export class TinyHyperGraphSectionSolver extends BaseSolver {
   baselineSolver: TinyHyperGraphSolver
   baselineSummary: RegionCostSummary
+  sectionBaselineSummary: RegionCostSummary
+  sectionRegionIds: RegionId[]
   optimizedSolver?: TinyHyperGraphSolver
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
@@ -744,9 +785,26 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.baselineSummary = summarizeRegionIntersectionCaches(
       this.baselineSolver.state.regionIntersectionCaches,
     )
+    this.sectionRegionIds = getSectionRegionIds(topology, problem)
+    this.sectionBaselineSummary = summarizeRegionIntersectionCachesForRegionIds(
+      this.baselineSolver.state.regionIntersectionCaches,
+      this.sectionRegionIds,
+    )
+    this.applySectionRipPolicy()
+  }
+
+  applySectionRipPolicy() {
+    this.RIP_THRESHOLD_START = 0.05
+    this.RIP_THRESHOLD_END = Math.max(
+      this.RIP_THRESHOLD_START,
+      this.sectionBaselineSummary.maxRegionCost,
+    )
+    this.MAX_RIPS = Math.min(this.MAX_RIPS, 20)
   }
 
   override _setup() {
+    this.applySectionRipPolicy()
+
     const { sectionProblem, routePlans, activeRouteIds } =
       createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
 
@@ -774,6 +832,14 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       getTinyHyperGraphSectionSolverOptions(this),
     )
     this.activeSubSolver = this.sectionSolver
+    this.stats = {
+      ...this.stats,
+      sectionBaselineMaxRegionCost: this.sectionBaselineSummary.maxRegionCost,
+      sectionBaselineTotalRegionCost: this.sectionBaselineSummary.totalRegionCost,
+      effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
+      effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
+      effectiveMaxRips: this.MAX_RIPS,
+    }
   }
 
   override _step() {

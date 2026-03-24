@@ -122,7 +122,7 @@ test("section solver visualize highlights the section without idle gray port-reg
   expect(graphics.title).toContain("sectionPorts=")
 })
 
-test("section solver constructor options propagate to the inner section search solver", () => {
+test("section solver enforces section-specific rip thresholds and max rip cap", () => {
   const { topology, problem, solution } = loadSerializedHyperGraph(
     sectionSolverFixtureGraph,
   )
@@ -139,7 +139,7 @@ test("section solver constructor options propagate to the inner section search s
       RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
       RIP_CONGESTION_REGION_COST_FACTOR: 0.33,
       MAX_ITERATIONS: 4567,
-      MAX_RIPS: 8,
+      MAX_RIPS: 80,
       MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 3,
       EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: 2,
     },
@@ -149,14 +149,21 @@ test("section solver constructor options propagate to the inner section search s
 
   expect(sectionSolver.DISTANCE_TO_COST).toBe(0.2)
   expect(sectionSolver.sectionSolver?.DISTANCE_TO_COST).toBe(0.2)
-  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.11)
-  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(0.22)
+  expect(sectionSolver.RIP_THRESHOLD_START).toBe(0.05)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.05)
+  expect(sectionSolver.RIP_THRESHOLD_END).toBe(
+    sectionSolver.sectionBaselineSummary.maxRegionCost,
+  )
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(
+    sectionSolver.sectionBaselineSummary.maxRegionCost,
+  )
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(9)
   expect(sectionSolver.sectionSolver?.RIP_CONGESTION_REGION_COST_FACTOR).toBe(
     0.33,
   )
   expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
-  expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(8)
+  expect(sectionSolver.MAX_RIPS).toBe(20)
+  expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(20)
   expect(
     sectionSolver.sectionSolver?.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
   ).toBe(3)

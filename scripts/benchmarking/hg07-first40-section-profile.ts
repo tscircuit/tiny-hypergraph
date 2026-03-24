@@ -16,12 +16,12 @@ type BenchmarkVariant = {
 }
 
 const allFamilies: CandidateFamily[] = [
-  "self-both",
-  "self-any",
-  "onehop-both",
-  "onehop-any",
-  "twohop-both",
-  "twohop-any",
+  "self-all",
+  "self-touch",
+  "onehop-all",
+  "onehop-touch",
+  "twohop-all",
+  "twohop-touch",
 ]
 
 const variants: BenchmarkVariant[] = [
@@ -70,11 +70,11 @@ const variants: BenchmarkVariant[] = [
       maxPasses: 1,
       maxHotRegions: 8,
       candidateFamilies: [
-        "self-any",
-        "onehop-both",
-        "onehop-any",
-        "twohop-both",
-        "twohop-any",
+        "self-touch",
+        "onehop-all",
+        "onehop-touch",
+        "twohop-all",
+        "twohop-touch",
       ],
     },
   },
@@ -84,11 +84,11 @@ const variants: BenchmarkVariant[] = [
       maxPasses: 1,
       maxHotRegions: 6,
       candidateFamilies: [
-        "self-any",
-        "onehop-both",
-        "onehop-any",
-        "twohop-both",
-        "twohop-any",
+        "self-touch",
+        "onehop-all",
+        "onehop-touch",
+        "twohop-all",
+        "twohop-touch",
       ],
       sectionSolver: {
         maxRipsWithoutMaxRegionCostImprovement: 2,

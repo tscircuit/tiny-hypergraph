@@ -21,18 +21,20 @@ type DatasetModule = Record<string, unknown> & {
 }
 
 export type CandidateFamily =
-  | "self-both"
-  | "self-any"
-  | "onehop-both"
-  | "onehop-any"
-  | "twohop-both"
-  | "twohop-any"
+  | "self-all"
+  | "self-touch"
+  | "onehop-all"
+  | "onehop-touch"
+  | "twohop-all"
+  | "twohop-touch"
 
 type SectionMaskCandidate = {
   label: string
   family: CandidateFamily
   regionIds: number[]
-  mode: "any" | "both"
+  portSelectionRule:
+    | "touches-selected-region"
+    | "all-incident-regions-selected"
 }
 
 type SectionPassResult = {
@@ -144,12 +146,12 @@ type SectionSolverBenchmarkOptions = {
 const datasetModule = datasetHg07 as DatasetModule
 
 const allCandidateFamilies: CandidateFamily[] = [
-  "self-both",
-  "self-any",
-  "onehop-both",
-  "onehop-any",
-  "twohop-both",
-  "twohop-any",
+  "self-all",
+  "self-touch",
+  "onehop-all",
+  "onehop-touch",
+  "twohop-all",
+  "twohop-touch",
 ]
 
 export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig = {
@@ -172,11 +174,11 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig = 
 }
 
 const defaultCandidateFamilies: CandidateFamily[] = [
-  "self-any",
-  "onehop-both",
-  "onehop-any",
-  "twohop-both",
-  "twohop-any",
+  "self-touch",
+  "onehop-all",
+  "onehop-touch",
+  "twohop-all",
+  "twohop-touch",
 ]
 
 export const defaultSectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
@@ -213,14 +215,16 @@ const getAdjacentRegionIds = (
 const createPortSectionMaskForRegionIds = (
   topology: TinyHyperGraphTopology,
   regionIds: number[],
-  mode: "any" | "both",
+  portSelectionRule:
+    | "touches-selected-region"
+    | "all-incident-regions-selected",
 ) => {
   const selectedRegionIds = new Set(regionIds)
 
   return Int8Array.from({ length: topology.portCount }, (_, portId) => {
     const incidentRegionIds = topology.incidentPortRegion[portId] ?? []
 
-    if (mode === "any") {
+    if (portSelectionRule === "touches-selected-region") {
       return incidentRegionIds.some((regionId) => selectedRegionIds.has(regionId))
         ? 1
         : 0
@@ -268,41 +272,41 @@ const getSectionMaskCandidates = (
     const twoHopRegionIds = getAdjacentRegionIds(topology, oneHopRegionIds)
 
     const candidateByFamily: Record<CandidateFamily, SectionMaskCandidate> = {
-      "self-both": {
-        label: `hot-${hotRegionId}-self-both`,
-        family: "self-both",
+      "self-all": {
+        label: `hot-${hotRegionId}-self-all`,
+        family: "self-all",
         regionIds: [hotRegionId],
-        mode: "both",
+        portSelectionRule: "all-incident-regions-selected",
       },
-      "self-any": {
-        label: `hot-${hotRegionId}-self-any`,
-        family: "self-any",
+      "self-touch": {
+        label: `hot-${hotRegionId}-self-touch`,
+        family: "self-touch",
         regionIds: [hotRegionId],
-        mode: "any",
+        portSelectionRule: "touches-selected-region",
       },
-      "onehop-both": {
-        label: `hot-${hotRegionId}-onehop-both`,
-        family: "onehop-both",
+      "onehop-all": {
+        label: `hot-${hotRegionId}-onehop-all`,
+        family: "onehop-all",
         regionIds: oneHopRegionIds,
-        mode: "both",
+        portSelectionRule: "all-incident-regions-selected",
       },
-      "onehop-any": {
-        label: `hot-${hotRegionId}-onehop-any`,
-        family: "onehop-any",
+      "onehop-touch": {
+        label: `hot-${hotRegionId}-onehop-touch`,
+        family: "onehop-touch",
         regionIds: oneHopRegionIds,
-        mode: "any",
+        portSelectionRule: "touches-selected-region",
       },
-      "twohop-both": {
-        label: `hot-${hotRegionId}-twohop-both`,
-        family: "twohop-both",
+      "twohop-all": {
+        label: `hot-${hotRegionId}-twohop-all`,
+        family: "twohop-all",
         regionIds: twoHopRegionIds,
-        mode: "both",
+        portSelectionRule: "all-incident-regions-selected",
       },
-      "twohop-any": {
-        label: `hot-${hotRegionId}-twohop-any`,
-        family: "twohop-any",
+      "twohop-touch": {
+        label: `hot-${hotRegionId}-twohop-touch`,
+        family: "twohop-touch",
         regionIds: twoHopRegionIds,
-        mode: "any",
+        portSelectionRule: "touches-selected-region",
       },
     }
 
@@ -340,7 +344,7 @@ const createProfilingState = (): MutableProfilingState => ({
   totalCandidateSolveMs: 0,
   totalCandidateCount: 0,
   familyTimings: {
-    "self-both": {
+    "self-all": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -349,7 +353,7 @@ const createProfilingState = (): MutableProfilingState => ({
       totalActiveRouteCount: 0,
       totalRipsUsed: 0,
     },
-    "self-any": {
+    "self-touch": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -358,7 +362,7 @@ const createProfilingState = (): MutableProfilingState => ({
       totalActiveRouteCount: 0,
       totalRipsUsed: 0,
     },
-    "onehop-both": {
+    "onehop-all": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -367,7 +371,7 @@ const createProfilingState = (): MutableProfilingState => ({
       totalActiveRouteCount: 0,
       totalRipsUsed: 0,
     },
-    "onehop-any": {
+    "onehop-touch": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -376,7 +380,7 @@ const createProfilingState = (): MutableProfilingState => ({
       totalActiveRouteCount: 0,
       totalRipsUsed: 0,
     },
-    "twohop-both": {
+    "twohop-all": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -385,7 +389,7 @@ const createProfilingState = (): MutableProfilingState => ({
       totalActiveRouteCount: 0,
       totalRipsUsed: 0,
     },
-    "twohop-any": {
+    "twohop-touch": {
       attempts: 0,
       wins: 0,
       totalInitMs: 0,
@@ -460,7 +464,7 @@ const runBestSectionOptimizationPass = (
           createPortSectionMaskForRegionIds(
             replay.topology,
             candidate.regionIds,
-            candidate.mode,
+            candidate.portSelectionRule,
           ),
         ),
         replay.solution,
