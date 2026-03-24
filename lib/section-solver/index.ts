@@ -55,6 +55,7 @@ interface SectionRoutePlan {
 
 export interface TinyHyperGraphSectionSolverOptions
   extends TinyHyperGraphSolverOptions {
+  ENABLE_CACHE?: boolean
   MAX_RIPS?: number
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT?: number
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST?: number
@@ -75,6 +76,9 @@ const applyTinyHyperGraphSectionSolverOptions = (
   if (options.MAX_RIPS !== undefined) {
     solver.MAX_RIPS = options.MAX_RIPS
   }
+  if (options.ENABLE_CACHE !== undefined) {
+    solver.ENABLE_CACHE = options.ENABLE_CACHE
+  }
   if (options.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT !== undefined) {
     solver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT =
       options.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT
@@ -89,6 +93,7 @@ const getTinyHyperGraphSectionSolverOptions = (
   solver: TinyHyperGraphSectionSolver,
 ): TinyHyperGraphSectionSolverOptions => ({
   ...getTinyHyperGraphSolverOptions(solver),
+  ENABLE_CACHE: solver.ENABLE_CACHE,
   MAX_RIPS: solver.MAX_RIPS,
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
     solver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
@@ -559,6 +564,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   ripsSinceBestMaxRegionCostImprovement = 0
 
   MAX_RIPS = Number.POSITIVE_INFINITY
+  ENABLE_CACHE = true
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
 
@@ -772,6 +778,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   sectionCacheContext?: ReturnType<typeof createSectionSolverCacheContext>
   sectionCacheHydrated = false
 
+  ENABLE_CACHE = true
   DISTANCE_TO_COST = 0.05
 
   RIP_THRESHOLD_START = 0.05
@@ -855,30 +862,34 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     )
     this.activeSubSolver = this.sectionSolver
 
-    const cacheContext = createSectionSolverCacheContext({
-      topology: this.topology,
-      problem: sectionProblem,
-      sectionRegionIds: this.sectionRegionIds,
-      routePlans,
-      activeRouteIds,
-      baselineRegionCosts: this.baselineSolver.state.regionIntersectionCaches.map(
-        (regionCache) => regionCache.existingRegionCost,
-      ),
-      policy: {
-        DISTANCE_TO_COST: this.sectionSolver.DISTANCE_TO_COST,
-        RIP_THRESHOLD_START: this.sectionSolver.RIP_THRESHOLD_START,
-        RIP_THRESHOLD_END: this.sectionSolver.RIP_THRESHOLD_END,
-        RIP_THRESHOLD_RAMP_ATTEMPTS: this.sectionSolver.RIP_THRESHOLD_RAMP_ATTEMPTS,
-        RIP_CONGESTION_REGION_COST_FACTOR:
-          this.sectionSolver.RIP_CONGESTION_REGION_COST_FACTOR,
-        MAX_ITERATIONS: this.sectionSolver.MAX_ITERATIONS,
-        MAX_RIPS: this.sectionSolver.MAX_RIPS,
-        MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
-          this.sectionSolver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
-        EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
-          this.sectionSolver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
-      },
-    })
+    const cacheContext = this.ENABLE_CACHE
+      ? createSectionSolverCacheContext({
+          topology: this.topology,
+          problem: sectionProblem,
+          sectionRegionIds: this.sectionRegionIds,
+          routePlans,
+          activeRouteIds,
+          baselineRegionCosts:
+            this.baselineSolver.state.regionIntersectionCaches.map(
+              (regionCache) => regionCache.existingRegionCost,
+            ),
+          policy: {
+            DISTANCE_TO_COST: this.sectionSolver.DISTANCE_TO_COST,
+            RIP_THRESHOLD_START: this.sectionSolver.RIP_THRESHOLD_START,
+            RIP_THRESHOLD_END: this.sectionSolver.RIP_THRESHOLD_END,
+            RIP_THRESHOLD_RAMP_ATTEMPTS:
+              this.sectionSolver.RIP_THRESHOLD_RAMP_ATTEMPTS,
+            RIP_CONGESTION_REGION_COST_FACTOR:
+              this.sectionSolver.RIP_CONGESTION_REGION_COST_FACTOR,
+            MAX_ITERATIONS: this.sectionSolver.MAX_ITERATIONS,
+            MAX_RIPS: this.sectionSolver.MAX_RIPS,
+            MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
+              this.sectionSolver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
+            EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
+              this.sectionSolver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+          },
+        })
+      : undefined
     this.sectionCacheContext = cacheContext
 
     let cacheStatus = "miss"
@@ -958,6 +969,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         cacheStatus = "miss"
       }
       cacheHit = false
+    } else if (this.ENABLE_CACHE) {
+      cacheStatus = "disabled"
     } else {
       cacheStatus = "disabled"
     }
@@ -1017,7 +1030,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
     const finalSummary = optimized ? candidateSummary : this.baselineSummary
 
-    if (this.sectionCacheContext && !this.sectionCacheHydrated) {
+    if (this.ENABLE_CACHE && this.sectionCacheContext && !this.sectionCacheHydrated) {
       setSectionSolverCacheEntry(
         this.sectionCacheContext.key,
         createSectionSolverCacheEntry({

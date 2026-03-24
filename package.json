@@ -8,6 +8,7 @@
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:cache": "bun run scripts/benchmarking/hg07-section-cache-effectiveness.ts",
+    "benchmark:section:cache:compare": "bun run scripts/benchmarking/hg07-section-cache-compare.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts"
   },
   "devDependencies": {
