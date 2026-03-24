@@ -328,16 +328,19 @@ const findBestAutomaticSectionMask = (
         : undefined
 
       if (cachedScore) {
-        const finalMaxRegionCost = cachedScore.finalSummary.maxRegionCost
+        const finalMaxRegionCost = cachedScore.entry.finalSummary.maxRegionCost
 
-        if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
+        if (finalMaxRegionCost >= bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
+          continue
+        }
+
+        if (cachedScore.fromPreviousGeneration) {
           bestFinalMaxRegionCost = finalMaxRegionCost
           bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
           winningCandidateLabel = candidate.label
           winningCandidateFamily = candidate.family
+          continue
         }
-
-        continue
       }
 
       const candidateSolveStartTime = performance.now()

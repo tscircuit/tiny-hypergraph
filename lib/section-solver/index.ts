@@ -21,10 +21,13 @@ import type {
 } from "../types"
 import { visualizeTinyGraph } from "../visualizeTinyGraph"
 import {
+  createSectionSolverLossyScoreCacheKey,
   createSectionSolverScoreCacheKey,
   createSectionSolverCacheContext,
   createSectionSolverCacheEntry,
   getSectionSolverCacheEntry,
+  isSectionSolverLossyScoreKeyObservationEnabled,
+  recordSectionSolverLossyScoreKeyObservation,
   getTinyHyperGraphSectionSolverCacheStats,
   hydrateSectionSolverCacheEntrySolution,
   recordSectionSolverCacheTiming,
@@ -33,8 +36,15 @@ import {
   setSectionSolverScoreCacheEntry,
 } from "./cache"
 export {
+  advanceTinyHyperGraphSectionSolverCacheGeneration,
   clearTinyHyperGraphSectionSolverCache,
+  createSectionSolverLossyScoreCacheKey,
+  createSectionSolverLossyScoreDescriptor,
+  getSectionSolverLossyDescriptorDistance,
+  getSectionSolverLossyScoreKeyStats,
+  getSectionSolverScoreCacheKeyStats,
   getSectionSolverScoreCacheEntry,
+  setSectionSolverLossyScoreKeyObservationEnabled,
   getTinyHyperGraphSectionSolverCacheStats,
   toActualPoint as applySectionSolverCacheReverseTransform,
 } from "./cache"
@@ -861,10 +871,10 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
     this.activeRouteIds = activeRouteIds
 
-    if (this.ENABLE_CACHE) {
+    if (this.ENABLE_CACHE && activeRouteIds.length > 0) {
       if (!this.sectionScoreCacheKey) {
         const cacheContextBuildStartTime = performance.now()
-        this.sectionScoreCacheKey = createSectionSolverScoreCacheKey({
+        this.sectionScoreCacheKey = createSectionSolverLossyScoreCacheKey({
           topology: this.topology,
           problem: sectionProblem,
           sectionRegionIds: this.sectionRegionIds,
@@ -894,6 +904,44 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         recordSectionSolverCacheTiming({
           contextBuildMs: this.preparedCacheContextBuildMs,
         })
+
+        if (
+          this.sectionScoreCacheKey &&
+          isSectionSolverLossyScoreKeyObservationEnabled()
+        ) {
+          const exactScoreKey = createSectionSolverScoreCacheKey({
+            topology: this.topology,
+            problem: sectionProblem,
+            sectionRegionIds: this.sectionRegionIds,
+            routePlans,
+            activeRouteIds,
+            baselineRegionCosts:
+              this.baselineSolver.state.regionIntersectionCaches.map(
+                (regionCache) => regionCache.existingRegionCost,
+              ),
+            policy: {
+              DISTANCE_TO_COST: this.DISTANCE_TO_COST,
+              RIP_THRESHOLD_START: this.RIP_THRESHOLD_START,
+              RIP_THRESHOLD_END: this.RIP_THRESHOLD_END,
+              RIP_THRESHOLD_RAMP_ATTEMPTS: this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+              RIP_CONGESTION_REGION_COST_FACTOR:
+                this.RIP_CONGESTION_REGION_COST_FACTOR,
+              MAX_ITERATIONS: this.MAX_ITERATIONS,
+              MAX_RIPS: this.MAX_RIPS,
+              MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
+                this.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
+              EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
+                this.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+            },
+          })
+
+          if (exactScoreKey) {
+            recordSectionSolverLossyScoreKeyObservation(
+              this.sectionScoreCacheKey,
+              exactScoreKey,
+            )
+          }
+        }
       }
     } else {
       this.sectionScoreCacheKey = undefined
@@ -1205,9 +1253,12 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.optimizedSolver = selectedSolver
 
     if (this.ENABLE_CACHE && this.sectionScoreCacheKey && !this.sectionCacheHydrated) {
-      setSectionSolverScoreCacheEntry(this.sectionScoreCacheKey, {
-        optimized,
-        finalSummary,
+      setSectionSolverScoreCacheEntry({
+        lossyKey: this.sectionScoreCacheKey,
+        entry: {
+          optimized,
+          finalSummary,
+        },
       })
     }
 

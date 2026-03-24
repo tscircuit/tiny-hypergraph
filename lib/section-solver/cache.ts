@@ -68,18 +68,61 @@ export interface SectionSolverScoreCacheEntry {
   finalSummary: RegionCostSummary
 }
 
+export interface SectionSolverScoreCacheHit {
+  entry: SectionSolverScoreCacheEntry
+  trusted: boolean
+  fromPreviousGeneration: boolean
+}
+
+interface SectionSolverLossyScoreCacheBucket {
+  observedCount: number
+  exactKeyCount: number
+  trusted: boolean
+  consistent: boolean
+  generation: number
+  summaryToken?: string
+  entry?: SectionSolverScoreCacheEntry
+}
+
 export interface TinyHyperGraphSectionSolverCacheStats {
   entries: number
+  scoreEntries: number
   lookups: number
   hits: number
   misses: number
   rejectedHits: number
   stores: number
+  scoreLookups: number
+  scoreHits: number
+  scoreMisses: number
+  scoreStores: number
   contextBuildMs: number
   hydrateSolutionMs: number
   hydratedSolverBuildMs: number
   storeValidationMs: number
   storeEntryBuildMs: number
+}
+
+export interface SectionSolverScoreCacheKeyStats {
+  key: string
+  lookups: number
+  hits: number
+  misses: number
+  stores: number
+}
+
+export interface SectionSolverLossyDescriptor {
+  scaleBucket: ScaleBucket
+  policyToken: string
+  regionTokens: string[]
+  portTokens: string[]
+  routeTokens: string[]
+}
+
+export interface SectionSolverLossyScoreKeyStats {
+  key: string
+  lookups: number
+  distinctScoreKeys: number
 }
 
 interface OrientationCandidate {
@@ -91,19 +134,43 @@ interface ScoreKeyOrientationCandidate {
   key: string
 }
 
+interface SectionSolverLossyScoreFingerprint {
+  scaleBucket: ScaleBucket
+  policyToken: string
+  regionTokenHashes: HashPair[]
+  routeTokenHashes: HashPair[]
+}
+
 const SECTION_SOLVER_CACHE_VERSION = 1
 const UNIT_REGION_SIZE_MM = 4
 const SCALE_BUCKETS: ScaleBucket[] = [1, 2, 3, 4]
 const GEOMETRY_QUANTIZATION = 1000
 
 const sectionSolverCache = new Map<string, SectionSolverCacheEntry>()
-const sectionSolverScoreCache = new Map<string, SectionSolverScoreCacheEntry>()
+const sectionSolverLossyScoreCache = new Map<
+  string,
+  SectionSolverLossyScoreCacheBucket
+>()
+const sectionSolverScoreCacheKeyStatsByKey = new Map<
+  string,
+  Omit<SectionSolverScoreCacheKeyStats, "key">
+>()
+const sectionSolverLossyScoreKeyStatsByKey = new Map<
+  string,
+  { lookups: number; scoreKeys: Set<string> }
+>()
+let sectionSolverLossyScoreKeyObservationEnabled = false
+let sectionSolverScoreCacheGeneration = 0
 const sectionSolverCacheStats = {
   lookups: 0,
   hits: 0,
   misses: 0,
   rejectedHits: 0,
   stores: 0,
+  scoreLookups: 0,
+  scoreHits: 0,
+  scoreMisses: 0,
+  scoreStores: 0,
   contextBuildMs: 0,
   hydrateSolutionMs: 0,
   hydratedSolverBuildMs: 0,
@@ -113,6 +180,41 @@ const sectionSolverCacheStats = {
 
 const compareStrings = (left: string, right: string) =>
   left < right ? -1 : left > right ? 1 : 0
+
+const getOrCreateScoreCacheKeyStats = (key: string) => {
+  let stats = sectionSolverScoreCacheKeyStatsByKey.get(key)
+  if (!stats) {
+    stats = {
+      lookups: 0,
+      hits: 0,
+      misses: 0,
+      stores: 0,
+    }
+    sectionSolverScoreCacheKeyStatsByKey.set(key, stats)
+  }
+  return stats
+}
+
+const summarizeScoreEntry = (entry: SectionSolverScoreCacheEntry) =>
+  JSON.stringify({
+    optimized: entry.optimized ? 1 : 0,
+    finalSummary: {
+      maxRegionCost: Number(entry.finalSummary.maxRegionCost.toFixed(9)),
+      totalRegionCost: Number(entry.finalSummary.totalRegionCost.toFixed(9)),
+    },
+  })
+
+const getOrCreateLossyScoreKeyStats = (key: string) => {
+  let stats = sectionSolverLossyScoreKeyStatsByKey.get(key)
+  if (!stats) {
+    stats = {
+      lookups: 0,
+      scoreKeys: new Set<string>(),
+    }
+    sectionSolverLossyScoreKeyStatsByKey.set(key, stats)
+  }
+  return stats
+}
 
 const compareNumbers = (left: number, right: number) => left - right
 
@@ -172,6 +274,32 @@ const hashTriples = (triples: Array<[number, number, number]>): HashPair => {
 
 const formatHashPair = (hash: HashPair) =>
   `${hash[0].toString(16).padStart(8, "0")}${hash[1].toString(16).padStart(8, "0")}`
+
+const getSideFromAngle = (angle: number) =>
+  ((((Math.round(angle / 9000) % 4) + 4) % 4) as 0 | 1 | 2 | 3)
+
+const getSideOrderCoordinate = (
+  canonicalPoint: { x: number; y: number },
+  side: 0 | 1 | 2 | 3,
+) => {
+  if (side === 0 || side === 2) {
+    return quantize(canonicalPoint.y)
+  }
+
+  return quantize(canonicalPoint.x)
+}
+
+const getOrdinalBucket = (ordinal: number, sideCount: number) => {
+  if (sideCount <= 1) {
+    return 0
+  }
+
+  return Math.round((ordinal * 3) / Math.max(sideCount - 1, 1))
+}
+
+const bucketCount = (count: number) => (count <= 0 ? 0 : count === 1 ? 1 : 2)
+const getNormalizedSizeBucket = (normalizedSize: number) =>
+  Math.max(1, Math.min(4, Math.round(normalizedSize)))
 
 const quantize = (value: number) => Math.round(value * GEOMETRY_QUANTIZATION)
 
@@ -848,6 +976,481 @@ export const createSectionSolverScoreCacheKey = ({
   return bestCandidate?.key
 }
 
+const buildMultisetDistance = (left: string[], right: string[]) => {
+  if (left.length === 0 && right.length === 0) {
+    return 0
+  }
+
+  const leftCounts = new Map<string, number>()
+  const rightCounts = new Map<string, number>()
+
+  for (const token of left) {
+    leftCounts.set(token, (leftCounts.get(token) ?? 0) + 1)
+  }
+  for (const token of right) {
+    rightCounts.set(token, (rightCounts.get(token) ?? 0) + 1)
+  }
+
+  let overlap = 0
+  const allTokens = new Set([...leftCounts.keys(), ...rightCounts.keys()])
+  for (const token of allTokens) {
+    overlap += Math.min(leftCounts.get(token) ?? 0, rightCounts.get(token) ?? 0)
+  }
+
+  return 1 - overlap / Math.max(left.length, right.length, 1)
+}
+
+export const getSectionSolverLossyDescriptorDistance = (
+  left: SectionSolverLossyDescriptor,
+  right: SectionSolverLossyDescriptor,
+) => {
+  const scaleDistance = left.scaleBucket === right.scaleBucket ? 0 : 1
+  const policyDistance = left.policyToken === right.policyToken ? 0 : 1
+  const regionDistance = buildMultisetDistance(
+    left.regionTokens,
+    right.regionTokens,
+  )
+  const portDistance = buildMultisetDistance(left.portTokens, right.portTokens)
+  const routeDistance = buildMultisetDistance(left.routeTokens, right.routeTokens)
+
+  return (
+    scaleDistance * 0.1 +
+    policyDistance * 0.1 +
+    regionDistance * 0.25 +
+    portDistance * 0.25 +
+    routeDistance * 0.3
+  )
+}
+
+const createSectionSolverLossyScoreFingerprint = ({
+  topology,
+  problem,
+  sectionRegionIds,
+  routePlans,
+  activeRouteIds,
+  baselineRegionCosts,
+  policy,
+}: {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  sectionRegionIds: RegionId[]
+  routePlans: SectionCacheRoutePlan[]
+  activeRouteIds: RouteId[]
+  baselineRegionCosts: ArrayLike<number>
+  policy: SectionCachePolicySignature
+}): SectionSolverLossyScoreFingerprint | undefined => {
+  const uniqueSectionRegionIds = uniqueNumberList(sectionRegionIds)
+  if (uniqueSectionRegionIds.length === 0) {
+    return undefined
+  }
+
+  const localIdsFromRoutes = getLocalRoutePortAndRegionIds(
+    routePlans,
+    activeRouteIds,
+  )
+  const localPortIds = uniqueNumberList([
+    ...getSectionLocalPortIds(topology, uniqueSectionRegionIds),
+    ...localIdsFromRoutes.portIds,
+  ])
+  const localRegionIds = uniqueNumberList([
+    ...uniqueSectionRegionIds,
+    ...localIdsFromRoutes.regionIds,
+  ])
+  const localRegionIdSet = new Set(localRegionIds)
+  const activeRouteIdSet = new Set(activeRouteIds)
+  const routePlanByRouteId = new Map(
+    routePlans.map((routePlan) => [routePlan.routeId, routePlan]),
+  )
+  const localRouteIds = uniqueNumberList(
+    routePlans
+      .filter(
+        (routePlan) =>
+          activeRouteIdSet.has(routePlan.routeId) ||
+          routePlan.fixedSegments.some((segment) =>
+            localRegionIdSet.has(segment.regionId),
+          ),
+      )
+      .map((routePlan) => routePlan.routeId),
+  )
+
+  const anchorRegionId = selectAnchorRegionId(
+    topology,
+    uniqueSectionRegionIds,
+    baselineRegionCosts,
+  )
+  const scaleDivisor =
+    UNIT_REGION_SIZE_MM *
+    getRegionScaleFactor(
+      topology.regionWidth[anchorRegionId],
+      topology.regionHeight[anchorRegionId],
+    )
+  const scaleBucket = getClosestScaleBucket(
+    topology.regionWidth[anchorRegionId],
+    topology.regionHeight[anchorRegionId],
+  )
+  const policySignature = createPolicySignature(policy)
+  const policyToken = formatHashPair(
+    hashNumbers([
+      quantize(policySignature.DISTANCE_TO_COST),
+      policySignature.RIP_THRESHOLD_RAMP_ATTEMPTS,
+      quantize(policySignature.RIP_CONGESTION_REGION_COST_FACTOR),
+      policySignature.MAX_ITERATIONS,
+      typeof policySignature.MAX_RIPS === "number"
+        ? policySignature.MAX_RIPS
+        : HASH_DELIMITER,
+      typeof policySignature.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT ===
+      "number"
+        ? policySignature.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT
+        : HASH_DELIMITER,
+      typeof policySignature.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST ===
+      "number"
+        ? policySignature.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST
+        : HASH_DELIMITER,
+    ]),
+  )
+  const activeEndpointPortIds = new Set<PortId>()
+  for (const routePlan of routePlans) {
+    if (routePlan.activeStartPortId !== undefined) {
+      activeEndpointPortIds.add(routePlan.activeStartPortId)
+    }
+    if (routePlan.activeEndPortId !== undefined) {
+      activeEndpointPortIds.add(routePlan.activeEndPortId)
+    }
+  }
+
+  let bestFingerprint: SectionSolverLossyScoreFingerprint | undefined
+  let bestKey: string | undefined
+
+  for (const rotationQuarterTurns of [0, 1, 2, 3] as QuarterTurn[]) {
+    const regionSideEntriesByRegionId = new Map<
+      RegionId,
+      Array<{
+        portId: PortId
+        side: 0 | 1 | 2 | 3
+        orderCoordinate: number
+        masked: boolean
+        hasExternalIncident: boolean
+        activeEndpoint: boolean
+      }>
+    >()
+
+    for (const regionId of localRegionIds) {
+      regionSideEntriesByRegionId.set(regionId, [])
+    }
+
+    for (const portId of localPortIds) {
+      const rotatedPoint = rotatePoint(
+        topology.portX[portId],
+        topology.portY[portId],
+        rotationQuarterTurns,
+      )
+      const incidentRegionIds = topology.incidentPortRegion[portId] ?? []
+      const localIncidentCount = incidentRegionIds.filter((regionId) =>
+        localRegionIdSet.has(regionId),
+      ).length
+
+      incidentRegionIds.forEach((regionId, regionIndex) => {
+        if (!localRegionIdSet.has(regionId)) {
+          return
+        }
+
+        const rawAngle =
+          regionIndex === 0
+            ? topology.portAngleForRegion1[portId]
+            : topology.portAngleForRegion2?.[portId] ??
+              topology.portAngleForRegion1[portId]
+        const side = getSideFromAngle(rotateAngle(rawAngle, rotationQuarterTurns))
+        regionSideEntriesByRegionId.get(regionId)?.push({
+          portId,
+          side,
+          orderCoordinate: getSideOrderCoordinate(rotatedPoint, side),
+          masked: problem.portSectionMask[portId] === 1,
+          hasExternalIncident: incidentRegionIds.length > localIncidentCount,
+          activeEndpoint: activeEndpointPortIds.has(portId),
+        })
+      })
+    }
+
+    const incidentDescriptorHashesByPortId = new Map<PortId, HashPair[]>()
+    const localIncidentCountByPortId = new Map<PortId, number>()
+    const externalIncidentBucketByPortId = new Map<PortId, number>()
+    const primarySideByRegionAndPortId = new Map<string, number>()
+    const regionTokenHashes: HashPair[] = []
+
+    for (const regionId of localRegionIds) {
+      const width =
+        rotationQuarterTurns % 2 === 0
+          ? topology.regionWidth[regionId]
+          : topology.regionHeight[regionId]
+      const height =
+        rotationQuarterTurns % 2 === 0
+          ? topology.regionHeight[regionId]
+          : topology.regionWidth[regionId]
+      const sideEntries = regionSideEntriesByRegionId.get(regionId) ?? []
+      const groupedSideEntries: Array<typeof sideEntries> = [[], [], [], []]
+      for (const sideEntry of sideEntries) {
+        groupedSideEntries[sideEntry.side]?.push(sideEntry)
+      }
+
+      const maskedSideBuckets = [0, 0, 0, 0]
+      const boundarySideBuckets = [0, 0, 0, 0]
+      const activeEndpointSideBuckets = [0, 0, 0, 0]
+
+      groupedSideEntries.forEach((entries, side) => {
+        entries.sort(
+          (left, right) =>
+            left.orderCoordinate - right.orderCoordinate ||
+            left.portId - right.portId,
+        )
+        const sideCountBucket = bucketCount(entries.length)
+
+        entries.forEach((entry, ordinal) => {
+          const incidentDescriptorHash = hashNumbers([
+            side,
+            getOrdinalBucket(ordinal, entries.length),
+            sideCountBucket,
+          ])
+          const incidentDescriptorHashes =
+            incidentDescriptorHashesByPortId.get(entry.portId) ?? []
+          incidentDescriptorHashes.push(incidentDescriptorHash)
+          incidentDescriptorHashesByPortId.set(
+            entry.portId,
+            incidentDescriptorHashes,
+          )
+          localIncidentCountByPortId.set(
+            entry.portId,
+            (localIncidentCountByPortId.get(entry.portId) ?? 0) + 1,
+          )
+          externalIncidentBucketByPortId.set(
+            entry.portId,
+            bucketCount(
+              (topology.incidentPortRegion[entry.portId]?.length ?? 0) -
+                (localIncidentCountByPortId.get(entry.portId) ?? 0),
+            ),
+          )
+          primarySideByRegionAndPortId.set(`${regionId}:${entry.portId}`, side)
+
+          if (entry.masked) {
+            maskedSideBuckets[side] += 1
+          }
+          if (entry.hasExternalIncident) {
+            boundarySideBuckets[side] += 1
+          }
+          if (entry.activeEndpoint) {
+            activeEndpointSideBuckets[side] += 1
+          }
+        })
+      })
+
+      const fixedSidePairBuckets = new Array(25).fill(0)
+      for (const routePlan of routePlans) {
+        for (const fixedSegment of routePlan.fixedSegments) {
+          if (fixedSegment.regionId !== regionId) {
+            continue
+          }
+
+          const fromSide =
+            primarySideByRegionAndPortId.get(
+              `${regionId}:${fixedSegment.fromPortId}`,
+            ) ?? -1
+          const toSide =
+            primarySideByRegionAndPortId.get(
+              `${regionId}:${fixedSegment.toPortId}`,
+            ) ?? -1
+          fixedSidePairBuckets[
+            (Math.min(fromSide, toSide) + 1) * 5 +
+              (Math.max(fromSide, toSide) + 1)
+          ] += 1
+        }
+      }
+
+      regionTokenHashes.push(
+        hashNumbers([
+          getNormalizedSizeBucket(width / scaleDivisor),
+          getNormalizedSizeBucket(height / scaleDivisor),
+          problem.regionNetId[regionId] === -1 ? 0 : 1,
+          ...maskedSideBuckets.map(bucketCount),
+          ...boundarySideBuckets.map(bucketCount),
+          ...activeEndpointSideBuckets.map(bucketCount),
+          ...fixedSidePairBuckets.map(bucketCount),
+        ]),
+      )
+    }
+
+    const portEndpointHashById = new Map<PortId, HashPair>()
+    for (const portId of activeEndpointPortIds) {
+      const incidentDescriptorHashes = (
+        incidentDescriptorHashesByPortId.get(portId) ?? []
+      ).sort(compareHashPairs)
+      portEndpointHashById.set(
+        portId,
+        hashNumbers([
+          topology.portZ[portId] ?? 0,
+          localIncidentCountByPortId.get(portId) ?? 0,
+          externalIncidentBucketByPortId.get(portId) ?? 0,
+          ...hashHashPairs(incidentDescriptorHashes),
+        ]),
+      )
+    }
+
+    const routeTokenHashes = localRouteIds
+      .map((routeId) => {
+        if (!activeRouteIdSet.has(routeId)) {
+          return undefined
+        }
+
+        const routePlan = routePlanByRouteId.get(routeId)
+        const endpointHashes = [
+          routePlan?.activeStartPortId !== undefined
+            ? portEndpointHashById.get(routePlan.activeStartPortId) ?? null
+            : null,
+          routePlan?.activeEndPortId !== undefined
+            ? portEndpointHashById.get(routePlan.activeEndPortId) ?? null
+            : null,
+        ].sort((left, right) => {
+          if (left === null && right === null) {
+            return 0
+          }
+          if (left === null) {
+            return -1
+          }
+          if (right === null) {
+            return 1
+          }
+          return compareHashPairs(left, right)
+        })
+
+        const fixedSegmentHashes =
+          routePlan?.fixedSegments
+            .filter((segment) => localRegionIdSet.has(segment.regionId))
+            .map((segment) => {
+              const fromSide =
+                primarySideByRegionAndPortId.get(
+                  `${segment.regionId}:${segment.fromPortId}`,
+                ) ?? -1
+              const toSide =
+                primarySideByRegionAndPortId.get(
+                  `${segment.regionId}:${segment.toPortId}`,
+                ) ?? -1
+              return hashNumbers([
+                Math.min(fromSide, toSide),
+                Math.max(fromSide, toSide),
+              ])
+            })
+            .sort(compareHashPairs) ?? []
+
+        return hashNumbers([
+          ...hashHashPairWithValue(endpointHashes[0], 1),
+          ...hashHashPairWithValue(endpointHashes[1], 2),
+          ...hashHashPairs(fixedSegmentHashes),
+          routePlan?.forcedStartRegionId !== undefined &&
+          localRegionIdSet.has(routePlan.forcedStartRegionId)
+            ? 1
+            : 0,
+        ])
+      })
+      .filter((hash): hash is HashPair => hash !== undefined)
+      .sort(compareHashPairs)
+
+    const fingerprint: SectionSolverLossyScoreFingerprint = {
+      scaleBucket,
+      policyToken,
+      regionTokenHashes: regionTokenHashes.sort(compareHashPairs),
+      routeTokenHashes,
+    }
+
+    const fingerprintKey = [
+      SECTION_SOLVER_CACHE_VERSION,
+      fingerprint.scaleBucket,
+      fingerprint.policyToken,
+      fingerprint.regionTokenHashes.length,
+      formatHashPair(hashHashPairs(fingerprint.regionTokenHashes)),
+      fingerprint.routeTokenHashes.length,
+      formatHashPair(hashHashPairs(fingerprint.routeTokenHashes)),
+    ].join("|")
+    if (!bestKey || compareStrings(fingerprintKey, bestKey) < 0) {
+      bestKey = fingerprintKey
+      bestFingerprint = fingerprint
+    }
+  }
+
+  return bestFingerprint
+}
+
+export const createSectionSolverLossyScoreDescriptor = (
+  params: Parameters<typeof createSectionSolverLossyScoreFingerprint>[0],
+): SectionSolverLossyDescriptor | undefined => {
+  const fingerprint = createSectionSolverLossyScoreFingerprint(params)
+  if (!fingerprint) {
+    return undefined
+  }
+
+  return {
+    scaleBucket: fingerprint.scaleBucket,
+    policyToken: fingerprint.policyToken,
+    regionTokens: fingerprint.regionTokenHashes.map(formatHashPair),
+    portTokens: [],
+    routeTokens: fingerprint.routeTokenHashes.map(formatHashPair),
+  }
+}
+
+export const createSectionSolverLossyScoreCacheKey = (
+  params: Parameters<typeof createSectionSolverLossyScoreFingerprint>[0],
+) => {
+  const fingerprint = createSectionSolverLossyScoreFingerprint(params)
+  if (!fingerprint) {
+    return undefined
+  }
+
+  return [
+    SECTION_SOLVER_CACHE_VERSION,
+    fingerprint.scaleBucket,
+    fingerprint.policyToken,
+    fingerprint.regionTokenHashes.length,
+    formatHashPair(hashHashPairs(fingerprint.regionTokenHashes)),
+    0,
+    formatHashPair(hashHashPairs([])),
+    fingerprint.routeTokenHashes.length,
+    formatHashPair(hashHashPairs(fingerprint.routeTokenHashes)),
+  ].join("|")
+}
+
+export const setSectionSolverLossyScoreKeyObservationEnabled = (
+  enabled: boolean,
+) => {
+  sectionSolverLossyScoreKeyObservationEnabled = enabled
+}
+
+export const isSectionSolverLossyScoreKeyObservationEnabled = () =>
+  sectionSolverLossyScoreKeyObservationEnabled
+
+export const recordSectionSolverLossyScoreKeyObservation = (
+  lossyKey: string,
+  scoreKey: string,
+) => {
+  if (!sectionSolverLossyScoreKeyObservationEnabled) {
+    return
+  }
+
+  const stats = getOrCreateLossyScoreKeyStats(lossyKey)
+  stats.lookups += 1
+  stats.scoreKeys.add(scoreKey)
+}
+
+export const getSectionSolverLossyScoreKeyStats = () =>
+  [...sectionSolverLossyScoreKeyStatsByKey.entries()]
+    .map(([key, stats]) => ({
+      key,
+      lookups: stats.lookups,
+      distinctScoreKeys: stats.scoreKeys.size,
+    }))
+    .sort(
+      (left, right) =>
+        right.lookups - left.lookups ||
+        right.distinctScoreKeys - left.distinctScoreKeys ||
+        compareStrings(left.key, right.key),
+    )
+
 export const createSectionSolverCacheContext = ({
   topology,
   problem,
@@ -1410,14 +2013,85 @@ export const setSectionSolverCacheEntry = (
   sectionSolverCacheStats.stores += 1
 }
 
-export const getSectionSolverScoreCacheEntry = (key: string) =>
-  sectionSolverScoreCache.get(key)
+export const getSectionSolverScoreCacheEntry = (lossyKey: string) => {
+  const bucket = sectionSolverLossyScoreCache.get(lossyKey)
+  const keyStats = getOrCreateScoreCacheKeyStats(lossyKey)
 
-export const setSectionSolverScoreCacheEntry = (
-  key: string,
-  entry: SectionSolverScoreCacheEntry,
-) => {
-  sectionSolverScoreCache.set(key, entry)
+  sectionSolverCacheStats.scoreLookups += 1
+  keyStats.lookups += 1
+
+  if (
+    bucket?.consistent &&
+    bucket.entry &&
+    (bucket.trusted || bucket.generation < sectionSolverScoreCacheGeneration)
+  ) {
+    sectionSolverCacheStats.scoreHits += 1
+    keyStats.hits += 1
+    return {
+      entry: bucket.entry,
+      trusted: bucket.trusted,
+      fromPreviousGeneration:
+        bucket.generation < sectionSolverScoreCacheGeneration,
+    }
+  }
+
+  sectionSolverCacheStats.scoreMisses += 1
+  keyStats.misses += 1
+  return undefined
+}
+
+export const setSectionSolverScoreCacheEntry = ({
+  lossyKey,
+  exactKey,
+  entry,
+}: {
+  lossyKey: string
+  exactKey?: string
+  entry: SectionSolverScoreCacheEntry
+}) => {
+  const entryToken = summarizeScoreEntry(entry)
+  const previousBucket = sectionSolverLossyScoreCache.get(lossyKey)
+  const observedCount = (previousBucket?.observedCount ?? 0) + 1
+  const exactKeyCount =
+    previousBucket?.exactKeyCount ??
+    (exactKey !== undefined ? 1 : 0)
+  let trusted = false
+  let consistent = true
+  let summaryToken: string | undefined = entryToken
+  let storedEntry: SectionSolverScoreCacheEntry | undefined
+
+  if (!previousBucket) {
+    trusted = false
+    consistent = true
+    storedEntry = entry
+  } else if (!previousBucket.consistent) {
+    consistent = false
+    trusted = false
+    summaryToken = previousBucket.summaryToken
+    storedEntry = previousBucket.entry
+  } else if (previousBucket.summaryToken === entryToken) {
+    consistent = true
+    trusted = previousBucket.trusted || observedCount >= 2
+    summaryToken = entryToken
+    storedEntry = entry
+  } else {
+    consistent = false
+    trusted = false
+    summaryToken = undefined
+    storedEntry = undefined
+  }
+
+  sectionSolverLossyScoreCache.set(lossyKey, {
+    observedCount,
+    exactKeyCount,
+    trusted,
+    consistent,
+    generation: sectionSolverScoreCacheGeneration,
+    summaryToken,
+    entry: storedEntry,
+  })
+  sectionSolverCacheStats.scoreStores += 1
+  getOrCreateScoreCacheKeyStats(lossyKey).stores += 1
 }
 
 export const recordSectionSolverCacheLookup = (result: CacheLookupResult) => {
@@ -1452,12 +2126,19 @@ export const recordSectionSolverCacheTiming = ({
 
 export const clearTinyHyperGraphSectionSolverCache = () => {
   sectionSolverCache.clear()
-  sectionSolverScoreCache.clear()
+  sectionSolverLossyScoreCache.clear()
+  sectionSolverScoreCacheKeyStatsByKey.clear()
+  sectionSolverLossyScoreKeyStatsByKey.clear()
+  sectionSolverScoreCacheGeneration = 0
   sectionSolverCacheStats.lookups = 0
   sectionSolverCacheStats.hits = 0
   sectionSolverCacheStats.misses = 0
   sectionSolverCacheStats.rejectedHits = 0
   sectionSolverCacheStats.stores = 0
+  sectionSolverCacheStats.scoreLookups = 0
+  sectionSolverCacheStats.scoreHits = 0
+  sectionSolverCacheStats.scoreMisses = 0
+  sectionSolverCacheStats.scoreStores = 0
   sectionSolverCacheStats.contextBuildMs = 0
   sectionSolverCacheStats.hydrateSolutionMs = 0
   sectionSolverCacheStats.hydratedSolverBuildMs = 0
@@ -1465,17 +2146,42 @@ export const clearTinyHyperGraphSectionSolverCache = () => {
   sectionSolverCacheStats.storeEntryBuildMs = 0
 }
 
+export const advanceTinyHyperGraphSectionSolverCacheGeneration = () => {
+  sectionSolverScoreCacheGeneration += 1
+}
+
 export const getTinyHyperGraphSectionSolverCacheStats =
   (): TinyHyperGraphSectionSolverCacheStats => ({
     entries: sectionSolverCache.size,
+    scoreEntries: sectionSolverLossyScoreCache.size,
     lookups: sectionSolverCacheStats.lookups,
     hits: sectionSolverCacheStats.hits,
     misses: sectionSolverCacheStats.misses,
     rejectedHits: sectionSolverCacheStats.rejectedHits,
     stores: sectionSolverCacheStats.stores,
+    scoreLookups: sectionSolverCacheStats.scoreLookups,
+    scoreHits: sectionSolverCacheStats.scoreHits,
+    scoreMisses: sectionSolverCacheStats.scoreMisses,
+    scoreStores: sectionSolverCacheStats.scoreStores,
     contextBuildMs: sectionSolverCacheStats.contextBuildMs,
     hydrateSolutionMs: sectionSolverCacheStats.hydrateSolutionMs,
     hydratedSolverBuildMs: sectionSolverCacheStats.hydratedSolverBuildMs,
     storeValidationMs: sectionSolverCacheStats.storeValidationMs,
     storeEntryBuildMs: sectionSolverCacheStats.storeEntryBuildMs,
   })
+
+export const getSectionSolverScoreCacheKeyStats = () =>
+  [...sectionSolverScoreCacheKeyStatsByKey.entries()]
+    .map(([key, stats]) => ({
+      key,
+      lookups: stats.lookups,
+      hits: stats.hits,
+      misses: stats.misses,
+      stores: stats.stores,
+    }))
+    .sort(
+      (left, right) =>
+        right.lookups - left.lookups ||
+        right.hits - left.hits ||
+        compareStrings(left.key, right.key),
+    )

@@ -1,6 +1,7 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import {
+  advanceTinyHyperGraphSectionSolverCacheGeneration,
   clearTinyHyperGraphSectionSolverCache,
   getTinyHyperGraphSectionSolverCacheStats,
   TinyHyperGraphSectionPipelineSolver,
@@ -171,6 +172,8 @@ const coldStartSummary = runMode({
   enableCache: true,
   clearCacheBeforeRun: true,
 })
+
+advanceTinyHyperGraphSectionSolverCacheGeneration()
 
 const warmedSummary = runMode({
   mode: "warmed-cache",
