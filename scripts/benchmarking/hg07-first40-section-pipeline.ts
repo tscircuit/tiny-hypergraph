@@ -63,6 +63,7 @@ type PipelineBenchmarkSummary = {
   averagePipelineSeconds: string
   averageSectionSearchSeconds: string
   totalCandidateCount: number
+  averageAttemptedSectionSolves: string
   averageCandidateSeconds: string
   totalCandidateSolveSeconds: string
   totalCandidateReplayScoreSeconds: string
@@ -286,7 +287,7 @@ for (const sampleMeta of sampleMetas) {
           : "unchanged"
 
     console.log(
-      `[${rows.length}/${sampleMetas.length} ${formatPct((rows.length / Math.max(sampleMetas.length, 1)) * 100)}] success=${formatPct((improvedSampleCount / Math.max(rows.length - failedSampleCount, 1)) * 100)} improved=${improvedSampleCount} unchanged=${unchangedSampleCount} regressed=${regressedSampleCount} failed=${failedSampleCount} last=${row.sample} ${outcome} elapsed=${formatSeconds(performance.now() - benchmarkStartTime)}`,
+      `[${rows.length}/${sampleMetas.length} ${formatPct((rows.length / Math.max(sampleMetas.length, 1)) * 100)}] success=${formatPct((improvedSampleCount / Math.max(rows.length - failedSampleCount, 1)) * 100)} improved=${improvedSampleCount} unchanged=${unchangedSampleCount} regressed=${regressedSampleCount} failed=${failedSampleCount} last=${row.sample} ${outcome} elapsed=${formatSeconds(performance.now() - benchmarkStartTime)} lastSample[attempts=${row.sectionSearchCandidateCount}]`,
     )
   } catch (error) {
     failedSampleCount += 1
@@ -317,7 +318,7 @@ for (const sampleMeta of sampleMetas) {
     rows.push(row)
 
     console.log(
-      `[${rows.length}/${sampleMetas.length} ${formatPct((rows.length / Math.max(sampleMetas.length, 1)) * 100)}] success=${formatPct((improvedSampleCount / Math.max(rows.length - failedSampleCount, 1)) * 100)} improved=${improvedSampleCount} unchanged=${unchangedSampleCount} regressed=${regressedSampleCount} failed=${failedSampleCount} last=${row.sample} failed elapsed=${formatSeconds(performance.now() - benchmarkStartTime)}`,
+      `[${rows.length}/${sampleMetas.length} ${formatPct((rows.length / Math.max(sampleMetas.length, 1)) * 100)}] success=${formatPct((improvedSampleCount / Math.max(rows.length - failedSampleCount, 1)) * 100)} improved=${improvedSampleCount} unchanged=${unchangedSampleCount} regressed=${regressedSampleCount} failed=${failedSampleCount} last=${row.sample} failed elapsed=${formatSeconds(performance.now() - benchmarkStartTime)} lastSample[attempts=${row.sectionSearchCandidateCount}]`,
     )
   }
 }
@@ -343,6 +344,9 @@ const summary: PipelineBenchmarkSummary = {
     totalSectionSearchMs / solvedSampleCount,
   ),
   totalCandidateCount,
+  averageAttemptedSectionSolves: (
+    totalCandidateCount / solvedSampleCount
+  ).toFixed(2),
   averageCandidateSeconds:
     totalCandidateCount > 0
       ? formatSeconds(totalSectionSearchMs / totalCandidateCount)
@@ -389,6 +393,10 @@ const performanceSummaryRows = [
     value: summary.averageSectionSearchSeconds,
   },
   { key: "totalCandidateCount", value: String(summary.totalCandidateCount) },
+  {
+    key: "averageAttemptedSectionSolves",
+    value: summary.averageAttemptedSectionSolves,
+  },
   { key: "averageCandidateSeconds", value: summary.averageCandidateSeconds },
   { key: "candidateInitSeconds", value: summary.totalCandidateInitSeconds },
   { key: "candidateSolveSeconds", value: summary.totalCandidateSolveSeconds },
