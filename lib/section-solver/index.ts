@@ -314,7 +314,7 @@ const applyRouteSegmentsToSolver = (
   solver.state.currentRouteNetId = undefined
   solver.state.unroutedRoutes = []
   solver.state.candidateQueue.clear()
-  solver.state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
+  solver.resetCandidateBestCosts()
   solver.state.goalPortId = -1
   solver.state.ripCount = 0
   solver.state.regionCongestionCost.fill(0)
@@ -609,7 +609,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.currentRouteNetId = undefined
     this.state.unroutedRoutes = []
     this.state.candidateQueue.clear()
-    this.state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
+    this.resetCandidateBestCosts()
     this.state.goalPortId = -1
   }
 

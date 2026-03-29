@@ -132,6 +132,8 @@ export interface TinyHyperGraphWorkingState {
 
   candidateQueue: MinHeap<Candidate>
   candidateBestCostByHopId: Float64Array
+  candidateBestCostGenerationByHopId: Uint32Array
+  candidateBestCostGeneration: number
 
   goalPortId: PortId
 
@@ -236,7 +238,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       candidateQueue: new MinHeap([], compareCandidatesByF),
       candidateBestCostByHopId: new Float64Array(
         topology.portCount * topology.regionCount,
-      ).fill(Number.POSITIVE_INFINITY),
+      ),
+      candidateBestCostGenerationByHopId: new Uint32Array(
+        topology.portCount * topology.regionCount,
+      ),
+      candidateBestCostGeneration: 1,
       goalPortId: -1,
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
@@ -294,7 +300,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
-      state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
+      this.resetCandidateBestCosts()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidateQueue.clear()
       const startingNextRegionId = this.getStartingNextRegionId(
@@ -308,9 +314,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      state.candidateBestCostByHopId[
-        this.getHopId(startingPortId, startingNextRegionId)
-      ] = 0
+      this.setCandidateBestCost(
+        this.getHopId(startingPortId, startingNextRegionId),
+        0,
+      )
       state.candidateQueue.queue({
         nextRegionId: startingNextRegionId,
         portId: startingPortId,
@@ -332,9 +339,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentCandidate.portId,
       currentCandidate.nextRegionId,
     )
-    if (
-      currentCandidate.g > state.candidateBestCostByHopId[currentCandidateHopId]
-    ) {
+    if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
       return
     }
 
@@ -394,11 +399,40 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
 
       const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (g >= state.candidateBestCostByHopId[candidateHopId]) continue
+      if (g >= this.getCandidateBestCost(candidateHopId)) continue
 
-      state.candidateBestCostByHopId[candidateHopId] = g
+      this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
     }
+  }
+
+  resetCandidateBestCosts() {
+    const { state } = this
+
+    if (state.candidateBestCostGeneration === 0xffffffff) {
+      state.candidateBestCostGenerationByHopId.fill(0)
+      state.candidateBestCostGeneration = 1
+      return
+    }
+
+    state.candidateBestCostGeneration += 1
+  }
+
+  getCandidateBestCost(hopId: HopId) {
+    const { state } = this
+
+    return state.candidateBestCostGenerationByHopId[hopId] ===
+      state.candidateBestCostGeneration
+      ? state.candidateBestCostByHopId[hopId]!
+      : Number.POSITIVE_INFINITY
+  }
+
+  setCandidateBestCost(hopId: HopId, bestCost: number) {
+    const { state } = this
+
+    state.candidateBestCostGenerationByHopId[hopId] =
+      state.candidateBestCostGeneration
+    state.candidateBestCostByHopId[hopId] = bestCost
   }
 
   getHopId(portId: PortId, nextRegionId: RegionId): HopId {
@@ -600,7 +634,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteId = undefined
     state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
     state.candidateQueue.clear()
-    state.candidateBestCostByHopId.fill(Number.POSITIVE_INFINITY)
+    this.resetCandidateBestCosts()
     state.goalPortId = -1
   }
 
