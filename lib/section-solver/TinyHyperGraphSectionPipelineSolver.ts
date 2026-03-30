@@ -54,8 +54,44 @@ type AutomaticSectionSearchResult = {
   candidateInitMs: number
   candidateSolveMs: number
   candidateReplayScoreMs: number
+  candidateMaskBuildMs: number
+  candidateProblemBuildMs: number
+  candidateKeyBuildMs: number
+  candidateGenerationMs: number
+  replayLoadMs: number
+  replaySectionSolverInitMs: number
+  replayGetMaxRegionCostMs: number
+  terminatedEarly: boolean
+  baselineMemoryDelta?: MemoryUsageSnapshot
+  candidatePeakMemoryDelta?: MemoryUsageSnapshot
+  replayPeakMemoryDelta?: MemoryUsageSnapshot
+  candidateBreakdown: CandidateBreakdown[]
   winningCandidateLabel?: string
   winningCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+}
+
+type MemoryUsageSnapshot = ReturnType<typeof process.memoryUsage>
+
+type CandidateBreakdown = {
+  label: string
+  family: TinyHyperGraphSectionCandidateFamily
+  regionCount: number
+  activeRouteCount?: number
+  duplicate: boolean
+  failed: boolean
+  improved: boolean
+  replayAccepted: boolean
+  maskBuildMs: number
+  problemBuildMs: number
+  keyBuildMs: number
+  eligibilityMs: number
+  initMs: number
+  solveMs: number
+  replayMs: number
+  finalMaxRegionCost?: number
+  replayedFinalMaxRegionCost?: number
+  memoryDelta?: MemoryUsageSnapshot
+  replayMemoryDelta?: MemoryUsageSnapshot
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
@@ -80,6 +116,37 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
 ]
 
 const IMPROVEMENT_EPSILON = 1e-9
+const MAX_NON_IMPROVING_SOLVED_CANDIDATES_AFTER_IMPROVEMENT = 8
+
+const CANDIDATE_FAMILY_PRIORITY: Record<
+  TinyHyperGraphSectionCandidateFamily,
+  number
+> = {
+  "self-touch": 0,
+  "onehop-all": 1,
+  "onehop-touch": 2,
+  "twohop-all": 3,
+  "twohop-touch": 4,
+}
+
+const getMemoryDelta = (
+  before: MemoryUsageSnapshot,
+  after: MemoryUsageSnapshot,
+): MemoryUsageSnapshot => ({
+  rss: after.rss - before.rss,
+  heapTotal: after.heapTotal - before.heapTotal,
+  heapUsed: after.heapUsed - before.heapUsed,
+  external: after.external - before.external,
+  arrayBuffers: after.arrayBuffers - before.arrayBuffers,
+})
+
+const getLargerMemoryDelta = (
+  left: MemoryUsageSnapshot | undefined,
+  right: MemoryUsageSnapshot,
+) => {
+  if (!left) return right
+  return Math.abs(right.rss) > Math.abs(left.rss) ? right : left
+}
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -91,14 +158,33 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
 ) => {
+  const memoryBefore = process.memoryUsage()
+  const loadStartTime = performance.now()
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
+  const replayLoadMs = performance.now() - loadStartTime
+
+  const sectionSolverInitStartTime = performance.now()
   const replayedSolver = new TinyHyperGraphSectionSolver(
     replay.topology,
     replay.problem,
     replay.solution,
   )
+  const replaySectionSolverInitMs =
+    performance.now() - sectionSolverInitStartTime
 
-  return getMaxRegionCost(replayedSolver.baselineSolver)
+  const getMaxRegionCostStartTime = performance.now()
+  const maxRegionCost = getMaxRegionCost(replayedSolver.baselineSolver)
+  const replayGetMaxRegionCostMs =
+    performance.now() - getMaxRegionCostStartTime
+  const memoryAfter = process.memoryUsage()
+
+  return {
+    maxRegionCost,
+    replayLoadMs,
+    replaySectionSolverInitMs,
+    replayGetMaxRegionCostMs,
+    memoryDelta: getMemoryDelta(memoryBefore, memoryAfter),
+  }
 }
 
 const getAdjacentRegionIds = (
@@ -221,7 +307,19 @@ const getSectionMaskCandidates = (
     }
   }
 
-  return candidates
+  return candidates.sort((left, right) => {
+    if (left.regionIds.length !== right.regionIds.length) {
+      return left.regionIds.length - right.regionIds.length
+    }
+
+    const leftFamilyPriority = CANDIDATE_FAMILY_PRIORITY[left.family]
+    const rightFamilyPriority = CANDIDATE_FAMILY_PRIORITY[right.family]
+    if (leftFamilyPriority !== rightFamilyPriority) {
+      return leftFamilyPriority - rightFamilyPriority
+    }
+
+    return left.label.localeCompare(right.label)
+  })
 }
 
 const findBestAutomaticSectionMask = (
@@ -234,6 +332,7 @@ const findBestAutomaticSectionMask = (
 ): AutomaticSectionSearchResult => {
   const searchStartTime = performance.now()
   const baselineEvaluationStartTime = performance.now()
+  const baselineMemoryBefore = process.memoryUsage()
   const baselineSectionSolver = new TinyHyperGraphSectionSolver(
     topology,
     problem,
@@ -244,6 +343,10 @@ const findBestAutomaticSectionMask = (
     baselineSectionSolver.baselineSolver,
   )
   const baselineEvaluationMs = performance.now() - baselineEvaluationStartTime
+  const baselineMemoryDelta = getMemoryDelta(
+    baselineMemoryBefore,
+    process.memoryUsage(),
+  )
 
   let bestFinalMaxRegionCost = baselineMaxRegionCost
   let bestPortSectionMask = new Int8Array(topology.portCount)
@@ -256,27 +359,84 @@ const findBestAutomaticSectionMask = (
   let candidateInitMs = 0
   let candidateSolveMs = 0
   let candidateReplayScoreMs = 0
+  let candidateMaskBuildMs = 0
+  let candidateProblemBuildMs = 0
+  let candidateKeyBuildMs = 0
+  let candidateGenerationMs = 0
+  let replayLoadMs = 0
+  let replaySectionSolverInitMs = 0
+  let replayGetMaxRegionCostMs = 0
+  let solvedCandidateCountSinceLastImprovement = 0
+  let terminatedEarly = false
+  let candidatePeakMemoryDelta: MemoryUsageSnapshot | undefined
+  let replayPeakMemoryDelta: MemoryUsageSnapshot | undefined
+  const candidateBreakdown: CandidateBreakdown[] = []
   const seenPortSectionMasks = new Set<string>()
-
-  for (const candidate of getSectionMaskCandidates(
+  const candidateGenerationStartTime = performance.now()
+  const candidates = getSectionMaskCandidates(
     solvedSolver,
     topology,
     searchConfig?.maxHotRegions ?? 9,
     searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
-  )) {
+  )
+  candidateGenerationMs = performance.now() - candidateGenerationStartTime
+
+  for (const candidate of candidates) {
+    const candidateMemoryBefore = process.memoryUsage()
+    const candidateBreakdownEntry: CandidateBreakdown = {
+      label: candidate.label,
+      family: candidate.family,
+      regionCount: candidate.regionIds.length,
+      duplicate: false,
+      failed: false,
+      improved: false,
+      replayAccepted: false,
+      maskBuildMs: 0,
+      problemBuildMs: 0,
+      keyBuildMs: 0,
+      eligibilityMs: 0,
+      initMs: 0,
+      solveMs: 0,
+      replayMs: 0,
+    }
+
+    const maskBuildStartTime = performance.now()
+    const portSectionMask = createPortSectionMaskForRegionIds(
+      topology,
+      candidate.regionIds,
+      candidate.portSelectionRule,
+    )
+    candidateBreakdownEntry.maskBuildMs =
+      performance.now() - maskBuildStartTime
+    candidateMaskBuildMs += candidateBreakdownEntry.maskBuildMs
+
+    const problemBuildStartTime = performance.now()
     const candidateProblem = createProblemWithPortSectionMask(
       problem,
-      createPortSectionMaskForRegionIds(
-        topology,
-        candidate.regionIds,
-        candidate.portSelectionRule,
-      ),
+      portSectionMask,
     )
+    candidateBreakdownEntry.problemBuildMs =
+      performance.now() - problemBuildStartTime
+    candidateProblemBuildMs += candidateBreakdownEntry.problemBuildMs
+
     generatedCandidateCount += 1
+    const keyBuildStartTime = performance.now()
     const portSectionMaskKey = candidateProblem.portSectionMask.join(",")
+    candidateBreakdownEntry.keyBuildMs = performance.now() - keyBuildStartTime
+    candidateKeyBuildMs += candidateBreakdownEntry.keyBuildMs
 
     if (seenPortSectionMasks.has(portSectionMaskKey)) {
       duplicateCandidateCount += 1
+      candidateBreakdownEntry.duplicate = true
+      candidateBreakdownEntry.memoryDelta = getMemoryDelta(
+        candidateMemoryBefore,
+        process.memoryUsage(),
+      )
+      candidatePeakMemoryDelta = getLargerMemoryDelta(
+        candidatePeakMemoryDelta,
+        candidateBreakdownEntry.memoryDelta,
+      )
+      candidateBreakdown.push(candidateBreakdownEntry)
       continue
     }
 
@@ -289,9 +449,21 @@ const findBestAutomaticSectionMask = (
         candidateProblem,
         solution,
       )
-      candidateEligibilityMs += performance.now() - eligibilityStartTime
+      candidateBreakdownEntry.eligibilityMs =
+        performance.now() - eligibilityStartTime
+      candidateEligibilityMs += candidateBreakdownEntry.eligibilityMs
+      candidateBreakdownEntry.activeRouteCount = activeRouteIds.length
 
       if (activeRouteIds.length === 0) {
+        candidateBreakdownEntry.memoryDelta = getMemoryDelta(
+          candidateMemoryBefore,
+          process.memoryUsage(),
+        )
+        candidatePeakMemoryDelta = getLargerMemoryDelta(
+          candidatePeakMemoryDelta,
+          candidateBreakdownEntry.memoryDelta,
+        )
+        candidateBreakdown.push(candidateBreakdownEntry)
         continue
       }
 
@@ -304,13 +476,27 @@ const findBestAutomaticSectionMask = (
         solution,
         sectionSolverOptions,
       )
-      candidateInitMs += performance.now() - candidateInitStartTime
+      candidateBreakdownEntry.initMs =
+        performance.now() - candidateInitStartTime
+      candidateInitMs += candidateBreakdownEntry.initMs
 
       const candidateSolveStartTime = performance.now()
       sectionSolver.solve()
-      candidateSolveMs += performance.now() - candidateSolveStartTime
+      candidateBreakdownEntry.solveMs =
+        performance.now() - candidateSolveStartTime
+      candidateSolveMs += candidateBreakdownEntry.solveMs
+      candidateBreakdownEntry.memoryDelta = getMemoryDelta(
+        candidateMemoryBefore,
+        process.memoryUsage(),
+      )
+      candidatePeakMemoryDelta = getLargerMemoryDelta(
+        candidatePeakMemoryDelta,
+        candidateBreakdownEntry.memoryDelta,
+      )
 
       if (sectionSolver.failed || !sectionSolver.solved) {
+        candidateBreakdownEntry.failed = true
+        candidateBreakdown.push(candidateBreakdownEntry)
         continue
       }
 
@@ -318,27 +504,53 @@ const findBestAutomaticSectionMask = (
         sectionSolver.stats.finalMaxRegionCost ??
           getMaxRegionCost(sectionSolver.getSolvedSolver()),
       )
+      candidateBreakdownEntry.finalMaxRegionCost = finalMaxRegionCost
 
       if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
         const candidateReplayScoreStartTime = performance.now()
-        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
-          sectionSolver.getOutput(),
-        )
-        candidateReplayScoreMs +=
+        const replayResult = getSerializedOutputMaxRegionCost(sectionSolver.getOutput())
+        candidateBreakdownEntry.replayMs =
           performance.now() - candidateReplayScoreStartTime
+        candidateReplayScoreMs += candidateBreakdownEntry.replayMs
+        replayLoadMs += replayResult.replayLoadMs
+        replaySectionSolverInitMs += replayResult.replaySectionSolverInitMs
+        replayGetMaxRegionCostMs += replayResult.replayGetMaxRegionCostMs
+        candidateBreakdownEntry.replayMemoryDelta = replayResult.memoryDelta
+        replayPeakMemoryDelta = getLargerMemoryDelta(
+          replayPeakMemoryDelta,
+          replayResult.memoryDelta,
+        )
+        candidateBreakdownEntry.improved = true
+        candidateBreakdownEntry.replayedFinalMaxRegionCost =
+          replayResult.maxRegionCost
 
         if (
-          replayedFinalMaxRegionCost <
-          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
+          replayResult.maxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
         ) {
-          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
+          bestFinalMaxRegionCost = replayResult.maxRegionCost
           bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
           winningCandidateLabel = candidate.label
           winningCandidateFamily = candidate.family
+          candidateBreakdownEntry.replayAccepted = true
+          solvedCandidateCountSinceLastImprovement = 0
         }
       }
+
+      solvedCandidateCountSinceLastImprovement += 1
     } catch {
       // Skip invalid section masks that split a route into multiple spans.
+      candidateBreakdownEntry.failed = true
+    }
+
+    candidateBreakdown.push(candidateBreakdownEntry)
+
+    if (
+      winningCandidateLabel &&
+      solvedCandidateCountSinceLastImprovement >=
+        MAX_NON_IMPROVING_SOLVED_CANDIDATES_AFTER_IMPROVEMENT
+    ) {
+      terminatedEarly = true
+      break
     }
   }
 
@@ -355,6 +567,18 @@ const findBestAutomaticSectionMask = (
     candidateInitMs,
     candidateSolveMs,
     candidateReplayScoreMs,
+    candidateMaskBuildMs,
+    candidateProblemBuildMs,
+    candidateKeyBuildMs,
+    candidateGenerationMs,
+    replayLoadMs,
+    replaySectionSolverInitMs,
+    replayGetMaxRegionCostMs,
+    terminatedEarly,
+    baselineMemoryDelta,
+    candidatePeakMemoryDelta,
+    replayPeakMemoryDelta,
+    candidateBreakdown,
     winningCandidateLabel,
     winningCandidateFamily,
   }
@@ -493,6 +717,27 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
             sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
             sectionSearchCandidateReplayScoreMs:
               searchResult.candidateReplayScoreMs,
+            sectionSearchCandidateMaskBuildMs:
+              searchResult.candidateMaskBuildMs,
+            sectionSearchCandidateProblemBuildMs:
+              searchResult.candidateProblemBuildMs,
+            sectionSearchCandidateKeyBuildMs:
+              searchResult.candidateKeyBuildMs,
+            sectionSearchCandidateGenerationMs:
+              searchResult.candidateGenerationMs,
+            sectionSearchReplayLoadMs: searchResult.replayLoadMs,
+            sectionSearchReplaySectionSolverInitMs:
+              searchResult.replaySectionSolverInitMs,
+            sectionSearchReplayGetMaxRegionCostMs:
+              searchResult.replayGetMaxRegionCostMs,
+            sectionSearchTerminatedEarly: searchResult.terminatedEarly,
+            sectionSearchBaselineMemoryDelta:
+              searchResult.baselineMemoryDelta ?? null,
+            sectionSearchCandidatePeakMemoryDelta:
+              searchResult.candidatePeakMemoryDelta ?? null,
+            sectionSearchReplayPeakMemoryDelta:
+              searchResult.replayPeakMemoryDelta ?? null,
+            sectionSearchCandidateBreakdown: searchResult.candidateBreakdown,
           }
 
           return searchResult.portSectionMask

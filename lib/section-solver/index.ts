@@ -517,6 +517,19 @@ export const getActiveSectionRouteIds = (
   solution: TinyHyperGraphSolution,
 ) => createSectionRoutePlans(topology, problem, solution).activeRouteIds
 
+type MemoryUsageSnapshot = ReturnType<typeof process.memoryUsage>
+
+const getMemoryDelta = (
+  before: MemoryUsageSnapshot,
+  after: MemoryUsageSnapshot,
+): MemoryUsageSnapshot => ({
+  rss: after.rss - before.rss,
+  heapTotal: after.heapTotal - before.heapTotal,
+  heapUsed: after.heapUsed - before.heapUsed,
+  external: after.external - before.external,
+  arrayBuffers: after.arrayBuffers - before.arrayBuffers,
+})
+
 const getSectionRegionIds = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
@@ -775,22 +788,54 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     options?: TinyHyperGraphSectionSolverOptions,
   ) {
     super()
+    const constructorStartTime = performance.now()
+    const constructorMemoryBefore = process.memoryUsage()
     applyTinyHyperGraphSectionSolverOptions(this, options)
+    const constructorOptionApplyMs = performance.now() - constructorStartTime
+    const baselineSolverInitStartTime = performance.now()
     this.baselineSolver = createSolvedSolverFromSolution(
       topology,
       problem,
       initialSolution,
       getTinyHyperGraphSolverOptions(this),
     )
+    const constructorBaselineSolverInitMs =
+      performance.now() - baselineSolverInitStartTime
+    const baselineSummaryStartTime = performance.now()
     this.baselineSummary = summarizeRegionIntersectionCaches(
       this.baselineSolver.state.regionIntersectionCaches,
     )
+    const constructorBaselineSummaryMs =
+      performance.now() - baselineSummaryStartTime
+    const sectionRegionIdsStartTime = performance.now()
     this.sectionRegionIds = getSectionRegionIds(topology, problem)
+    const constructorSectionRegionIdsMs =
+      performance.now() - sectionRegionIdsStartTime
+    const sectionBaselineSummaryStartTime = performance.now()
     this.sectionBaselineSummary = summarizeRegionIntersectionCachesForRegionIds(
       this.baselineSolver.state.regionIntersectionCaches,
       this.sectionRegionIds,
     )
+    const constructorSectionBaselineSummaryMs =
+      performance.now() - sectionBaselineSummaryStartTime
+    const applySectionRipPolicyStartTime = performance.now()
     this.applySectionRipPolicy()
+    const constructorApplySectionRipPolicyMs =
+      performance.now() - applySectionRipPolicyStartTime
+    this.stats = {
+      ...this.stats,
+      constructorMs: performance.now() - constructorStartTime,
+      constructorOptionApplyMs,
+      constructorBaselineSolverInitMs,
+      constructorBaselineSummaryMs,
+      constructorSectionRegionIdsMs,
+      constructorSectionBaselineSummaryMs,
+      constructorApplySectionRipPolicyMs,
+      constructorMemoryDelta: getMemoryDelta(
+        constructorMemoryBefore,
+        process.memoryUsage(),
+      ),
+    }
   }
 
   applySectionRipPolicy() {
@@ -803,10 +848,15 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   }
 
   override _setup() {
+    const setupStartTime = performance.now()
+    const setupMemoryBefore = process.memoryUsage()
     this.applySectionRipPolicy()
 
+    const createSectionRoutePlansStartTime = performance.now()
     const { sectionProblem, routePlans, activeRouteIds } =
       createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
+    const setupCreateSectionRoutePlansMs =
+      performance.now() - createSectionRoutePlansStartTime
 
     this.activeRouteIds = activeRouteIds
 
@@ -818,11 +868,18 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
         initialMaxRegionCost: this.baselineSummary.maxRegionCost,
         finalMaxRegionCost: this.baselineSummary.maxRegionCost,
         optimized: false,
+        setupMs: performance.now() - setupStartTime,
+        setupCreateSectionRoutePlansMs,
+        setupMemoryDelta: getMemoryDelta(
+          setupMemoryBefore,
+          process.memoryUsage(),
+        ),
       }
       this.solved = true
       return
     }
 
+    const setupSectionSolverInitStartTime = performance.now()
     this.sectionSolver = new TinyHyperGraphSectionSearchSolver(
       this.topology,
       sectionProblem,
@@ -831,6 +888,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       this.baselineSummary,
       getTinyHyperGraphSectionSolverOptions(this),
     )
+    const setupSectionSolverInitMs =
+      performance.now() - setupSectionSolverInitStartTime
     this.activeSubSolver = this.sectionSolver
     this.stats = {
       ...this.stats,
@@ -839,6 +898,13 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
       effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
       effectiveMaxRips: this.MAX_RIPS,
+      setupMs: performance.now() - setupStartTime,
+      setupCreateSectionRoutePlansMs,
+      setupSectionSolverInitMs,
+      setupMemoryDelta: getMemoryDelta(
+        setupMemoryBefore,
+        process.memoryUsage(),
+      ),
     }
   }
 
@@ -865,15 +931,23 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       return
     }
 
+    const finalizeStartTime = performance.now()
+    const finalizeMemoryBefore = process.memoryUsage()
+    const finalizeCandidateSolverInitStartTime = performance.now()
     const candidateSolver = createSolvedSolverFromRegionSegments(
       this.topology,
       this.problem,
       cloneRegionSegments(this.sectionSolver.state.regionSegments),
       getTinyHyperGraphSolverOptions(this),
     )
+    const finalizeCandidateSolverInitMs =
+      performance.now() - finalizeCandidateSolverInitStartTime
+    const finalizeCandidateSummaryStartTime = performance.now()
     const candidateSummary = summarizeRegionIntersectionCaches(
       candidateSolver.state.regionIntersectionCaches,
     )
+    const finalizeCandidateSummaryMs =
+      performance.now() - finalizeCandidateSummaryStartTime
     const optimized =
       compareRegionCostSummaries(candidateSummary, this.baselineSummary) < 0
 
@@ -889,6 +963,13 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       finalMaxRegionCost: finalSummary.maxRegionCost,
       finalTotalRegionCost: finalSummary.totalRegionCost,
       optimized,
+      finalizeMs: performance.now() - finalizeStartTime,
+      finalizeCandidateSolverInitMs,
+      finalizeCandidateSummaryMs,
+      finalizeMemoryDelta: getMemoryDelta(
+        finalizeMemoryBefore,
+        process.memoryUsage(),
+      ),
     }
     this.solved = true
   }
