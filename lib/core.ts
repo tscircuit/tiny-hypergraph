@@ -2,7 +2,7 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import { computeRegionCost } from "./computeRegionCost"
-import { countNewIntersections } from "./countNewIntersections"
+import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
 import type {
@@ -204,9 +204,22 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
+interface SegmentGeometryScratch {
+  lesserAngle: number
+  greaterAngle: number
+  layerMask: number
+  entryExitLayerChanges: number
+}
+
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
-  problemSetup: TinyHyperGraphProblemSetup
+  private _problemSetup?: TinyHyperGraphProblemSetup
+  private segmentGeometryScratch: SegmentGeometryScratch = {
+    lesserAngle: 0,
+    greaterAngle: 0,
+    layerMask: 0,
+    entryExitLayerChanges: 0,
+  }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
 
@@ -247,7 +260,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
     }
-    this.problemSetup = this.computeProblemSetup()
+  }
+
+  get problemSetup(): TinyHyperGraphProblemSetup {
+    if (!this._problemSetup) {
+      this._problemSetup = this.computeProblemSetup()
+    }
+
+    return this._problemSetup
   }
 
   computeProblemSetup(): TinyHyperGraphProblemSetup {
@@ -286,6 +306,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       portHCostToEndOfRoute,
       portEndpointNetIds,
     }
+  }
+
+  override _setup() {
+    void this.problemSetup
   }
 
   override _step() {
@@ -480,41 +504,33 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
-  getPortAngleInRegion(portId: PortId, regionId: RegionId): number {
-    const { topology } = this
-    const [firstRegionId, secondRegionId] =
-      topology.incidentPortRegion[portId] ?? []
-
-    if (firstRegionId === regionId) {
-      return topology.portAngleForRegion1[portId]
-    }
-
-    if (secondRegionId === regionId) {
-      return (
-        topology.portAngleForRegion2?.[portId] ??
-        topology.portAngleForRegion1[portId]
-      )
-    }
-
-    return topology.portAngleForRegion1[portId]
-  }
-
-  buildDynamicAnglePair(
+  populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
     port2Id: PortId,
-  ): DynamicAnglePair {
-    const { topology, state } = this
-    const angle1 = this.getPortAngleInRegion(port1Id, regionId)
-    const angle2 = this.getPortAngleInRegion(port2Id, regionId)
+  ): SegmentGeometryScratch {
+    const { topology } = this
+    const scratch = this.segmentGeometryScratch
+    const port1IncidentRegions = topology.incidentPortRegion[port1Id]
+    const port2IncidentRegions = topology.incidentPortRegion[port2Id]
+    const angle1 =
+      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+        ? topology.portAngleForRegion1[port1Id]
+        : topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id]
+    const angle2 =
+      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+        ? topology.portAngleForRegion1[port2Id]
+        : topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id]
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
+    scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
+    scratch.greaterAngle = angle1 < angle2 ? angle2 : angle1
+    scratch.layerMask = (1 << z1) | (1 << z2)
+    scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
 
-    if (angle1 < angle2) {
-      return [state.currentRouteNetId!, angle1, z1, angle2, z2]
-    }
-
-    return [state.currentRouteNetId!, angle2, z2, angle1, z1]
+    return scratch
   }
 
   appendSegmentToRegionCache(
@@ -524,30 +540,40 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     const { topology, state } = this
     const regionCache = state.regionIntersectionCaches[regionId]
-    const newPair = this.buildDynamicAnglePair(regionId, port1Id, port2Id)
+    const segmentGeometry = this.populateSegmentGeometryScratch(
+      regionId,
+      port1Id,
+      port2Id,
+    )
     const [
       newSameLayerIntersections,
       newCrossLayerIntersections,
       newEntryExitLayerChanges,
-    ] = countNewIntersections(regionCache, newPair)
-    const [netId, lesserAngle, z1, greaterAngle, z2] = newPair
+    ] = countNewIntersectionsWithValues(
+      regionCache,
+      state.currentRouteNetId!,
+      segmentGeometry.lesserAngle,
+      segmentGeometry.greaterAngle,
+      segmentGeometry.layerMask,
+      segmentGeometry.entryExitLayerChanges,
+    )
     const nextLength = regionCache.netIds.length + 1
 
     const netIds = new Int32Array(nextLength)
     netIds.set(regionCache.netIds)
-    netIds[nextLength - 1] = netId
+    netIds[nextLength - 1] = state.currentRouteNetId!
 
     const lesserAngles = new Int32Array(nextLength)
     lesserAngles.set(regionCache.lesserAngles)
-    lesserAngles[nextLength - 1] = lesserAngle
+    lesserAngles[nextLength - 1] = segmentGeometry.lesserAngle
 
     const greaterAngles = new Int32Array(nextLength)
     greaterAngles.set(regionCache.greaterAngles)
-    greaterAngles[nextLength - 1] = greaterAngle
+    greaterAngles[nextLength - 1] = segmentGeometry.greaterAngle
 
     const layerMasks = new Int32Array(nextLength)
     layerMasks.set(regionCache.layerMasks)
-    layerMasks[nextLength - 1] = (1 << z1) | (1 << z2)
+    layerMasks[nextLength - 1] = segmentGeometry.layerMask
 
     const existingSameLayerIntersections =
       regionCache.existingSameLayerIntersections + newSameLayerIntersections
@@ -742,8 +768,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const nextRegionId = currentCandidate.nextRegionId
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
-
-    const newPair = this.buildDynamicAnglePair(
+    const segmentGeometry = this.populateSegmentGeometryScratch(
       nextRegionId,
       currentCandidate.portId,
       neighborPortId,
@@ -753,7 +778,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newSameLayerIntersections,
       newCrossLayerIntersections,
       newEntryExitLayerChanges,
-    ] = countNewIntersections(regionCache, newPair)
+    ] = countNewIntersectionsWithValues(
+      regionCache,
+      state.currentRouteNetId!,
+      segmentGeometry.lesserAngle,
+      segmentGeometry.greaterAngle,
+      segmentGeometry.layerMask,
+      segmentGeometry.entryExitLayerChanges,
+    )
 
     const newRegionCost =
       computeRegionCost(
