@@ -2,7 +2,10 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import { computeRegionCost } from "./computeRegionCost"
-import { countNewIntersectionsWithValues } from "./countNewIntersections"
+import {
+  countNewIntersectionsWithValues,
+  type IntersectionCountScratch,
+} from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
 import type {
@@ -220,6 +223,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     layerMask: 0,
     entryExitLayerChanges: 0,
   }
+  private intersectionCountScratch: IntersectionCountScratch = {
+    sameLayerIntersectionCount: 0,
+    crossingLayerIntersectionCount: 0,
+    entryExitLayerChanges: 0,
+  }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
 
@@ -376,7 +384,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     for (const neighborPortId of neighbors) {
       const assignedRouteId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
         if (
           assignedRouteId !== -1 &&
@@ -390,9 +397,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (assignedRouteId !== -1) continue
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
-
-      const g = this.computeG(currentCandidate, neighborPortId)
-      const h = this.computeH(neighborPortId)
+      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
 
       const nextRegionId =
         topology.incidentPortRegion[neighborPortId][0] ===
@@ -406,6 +411,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ) {
         continue
       }
+
+      const g = this.computeG(currentCandidate, neighborPortId)
+      const h = this.computeH(neighborPortId)
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -766,35 +774,56 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, state } = this
 
     const nextRegionId = currentCandidate.nextRegionId
-
     const regionCache = state.regionIntersectionCaches[nextRegionId]
-    const segmentGeometry = this.populateSegmentGeometryScratch(
-      nextRegionId,
-      currentCandidate.portId,
-      neighborPortId,
-    )
+    const currentPortId = currentCandidate.portId
+    const currentRouteNetId = state.currentRouteNetId!
+    const incidentPortRegion = topology.incidentPortRegion
+    const portAngleForRegion1 = topology.portAngleForRegion1
+    const portAngleForRegion2 = topology.portAngleForRegion2
+    const portZ = topology.portZ
 
-    const [
-      newSameLayerIntersections,
-      newCrossLayerIntersections,
-      newEntryExitLayerChanges,
-    ] = countNewIntersectionsWithValues(
+    const currentPortIncidentRegions = incidentPortRegion[currentPortId]
+    const neighborPortIncidentRegions = incidentPortRegion[neighborPortId]
+    const currentPortUsesRegion1 =
+      currentPortIncidentRegions[0] === nextRegionId ||
+      currentPortIncidentRegions[1] !== nextRegionId
+    const neighborPortUsesRegion1 =
+      neighborPortIncidentRegions[0] === nextRegionId ||
+      neighborPortIncidentRegions[1] !== nextRegionId
+    const angle1 = currentPortUsesRegion1
+      ? portAngleForRegion1[currentPortId]
+      : (portAngleForRegion2?.[currentPortId] ?? portAngleForRegion1[currentPortId])
+    const angle2 = neighborPortUsesRegion1
+      ? portAngleForRegion1[neighborPortId]
+      : (portAngleForRegion2?.[neighborPortId] ??
+        portAngleForRegion1[neighborPortId])
+    const lesserAngle = angle1 < angle2 ? angle1 : angle2
+    const greaterAngle = angle1 < angle2 ? angle2 : angle1
+    const z1 = portZ[currentPortId]
+    const z2 = portZ[neighborPortId]
+    const layerMask = (1 << z1) | (1 << z2)
+    const entryExitLayerChanges = z1 !== z2 ? 1 : 0
+
+    const intersectionCounts = countNewIntersectionsWithValues(
       regionCache,
-      state.currentRouteNetId!,
-      segmentGeometry.lesserAngle,
-      segmentGeometry.greaterAngle,
-      segmentGeometry.layerMask,
-      segmentGeometry.entryExitLayerChanges,
+      currentRouteNetId,
+      lesserAngle,
+      greaterAngle,
+      layerMask,
+      entryExitLayerChanges,
+      this.intersectionCountScratch,
     )
 
     const newRegionCost =
       computeRegionCost(
         topology.regionWidth[nextRegionId],
         topology.regionHeight[nextRegionId],
-        regionCache.existingSameLayerIntersections + newSameLayerIntersections,
+        regionCache.existingSameLayerIntersections +
+          intersectionCounts.sameLayerIntersectionCount,
         regionCache.existingCrossingLayerIntersections +
-          newCrossLayerIntersections,
-        regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
+          intersectionCounts.crossingLayerIntersectionCount,
+        regionCache.existingEntryExitLayerChanges +
+          intersectionCounts.entryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 

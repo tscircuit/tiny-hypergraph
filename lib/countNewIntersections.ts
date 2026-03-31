@@ -1,5 +1,11 @@
 import type { DynamicAnglePair, DynamicAnglePairArrays } from "./types"
 
+export interface IntersectionCountScratch {
+  sameLayerIntersectionCount: number
+  crossingLayerIntersectionCount: number
+  entryExitLayerChanges: number
+}
+
 export const createDynamicAnglePairArrays = (
   anglePairs: Array<DynamicAnglePair>,
 ): DynamicAnglePairArrays => {
@@ -24,20 +30,42 @@ export const createDynamicAnglePairArrays = (
   }
 }
 
-export const countNewIntersectionsWithValues = (
+export function countNewIntersectionsWithValues(
   existingPairs: DynamicAnglePairArrays,
   newNet: number,
   newLesserAngle: number,
   newGreaterAngle: number,
   newLayerMask: number,
   entryExitLayerChanges: number,
-): [number, number, number] => {
-  const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
+): [number, number, number]
+export function countNewIntersectionsWithValues(
+  existingPairs: DynamicAnglePairArrays,
+  newNet: number,
+  newLesserAngle: number,
+  newGreaterAngle: number,
+  newLayerMask: number,
+  entryExitLayerChanges: number,
+  scratch: IntersectionCountScratch,
+): IntersectionCountScratch
+export function countNewIntersectionsWithValues(
+  existingPairs: DynamicAnglePairArrays,
+  newNet: number,
+  newLesserAngle: number,
+  newGreaterAngle: number,
+  newLayerMask: number,
+  entryExitLayerChanges: number,
+  scratch?: IntersectionCountScratch,
+): [number, number, number] | IntersectionCountScratch {
+  const netIds = existingPairs.netIds
+  const lesserAngles = existingPairs.lesserAngles
+  const greaterAngles = existingPairs.greaterAngles
+  const layerMasks = existingPairs.layerMasks
+  const length = netIds.length
 
   let sameLayerIntersectionCount = 0
   let crossingLayerIntersectionCount = 0
 
-  for (let i = 0; i < netIds.length; i++) {
+  for (let i = 0; i < length; i++) {
     if (newNet === netIds[i]) continue
 
     const lesserAngleIsInsideInterval =
@@ -52,6 +80,13 @@ export const countNewIntersectionsWithValues = (
     } else {
       crossingLayerIntersectionCount++
     }
+  }
+
+  if (scratch) {
+    scratch.sameLayerIntersectionCount = sameLayerIntersectionCount
+    scratch.crossingLayerIntersectionCount = crossingLayerIntersectionCount
+    scratch.entryExitLayerChanges = entryExitLayerChanges
+    return scratch
   }
 
   return [
