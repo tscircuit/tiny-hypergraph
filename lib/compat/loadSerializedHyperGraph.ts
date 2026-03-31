@@ -176,6 +176,25 @@ const getRegionGeometry = (
   }
 }
 
+const getRegionAvailableZMask = (
+  region: SerializedHyperGraph["regions"][number],
+): number => {
+  const availableZ = region.d?.availableZ
+  if (!Array.isArray(availableZ)) {
+    return 0
+  }
+
+  let mask = 0
+  for (const z of availableZ) {
+    if (!Number.isInteger(z) || z < 0 || z >= 31) {
+      continue
+    }
+    mask |= 1 << z
+  }
+
+  return mask
+}
+
 const computePortAngle = (
   port: SerializedHyperGraph["ports"][number],
   region: SerializedHyperGraph["regions"][number] | undefined,
@@ -300,6 +319,7 @@ export const loadSerializedHyperGraph = (
   const regionHeight = new Float64Array(regionCount)
   const regionCenterX = new Float64Array(regionCount)
   const regionCenterY = new Float64Array(regionCount)
+  const regionAvailableZMask = new Int32Array(regionCount)
   const regionNetId = new Int32Array(regionCount).fill(-1)
 
   filteredHyperGraph.regions.forEach((region, regionIndex) => {
@@ -308,6 +328,7 @@ export const loadSerializedHyperGraph = (
     regionHeight[regionIndex] = geometry.height
     regionCenterX[regionIndex] = geometry.centerX
     regionCenterY[regionIndex] = geometry.centerY
+    regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
   })
 
   const portAngleForRegion1 = new Int32Array(portCount)
@@ -450,6 +471,7 @@ export const loadSerializedHyperGraph = (
     regionHeight,
     regionCenterX,
     regionCenterY,
+    regionAvailableZMask,
     regionMetadata: filteredHyperGraph.regions.map((region) =>
       addSerializedRegionIdToMetadata(region),
     ),

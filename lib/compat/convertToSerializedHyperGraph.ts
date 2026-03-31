@@ -28,6 +28,18 @@ const toObjectRecord = (value: unknown): Record<string, unknown> => {
 const normalizePortIdFallback = (value: string) =>
   value.includes("::") ? value.slice(0, value.indexOf("::")) : value
 
+const getAvailableZFromMask = (mask: number): number[] => {
+  const availableZ: number[] = []
+
+  for (let z = 0; z < 31; z++) {
+    if ((mask & (1 << z)) !== 0) {
+      availableZ.push(z)
+    }
+  }
+
+  return availableZ
+}
+
 const getSerializedRegionId = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
@@ -87,6 +99,13 @@ const getSerializedRegionData = (
 
   if (typeof data.height !== "number") {
     data.height = solver.topology.regionHeight[regionId]
+  }
+
+  if (!Array.isArray(data.availableZ)) {
+    const availableZMask = solver.topology.regionAvailableZMask?.[regionId] ?? 0
+    if (availableZMask !== 0) {
+      data.availableZ = getAvailableZFromMask(availableZMask)
+    }
   }
 
   return data

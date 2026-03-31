@@ -44,6 +44,12 @@ export interface TinyHyperGraphTopology {
   regionHeight: Float64Array
   regionCenterX: Float64Array
   regionCenterY: Float64Array
+  /**
+   * regionAvailableZMask[regionId] is a bitmask of the routed layers available
+   * within the region. A zero mask means "unknown", which preserves legacy cost
+   * behavior for manually-constructed topologies that do not provide this data.
+   */
+  regionAvailableZMask?: Int32Array
 
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
@@ -392,6 +398,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       const g = this.computeG(currentCandidate, neighborPortId)
+      if (!Number.isFinite(g)) continue
       const h = this.computeH(neighborPortId)
 
       const nextRegionId =
@@ -504,6 +511,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  isKnownSingleLayerRegion(regionId: RegionId): boolean {
+    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    return regionAvailableZMask === 1 || regionAvailableZMask === 2
+  }
+
   populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
@@ -600,6 +612,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         existingCrossingLayerIntersections,
         existingEntryExitLayerChanges,
         existingSegmentCount,
+        topology.regionAvailableZMask?.[regionId] ?? 0,
       ),
     }
   }
@@ -787,6 +800,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       segmentGeometry.entryExitLayerChanges,
     )
 
+    if (
+      newSameLayerIntersections > 0 &&
+      this.isKnownSingleLayerRegion(nextRegionId)
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
+
     const newRegionCost =
       computeRegionCost(
         topology.regionWidth[nextRegionId],
@@ -796,6 +816,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
+        topology.regionAvailableZMask?.[nextRegionId] ?? 0,
       ) - regionCache.existingRegionCost
 
     return (
