@@ -1,6 +1,11 @@
 const viaSize = 0.45
 const viaSizeSq = viaSize ** 2
 const traceWidth = 0.1
+const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
+
+const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
+  regionAvailableZMask > 0 &&
+  (regionAvailableZMask & (regionAvailableZMask - 1)) === 0
 
 export const computeRegionCost = (
   regionWidth: number,
@@ -9,6 +14,7 @@ export const computeRegionCost = (
   numCrossLayerIntersections: number,
   numEntryExitChanges: number,
   traceCount: number,
+  regionAvailableZMask = 0,
 ) => {
   const area = regionWidth * regionHeight
 
@@ -18,6 +24,14 @@ export const computeRegionCost = (
     numEntryExitChanges * 1
 
   const traceCountMult = 1 + traceCount / 5
+  const impossibleSingleLayerIntersectionCost = isKnownSingleLayerMask(
+    regionAvailableZMask,
+  )
+    ? numSameLayerIntersections * IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST
+    : 0
 
-  return (estViasRequired * viaSizeSq * traceCountMult) / area
+  return (
+    (estViasRequired * viaSizeSq * traceCountMult) / area +
+    impossibleSingleLayerIntersectionCost
+  )
 }
