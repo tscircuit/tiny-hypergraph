@@ -4,8 +4,7 @@ const traceWidth = 0.1
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
 
 const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
-  regionAvailableZMask > 0 &&
-  (regionAvailableZMask & (regionAvailableZMask - 1)) === 0
+  regionAvailableZMask === 1 || regionAvailableZMask === 2
 
 export const computeRegionCost = (
   regionWidth: number,

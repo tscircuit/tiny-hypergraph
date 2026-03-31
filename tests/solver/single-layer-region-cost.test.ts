@@ -5,7 +5,10 @@ import {
   type TinyHyperGraphTopology,
 } from "lib/index"
 
-const createTopology = (regionAvailableZMask: number): TinyHyperGraphTopology => ({
+const createTopology = (
+  regionAvailableZMask: number,
+  portZ: number,
+): TinyHyperGraphTopology => ({
   portCount: 4,
   regionCount: 2,
   regionIncidentPorts: [[0, 1, 2, 3], []],
@@ -24,7 +27,7 @@ const createTopology = (regionAvailableZMask: number): TinyHyperGraphTopology =>
   portAngleForRegion2: new Int32Array(4),
   portX: new Float64Array([1, 0, -1, 0]),
   portY: new Float64Array([0, 1, 0, -1]),
-  portZ: new Int32Array(4),
+  portZ: new Int32Array([portZ, portZ, portZ, portZ]),
 })
 
 const createProblem = (): TinyHyperGraphProblem => ({
@@ -36,9 +39,9 @@ const createProblem = (): TinyHyperGraphProblem => ({
   regionNetId: new Int32Array(2).fill(-1),
 })
 
-const getCrossingCost = (regionAvailableZMask: number) => {
+const getCrossingCost = (regionAvailableZMask: number, portZ: number) => {
   const solver = new TinyHyperGraphSolver(
-    createTopology(regionAvailableZMask),
+    createTopology(regionAvailableZMask, portZ),
     createProblem(),
   )
 
@@ -58,11 +61,12 @@ const getCrossingCost = (regionAvailableZMask: number) => {
   )
 }
 
-test("same-layer crossings in known single-layer regions get an impossible-level penalty", () => {
-  const singleLayerCrossingCost = getCrossingCost(1 << 0)
-  const multiLayerCrossingCost = getCrossingCost((1 << 0) | (1 << 1))
+test("same-layer crossings in known single-layer regions are rejected as candidates", () => {
+  const topLayerCrossingCost = getCrossingCost(1 << 0, 0)
+  const bottomLayerCrossingCost = getCrossingCost(1 << 1, 1)
+  const multiLayerCrossingCost = getCrossingCost((1 << 0) | (1 << 1), 0)
 
-  expect(singleLayerCrossingCost).toBeGreaterThan(10)
+  expect(topLayerCrossingCost).toBe(Number.POSITIVE_INFINITY)
+  expect(bottomLayerCrossingCost).toBe(Number.POSITIVE_INFINITY)
   expect(multiLayerCrossingCost).toBeLessThan(0.1)
-  expect(singleLayerCrossingCost).toBeGreaterThan(multiLayerCrossingCost + 9)
 })

@@ -398,6 +398,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       const g = this.computeG(currentCandidate, neighborPortId)
+      if (!Number.isFinite(g)) continue
       const h = this.computeH(neighborPortId)
 
       const nextRegionId =
@@ -508,6 +509,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
     )
+  }
+
+  isKnownSingleLayerRegion(regionId: RegionId): boolean {
+    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    return regionAvailableZMask === 1 || regionAvailableZMask === 2
   }
 
   populateSegmentGeometryScratch(
@@ -793,6 +799,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       segmentGeometry.layerMask,
       segmentGeometry.entryExitLayerChanges,
     )
+
+    if (
+      newSameLayerIntersections > 0 &&
+      this.isKnownSingleLayerRegion(nextRegionId)
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
 
     const newRegionCost =
       computeRegionCost(
