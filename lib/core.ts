@@ -1,7 +1,7 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
-import { computeRegionCost } from "./computeRegionCost"
+import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
@@ -513,7 +513,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
     const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
-    return regionAvailableZMask === 1 || regionAvailableZMask === 2
+    return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
   populateSegmentGeometryScratch(

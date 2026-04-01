@@ -4,6 +4,10 @@ import {
   TinyHyperGraphSolver,
   type TinyHyperGraphTopology,
 } from "lib/index"
+import {
+  computeRegionCost,
+  isKnownSingleLayerMask,
+} from "lib/computeRegionCost"
 
 const createTopology = (
   regionAvailableZMask: number,
@@ -64,9 +68,55 @@ const getCrossingCost = (regionAvailableZMask: number, portZ: number) => {
 test("same-layer crossings in known single-layer regions are rejected as candidates", () => {
   const topLayerCrossingCost = getCrossingCost(1 << 0, 0)
   const bottomLayerCrossingCost = getCrossingCost(1 << 1, 1)
+  const innerLayer2CrossingCost = getCrossingCost(1 << 2, 2)
+  const innerLayer3CrossingCost = getCrossingCost(1 << 3, 3)
   const multiLayerCrossingCost = getCrossingCost((1 << 0) | (1 << 1), 0)
 
   expect(topLayerCrossingCost).toBe(Number.POSITIVE_INFINITY)
   expect(bottomLayerCrossingCost).toBe(Number.POSITIVE_INFINITY)
+  expect(innerLayer2CrossingCost).toBe(Number.POSITIVE_INFINITY)
+  expect(innerLayer3CrossingCost).toBe(Number.POSITIVE_INFINITY)
   expect(multiLayerCrossingCost).toBeLessThan(0.1)
+})
+
+test("single-bit availableZ masks are all treated as known single-layer regions", () => {
+  expect(isKnownSingleLayerMask(1 << 0)).toBe(true)
+  expect(isKnownSingleLayerMask(1 << 1)).toBe(true)
+  expect(isKnownSingleLayerMask(1 << 2)).toBe(true)
+  expect(isKnownSingleLayerMask(1 << 3)).toBe(true)
+  expect(isKnownSingleLayerMask((1 << 0) | (1 << 1))).toBe(false)
+  expect(isKnownSingleLayerMask(0)).toBe(false)
+})
+
+test("same-layer crossings incur the impossible single-layer penalty for higher routed layers too", () => {
+  const width = 3
+  const height = 3
+  const sameLayerIntersections = 1
+  const crossLayerIntersections = 0
+  const entryExitChanges = 0
+  const traceCount = 2
+
+  expect(
+    computeRegionCost(
+      width,
+      height,
+      sameLayerIntersections,
+      crossLayerIntersections,
+      entryExitChanges,
+      traceCount,
+      1 << 2,
+    ),
+  ).toBeGreaterThan(10)
+
+  expect(
+    computeRegionCost(
+      width,
+      height,
+      sameLayerIntersections,
+      crossLayerIntersections,
+      entryExitChanges,
+      traceCount,
+      1 << 3,
+    ),
+  ).toBeGreaterThan(10)
 })
