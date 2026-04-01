@@ -78,6 +78,7 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
   "twohop-all",
   "twohop-touch",
 ]
+const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
 
@@ -261,7 +262,7 @@ const findBestAutomaticSectionMask = (
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
     topology,
-    searchConfig?.maxHotRegions ?? 9,
+    searchConfig?.maxHotRegions ?? DEFAULT_MAX_HOT_REGIONS,
     searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
   )) {
     const candidateProblem = createProblemWithPortSectionMask(
