@@ -76,6 +76,7 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 }
 
 const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
+  "self-touch",
   "onehop-all",
   "onehop-touch",
   "twohop-all",
