@@ -22,6 +22,8 @@ import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
  *   inside the hottest region plus its immediate neighbors.
  * - `twohop-touch`: ports are included when they touch any region in the
  *   two-hop neighborhood around the hottest region.
+ * - `threehop-all`: ports are included only when all of their incident regions
+ *   are inside the three-hop neighborhood around the hottest region.
  */
 export type TinyHyperGraphSectionCandidateFamily =
   | "self-touch"
@@ -29,6 +31,7 @@ export type TinyHyperGraphSectionCandidateFamily =
   | "onehop-touch"
   | "twohop-all"
   | "twohop-touch"
+  | "threehop-all"
 
 type SectionMaskCandidate = {
   /** Human-readable identifier used in logs, stats, and benchmark output. */
@@ -71,7 +74,7 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
 }
 
-const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
+const BASE_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
   "self-touch",
   "onehop-all",
   "onehop-touch",
@@ -79,8 +82,16 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
   "twohop-touch",
 ]
 const DEFAULT_MAX_HOT_REGIONS = 2
+const DEFAULT_EFFORT = 1
 
 const IMPROVEMENT_EPSILON = 1e-9
+
+export const getDefaultSectionCandidateFamilies = (
+  effort = DEFAULT_EFFORT,
+): TinyHyperGraphSectionCandidateFamily[] =>
+  effort > 1
+    ? [...BASE_CANDIDATE_FAMILIES, "threehop-all"]
+    : [...BASE_CANDIDATE_FAMILIES]
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -181,44 +192,64 @@ const getSectionMaskCandidates = (
     const oneHopRegionIds = getAdjacentRegionIds(topology, [hotRegionId])
     const twoHopRegionIds = getAdjacentRegionIds(topology, oneHopRegionIds)
 
-    const candidateByFamily: Record<
-      TinyHyperGraphSectionCandidateFamily,
-      SectionMaskCandidate
-    > = {
-      "self-touch": {
-        label: `hot-${hotRegionId}-self-touch`,
-        family: "self-touch",
-        regionIds: [hotRegionId],
-        portSelectionRule: "touches-selected-region",
-      },
-      "onehop-all": {
-        label: `hot-${hotRegionId}-onehop-all`,
-        family: "onehop-all",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "onehop-touch": {
-        label: `hot-${hotRegionId}-onehop-touch`,
-        family: "onehop-touch",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-      "twohop-all": {
-        label: `hot-${hotRegionId}-twohop-all`,
-        family: "twohop-all",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "twohop-touch": {
-        label: `hot-${hotRegionId}-twohop-touch`,
-        family: "twohop-touch",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-    }
-
     for (const family of candidateFamilies) {
-      candidates.push(candidateByFamily[family])
+      if (family === "self-touch") {
+        candidates.push({
+          label: `hot-${hotRegionId}-self-touch`,
+          family,
+          regionIds: [hotRegionId],
+          portSelectionRule: "touches-selected-region",
+        })
+        continue
+      }
+
+      if (family === "onehop-all") {
+        candidates.push({
+          label: `hot-${hotRegionId}-onehop-all`,
+          family,
+          regionIds: oneHopRegionIds,
+          portSelectionRule: "all-incident-regions-selected",
+        })
+        continue
+      }
+
+      if (family === "onehop-touch") {
+        candidates.push({
+          label: `hot-${hotRegionId}-onehop-touch`,
+          family,
+          regionIds: oneHopRegionIds,
+          portSelectionRule: "touches-selected-region",
+        })
+        continue
+      }
+
+      if (family === "twohop-all") {
+        candidates.push({
+          label: `hot-${hotRegionId}-twohop-all`,
+          family,
+          regionIds: twoHopRegionIds,
+          portSelectionRule: "all-incident-regions-selected",
+        })
+        continue
+      }
+
+      if (family === "twohop-touch") {
+        candidates.push({
+          label: `hot-${hotRegionId}-twohop-touch`,
+          family,
+          regionIds: twoHopRegionIds,
+          portSelectionRule: "touches-selected-region",
+        })
+        continue
+      }
+
+      const threeHopRegionIds = getAdjacentRegionIds(topology, twoHopRegionIds)
+      candidates.push({
+        label: `hot-${hotRegionId}-threehop-all`,
+        family,
+        regionIds: threeHopRegionIds,
+        portSelectionRule: "all-incident-regions-selected",
+      })
     }
   }
 
@@ -262,12 +293,15 @@ const findBestAutomaticSectionMask = (
     searchConfig?.maxHotRegions ??
     sectionSolverOptions.MAX_HOT_REGIONS ??
     DEFAULT_MAX_HOT_REGIONS
+  const candidateFamilies =
+    searchConfig?.candidateFamilies ??
+    getDefaultSectionCandidateFamilies(sectionSolverOptions.effort)
 
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
     topology,
     maxHotRegions,
-    searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
+    candidateFamilies,
   )) {
     const candidateProblem = createProblemWithPortSectionMask(
       problem,
@@ -366,6 +400,7 @@ const findBestAutomaticSectionMask = (
 }
 
 export interface TinyHyperGraphSectionMaskContext {
+  effort: number
   serializedHyperGraph: SerializedHyperGraph
   solvedSerializedHyperGraph: SerializedHyperGraph
   solvedSolver: TinyHyperGraphSolver
@@ -381,6 +416,7 @@ export interface TinyHyperGraphSectionPipelineSearchConfig {
 
 export interface TinyHyperGraphSectionPipelineInput {
   serializedHyperGraph: SerializedHyperGraph
+  effort?: number
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
@@ -388,10 +424,16 @@ export interface TinyHyperGraphSectionPipelineInput {
 }
 
 export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
+  effort = DEFAULT_EFFORT
   initialVisualizationSolver?: TinyHyperGraphSolver
   selectedSectionMask?: Int8Array
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+
+  constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
+    super(inputProblem)
+    this.effort = inputProblem.effort ?? DEFAULT_EFFORT
+  }
 
   override pipelineDef = [
     {
@@ -407,6 +449,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           {
             ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+            effort: instance.effort,
             ...instance.inputProblem.solveGraphOptions,
           },
         ] as ConstructorParameters<typeof TinyHyperGraphSolver>
@@ -443,6 +486,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
     const sectionSolverOptions = {
       ...DEFAULT_SECTION_SOLVER_OPTIONS,
+      effort: this.effort,
       ...this.inputProblem.sectionSolverOptions,
     }
     const { topology, problem, solution } = loadSerializedHyperGraph(
@@ -451,6 +495,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
     const portSectionMask = this.inputProblem.createSectionMask
       ? this.inputProblem.createSectionMask({
+          effort: this.effort,
           serializedHyperGraph: this.inputProblem.serializedHyperGraph,
           solvedSerializedHyperGraph,
           solvedSolver,
@@ -523,6 +568,11 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       this.initialVisualizationSolver = new TinyHyperGraphSolver(
         topology,
         problem,
+        {
+          ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+          effort: this.effort,
+          ...this.inputProblem.solveGraphOptions,
+        },
       )
     }
 

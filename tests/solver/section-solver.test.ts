@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  getDefaultSectionCandidateFamilies,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
@@ -231,4 +232,34 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.failed).toBe(false)
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})
+
+test("section pipeline adds threehop-all to automatic families when effort is greater than one", () => {
+  const baselinePipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSolverOptions: {
+      MAX_HOT_REGIONS: 1,
+    },
+  })
+  const higherEffortPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    effort: 2,
+    sectionSolverOptions: {
+      MAX_HOT_REGIONS: 1,
+    },
+  })
+
+  baselinePipelineSolver.solve()
+  higherEffortPipelineSolver.solve()
+
+  expect(baselinePipelineSolver.solved).toBe(true)
+  expect(higherEffortPipelineSolver.solved).toBe(true)
+  expect(getDefaultSectionCandidateFamilies(1)).not.toContain("threehop-all")
+  expect(getDefaultSectionCandidateFamilies(2)).toContain("threehop-all")
+  expect(baselinePipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(
+    5,
+  )
+  expect(
+    higherEffortPipelineSolver.stats.sectionSearchGeneratedCandidateCount,
+  ).toBe(6)
 })

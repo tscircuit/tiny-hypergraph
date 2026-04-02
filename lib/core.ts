@@ -150,6 +150,7 @@ export interface TinyHyperGraphWorkingState {
 }
 
 export interface TinyHyperGraphSolverOptions {
+  effort?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -159,6 +160,7 @@ export interface TinyHyperGraphSolverOptions {
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
+  effort: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -175,6 +177,9 @@ export const applyTinyHyperGraphSolverOptions = (
     return
   }
 
+  if (options.effort !== undefined) {
+    solver.effort = options.effort
+  }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
   }
@@ -199,6 +204,7 @@ export const applyTinyHyperGraphSolverOptions = (
 export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
+  effort: solver.effort,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -228,6 +234,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  effort = 1
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8

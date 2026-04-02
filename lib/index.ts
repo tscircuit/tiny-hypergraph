@@ -5,6 +5,7 @@ export {
   type TinyHyperGraphSectionSolverOptions,
 } from "./section-solver"
 export {
+  getDefaultSectionCandidateFamilies,
   TinyHyperGraphSectionPipelineSolver,
   type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSectionMaskContext,
