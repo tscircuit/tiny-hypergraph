@@ -1,4 +1,5 @@
 export * from "./core"
+export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 export {
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionSolverOptions,
