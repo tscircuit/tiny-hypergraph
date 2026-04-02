@@ -104,6 +104,7 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  pairCount: regionIntersectionCache.pairCount,
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -353,7 +354,10 @@ const applyRouteSegmentsToSolver = (
   )
   solver.state.regionIntersectionCaches = Array.from(
     { length: solver.topology.regionCount },
-    () => createEmptyRegionIntersectionCache(),
+    () =>
+      createEmptyRegionIntersectionCache(
+        solver.REGION_PAIR_CAPACITY_GROWTH_STEPS[0] ?? 0,
+      ),
   )
   solver.state.currentRouteId = undefined
   solver.state.currentRouteNetId = undefined
@@ -869,6 +873,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
+  REGION_PAIR_CAPACITY_GROWTH_STEPS: number[] = []
 
   constructor(
     public topology: TinyHyperGraphTopology,

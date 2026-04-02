@@ -18,11 +18,12 @@ import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
 export const createEmptyRegionIntersectionCache =
-  (): RegionIntersectionCache => ({
-    netIds: new Int32Array(0),
-    lesserAngles: new Int32Array(0),
-    greaterAngles: new Int32Array(0),
-    layerMasks: new Int32Array(0),
+  (initialPairCapacity = 0): RegionIntersectionCache => ({
+    netIds: new Int32Array(initialPairCapacity),
+    lesserAngles: new Int32Array(initialPairCapacity),
+    greaterAngles: new Int32Array(initialPairCapacity),
+    layerMasks: new Int32Array(initialPairCapacity),
+    pairCount: 0,
     existingCrossingLayerIntersections: 0,
     existingSameLayerIntersections: 0,
     existingEntryExitLayerChanges: 0,
@@ -156,6 +157,7 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   MAX_ITERATIONS?: number
+  REGION_PAIR_CAPACITY_GROWTH_STEPS?: number[]
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -165,7 +167,15 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   MAX_ITERATIONS: number
+  REGION_PAIR_CAPACITY_GROWTH_STEPS: number[]
 }
+
+const normalizeRegionPairCapacityGrowthSteps = (
+  regionPairCapacityGrowthSteps: number[],
+) =>
+  [...new Set(regionPairCapacityGrowthSteps.map((step) => Math.floor(step)))]
+    .filter((step) => Number.isInteger(step) && step > 0)
+    .sort((left, right) => left - right)
 
 export const applyTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
@@ -194,6 +204,12 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
   }
+  if (options.REGION_PAIR_CAPACITY_GROWTH_STEPS !== undefined) {
+    solver.REGION_PAIR_CAPACITY_GROWTH_STEPS =
+      normalizeRegionPairCapacityGrowthSteps(
+        options.REGION_PAIR_CAPACITY_GROWTH_STEPS,
+      )
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -205,6 +221,9 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
+  REGION_PAIR_CAPACITY_GROWTH_STEPS: [
+    ...solver.REGION_PAIR_CAPACITY_GROWTH_STEPS,
+  ],
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -236,6 +255,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
+  REGION_PAIR_CAPACITY_GROWTH_STEPS: number[] = []
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -249,7 +269,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
       regionIntersectionCaches: Array.from(
         { length: topology.regionCount },
-        () => createEmptyRegionIntersectionCache(),
+        () =>
+          createEmptyRegionIntersectionCache(
+            this.REGION_PAIR_CAPACITY_GROWTH_STEPS[0] ?? 0,
+          ),
       ),
       currentRouteId: undefined,
       currentRouteNetId: undefined,
@@ -516,6 +539,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
+  getNextRegionPairCapacity(requiredPairCount: number): number {
+    for (const capacity of this.REGION_PAIR_CAPACITY_GROWTH_STEPS) {
+      if (capacity >= requiredPairCount) {
+        return capacity
+      }
+    }
+
+    return requiredPairCount
+  }
+
   populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
@@ -569,23 +602,38 @@ export class TinyHyperGraphSolver extends BaseSolver {
       segmentGeometry.layerMask,
       segmentGeometry.entryExitLayerChanges,
     )
-    const nextLength = regionCache.netIds.length + 1
+    let netIds = regionCache.netIds
+    let lesserAngles = regionCache.lesserAngles
+    let greaterAngles = regionCache.greaterAngles
+    let layerMasks = regionCache.layerMasks
+    let pairCount = regionCache.pairCount
 
-    const netIds = new Int32Array(nextLength)
-    netIds.set(regionCache.netIds)
-    netIds[nextLength - 1] = state.currentRouteNetId!
+    if (pairCount < netIds.length) {
+      netIds[pairCount] = state.currentRouteNetId!
+      lesserAngles[pairCount] = segmentGeometry.lesserAngle
+      greaterAngles[pairCount] = segmentGeometry.greaterAngle
+      layerMasks[pairCount] = segmentGeometry.layerMask
+      pairCount += 1
+    } else {
+      const nextLength = this.getNextRegionPairCapacity(pairCount + 1)
 
-    const lesserAngles = new Int32Array(nextLength)
-    lesserAngles.set(regionCache.lesserAngles)
-    lesserAngles[nextLength - 1] = segmentGeometry.lesserAngle
+      netIds = new Int32Array(nextLength)
+      netIds.set(regionCache.netIds)
+      netIds[pairCount] = state.currentRouteNetId!
 
-    const greaterAngles = new Int32Array(nextLength)
-    greaterAngles.set(regionCache.greaterAngles)
-    greaterAngles[nextLength - 1] = segmentGeometry.greaterAngle
+      lesserAngles = new Int32Array(nextLength)
+      lesserAngles.set(regionCache.lesserAngles)
+      lesserAngles[pairCount] = segmentGeometry.lesserAngle
 
-    const layerMasks = new Int32Array(nextLength)
-    layerMasks.set(regionCache.layerMasks)
-    layerMasks[nextLength - 1] = segmentGeometry.layerMask
+      greaterAngles = new Int32Array(nextLength)
+      greaterAngles.set(regionCache.greaterAngles)
+      greaterAngles[pairCount] = segmentGeometry.greaterAngle
+
+      layerMasks = new Int32Array(nextLength)
+      layerMasks.set(regionCache.layerMasks)
+      layerMasks[pairCount] = segmentGeometry.layerMask
+      pairCount += 1
+    }
 
     const existingSameLayerIntersections =
       regionCache.existingSameLayerIntersections + newSameLayerIntersections
@@ -594,13 +642,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newCrossLayerIntersections
     const existingEntryExitLayerChanges =
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
-    const existingSegmentCount = lesserAngles.length
+    const existingSegmentCount = regionCache.existingSegmentCount + 1
 
     state.regionIntersectionCaches[regionId] = {
       netIds,
       lesserAngles,
       greaterAngles,
       layerMasks,
+      pairCount,
       existingSameLayerIntersections,
       existingCrossingLayerIntersections,
       existingEntryExitLayerChanges,
@@ -667,7 +716,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.regionIntersectionCaches = Array.from(
       { length: topology.regionCount },
-      () => createEmptyRegionIntersectionCache(),
+      () =>
+        createEmptyRegionIntersectionCache(
+          this.REGION_PAIR_CAPACITY_GROWTH_STEPS[0] ?? 0,
+        ),
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined

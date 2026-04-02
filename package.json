@@ -8,7 +8,8 @@
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
-    "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
+    "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts",
+    "benchmark:max-pairs-per-region": "bun run scripts/benchmarking/max-pairs-per-region.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",

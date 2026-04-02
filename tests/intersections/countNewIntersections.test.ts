@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
 import {
   countNewIntersections,
+  countNewIntersectionsWithValues,
   createDynamicAnglePairArrays,
 } from "lib/countNewIntersections"
 import { mapPortsToAnglePairs } from "lib/mapPortsToAnglePairs"
@@ -95,4 +96,23 @@ test("countNewIntersections matches the incremental delta from the full counter"
       ],
     })
   }
+})
+
+test("countNewIntersectionsWithValues ignores unused preallocated slots", () => {
+  const result = countNewIntersectionsWithValues(
+    {
+      netIds: Int32Array.from([1, 2, 99, 98]),
+      lesserAngles: Int32Array.from([100, 300, 0, 0]),
+      greaterAngles: Int32Array.from([200, 400, 0, 0]),
+      layerMasks: Int32Array.from([1, 2, 1, 1]),
+      pairCount: 2,
+    },
+    3,
+    150,
+    350,
+    1,
+    0,
+  )
+
+  expect(result).toEqual([1, 1, 0])
 })
