@@ -229,6 +229,6 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
 
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
+  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(4)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })

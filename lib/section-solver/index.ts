@@ -7,6 +7,7 @@ import {
   type RegionCostSummary,
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphProblemSetup,
   type TinyHyperGraphSolution,
   type TinyHyperGraphTopology,
   type TinyHyperGraphSolverOptions,
@@ -36,6 +37,17 @@ interface SectionRoutePlan {
   activeStartPortId?: PortId
   activeEndPortId?: PortId
   forcedStartRegionId?: RegionId
+}
+
+interface OrderedRoutePath {
+  orderedPortIds: PortId[]
+  orderedRegionIds: RegionId[]
+}
+
+interface TinyHyperGraphSectionSharedContext {
+  baselineSolver: TinyHyperGraphSolver
+  baselineSummary?: RegionCostSummary
+  orderedRoutePaths?: OrderedRoutePath[]
 }
 
 export interface TinyHyperGraphSectionSolverOptions
@@ -240,10 +252,7 @@ const getOrderedRoutePath = (
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
   routeId: RouteId,
-): {
-  orderedPortIds: PortId[]
-  orderedRegionIds: RegionId[]
-} => {
+): OrderedRoutePath => {
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
   const routeSegmentRegionIds = solution.solvedRoutePathRegionIds?.[routeId] ?? []
   const startPortId = problem.routeStartPort[routeId]
@@ -342,6 +351,15 @@ const getOrderedRoutePath = (
   }
 }
 
+export const getOrderedRoutePaths = (
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+  solution: TinyHyperGraphSolution,
+): OrderedRoutePath[] =>
+  Array.from({ length: problem.routeCount }, (_, routeId) =>
+    getOrderedRoutePath(topology, problem, solution, routeId),
+  )
+
 const applyRouteSegmentsToSolver = (
   solver: TinyHyperGraphSolver,
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
@@ -436,6 +454,7 @@ const createSectionRoutePlans = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
+  orderedRoutePaths?: OrderedRoutePath[],
 ): {
   sectionProblem: TinyHyperGraphProblem
   routePlans: SectionRoutePlan[]
@@ -454,12 +473,9 @@ const createSectionRoutePlans = (
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
     const routePlan = routePlans[routeId]!
-    const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
-      topology,
-      problem,
-      solution,
-      routeId,
-    )
+    const { orderedPortIds, orderedRegionIds } =
+      orderedRoutePaths?.[routeId] ??
+      getOrderedRoutePath(topology, problem, solution, routeId)
     const maskedRuns: Array<{ startIndex: number; endIndex: number }> = []
     let currentRunStartIndex: number | undefined
 
@@ -560,7 +576,10 @@ export const getActiveSectionRouteIds = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
-) => createSectionRoutePlans(topology, problem, solution).activeRouteIds
+  orderedRoutePaths?: OrderedRoutePath[],
+) =>
+  createSectionRoutePlans(topology, problem, solution, orderedRoutePaths)
+    .activeRouteIds
 
 const getSectionRegionIds = (
   topology: TinyHyperGraphTopology,
@@ -592,6 +611,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   MAX_RIPS = Number.POSITIVE_INFINITY
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
+  EDGE_DELTA_COST_CACHE_MAX_ACTIVE_ROUTES = 12
+  EDGE_DELTA_COST_CACHE_MAX_MUTABLE_REGIONS = 24
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -605,6 +626,9 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   ) {
     super(topology, problem, options)
     applyTinyHyperGraphSectionSolverOptions(this, options)
+    this.enableEdgeDeltaCostCache =
+      activeRouteIds.length <= this.EDGE_DELTA_COST_CACHE_MAX_ACTIVE_ROUTES &&
+      mutableRegionIds.length <= this.EDGE_DELTA_COST_CACHE_MAX_MUTABLE_REGIONS
     this.state.unroutedRoutes = [...activeRouteIds]
     this.applyFixedSegments()
     this.fixedSnapshot = cloneSolvedStateSnapshot({
@@ -675,6 +699,43 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     return super.getStartingNextRegionId(routeId, startingPortId)
   }
 
+  override computeProblemSetup(): TinyHyperGraphProblemSetup {
+    const { topology, problem } = this
+    const portX = topology.portX as unknown as ArrayLike<number>
+    const portY = topology.portY as unknown as ArrayLike<number>
+    const portHCostToEndOfRoute = new Float64Array(
+      topology.portCount * problem.routeCount,
+    )
+    const portEndpointNetIds = Array.from(
+      { length: topology.portCount },
+      () => new Set<number>(),
+    )
+
+    for (const routeId of this.activeRouteIds) {
+      const routeNetId = problem.routeNet[routeId]
+      const startPortId = problem.routeStartPort[routeId]
+      const endPortId = problem.routeEndPort[routeId]
+
+      portEndpointNetIds[startPortId]!.add(routeNetId)
+      portEndpointNetIds[endPortId]!.add(routeNetId)
+
+      const endX = portX[endPortId]
+      const endY = portY[endPortId]
+
+      for (let portId = 0; portId < topology.portCount; portId++) {
+        const dx = portX[portId] - endX
+        const dy = portY[portId] - endY
+        portHCostToEndOfRoute[portId * problem.routeCount + routeId] =
+          Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+      }
+    }
+
+    return {
+      portHCostToEndOfRoute,
+      portEndpointNetIds,
+    }
+  }
+
   override resetRoutingStateForRerip() {
     if (!this.fixedSnapshot) {
       super.resetRoutingStateForRerip()
@@ -686,6 +747,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       return
     }
 
+    this.clearEdgeDeltaCostCache()
     restoreSolvedStateSnapshot(this, this.fixedSnapshot)
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
@@ -856,6 +918,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   optimizedSolver?: TinyHyperGraphSolver
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
+  orderedRoutePaths: OrderedRoutePath[]
 
   DISTANCE_TO_COST = 0.05
 
@@ -875,18 +938,26 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     public problem: TinyHyperGraphProblem,
     public initialSolution: TinyHyperGraphSolution,
     options?: TinyHyperGraphSectionSolverOptions,
+    sharedContext?: TinyHyperGraphSectionSharedContext,
   ) {
     super()
     applyTinyHyperGraphSectionSolverOptions(this, options)
-    this.baselineSolver = createSolvedSolverFromSolution(
-      topology,
-      problem,
-      initialSolution,
-      getTinyHyperGraphSolverOptions(this),
-    )
-    this.baselineSummary = summarizeRegionIntersectionCaches(
-      this.baselineSolver.state.regionIntersectionCaches,
-    )
+    this.baselineSolver =
+      sharedContext?.baselineSolver ??
+      createSolvedSolverFromSolution(
+        topology,
+        problem,
+        initialSolution,
+        getTinyHyperGraphSolverOptions(this),
+      )
+    this.baselineSummary =
+      sharedContext?.baselineSummary ??
+      summarizeRegionIntersectionCaches(
+        this.baselineSolver.state.regionIntersectionCaches,
+      )
+    this.orderedRoutePaths =
+      sharedContext?.orderedRoutePaths ??
+      getOrderedRoutePaths(topology, problem, initialSolution)
     this.sectionRegionIds = getSectionRegionIds(topology, problem)
     this.sectionBaselineSummary = summarizeRegionIntersectionCachesForRegionIds(
       this.baselineSolver.state.regionIntersectionCaches,
@@ -913,7 +984,12 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.applySectionRipPolicy()
 
     const { sectionProblem, routePlans, activeRouteIds } =
-      createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
+      createSectionRoutePlans(
+        this.topology,
+        this.problem,
+        this.initialSolution,
+        this.orderedRoutePaths,
+      )
 
     this.activeRouteIds = activeRouteIds
 
