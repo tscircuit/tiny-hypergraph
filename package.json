@@ -9,7 +9,7 @@
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts",
-    "benchmark:max-pairs-per-region": "bun run scripts/benchmarking/max-pairs-per-region.ts"
+    "benchmark:compare-main-vs-optimized": "bun run scripts/benchmarking/compare-main-vs-optimized.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",

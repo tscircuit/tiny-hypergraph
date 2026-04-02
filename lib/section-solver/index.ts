@@ -354,10 +354,7 @@ const applyRouteSegmentsToSolver = (
   )
   solver.state.regionIntersectionCaches = Array.from(
     { length: solver.topology.regionCount },
-    () =>
-      createEmptyRegionIntersectionCache(
-        solver.REGION_PAIR_CAPACITY_GROWTH_STEPS[0] ?? 0,
-      ),
+    () => createEmptyRegionIntersectionCache(),
   )
   solver.state.currentRouteId = undefined
   solver.state.currentRouteNetId = undefined
@@ -873,7 +870,6 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
-  REGION_PAIR_CAPACITY_GROWTH_STEPS: number[] = []
 
   constructor(
     public topology: TinyHyperGraphTopology,

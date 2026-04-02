@@ -148,7 +148,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
     RIP_THRESHOLD_RAMP_ATTEMPTS: 7,
     RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
     MAX_ITERATIONS: 1234,
-    REGION_PAIR_CAPACITY_GROWTH_STEPS: [4, 16, 64],
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -157,6 +156,5 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
-  expect(solver.REGION_PAIR_CAPACITY_GROWTH_STEPS).toEqual([4, 16, 64])
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })

@@ -139,7 +139,6 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
       RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
       RIP_CONGESTION_REGION_COST_FACTOR: 0.33,
       MAX_ITERATIONS: 4567,
-      REGION_PAIR_CAPACITY_GROWTH_STEPS: [4, 16, 64],
       MAX_RIPS: 80,
       MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 3,
       EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: 2,
@@ -163,12 +162,6 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     0.33,
   )
   expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
-  expect(sectionSolver.baselineSolver.REGION_PAIR_CAPACITY_GROWTH_STEPS).toEqual(
-    [4, 16, 64],
-  )
-  expect(sectionSolver.sectionSolver?.REGION_PAIR_CAPACITY_GROWTH_STEPS).toEqual(
-    [4, 16, 64],
-  )
   expect(sectionSolver.MAX_RIPS).toBe(20)
   expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(20)
   expect(
