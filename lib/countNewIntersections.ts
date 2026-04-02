@@ -21,6 +21,7 @@ export const createDynamicAnglePairArrays = (
     lesserAngles,
     greaterAngles,
     layerMasks,
+    pairCount: anglePairs.length,
   }
 }
 
@@ -33,11 +34,12 @@ export const countNewIntersectionsWithValues = (
   entryExitLayerChanges: number,
 ): [number, number, number] => {
   const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
+  const pairCount = existingPairs.pairCount ?? netIds.length
 
   let sameLayerIntersectionCount = 0
   let crossingLayerIntersectionCount = 0
 
-  for (let i = 0; i < netIds.length; i++) {
+  for (let i = 0; i < pairCount; i++) {
     if (newNet === netIds[i]) continue
 
     const lesserAngleIsInsideInterval =

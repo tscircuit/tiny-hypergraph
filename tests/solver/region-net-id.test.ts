@@ -13,6 +13,7 @@ const createRegionCache = (
   lesserAngles: new Int32Array(0),
   greaterAngles: new Int32Array(0),
   layerMasks: new Int32Array(0),
+  pairCount: 0,
   existingCrossingLayerIntersections: 0,
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
@@ -69,4 +70,39 @@ test("solver does not traverse regions reserved for a different net", () => {
     0.5 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
   )
   expect(solver.stats.reripReason).toBe("out_of_candidates")
+})
+
+test("ports reserved by multiple endpoint nets stay blocked for every route", () => {
+  const topology: TinyHyperGraphTopology = {
+    portCount: 3,
+    regionCount: 2,
+    regionIncidentPorts: [[0, 1], [1, 2]],
+    incidentPortRegion: [[0], [0, 1], [1]],
+    regionWidth: new Float64Array(2).fill(1),
+    regionHeight: new Float64Array(2).fill(1),
+    regionCenterX: new Float64Array(2).fill(0),
+    regionCenterY: new Float64Array(2).fill(0),
+    portAngleForRegion1: new Int32Array(3),
+    portAngleForRegion2: new Int32Array(3),
+    portX: new Float64Array([0, 1, 2]),
+    portY: new Float64Array(3),
+    portZ: new Int32Array(3),
+  }
+
+  const problem: TinyHyperGraphProblem = {
+    routeCount: 2,
+    portSectionMask: new Int8Array(3).fill(1),
+    routeStartPort: new Int32Array([0, 1]),
+    routeEndPort: new Int32Array([1, 2]),
+    routeNet: new Int32Array([0, 1]),
+    regionNetId: Int32Array.from([-1, -1]),
+  }
+
+  const solver = new TinyHyperGraphSolver(topology, problem)
+
+  solver.state.currentRouteNetId = 0
+  expect(solver.isPortReservedForDifferentNet(1)).toBe(true)
+
+  solver.state.currentRouteNetId = 1
+  expect(solver.isPortReservedForDifferentNet(1)).toBe(true)
 })

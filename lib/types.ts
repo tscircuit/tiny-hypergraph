@@ -22,6 +22,7 @@ export interface DynamicAnglePairArrays {
   lesserAngles: Int32Array
   greaterAngles: Int32Array
   layerMasks: Int32Array
+  pairCount: number
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
