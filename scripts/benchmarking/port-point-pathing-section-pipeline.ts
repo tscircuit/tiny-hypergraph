@@ -11,7 +11,6 @@ const DEFAULT_INPUT_PATH =
   "/Users/seve/Downloads/portPointPathingSolver_input (6).json"
 
 const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
-  "self-touch",
   "onehop-all",
   "onehop-touch",
   "twohop-all",

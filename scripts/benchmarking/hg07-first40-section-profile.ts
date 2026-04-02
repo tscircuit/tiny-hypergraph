@@ -70,7 +70,6 @@ const variants: BenchmarkVariant[] = [
       maxPasses: 1,
       maxHotRegions: 8,
       candidateFamilies: [
-        "self-touch",
         "onehop-all",
         "onehop-touch",
         "twohop-all",
@@ -84,7 +83,6 @@ const variants: BenchmarkVariant[] = [
       maxPasses: 1,
       maxHotRegions: 6,
       candidateFamilies: [
-        "self-touch",
         "onehop-all",
         "onehop-touch",
         "twohop-all",

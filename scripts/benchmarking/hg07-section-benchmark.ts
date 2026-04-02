@@ -174,7 +174,6 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig = 
 }
 
 const defaultCandidateFamilies: CandidateFamily[] = [
-  "self-touch",
   "onehop-all",
   "onehop-touch",
   "twohop-all",
