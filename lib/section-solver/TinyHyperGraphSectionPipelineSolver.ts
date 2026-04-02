@@ -258,11 +258,15 @@ const findBestAutomaticSectionMask = (
   let candidateSolveMs = 0
   let candidateReplayScoreMs = 0
   const seenPortSectionMasks = new Set<string>()
+  const maxHotRegions =
+    searchConfig?.maxHotRegions ??
+    sectionSolverOptions.MAX_HOT_REGIONS ??
+    DEFAULT_MAX_HOT_REGIONS
 
   for (const candidate of getSectionMaskCandidates(
     solvedSolver,
     topology,
-    searchConfig?.maxHotRegions ?? DEFAULT_MAX_HOT_REGIONS,
+    maxHotRegions,
     searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
   )) {
     const candidateProblem = createProblemWithPortSectionMask(

@@ -216,3 +216,19 @@ test("section pipeline searches multiple masks and commits an improving output o
     getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
   ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
 })
+
+test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSolverOptions: {
+      MAX_HOT_REGIONS: 1,
+    },
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
+  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})

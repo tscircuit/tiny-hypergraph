@@ -43,6 +43,12 @@ export interface TinyHyperGraphSectionSolverOptions
   MAX_RIPS?: number
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT?: number
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST?: number
+  /**
+   * Pipeline convenience option for automatic section-mask search.
+   * When `sectionSearchConfig.maxHotRegions` is omitted, the section pipeline
+   * falls back to this value before using its built-in default.
+   */
+  MAX_HOT_REGIONS?: number
 }
 
 const applyTinyHyperGraphSectionSolverOptions = (
