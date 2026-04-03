@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import {
   convertPortPointPathingSolverInputToSerializedHyperGraph,
+  getDefaultSectionCandidateFamilies,
   TinyHyperGraphSectionPipelineSolver,
   type TinyHyperGraphSectionCandidateFamily,
 } from "../../lib/index"
@@ -10,13 +11,7 @@ const DEFAULT_INPUT_PATH =
   process.env.TINY_HYPERGRAPH_PORT_POINT_PATHING_INPUT ??
   "/Users/seve/Downloads/portPointPathingSolver_input (6).json"
 
-const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
-  "self-touch",
-  "onehop-all",
-  "onehop-touch",
-  "twohop-all",
-  "twohop-touch",
-]
+const DEFAULT_CANDIDATE_FAMILIES = getDefaultSectionCandidateFamilies(1)
 
 const parseStringArg = (flag: string) => {
   const argIndex = process.argv.findIndex((arg) => arg === flag)
@@ -41,6 +36,7 @@ const formatMs = (value: number) => `${value.toFixed(1)}ms`
 
 type BenchmarkCase = {
   label: string
+  effort?: number
   maxHotRegions?: number
   candidateFamilies?: TinyHyperGraphSectionCandidateFamily[]
 }
@@ -74,6 +70,7 @@ const runBenchmarkCase = (
     const pipelineStartTime = performance.now()
     const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
       serializedHyperGraph,
+      effort: benchmarkCase.effort,
       sectionSearchConfig:
         benchmarkCase.maxHotRegions !== undefined ||
         benchmarkCase.candidateFamilies !== undefined

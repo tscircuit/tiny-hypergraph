@@ -857,6 +857,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
 
+  effort = 1
   DISTANCE_TO_COST = 0.05
 
   RIP_THRESHOLD_START = 0.05
