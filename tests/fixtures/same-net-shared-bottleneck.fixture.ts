@@ -49,13 +49,6 @@ const routeB = {
   mutuallyConnectedNetworkId: "net-0",
 }
 
-const routeC = {
-  connectionId: "route-c",
-  startRegionId: "start-c",
-  endRegionId: "end-c",
-  mutuallyConnectedNetworkId: "net-1",
-}
-
 export const sameNetSharedBottleneckFixture: SerializedHyperGraph = {
   regions: [
     createRegion("start-a", 0, 2, ["a-in"]),
@@ -66,11 +59,11 @@ export const sameNetSharedBottleneckFixture: SerializedHyperGraph = {
     createRegion("end-b", 3, 1, ["b-out"]),
   ],
   ports: [
-    createPort("a-in", "start-a", "left-shared", 0, 2),
-    createPort("b-in", "start-b", "left-shared", 0, 1),
+    createPort("a-in", "start-a", "left-shared", 0.5, 1.75),
+    createPort("b-in", "start-b", "left-shared", 0.5, 1.25),
     createPort("shared-x", "left-shared", "right-shared", 1.5, 1.5),
-    createPort("a-out", "right-shared", "end-a", 3, 2),
-    createPort("b-out", "right-shared", "end-b", 3, 1),
+    createPort("a-out", "right-shared", "end-a", 2.5, 1.75),
+    createPort("b-out", "right-shared", "end-b", 2.5, 1.25),
   ],
   connections: [routeA, routeB],
 }
