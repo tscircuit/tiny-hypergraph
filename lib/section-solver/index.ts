@@ -374,8 +374,8 @@ const applyRouteSegmentsToSolver = (
         fromPortId,
         toPortId,
       ])
-      solver.state.portAssignment[fromPortId] = routeId
-      solver.state.portAssignment[toPortId] = routeId
+      solver.state.portAssignment[fromPortId] = solver.state.currentRouteNetId
+      solver.state.portAssignment[toPortId] = solver.state.currentRouteNetId
       solver.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
   }
@@ -623,8 +623,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
           fromPortId,
           toPortId,
         ])
-        this.state.portAssignment[fromPortId] = routePlan.routeId
-        this.state.portAssignment[toPortId] = routePlan.routeId
+        this.state.portAssignment[fromPortId] = this.state.currentRouteNetId
+        this.state.portAssignment[toPortId] = this.state.currentRouteNetId
         this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
       }
     }

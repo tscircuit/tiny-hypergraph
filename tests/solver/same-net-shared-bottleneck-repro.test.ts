@@ -25,6 +25,6 @@ test("repro: two same-net routes must share one bottleneck port to solve", () =>
   )
   expect(stagedSvg).toMatchSvgSnapshot(import.meta.path)
 
-  expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(true)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
 })

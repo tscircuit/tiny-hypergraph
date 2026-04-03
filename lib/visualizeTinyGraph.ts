@@ -234,9 +234,9 @@ const getPortNetLabel = (
     return `net: ${solver.problem.routeNet[routeId]}`
   }
 
-  const assignedRouteId = solver.state.portAssignment[portId]
-  if (assignedRouteId >= 0) {
-    return `net: ${solver.problem.routeNet[assignedRouteId]}`
+  const assignedNetId = solver.state.portAssignment[portId]
+  if (assignedNetId >= 0) {
+    return `net: ${assignedNetId}`
   }
 
   const netIds = new Set<number>()
