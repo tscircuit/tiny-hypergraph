@@ -122,7 +122,7 @@ export interface Candidate {
 }
 
 export interface TinyHyperGraphWorkingState {
-  // portAssignment[portId] = RouteId, -1 means unassigned
+  // portAssignment[portId] = NetId, -1 means unassigned
   portAssignment: Int32Array
 
   // regionSegments[regionId] = Array<Route Assignment and Two Ports>
@@ -381,19 +381,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
     for (const neighborPortId of neighbors) {
-      const assignedRouteId = state.portAssignment[neighborPortId]
+      const assignedNetId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
-        if (
-          assignedRouteId !== -1 &&
-          problem.routeNet[assignedRouteId] !== state.currentRouteNetId
-        ) {
+        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
         this.onPathFound(currentCandidate)
         return
       }
-      if (assignedRouteId !== -1) continue
+      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        continue
+      }
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
@@ -765,8 +764,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         fromPortId,
         toPortId,
       ])
-      state.portAssignment[fromPortId] = currentRouteId
-      state.portAssignment[toPortId] = currentRouteId
+      state.portAssignment[fromPortId] = state.currentRouteNetId!
+      state.portAssignment[toPortId] = state.currentRouteNetId!
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
 
