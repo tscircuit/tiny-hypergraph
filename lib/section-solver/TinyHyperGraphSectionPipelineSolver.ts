@@ -11,7 +11,11 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
-import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import {
+  getActiveSectionRouteIds,
+  getOrderedRoutePaths,
+  TinyHyperGraphSectionSolver,
+} from "./index"
 
 /**
  * Candidate section families used by the automatic section-mask search.
@@ -87,6 +91,21 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
     (maxRegionCost, regionIntersectionCache) =>
       Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
     0,
+  )
+
+const summarizeSolverRegionCosts = (
+  solver: TinyHyperGraphSolver,
+): { maxRegionCost: number; totalRegionCost: number } =>
+  solver.state.regionIntersectionCaches.reduce(
+    (summary, regionIntersectionCache) => ({
+      maxRegionCost: Math.max(
+        summary.maxRegionCost,
+        regionIntersectionCache.existingRegionCost,
+      ),
+      totalRegionCost:
+        summary.totalRegionCost + regionIntersectionCache.existingRegionCost,
+    }),
+    { maxRegionCost: 0, totalRegionCost: 0 },
   )
 
 const getSerializedOutputMaxRegionCost = (
@@ -235,15 +254,13 @@ const findBestAutomaticSectionMask = (
 ): AutomaticSectionSearchResult => {
   const searchStartTime = performance.now()
   const baselineEvaluationStartTime = performance.now()
-  const baselineSectionSolver = new TinyHyperGraphSectionSolver(
-    topology,
-    problem,
-    solution,
-    sectionSolverOptions,
-  )
-  const baselineMaxRegionCost = getMaxRegionCost(
-    baselineSectionSolver.baselineSolver,
-  )
+  const orderedRoutePaths = getOrderedRoutePaths(topology, problem, solution)
+  const sharedBaseline = {
+    baselineSolver: solvedSolver,
+    baselineSummary: summarizeSolverRegionCosts(solvedSolver),
+    orderedRoutePaths,
+  }
+  const baselineMaxRegionCost = sharedBaseline.baselineSummary.maxRegionCost
   const baselineEvaluationMs = performance.now() - baselineEvaluationStartTime
 
   let bestFinalMaxRegionCost = baselineMaxRegionCost
@@ -293,6 +310,7 @@ const findBestAutomaticSectionMask = (
         topology,
         candidateProblem,
         solution,
+        orderedRoutePaths,
       )
       candidateEligibilityMs += performance.now() - eligibilityStartTime
 
@@ -308,6 +326,7 @@ const findBestAutomaticSectionMask = (
         candidateProblem,
         solution,
         sectionSolverOptions,
+        sharedBaseline,
       )
       candidateInitMs += performance.now() - candidateInitStartTime
 
@@ -425,6 +444,13 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     TinyHyperGraphProblem,
     TinyHyperGraphSolution,
     TinyHyperGraphSectionSolverOptions,
+    {
+      baselineSolver: TinyHyperGraphSolver
+      baselineSummary: {
+        maxRegionCost: number
+        totalRegionCost: number
+      }
+    },
   ] {
     const solvedSerializedHyperGraph =
       this.getStageOutput<SerializedHyperGraph>("solveGraph")
@@ -448,6 +474,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     const { topology, problem, solution } = loadSerializedHyperGraph(
       solvedSerializedHyperGraph,
     )
+    const orderedRoutePaths = getOrderedRoutePaths(topology, problem, solution)
+    const sharedBaseline = {
+      baselineSolver: solvedSolver,
+      baselineSummary: summarizeSolverRegionCosts(solvedSolver),
+      orderedRoutePaths,
+    }
 
     const portSectionMask = this.inputProblem.createSectionMask
       ? this.inputProblem.createSectionMask({
@@ -512,7 +544,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         .length,
     }
 
-    return [topology, problem, solution, sectionSolverOptions]
+    return [topology, problem, solution, sectionSolverOptions, sharedBaseline]
   }
 
   getInitialVisualizationSolver() {

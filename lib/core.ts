@@ -220,6 +220,8 @@ interface SegmentGeometryScratch {
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private edgeDeltaCostByKey = new Map<number, number>()
+  protected enableEdgeDeltaCostCache = false
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
     greaterAngle: 0,
@@ -318,6 +320,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     void this.problemSetup
   }
 
+  protected clearEdgeDeltaCostCache() {
+    if (this.enableEdgeDeltaCostCache) {
+      this.edgeDeltaCostByKey.clear()
+    }
+  }
+
   override _step() {
     const { problem, topology, state } = this
 
@@ -331,6 +339,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
 
       this.resetCandidateBestCosts()
+      this.clearEdgeDeltaCostCache()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
       state.candidateQueue.clear()
       const startingNextRegionId = this.getStartingNextRegionId(
@@ -377,8 +386,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    const neighbors =
-      topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    const neighbors = topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
@@ -398,7 +406,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       const g = this.computeG(currentCandidate, neighborPortId)
       if (!Number.isFinite(g)) continue
-      const h = this.computeH(neighborPortId)
 
       const nextRegionId =
         topology.incidentPortRegion[neighborPortId][0] ===
@@ -413,7 +420,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
-      const newCandidate = {
+      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      if (g >= this.getCandidateBestCost(candidateHopId)) continue
+
+      const h = this.computeH(neighborPortId)
+      this.setCandidateBestCost(candidateHopId, g)
+      state.candidateQueue.queue({
         prevRegionId: currentCandidate.nextRegionId,
         nextRegionId,
         portId: neighborPortId,
@@ -421,18 +433,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         h,
         f: g + h,
         prevCandidate: currentCandidate,
-      }
-
-      if (neighborPortId === state.goalPortId) {
-        this.onPathFound(newCandidate)
-        return
-      }
-
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (g >= this.getCandidateBestCost(candidateHopId)) continue
-
-      this.setCandidateBestCost(candidateHopId, g)
-      state.candidateQueue.queue(newCandidate)
+      })
     }
   }
 
@@ -659,6 +660,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
 
+    this.clearEdgeDeltaCostCache()
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
       { length: topology.regionCount },
@@ -769,60 +771,115 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
 
+    this.clearEdgeDeltaCostCache()
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
-    const { topology, state } = this
-
-    const nextRegionId = currentCandidate.nextRegionId
-
-    const regionCache = state.regionIntersectionCaches[nextRegionId]
+    const segmentRegionId = currentCandidate.nextRegionId
     const segmentGeometry = this.populateSegmentGeometryScratch(
-      nextRegionId,
+      segmentRegionId,
       currentCandidate.portId,
       neighborPortId,
     )
-
-    const [
-      newSameLayerIntersections,
-      newCrossLayerIntersections,
-      newEntryExitLayerChanges,
-    ] = countNewIntersectionsWithValues(
-      regionCache,
-      state.currentRouteNetId!,
+    const edgeDeltaCost = this.computeEdgeDeltaCost(
+      segmentRegionId,
+      this.getEdgeCostKey(
+        segmentRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      ),
       segmentGeometry.lesserAngle,
       segmentGeometry.greaterAngle,
       segmentGeometry.layerMask,
       segmentGeometry.entryExitLayerChanges,
     )
 
+    if (!Number.isFinite(edgeDeltaCost)) {
+      return Number.POSITIVE_INFINITY
+    }
+
+    return (
+      currentCandidate.g +
+      edgeDeltaCost +
+      this.state.regionCongestionCost[segmentRegionId]
+    )
+  }
+
+  protected getEdgeCostKey(
+    segmentRegionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ) {
+    const lesserPortId = port1Id < port2Id ? port1Id : port2Id
+    const greaterPortId = port1Id < port2Id ? port2Id : port1Id
+
+    return (
+      segmentRegionId * this.topology.portCount * this.topology.portCount +
+      lesserPortId * this.topology.portCount +
+      greaterPortId
+    )
+  }
+
+  protected computeEdgeDeltaCost(
+    segmentRegionId: RegionId,
+    edgeCostKey: number,
+    lesserAngle: number,
+    greaterAngle: number,
+    layerMask: number,
+    entryExitLayerChanges: number,
+  ) {
+    const cachedEdgeDeltaCost = this.enableEdgeDeltaCostCache
+      ? this.edgeDeltaCostByKey.get(edgeCostKey)
+      : undefined
+
+    if (cachedEdgeDeltaCost !== undefined) {
+      return cachedEdgeDeltaCost
+    }
+
+    const regionCache = this.state.regionIntersectionCaches[segmentRegionId]
+    const [
+      newSameLayerIntersections,
+      newCrossLayerIntersections,
+      newEntryExitLayerChanges,
+    ] = countNewIntersectionsWithValues(
+      regionCache,
+      this.state.currentRouteNetId!,
+      lesserAngle,
+      greaterAngle,
+      layerMask,
+      entryExitLayerChanges,
+    )
+
     if (
       newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      this.isKnownSingleLayerRegion(segmentRegionId)
     ) {
+      if (this.enableEdgeDeltaCostCache) {
+        this.edgeDeltaCostByKey.set(edgeCostKey, Number.POSITIVE_INFINITY)
+      }
       return Number.POSITIVE_INFINITY
     }
 
     const newRegionCost =
       computeRegionCost(
-        topology.regionWidth[nextRegionId],
-        topology.regionHeight[nextRegionId],
+        this.topology.regionWidth[segmentRegionId],
+        this.topology.regionHeight[segmentRegionId],
         regionCache.existingSameLayerIntersections + newSameLayerIntersections,
         regionCache.existingCrossingLayerIntersections +
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
-        topology.regionAvailableZMask?.[nextRegionId] ?? 0,
+        this.topology.regionAvailableZMask?.[segmentRegionId] ?? 0,
       ) - regionCache.existingRegionCost
 
-    return (
-      currentCandidate.g +
-      newRegionCost +
-      state.regionCongestionCost[nextRegionId]
-    )
+    if (this.enableEdgeDeltaCostCache) {
+      this.edgeDeltaCostByKey.set(edgeCostKey, newRegionCost)
+    }
+
+    return newRegionCost
   }
 
   computeH(neighborPortId: PortId): number {
