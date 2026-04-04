@@ -700,7 +700,7 @@ export const visualizeTinyHyperGraph = (
       const [region1Id, region2Id] =
         solver.topology.incidentPortRegion[portId] ?? []
       if (
-        options.showIdlePortRegionConnectors === false ||
+        options.showIdlePortRegionConnectors !== true ||
         region1Id === undefined ||
         region2Id === undefined
       ) {

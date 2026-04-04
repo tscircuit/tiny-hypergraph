@@ -832,7 +832,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   override visualize(): GraphicsObject {
-    return visualizeTinyGraph(this)
+    return visualizeTinyGraph(this, {
+      showIdlePortRegionConnectors: false,
+    })
   }
 
   override getOutput() {

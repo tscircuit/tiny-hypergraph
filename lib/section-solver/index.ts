@@ -1016,6 +1016,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     if (this.optimizedSolver) {
       return visualizeTinyGraph(this.optimizedSolver, {
         highlightSectionMask: true,
+        showIdlePortRegionConnectors: false,
       })
     }
 
