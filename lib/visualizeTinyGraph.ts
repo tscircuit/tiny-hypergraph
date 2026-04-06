@@ -236,7 +236,7 @@ const getPortNetLabel = (
 
   const assignedNetId = solver.state.portAssignment[portId]
   if (assignedNetId >= 0) {
-    return `assigned net: ${assignedNetId}`
+    return `net: ${assignedNetId}`
   }
 
   const netIds = new Set<number>()
