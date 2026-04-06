@@ -52,21 +52,25 @@ const routeB = {
 
 export const yPreExitFixture: SerializedHyperGraph = {
   regions: [
-    createRegion("start-a", 0, 2, ["a-in"]),
-    createRegion("start-b", 0, 0, ["b-in"]),
-    createRegion("shared-parent", 1, 1, ["a-in", "b-in", "shared-point-top", "shared-point-bottom"]),
-    createRegion("exit-a", 2, 2, ["shared-point-top", "a-out"]),
-    createRegion("exit-b", 2, 0, ["shared-point-bottom", "b-out"]),
-    createRegion("end-a", 3, 2, ["a-out"]),
-    createRegion("end-b", 3, 0, ["b-out"]),
+    createRegion("start-a", 0, 2, ["a-port"]),
+    createRegion("start-b", 0, 0, ["b-port"]),
+    createRegion("shared-parent", 1, 1, ["a-port", "b-port", "shared-top", "shared-bottom"]),
+    createRegion("same-end", 2, 1, ["shared-top", "shared-bottom"]),
   ],
   ports: [
-    createPort("a-in", "start-a", "shared-parent", 0.5, 1.75),
-    createPort("b-in", "start-b", "shared-parent", 0.5, 0.25),
-    createPort("shared-point-top", "shared-parent", "exit-a", 1.5, 1.5),
-    createPort("shared-point-bottom", "shared-parent", "exit-b", 1.5, 0.5),
-    createPort("a-out", "exit-a", "end-a", 2.5, 1.75),
-    createPort("b-out", "exit-b", "end-b", 2.5, 0.25),
+    createPort("a-port", "start-a", "shared-parent", 0.5, 1.75),
+    createPort("b-port", "start-b", "shared-parent", 0.5, 0.25),
+    createPort("shared-top", "shared-parent", "same-end", 1.5, 1.5),
+    createPort("shared-bottom", "shared-parent", "same-end", 1.5, 0.5),
   ],
-  connections: [routeA, routeB],
+  connections: [
+    {
+      ...routeA,
+      endRegionId: "same-end",
+    },
+    {
+      ...routeB,
+      endRegionId: "same-end",
+    },
+  ],
 }
