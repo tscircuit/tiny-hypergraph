@@ -54,14 +54,16 @@ export const yPreExitFixture: SerializedHyperGraph = {
   regions: [
     createRegion("start-a", 0, 2, ["a-port"]),
     createRegion("start-b", 0, 0, ["b-port"]),
-    createRegion("shared-parent", 1, 1, ["a-port", "b-port", "shared-top", "shared-bottom"]),
-    createRegion("same-end", 2, 1, ["shared-top", "shared-bottom"]),
+    createRegion("center-y", 1, 1, ["a-port", "b-port", "shared-top", "shared-bottom"]),
+    createRegion("shared-parent", 2, 1, ["shared-top", "shared-bottom", "end-port"]),
+    createRegion("same-end", 3, 1, ["end-port"]),
   ],
   ports: [
-    createPort("a-port", "start-a", "shared-parent", 0.5, 1.75),
-    createPort("b-port", "start-b", "shared-parent", 0.5, 0.25),
-    createPort("shared-top", "shared-parent", "same-end", 1.5, 1.5),
-    createPort("shared-bottom", "shared-parent", "same-end", 1.5, 0.5),
+    createPort("a-port", "start-a", "center-y", 0.5, 1.75),
+    createPort("b-port", "start-b", "center-y", 0.5, 0.25),
+    createPort("shared-top", "center-y", "shared-parent", 1.5, 1.5),
+    createPort("shared-bottom", "center-y", "shared-parent", 1.5, 0.5),
+    createPort("end-port", "shared-parent", "same-end", 2.5, 1),
   ],
   connections: [
     {
