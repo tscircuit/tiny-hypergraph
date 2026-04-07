@@ -1,6 +1,10 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BasePipelineSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { mkdtempSync, readFileSync, rmSync } from "node:fs"
+import { createRequire } from "node:module"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
   TinyHyperGraphProblem,
@@ -11,7 +15,13 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
-import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import {
+  cloneRegionSegments,
+  createSolvedSolverFromRegionSegments,
+  createSolvedSolverFromSolution,
+  getActiveSectionRouteIds,
+  TinyHyperGraphSectionSolver,
+} from "./index"
 
 /**
  * Candidate section families used by the automatic section-mask search.
@@ -31,14 +41,15 @@ export type TinyHyperGraphSectionCandidateFamily =
   | "twohop-touch"
 
 type SectionMaskCandidate = {
-  /** Human-readable identifier used in logs, stats, and benchmark output. */
   label: string
-  /** Candidate generation family that produced this section mask. */
   family: TinyHyperGraphSectionCandidateFamily
-  /** Regions included in the candidate section before conversion to a port mask. */
   regionIds: RegionId[]
-  /** Rule for deciding whether a port belongs in the section mask. */
   portSelectionRule: "touches-selected-region" | "all-incident-regions-selected"
+}
+
+type RegionCostSummary = {
+  maxRegionCost: number
+  totalRegionCost: number
 }
 
 type AutomaticSectionSearchResult = {
@@ -56,6 +67,43 @@ type AutomaticSectionSearchResult = {
   candidateReplayScoreMs: number
   winningCandidateLabel?: string
   winningCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+}
+
+type MultiSectionWorkerJob = {
+  serializedHyperGraph: SerializedHyperGraph
+  candidate: SectionMaskCandidate
+  portSectionMask: Int8Array
+  activeRouteIds: number[]
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions
+}
+
+type MultiSectionCandidateResult = {
+  label: string
+  family: TinyHyperGraphSectionCandidateFamily
+  portSectionMask: Int8Array
+  touchedRegionIds: RegionId[]
+  touchedRouteIds: number[]
+  finalSummary: RegionCostSummary
+  output: SerializedHyperGraph
+}
+
+type MultiSectionRoundResult = {
+  serializedHyperGraph: SerializedHyperGraph
+  portSectionMask: Int8Array
+  finalSummary: RegionCostSummary
+  generatedCandidateCount: number
+  candidateCount: number
+  duplicateCandidateCount: number
+  totalMs: number
+  baselineEvaluationMs: number
+  candidateEligibilityMs: number
+  candidateInitMs: number
+  candidateSolveMs: number
+  candidateReplayScoreMs: number
+  acceptedCandidateCount: number
+  roundCount: number
+  workerCount: number
+  acceptedCandidateLabels: string[]
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
@@ -79,19 +127,58 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
   "twohop-touch",
 ]
 const DEFAULT_MAX_HOT_REGIONS = 2
-
+const DEFAULT_MULTI_SECTION_MAX_ROUNDS = 2
+const MAX_MULTI_SECTION_WORKERS = 4
 const IMPROVEMENT_EPSILON = 1e-9
+const require = createRequire(import.meta.url)
+
+const summarizeRegionIntersectionCaches = (
+  regionIntersectionCaches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"],
+): RegionCostSummary => {
+  let maxRegionCost = 0
+  let totalRegionCost = 0
+
+  for (const regionIntersectionCache of regionIntersectionCaches) {
+    const regionCost = regionIntersectionCache.existingRegionCost
+    maxRegionCost = Math.max(maxRegionCost, regionCost)
+    totalRegionCost += regionCost
+  }
+
+  return {
+    maxRegionCost,
+    totalRegionCost,
+  }
+}
+
+const compareRegionCostSummaries = (
+  left: RegionCostSummary,
+  right: RegionCostSummary,
+) => {
+  if (Math.abs(left.maxRegionCost - right.maxRegionCost) > IMPROVEMENT_EPSILON) {
+    return left.maxRegionCost - right.maxRegionCost
+  }
+
+  if (
+    Math.abs(left.totalRegionCost - right.totalRegionCost) >
+    IMPROVEMENT_EPSILON
+  ) {
+    return left.totalRegionCost - right.totalRegionCost
+  }
+
+  return 0
+}
+
+const getSolverRegionCostSummary = (
+  solver: TinyHyperGraphSolver,
+): RegionCostSummary =>
+  summarizeRegionIntersectionCaches(solver.state.regionIntersectionCaches)
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
-  solver.state.regionIntersectionCaches.reduce(
-    (maxRegionCost, regionIntersectionCache) =>
-      Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
-    0,
-  )
+  getSolverRegionCostSummary(solver).maxRegionCost
 
-const getSerializedOutputMaxRegionCost = (
+const getSerializedOutputSummary = (
   serializedHyperGraph: SerializedHyperGraph,
-) => {
+): RegionCostSummary => {
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
   const replayedSolver = new TinyHyperGraphSectionSolver(
     replay.topology,
@@ -99,8 +186,12 @@ const getSerializedOutputMaxRegionCost = (
     replay.solution,
   )
 
-  return getMaxRegionCost(replayedSolver.baselineSolver)
+  return getSolverRegionCostSummary(replayedSolver.baselineSolver)
 }
+
+const getSerializedOutputMaxRegionCost = (
+  serializedHyperGraph: SerializedHyperGraph,
+) => getSerializedOutputSummary(serializedHyperGraph).maxRegionCost
 
 const getAdjacentRegionIds = (
   topology: TinyHyperGraphTopology,
@@ -171,7 +262,10 @@ const getSectionMaskCandidates = (
       regionCost: regionIntersectionCache.existingRegionCost,
     }))
     .filter(({ regionCost }) => regionCost > 0)
-    .sort((left, right) => right.regionCost - left.regionCost)
+    .sort(
+      (left, right) =>
+        right.regionCost - left.regionCost || left.regionId - right.regionId,
+    )
     .slice(0, maxHotRegions)
     .map(({ regionId }) => regionId)
 
@@ -365,6 +459,429 @@ const findBestAutomaticSectionMask = (
   }
 }
 
+const masksClash = (
+  acceptedRegionIds: Set<RegionId>,
+  candidateRegionIds: RegionId[],
+) => candidateRegionIds.some((regionId) => acceptedRegionIds.has(regionId))
+
+const routesClash = (
+  acceptedRouteIds: Set<number>,
+  candidateRouteIds: number[],
+) => candidateRouteIds.some((routeId) => acceptedRouteIds.has(routeId))
+
+const createUnionPortSectionMask = (
+  topology: TinyHyperGraphTopology,
+  candidateResults: Array<Pick<MultiSectionCandidateResult, "portSectionMask">>,
+) => {
+  const unionMask = new Int8Array(topology.portCount)
+
+  for (const candidateResult of candidateResults) {
+    for (let portId = 0; portId < unionMask.length; portId++) {
+      if (candidateResult.portSectionMask[portId] === 1) {
+        unionMask[portId] = 1
+      }
+    }
+  }
+
+  return unionMask
+}
+
+const mergeMultiSectionCandidateOutputs = (
+  currentSerializedHyperGraph: SerializedHyperGraph,
+  acceptedCandidates: MultiSectionCandidateResult[],
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+) => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    currentSerializedHyperGraph,
+  )
+  const baselineSolver = createSolvedSolverFromSolution(
+    topology,
+    problem,
+    solution,
+    sectionSolverOptions,
+  )
+  const mergedRegionSegments = cloneRegionSegments(
+    baselineSolver.state.regionSegments,
+  )
+
+  for (const acceptedCandidate of acceptedCandidates) {
+    const candidateReplay = loadSerializedHyperGraph(acceptedCandidate.output)
+    const candidateSolver = createSolvedSolverFromSolution(
+      candidateReplay.topology,
+      candidateReplay.problem,
+      candidateReplay.solution,
+      sectionSolverOptions,
+    )
+
+    for (const regionId of acceptedCandidate.touchedRegionIds) {
+      mergedRegionSegments[regionId] = cloneRegionSegments([
+        candidateSolver.state.regionSegments[regionId] ?? [],
+      ])[0]!
+    }
+  }
+
+  const mergedSolver = createSolvedSolverFromRegionSegments(
+    topology,
+    problem,
+    mergedRegionSegments,
+    sectionSolverOptions,
+  )
+
+  return {
+    serializedHyperGraph: mergedSolver.getOutput(),
+    finalSummary: getSolverRegionCostSummary(mergedSolver),
+    portSectionMask: createUnionPortSectionMask(topology, acceptedCandidates),
+  }
+}
+
+const runMultiSectionWorkerPool = (
+  jobs: MultiSectionWorkerJob[],
+  workerCount: number,
+): MultiSectionCandidateResult[] => {
+  if (jobs.length === 0) {
+    return []
+  }
+
+  let WorkerCtor: typeof import("node:worker_threads").Worker
+
+  try {
+    ;({ Worker: WorkerCtor } = require("node:worker_threads"))
+  } catch {
+    WorkerCtor = undefined as never
+  }
+
+  if (!WorkerCtor || workerCount <= 1) {
+    const fallbackResults = jobs.map((job) => {
+        const replay = loadSerializedHyperGraph(job.serializedHyperGraph)
+        const candidateProblem = createProblemWithPortSectionMask(
+          replay.problem,
+          new Int8Array(job.portSectionMask),
+        )
+        const sectionSolver = new TinyHyperGraphSectionSolver(
+          replay.topology,
+          candidateProblem,
+          replay.solution,
+          job.sectionSolverOptions,
+        )
+        sectionSolver.solve()
+
+        if (sectionSolver.failed || !sectionSolver.solved) {
+          return null
+        }
+
+        const output = sectionSolver.getOutput()
+
+        return {
+          label: job.candidate.label,
+          family: job.candidate.family,
+          portSectionMask: new Int8Array(job.portSectionMask),
+          touchedRegionIds: [...job.candidate.regionIds].sort((a, b) => a - b),
+          touchedRouteIds: [...job.activeRouteIds].sort((a, b) => a - b),
+          finalSummary: getSerializedOutputSummary(output),
+          output,
+        } as MultiSectionCandidateResult
+      })
+    return fallbackResults.filter(Boolean) as MultiSectionCandidateResult[]
+  }
+
+  const tempDir = mkdtempSync(join(tmpdir(), "tiny-hypergraph-multi-section-"))
+  const status = new Int32Array(new SharedArrayBuffer(workerCount * Int32Array.BYTES_PER_ELEMENT))
+  const workerSlots = new Array<
+    | {
+        jobIndex: number
+        outputPath: string
+        worker: InstanceType<typeof WorkerCtor>
+      }
+    | undefined
+  >(workerCount)
+  const results: MultiSectionCandidateResult[] = []
+  let nextJobIndex = 0
+  let activeWorkerCount = 0
+
+  const spawnJobInSlot = (slotIndex: number) => {
+    if (nextJobIndex >= jobs.length) {
+      return
+    }
+
+    const jobIndex = nextJobIndex++
+    const outputPath = join(tempDir, `worker-${slotIndex}-job-${jobIndex}.json`)
+    const worker = new WorkerCtor(
+      new URL("./multiSectionRoundWorker.ts", import.meta.url),
+      {
+        workerData: {
+          job: jobs[jobIndex],
+          outputPath,
+          sharedBuffer: status.buffer,
+          slotIndex,
+        },
+      },
+    )
+
+    Atomics.store(status, slotIndex, 0)
+    workerSlots[slotIndex] = {
+      jobIndex,
+      outputPath,
+      worker,
+    }
+    activeWorkerCount += 1
+  }
+
+  try {
+    for (
+      let slotIndex = 0;
+      slotIndex < workerCount && slotIndex < jobs.length;
+      slotIndex++
+    ) {
+      spawnJobInSlot(slotIndex)
+    }
+
+    while (activeWorkerCount > 0) {
+      let finishedSlotIndex = -1
+
+      while (finishedSlotIndex === -1) {
+        for (let slotIndex = 0; slotIndex < workerCount; slotIndex++) {
+          if (Atomics.load(status, slotIndex) === 1) {
+            finishedSlotIndex = slotIndex
+            break
+          }
+        }
+
+        if (finishedSlotIndex === -1) {
+          Atomics.wait(status, 0, 0, 10)
+        }
+      }
+
+      const slot = workerSlots[finishedSlotIndex]
+      if (!slot) {
+        Atomics.store(status, finishedSlotIndex, 0)
+        continue
+      }
+
+      const payload = JSON.parse(readFileSync(slot.outputPath, "utf8")) as
+        | { ok: true; result: MultiSectionCandidateResult }
+        | { ok: false; error: string }
+
+      slot.worker.terminate()
+      workerSlots[finishedSlotIndex] = undefined
+      Atomics.store(status, finishedSlotIndex, 0)
+      activeWorkerCount -= 1
+
+      if (payload.ok) {
+        results.push({
+          ...payload.result,
+          portSectionMask: new Int8Array(payload.result.portSectionMask),
+        })
+      }
+
+      spawnJobInSlot(finishedSlotIndex)
+    }
+  } finally {
+    for (const slot of workerSlots) {
+      slot?.worker.terminate()
+    }
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+
+  return results
+}
+
+const findBestMultiSectionRound = (
+  solvedSerializedHyperGraph: SerializedHyperGraph,
+  searchConfig: TinyHyperGraphSectionPipelineSearchConfig | undefined,
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+): MultiSectionRoundResult => {
+  const searchStartTime = performance.now()
+  let generatedCandidateCount = 0
+  let candidateCount = 0
+  let duplicateCandidateCount = 0
+  let candidateEligibilityMs = 0
+  let candidateInitMs = 0
+  let candidateSolveMs = 0
+  let candidateReplayScoreMs = 0
+  const acceptedCandidateLabels: string[] = []
+  const maxRounds = Math.max(
+    1,
+    searchConfig?.multiSectionRoundConfig?.maxRounds ??
+      DEFAULT_MULTI_SECTION_MAX_ROUNDS,
+  )
+  const workerCount = Math.max(
+    1,
+    Math.min(
+      MAX_MULTI_SECTION_WORKERS,
+      searchConfig?.multiSectionRoundConfig?.maxWorkers ??
+        MAX_MULTI_SECTION_WORKERS,
+    ),
+  )
+  let roundCount = 0
+  let currentSerializedHyperGraph = solvedSerializedHyperGraph
+  let currentPortSectionMask = new Int8Array(0)
+  const baselineEvaluationStartTime = performance.now()
+  let currentSummary = getSerializedOutputSummary(currentSerializedHyperGraph)
+  const baselineEvaluationMs = performance.now() - baselineEvaluationStartTime
+
+  for (let roundIndex = 0; roundIndex < maxRounds; roundIndex++) {
+    roundCount = roundIndex + 1
+    const { topology, problem, solution } = loadSerializedHyperGraph(
+      currentSerializedHyperGraph,
+    )
+    const solvedSolver = createSolvedSolverFromSolution(
+      topology,
+      problem,
+      solution,
+      sectionSolverOptions,
+    )
+    const maxHotRegions =
+      searchConfig?.maxHotRegions ??
+      sectionSolverOptions.MAX_HOT_REGIONS ??
+      DEFAULT_MAX_HOT_REGIONS
+    const seenPortSectionMasks = new Set<string>()
+    const workerJobs: MultiSectionWorkerJob[] = []
+
+    for (const candidate of getSectionMaskCandidates(
+      solvedSolver,
+      topology,
+      maxHotRegions,
+      searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
+    )) {
+      const portSectionMask = createPortSectionMaskForRegionIds(
+        topology,
+        candidate.regionIds,
+        candidate.portSelectionRule,
+      )
+      generatedCandidateCount += 1
+      const portSectionMaskKey = portSectionMask.join(",")
+
+      if (seenPortSectionMasks.has(portSectionMaskKey)) {
+        duplicateCandidateCount += 1
+        continue
+      }
+
+      seenPortSectionMasks.add(portSectionMaskKey)
+
+      try {
+        const eligibilityStartTime = performance.now()
+        const activeRouteIds = getActiveSectionRouteIds(
+          topology,
+          createProblemWithPortSectionMask(problem, portSectionMask),
+          solution,
+        )
+        candidateEligibilityMs += performance.now() - eligibilityStartTime
+
+        if (activeRouteIds.length === 0) {
+          continue
+        }
+
+        candidateCount += 1
+        workerJobs.push({
+          serializedHyperGraph: currentSerializedHyperGraph,
+          candidate,
+          portSectionMask,
+          activeRouteIds,
+          sectionSolverOptions,
+        })
+      } catch {
+        // Skip invalid section masks that split a route into multiple spans.
+      }
+    }
+
+    if (workerJobs.length === 0) {
+      break
+    }
+
+    const solveStartTime = performance.now()
+    const candidateResults = runMultiSectionWorkerPool(workerJobs, workerCount)
+    const solveDurationMs = performance.now() - solveStartTime
+    candidateSolveMs += solveDurationMs
+
+    const improvingResults = candidateResults
+      .filter(
+        (candidateResult) =>
+          compareRegionCostSummaries(candidateResult.finalSummary, currentSummary) <
+          0,
+      )
+      .sort(
+        (left, right) =>
+          compareRegionCostSummaries(left.finalSummary, right.finalSummary) ||
+          left.label.localeCompare(right.label),
+      )
+
+    const acceptedRegionIds = new Set<RegionId>()
+    const acceptedRouteIds = new Set<number>()
+    const acceptedCandidates: MultiSectionCandidateResult[] = []
+
+    for (const improvingResult of improvingResults) {
+      if (
+        masksClash(acceptedRegionIds, improvingResult.touchedRegionIds) ||
+        routesClash(acceptedRouteIds, improvingResult.touchedRouteIds)
+      ) {
+        continue
+      }
+
+      acceptedCandidates.push(improvingResult)
+
+      for (const regionId of improvingResult.touchedRegionIds) {
+        acceptedRegionIds.add(regionId)
+      }
+      for (const routeId of improvingResult.touchedRouteIds) {
+        acceptedRouteIds.add(routeId)
+      }
+    }
+
+    if (acceptedCandidates.length === 0) {
+      break
+    }
+
+    let mergedRound:
+      | ReturnType<typeof mergeMultiSectionCandidateOutputs>
+      | undefined
+    const mergeStartTime = performance.now()
+    try {
+      mergedRound = mergeMultiSectionCandidateOutputs(
+        currentSerializedHyperGraph,
+        acceptedCandidates,
+        sectionSolverOptions,
+      )
+    } catch {
+      mergedRound = undefined
+    }
+    candidateReplayScoreMs += performance.now() - mergeStartTime
+
+    if (!mergedRound) {
+      break
+    }
+
+    if (compareRegionCostSummaries(mergedRound.finalSummary, currentSummary) >= 0) {
+      break
+    }
+
+    currentSerializedHyperGraph = mergedRound.serializedHyperGraph
+    currentSummary = mergedRound.finalSummary
+    currentPortSectionMask = mergedRound.portSectionMask
+    acceptedCandidateLabels.push(
+      ...acceptedCandidates.map((candidate) => candidate.label),
+    )
+  }
+
+  return {
+    serializedHyperGraph: currentSerializedHyperGraph,
+    portSectionMask: currentPortSectionMask,
+    finalSummary: currentSummary,
+    generatedCandidateCount,
+    candidateCount,
+    duplicateCandidateCount,
+    totalMs: performance.now() - searchStartTime,
+    baselineEvaluationMs,
+    candidateEligibilityMs,
+    candidateInitMs,
+    candidateSolveMs,
+    candidateReplayScoreMs,
+    acceptedCandidateCount: acceptedCandidateLabels.length,
+    roundCount,
+    workerCount,
+    acceptedCandidateLabels,
+  }
+}
+
 export interface TinyHyperGraphSectionMaskContext {
   serializedHyperGraph: SerializedHyperGraph
   solvedSerializedHyperGraph: SerializedHyperGraph
@@ -374,9 +891,16 @@ export interface TinyHyperGraphSectionMaskContext {
   solution: TinyHyperGraphSolution
 }
 
+export interface TinyHyperGraphSectionPipelineMultiSectionRoundConfig {
+  enabled?: boolean
+  maxRounds?: number
+  maxWorkers?: number
+}
+
 export interface TinyHyperGraphSectionPipelineSearchConfig {
   maxHotRegions?: number
   candidateFamilies?: TinyHyperGraphSectionCandidateFamily[]
+  multiSectionRoundConfig?: TinyHyperGraphSectionPipelineMultiSectionRoundConfig
 }
 
 export interface TinyHyperGraphSectionPipelineInput {
@@ -445,7 +969,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       ...DEFAULT_SECTION_SOLVER_OPTIONS,
       ...this.inputProblem.sectionSolverOptions,
     }
-    const { topology, problem, solution } = loadSerializedHyperGraph(
+    let { topology, problem, solution } = loadSerializedHyperGraph(
       solvedSerializedHyperGraph,
     )
 
@@ -458,50 +982,104 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           solution,
         })
-      : (() => {
-          const searchResult = findBestAutomaticSectionMask(
-            solvedSolver,
-            topology,
-            problem,
-            solution,
-            this.inputProblem.sectionSearchConfig,
-            sectionSolverOptions,
-          )
+      : this.inputProblem.sectionSearchConfig?.multiSectionRoundConfig?.enabled
+        ? (() => {
+            const searchResult = findBestMultiSectionRound(
+              solvedSerializedHyperGraph,
+              this.inputProblem.sectionSearchConfig,
+              sectionSolverOptions,
+            )
 
-          this.selectedSectionCandidateLabel =
-            searchResult.winningCandidateLabel
-          this.selectedSectionCandidateFamily =
-            searchResult.winningCandidateFamily
-          this.stats = {
-            ...this.stats,
-            sectionSearchGeneratedCandidateCount:
-              searchResult.generatedCandidateCount,
-            sectionSearchCandidateCount: searchResult.candidateCount,
-            sectionSearchDuplicateCandidateCount:
-              searchResult.duplicateCandidateCount,
-            sectionSearchBaselineMaxRegionCost:
-              searchResult.baselineMaxRegionCost,
-            sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
-            sectionSearchDelta:
-              searchResult.baselineMaxRegionCost -
-              searchResult.finalMaxRegionCost,
-            selectedSectionCandidateLabel:
-              searchResult.winningCandidateLabel ?? null,
-            selectedSectionCandidateFamily:
-              searchResult.winningCandidateFamily ?? null,
-            sectionSearchMs: searchResult.totalMs,
-            sectionSearchBaselineEvaluationMs:
-              searchResult.baselineEvaluationMs,
-            sectionSearchCandidateEligibilityMs:
-              searchResult.candidateEligibilityMs,
-            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
-            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
-            sectionSearchCandidateReplayScoreMs:
-              searchResult.candidateReplayScoreMs,
-          }
+            this.selectedSectionCandidateLabel =
+              searchResult.acceptedCandidateLabels[0]
+            this.selectedSectionCandidateFamily = undefined
+            this.stats = {
+              ...this.stats,
+              sectionSearchMode: "multi_section_round",
+              sectionSearchGeneratedCandidateCount:
+                searchResult.generatedCandidateCount,
+              sectionSearchCandidateCount: searchResult.candidateCount,
+              sectionSearchDuplicateCandidateCount:
+                searchResult.duplicateCandidateCount,
+              sectionSearchBaselineMaxRegionCost: getSerializedOutputMaxRegionCost(
+                solvedSerializedHyperGraph,
+              ),
+              sectionSearchFinalMaxRegionCost: searchResult.finalSummary.maxRegionCost,
+              sectionSearchDelta:
+                getSerializedOutputMaxRegionCost(solvedSerializedHyperGraph) -
+                searchResult.finalSummary.maxRegionCost,
+              selectedSectionCandidateLabel:
+                searchResult.acceptedCandidateLabels[0] ?? null,
+              selectedSectionCandidateFamily: null,
+              sectionSearchAcceptedCandidateCount:
+                searchResult.acceptedCandidateCount,
+              sectionSearchAcceptedCandidateLabels:
+                searchResult.acceptedCandidateLabels.join(","),
+              sectionSearchRounds: searchResult.roundCount,
+              sectionSearchWorkers: searchResult.workerCount,
+              sectionSearchMs: searchResult.totalMs,
+              sectionSearchBaselineEvaluationMs:
+                searchResult.baselineEvaluationMs,
+              sectionSearchCandidateEligibilityMs:
+                searchResult.candidateEligibilityMs,
+              sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+              sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+              sectionSearchCandidateReplayScoreMs:
+                searchResult.candidateReplayScoreMs,
+            }
 
-          return searchResult.portSectionMask
-        })()
+            ;({ topology, problem, solution } = loadSerializedHyperGraph(
+              searchResult.serializedHyperGraph,
+            ))
+            return searchResult.portSectionMask.length === topology.portCount
+              ? searchResult.portSectionMask
+              : new Int8Array(topology.portCount)
+          })()
+        : (() => {
+            const searchResult = findBestAutomaticSectionMask(
+              solvedSolver,
+              topology,
+              problem,
+              solution,
+              this.inputProblem.sectionSearchConfig,
+              sectionSolverOptions,
+            )
+
+            this.selectedSectionCandidateLabel =
+              searchResult.winningCandidateLabel
+            this.selectedSectionCandidateFamily =
+              searchResult.winningCandidateFamily
+            this.stats = {
+              ...this.stats,
+              sectionSearchMode: "single_section",
+              sectionSearchGeneratedCandidateCount:
+                searchResult.generatedCandidateCount,
+              sectionSearchCandidateCount: searchResult.candidateCount,
+              sectionSearchDuplicateCandidateCount:
+                searchResult.duplicateCandidateCount,
+              sectionSearchBaselineMaxRegionCost:
+                searchResult.baselineMaxRegionCost,
+              sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+              sectionSearchDelta:
+                searchResult.baselineMaxRegionCost -
+                searchResult.finalMaxRegionCost,
+              selectedSectionCandidateLabel:
+                searchResult.winningCandidateLabel ?? null,
+              selectedSectionCandidateFamily:
+                searchResult.winningCandidateFamily ?? null,
+              sectionSearchMs: searchResult.totalMs,
+              sectionSearchBaselineEvaluationMs:
+                searchResult.baselineEvaluationMs,
+              sectionSearchCandidateEligibilityMs:
+                searchResult.candidateEligibilityMs,
+              sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+              sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+              sectionSearchCandidateReplayScoreMs:
+                searchResult.candidateReplayScoreMs,
+            }
+
+            return searchResult.portSectionMask
+          })()
 
     this.selectedSectionMask = new Int8Array(portSectionMask)
     problem.portSectionMask = new Int8Array(portSectionMask)

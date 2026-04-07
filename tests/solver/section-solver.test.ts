@@ -41,6 +41,38 @@ const getSerializedOutputMaxRegionCost = (
   return getMaxRegionCost(replayedSolver.baselineSolver)
 }
 
+const getSharedPortsAcrossDifferentNets = (solver: TinyHyperGraphSolver) => {
+  const routeIdsByPortId = new Map<number, Set<number>>()
+
+  for (const regionSegments of solver.state.regionSegments) {
+    for (const [routeId, port1Id, port2Id] of regionSegments) {
+      for (const portId of [port1Id, port2Id]) {
+        const routeIds = routeIdsByPortId.get(portId) ?? new Set<number>()
+        routeIds.add(routeId)
+        routeIdsByPortId.set(portId, routeIds)
+      }
+    }
+  }
+
+  return [...routeIdsByPortId.entries()]
+    .filter(([, routeIds]) => routeIds.size > 1)
+    .map(([portId, routeIds]) => {
+      const sortedRouteIds = [...routeIds].sort((left, right) => left - right)
+      const nets = [
+        ...new Set(
+          sortedRouteIds.map((routeId) => solver.problem.routeNet[routeId]),
+        ),
+      ].sort((left, right) => left - right)
+
+      return {
+        portId,
+        routeIds: sortedRouteIds,
+        nets,
+      }
+    })
+    .filter((entry) => entry.nets.length > 1)
+}
+
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
   const { topology, problem, solution } = loadSerializedHyperGraph(
     sectionSolverFixtureGraph,
@@ -231,4 +263,79 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.failed).toBe(false)
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})
+
+test("multi-section round path deterministically accepts non-clashing winners on hg07 sample029", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSearchConfig: {
+      maxHotRegions: 3,
+      multiSectionRoundConfig: {
+        enabled: true,
+        maxRounds: 2,
+        maxWorkers: 99,
+      },
+    },
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.sectionSearchMode).toBe("multi_section_round")
+  expect(pipelineSolver.stats.sectionSearchWorkers).toBe(4)
+  expect(pipelineSolver.stats.sectionSearchAcceptedCandidateCount).toBe(2)
+  expect(pipelineSolver.stats.sectionSearchAcceptedCandidateLabels).toBe(
+    "hot-3-twohop-all,hot-0-onehop-all",
+  )
+
+  const solveGraphOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "solveGraph",
+    )
+  const optimizeSectionOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(solveGraphOutput).toBeDefined()
+  expect(optimizeSectionOutput).toBeDefined()
+  expect(
+    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
+  ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
+})
+
+test("multi-section round path does not regress sample002 correctness", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+    sectionSearchConfig: {
+      maxHotRegions: 3,
+      multiSectionRoundConfig: {
+        enabled: true,
+        maxRounds: 2,
+      },
+    },
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+
+  const output = pipelineSolver.getOutput()
+  expect(output).not.toBeNull()
+
+  const replay = loadSerializedHyperGraph(output!)
+  const replayedSectionSolver = new TinyHyperGraphSectionSolver(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+  )
+  const region80Cache = replayedSectionSolver.baselineSolver.state
+    .regionIntersectionCaches[80]
+
+  expect(region80Cache.existingSameLayerIntersections).toBe(0)
+  expect(
+    getSharedPortsAcrossDifferentNets(replayedSectionSolver.baselineSolver),
+  ).toEqual([])
 })
