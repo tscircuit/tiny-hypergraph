@@ -87,7 +87,7 @@ const getTinyHyperGraphSectionSolverOptions = (
     solver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
 })
 
-const cloneRegionSegments = (
+export const cloneRegionSegments = (
   regionSegments: Array<[RouteId, PortId, PortId][]>,
 ): Array<[RouteId, PortId, PortId][]> =>
   regionSegments.map((segments) =>
@@ -387,7 +387,7 @@ const applyRouteSegmentsToSolver = (
   solver.error = null
 }
 
-const createSolvedSolverFromRegionSegments = (
+export const createSolvedSolverFromRegionSegments = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
@@ -398,7 +398,7 @@ const createSolvedSolverFromRegionSegments = (
   return solver
 }
 
-const createSolvedSolverFromSolution = (
+export const createSolvedSolverFromSolution = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
