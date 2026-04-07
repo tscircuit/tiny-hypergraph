@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
 } from "lib/index"
@@ -69,5 +70,37 @@ test("section solver getOutput preserves the optimized max region cost on hg07 s
   expect(getMaxRegionCost(replayedSolver.baselineSolver)).toBeCloseTo(
     optimizedMaxRegionCost,
     10,
+  )
+})
+
+test("sample002 automatic section search keeps the same winner in serial and parallel candidate evaluation", () => {
+  const serialPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+    sectionSearchConfig: {
+      maxParallelCandidates: 1,
+    },
+  })
+  const parallelPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+    sectionSearchConfig: {
+      maxParallelCandidates: 2,
+    },
+  })
+
+  serialPipelineSolver.solve()
+  parallelPipelineSolver.solve()
+
+  expect(serialPipelineSolver.solved).toBe(true)
+  expect(parallelPipelineSolver.solved).toBe(true)
+  expect(serialPipelineSolver.failed).toBe(false)
+  expect(parallelPipelineSolver.failed).toBe(false)
+  expect(serialPipelineSolver.selectedSectionCandidateLabel).toBe(
+    parallelPipelineSolver.selectedSectionCandidateLabel,
+  )
+  expect(serialPipelineSolver.selectedSectionCandidateFamily).toBe(
+    parallelPipelineSolver.selectedSectionCandidateFamily,
+  )
+  expect(serialPipelineSolver.stats.sectionSearchFinalMaxRegionCost).toBe(
+    parallelPipelineSolver.stats.sectionSearchFinalMaxRegionCost,
   )
 })

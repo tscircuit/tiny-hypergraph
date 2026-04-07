@@ -1,6 +1,8 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BasePipelineSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { availableParallelism } from "node:os"
+import { Worker } from "node:worker_threads"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
   TinyHyperGraphProblem,
@@ -58,6 +60,18 @@ type AutomaticSectionSearchResult = {
   winningCandidateFamily?: TinyHyperGraphSectionCandidateFamily
 }
 
+type PreparedSectionMaskCandidate = {
+  candidate: SectionMaskCandidate
+  candidateProblem: TinyHyperGraphProblem
+}
+
+type EvaluatedSectionMaskCandidate = {
+  finalMaxRegionCost?: number
+  candidateInitMs: number
+  candidateSolveMs: number
+  candidateReplayScoreMs: number
+}
+
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
@@ -79,6 +93,10 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
   "twohop-touch",
 ]
 const DEFAULT_MAX_HOT_REGIONS = 2
+const DEFAULT_MAX_PARALLEL_CANDIDATES = Math.max(
+  1,
+  Math.min(4, availableParallelism()),
+)
 
 const IMPROVEMENT_EPSILON = 1e-9
 
@@ -258,6 +276,7 @@ const findBestAutomaticSectionMask = (
   let candidateSolveMs = 0
   let candidateReplayScoreMs = 0
   const seenPortSectionMasks = new Set<string>()
+  const preparedCandidates: PreparedSectionMaskCandidate[] = []
   const maxHotRegions =
     searchConfig?.maxHotRegions ??
     sectionSolverOptions.MAX_HOT_REGIONS ??
@@ -301,50 +320,43 @@ const findBestAutomaticSectionMask = (
       }
 
       candidateCount += 1
-
-      const candidateInitStartTime = performance.now()
-      const sectionSolver = new TinyHyperGraphSectionSolver(
-        topology,
-        candidateProblem,
-        solution,
-        sectionSolverOptions,
-      )
-      candidateInitMs += performance.now() - candidateInitStartTime
-
-      const candidateSolveStartTime = performance.now()
-      sectionSolver.solve()
-      candidateSolveMs += performance.now() - candidateSolveStartTime
-
-      if (sectionSolver.failed || !sectionSolver.solved) {
-        continue
-      }
-
-      const finalMaxRegionCost = Number(
-        sectionSolver.stats.finalMaxRegionCost ??
-          getMaxRegionCost(sectionSolver.getSolvedSolver()),
-      )
-
-      if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
-        const candidateReplayScoreStartTime = performance.now()
-        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
-          sectionSolver.getOutput(),
-        )
-        candidateReplayScoreMs +=
-          performance.now() - candidateReplayScoreStartTime
-
-        if (
-          replayedFinalMaxRegionCost <
-          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
-        ) {
-          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
-          bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
-          winningCandidateLabel = candidate.label
-          winningCandidateFamily = candidate.family
-        }
-      }
+      preparedCandidates.push({ candidate, candidateProblem })
     } catch {
       // Skip invalid section masks that split a route into multiple spans.
     }
+  }
+
+  const evaluatedCandidates = evaluateSectionMaskCandidates(
+    topology,
+    solution,
+    preparedCandidates,
+    sectionSolverOptions,
+    searchConfig?.maxParallelCandidates ?? DEFAULT_MAX_PARALLEL_CANDIDATES,
+  )
+
+  for (let candidateIndex = 0; candidateIndex < preparedCandidates.length; candidateIndex++) {
+    const preparedCandidate = preparedCandidates[candidateIndex]
+    const evaluatedCandidate = evaluatedCandidates[candidateIndex]
+
+    candidateInitMs += evaluatedCandidate?.candidateInitMs ?? 0
+    candidateSolveMs += evaluatedCandidate?.candidateSolveMs ?? 0
+    candidateReplayScoreMs += evaluatedCandidate?.candidateReplayScoreMs ?? 0
+
+    const finalMaxRegionCost = evaluatedCandidate?.finalMaxRegionCost
+
+    if (
+      finalMaxRegionCost === undefined ||
+      finalMaxRegionCost >= bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
+    ) {
+      continue
+    }
+
+    bestFinalMaxRegionCost = finalMaxRegionCost
+    bestPortSectionMask = new Int8Array(
+      preparedCandidate!.candidateProblem.portSectionMask,
+    )
+    winningCandidateLabel = preparedCandidate!.candidate.label
+    winningCandidateFamily = preparedCandidate!.candidate.family
   }
 
   return {
@@ -365,6 +377,192 @@ const findBestAutomaticSectionMask = (
   }
 }
 
+const evaluateSectionMaskCandidates = (
+  topology: TinyHyperGraphTopology,
+  solution: TinyHyperGraphSolution,
+  preparedCandidates: PreparedSectionMaskCandidate[],
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+  maxParallelCandidates: number,
+): EvaluatedSectionMaskCandidate[] => {
+  const boundedMaxParallelCandidates = Math.max(
+    1,
+    Math.floor(maxParallelCandidates),
+  )
+
+  if (
+    preparedCandidates.length === 0 ||
+    boundedMaxParallelCandidates === 1
+  ) {
+    return evaluateSectionMaskCandidatesSerial(
+      topology,
+      solution,
+      preparedCandidates,
+      sectionSolverOptions,
+    )
+  }
+
+  return evaluateSectionMaskCandidatesParallel(
+    topology,
+    solution,
+    preparedCandidates,
+    sectionSolverOptions,
+    boundedMaxParallelCandidates,
+  )
+}
+
+const evaluateSectionMaskCandidatesSerial = (
+  topology: TinyHyperGraphTopology,
+  solution: TinyHyperGraphSolution,
+  preparedCandidates: PreparedSectionMaskCandidate[],
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+): EvaluatedSectionMaskCandidate[] =>
+  preparedCandidates.map(({ candidateProblem }) => {
+    try {
+      const candidateInitStartTime = performance.now()
+      const sectionSolver = new TinyHyperGraphSectionSolver(
+        topology,
+        candidateProblem,
+        solution,
+        sectionSolverOptions,
+      )
+      const candidateInitMs = performance.now() - candidateInitStartTime
+
+      const candidateSolveStartTime = performance.now()
+      sectionSolver.solve()
+      const candidateSolveMs = performance.now() - candidateSolveStartTime
+
+      if (sectionSolver.failed || !sectionSolver.solved) {
+        return {
+          candidateInitMs,
+          candidateSolveMs,
+          candidateReplayScoreMs: 0,
+        }
+      }
+
+      const candidateReplayScoreStartTime = performance.now()
+      const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
+        sectionSolver.getOutput(),
+      )
+      const candidateReplayScoreMs =
+        performance.now() - candidateReplayScoreStartTime
+
+      return {
+        finalMaxRegionCost,
+        candidateInitMs,
+        candidateSolveMs,
+        candidateReplayScoreMs,
+      }
+    } catch {
+      return {
+        candidateInitMs: 0,
+        candidateSolveMs: 0,
+        candidateReplayScoreMs: 0,
+      }
+    }
+  })
+
+const evaluateSectionMaskCandidatesParallel = (
+  topology: TinyHyperGraphTopology,
+  solution: TinyHyperGraphSolution,
+  preparedCandidates: PreparedSectionMaskCandidate[],
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+  maxParallelCandidates: number,
+): EvaluatedSectionMaskCandidate[] => {
+  const workerCount = Math.min(maxParallelCandidates, preparedCandidates.length)
+  const notifySignal = new Int32Array(
+    new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
+  )
+  const statuses = new Int32Array(
+    new SharedArrayBuffer(preparedCandidates.length * Int32Array.BYTES_PER_ELEMENT),
+  )
+  const candidateInitMs = new Float64Array(
+    new SharedArrayBuffer(preparedCandidates.length * Float64Array.BYTES_PER_ELEMENT),
+  )
+  const candidateSolveMs = new Float64Array(
+    new SharedArrayBuffer(preparedCandidates.length * Float64Array.BYTES_PER_ELEMENT),
+  )
+  const candidateReplayScoreMs = new Float64Array(
+    new SharedArrayBuffer(preparedCandidates.length * Float64Array.BYTES_PER_ELEMENT),
+  )
+  const finalMaxRegionCosts = new Float64Array(
+    new SharedArrayBuffer(preparedCandidates.length * Float64Array.BYTES_PER_ELEMENT),
+  )
+  finalMaxRegionCosts.fill(Number.NaN)
+
+  const activeCandidateIndexes = new Set<number>()
+  const completedCandidateIndexes = new Set<number>()
+  let nextCandidateIndex = 0
+  let completedCount = 0
+  let observedNotifyCount = 0
+
+  const startWorker = (candidateIndex: number) => {
+    new Worker(new URL("./section-search-candidate-worker.ts", import.meta.url), {
+      type: "module",
+      workerData: {
+        candidateIndex,
+        topology,
+        problem: preparedCandidates[candidateIndex]!.candidateProblem,
+        solution,
+        sectionSolverOptions,
+        sharedBuffers: {
+          notifySignal: notifySignal.buffer,
+          statuses: statuses.buffer,
+          candidateInitMs: candidateInitMs.buffer,
+          candidateSolveMs: candidateSolveMs.buffer,
+          candidateReplayScoreMs: candidateReplayScoreMs.buffer,
+          finalMaxRegionCosts: finalMaxRegionCosts.buffer,
+        },
+      },
+    })
+    activeCandidateIndexes.add(candidateIndex)
+  }
+
+  while (
+    nextCandidateIndex < preparedCandidates.length &&
+    activeCandidateIndexes.size < workerCount
+  ) {
+    startWorker(nextCandidateIndex)
+    nextCandidateIndex += 1
+  }
+
+  while (completedCount < preparedCandidates.length) {
+    while (observedNotifyCount === Atomics.load(notifySignal, 0)) {
+      Atomics.wait(notifySignal, 0, observedNotifyCount)
+    }
+
+    observedNotifyCount = Atomics.load(notifySignal, 0)
+
+    for (const candidateIndex of activeCandidateIndexes) {
+      if (completedCandidateIndexes.has(candidateIndex)) {
+        continue
+      }
+
+      if (Atomics.load(statuses, candidateIndex) === 0) {
+        continue
+      }
+
+      completedCandidateIndexes.add(candidateIndex)
+      activeCandidateIndexes.delete(candidateIndex)
+      completedCount += 1
+
+      if (nextCandidateIndex < preparedCandidates.length) {
+        startWorker(nextCandidateIndex)
+        nextCandidateIndex += 1
+      }
+    }
+  }
+
+  return preparedCandidates.map((_, candidateIndex) => ({
+    finalMaxRegionCost:
+      Atomics.load(statuses, candidateIndex) === 1
+        ? finalMaxRegionCosts[candidateIndex]
+        : undefined,
+    candidateInitMs: candidateInitMs[candidateIndex] ?? 0,
+    candidateSolveMs: candidateSolveMs[candidateIndex] ?? 0,
+    candidateReplayScoreMs: candidateReplayScoreMs[candidateIndex] ?? 0,
+  }))
+}
+
 export interface TinyHyperGraphSectionMaskContext {
   serializedHyperGraph: SerializedHyperGraph
   solvedSerializedHyperGraph: SerializedHyperGraph
@@ -377,6 +575,12 @@ export interface TinyHyperGraphSectionMaskContext {
 export interface TinyHyperGraphSectionPipelineSearchConfig {
   maxHotRegions?: number
   candidateFamilies?: TinyHyperGraphSectionCandidateFamily[]
+  /**
+   * Safe MVP for automatic section search parallelism.
+   * `1` preserves serial candidate evaluation; larger values use bounded
+   * worker-based evaluation while keeping final winner selection deterministic.
+   */
+  maxParallelCandidates?: number
 }
 
 export interface TinyHyperGraphSectionPipelineInput {
