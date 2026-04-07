@@ -123,3 +123,84 @@ test("unravel stage beats the optimizeSection stage on hg07 sample004", () => {
     ),
   )
 })
+
+test("unravel solver evaluates one mutation candidate per step on hg07 sample002 after section optimization", () => {
+  const sectionPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+  })
+
+  sectionPipelineSolver.solveUntilStage("unravel")
+
+  const optimizedOutput =
+    sectionPipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(optimizedOutput).toBeDefined()
+
+  const replay = loadSerializedHyperGraph(optimizedOutput!)
+  const unravelSolver = new TinyHyperGraphUnravelSolver(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+  )
+
+  unravelSolver.step()
+  const initialPendingMutationCount = Number(
+    unravelSolver.stats.pendingMutationCount,
+  )
+
+  expect(unravelSolver.stats.searchPhase).toBe("prepared-state")
+  expect(initialPendingMutationCount).toBeGreaterThan(0)
+  expect(Number(unravelSolver.stats.attemptedCandidateCount)).toBe(0)
+
+  unravelSolver.step()
+
+  expect(unravelSolver.stats.searchPhase).toBe("evaluating-mutation")
+  expect(Number(unravelSolver.stats.attemptedCandidateCount)).toBe(1)
+  expect(Number(unravelSolver.stats.pendingMutationCount)).toBe(
+    initialPendingMutationCount - 1,
+  )
+
+  unravelSolver.step()
+
+  expect(Number(unravelSolver.stats.attemptedCandidateCount)).toBe(2)
+  expect(Number(unravelSolver.stats.pendingMutationCount)).toBe(
+    initialPendingMutationCount - 2,
+  )
+})
+
+test("unravel solver keeps exploring sample002 after non-improving first-hop mutations", () => {
+  const sectionPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+  })
+
+  sectionPipelineSolver.solveUntilStage("unravel")
+
+  const optimizedOutput =
+    sectionPipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(optimizedOutput).toBeDefined()
+
+  const replay = loadSerializedHyperGraph(optimizedOutput!)
+  const unravelSolver = new TinyHyperGraphUnravelSolver(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+    {
+      MAX_MUTATION_DEPTH: 2,
+      MAX_SEARCH_STATES: 6,
+      MAX_ENQUEUED_MUTATIONS_PER_STATE: 2,
+    },
+  )
+
+  unravelSolver.solve()
+
+  expect(unravelSolver.solved).toBe(true)
+  expect(unravelSolver.failed).toBe(false)
+  expect(Number(unravelSolver.stats.searchStatesExpanded)).toBeGreaterThan(1)
+  expect(Number(unravelSolver.stats.attemptedCandidateCount)).toBeGreaterThan(3)
+  expect(unravelSolver.iterations).toBeGreaterThan(6)
+})

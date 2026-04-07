@@ -244,3 +244,28 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })
+
+test("section pipeline stage stats expose the unravel solver's own iteration count", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+  })
+
+  pipelineSolver.solve()
+
+  const unravelSolver =
+    pipelineSolver.getSolver<TinyHyperGraphUnravelSolver>("unravel")
+
+  expect(unravelSolver).toBeDefined()
+  expect(pipelineSolver.getStageStats().unravel?.iterations).toBe(
+    unravelSolver!.iterations,
+  )
+  expect(Number(pipelineSolver.stats.unravelSolverIterations)).toBe(
+    unravelSolver!.iterations,
+  )
+  expect(Number(pipelineSolver.stats.unravelAttemptedCandidateCount)).toBe(
+    Number(unravelSolver!.stats.attemptedCandidateCount),
+  )
+  expect(
+    pipelineSolver.iterations - pipelineSolver.firstIterationOfStage.unravel!,
+  ).toBe(unravelSolver!.iterations)
+})
