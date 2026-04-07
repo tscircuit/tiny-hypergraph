@@ -232,3 +232,44 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })
+
+test("section pipeline parallel candidate evaluation keeps the same winner and output semantics as serial search", () => {
+  const serialPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSearchConfig: {
+      maxParallelCandidates: 1,
+    },
+  })
+  const parallelPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSearchConfig: {
+      maxParallelCandidates: 2,
+    },
+  })
+
+  serialPipelineSolver.solve()
+  parallelPipelineSolver.solve()
+
+  expect(serialPipelineSolver.solved).toBe(true)
+  expect(parallelPipelineSolver.solved).toBe(true)
+  expect(serialPipelineSolver.failed).toBe(false)
+  expect(parallelPipelineSolver.failed).toBe(false)
+  expect(serialPipelineSolver.selectedSectionCandidateLabel).toBe(
+    parallelPipelineSolver.selectedSectionCandidateLabel,
+  )
+  expect(serialPipelineSolver.selectedSectionCandidateFamily).toBe(
+    parallelPipelineSolver.selectedSectionCandidateFamily,
+  )
+  expect([...(serialPipelineSolver.selectedSectionMask ?? [])]).toEqual([
+    ...(parallelPipelineSolver.selectedSectionMask ?? []),
+  ])
+  expect(serialPipelineSolver.stats.sectionSearchFinalMaxRegionCost).toBe(
+    parallelPipelineSolver.stats.sectionSearchFinalMaxRegionCost,
+  )
+  expect(
+    getSerializedOutputMaxRegionCost(serialPipelineSolver.getOutput()!),
+  ).toBeCloseTo(
+    getSerializedOutputMaxRegionCost(parallelPipelineSolver.getOutput()!),
+    10,
+  )
+})
