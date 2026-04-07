@@ -10,6 +10,8 @@ import type {
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
+import type { TinyHyperGraphUnravelSolverOptions } from "../unravel-solver"
+import { TinyHyperGraphUnravelSolver } from "../unravel-solver"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
 
@@ -384,6 +386,7 @@ export interface TinyHyperGraphSectionPipelineInput {
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
+  unravelSolverOptions?: TinyHyperGraphUnravelSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
 }
 
@@ -417,6 +420,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
+    },
+    {
+      solverName: "unravel",
+      solverClass: TinyHyperGraphUnravelSolver,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
+        instance.getUnravelStageParams(),
     },
   ]
 
@@ -515,6 +524,28 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return [topology, problem, solution, sectionSolverOptions]
   }
 
+  getUnravelStageParams(): [
+    TinyHyperGraphTopology,
+    TinyHyperGraphProblem,
+    TinyHyperGraphSolution,
+    TinyHyperGraphUnravelSolverOptions | undefined,
+  ] {
+    const optimizedSerializedHyperGraph =
+      this.getStageOutput<SerializedHyperGraph>("optimizeSection")
+
+    if (!optimizedSerializedHyperGraph) {
+      throw new Error(
+        "optimizeSection did not produce a solved serialized hypergraph",
+      )
+    }
+
+    const { topology, problem, solution } = loadSerializedHyperGraph(
+      optimizedSerializedHyperGraph,
+    )
+
+    return [topology, problem, solution, this.inputProblem.unravelSolverOptions]
+  }
+
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = loadSerializedHyperGraph(
@@ -543,6 +574,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override getOutput() {
     return (
+      this.getStageOutput<SerializedHyperGraph>("unravel") ??
       this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
       this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
       null

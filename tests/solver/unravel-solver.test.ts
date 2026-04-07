@@ -70,9 +70,9 @@ test("unravel solver improves hg07 sample002 after the baseline solveGraph pass"
     replay.problem,
     replay.solution,
     {
-      MAX_MUTATION_DEPTH: 2,
-      MAX_SEARCH_STATES: 8,
-      MAX_ENQUEUED_MUTATIONS_PER_STATE: 2,
+      MAX_MUTATION_DEPTH: 1,
+      MAX_SEARCH_STATES: 2,
+      MAX_ENQUEUED_MUTATIONS_PER_STATE: 1,
     },
   )
 
@@ -86,7 +86,7 @@ test("unravel solver improves hg07 sample002 after the baseline solveGraph pass"
   )
 })
 
-test("unravel solver beats the section pipeline on hg07 sample004", () => {
+test("unravel stage beats the optimizeSection stage on hg07 sample004", () => {
   const { topology, problem } = loadSerializedHyperGraph(datasetHg07.sample004)
   const solveGraphSolver = new TinyHyperGraphSolver(topology, problem)
   solveGraphSolver.solve()
@@ -114,7 +114,12 @@ test("unravel solver beats the section pipeline on hg07 sample004", () => {
   expect(sectionPipelineSolver.failed).toBe(false)
   expect(unravelSolver.solved).toBe(true)
   expect(unravelSolver.failed).toBe(false)
+  expect(
+    sectionPipelineSolver.getStageOutput("optimizeSection"),
+  ).toBeDefined()
   expect(getSerializedOutputMaxRegionCost(unravelSolver.getOutput())).toBeLessThan(
-    getSerializedOutputMaxRegionCost(sectionPipelineSolver.getOutput()!),
+    getSerializedOutputMaxRegionCost(
+      sectionPipelineSolver.getStageOutput("optimizeSection")!,
+    ),
   )
 })

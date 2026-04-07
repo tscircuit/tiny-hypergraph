@@ -4,8 +4,7 @@ import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGr
 import {
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
-  TinyHyperGraphSolver,
-  TinyHyperGraphUnravelSolver,
+  type TinyHyperGraphUnravelSolver,
   type TinyHyperGraphUnravelSolverOptions,
   type TinyHyperGraphSolver as TinyHyperGraphSolvedSolver,
 } from "../../lib/index"
@@ -204,20 +203,10 @@ export const runUnravelBenchmark = (
     ] as SerializedHyperGraph
 
     try {
-      const solveGraphStartTime = performance.now()
-      const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
-      const solveGraphSolver = new TinyHyperGraphSolver(topology, problem)
-      solveGraphSolver.solve()
-      const solveGraphOutput = solveGraphSolver.getOutput()
-      const solveGraphMs = performance.now() - solveGraphStartTime
-      totalSolveGraphMs += solveGraphMs
-
-      const baselineMaxRegionCost =
-        getSerializedOutputMaxRegionCost(solveGraphOutput)
-
       const sectionPipelineStartTime = performance.now()
       const sectionPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
         serializedHyperGraph,
+        unravelSolverOptions: config.unravelOptions,
       })
       sectionPipelineSolver.solve()
       const sectionPipelineMs = performance.now() - sectionPipelineStartTime
@@ -230,33 +219,47 @@ export const runUnravelBenchmark = (
         )
       }
 
-      const sectionOutput =
-        sectionPipelineSolver.getOutput() ?? solveGraphSolver.getOutput()
-      const sectionFinalMaxRegionCost =
-        getSerializedOutputMaxRegionCost(sectionOutput)
+      const solveGraphOutput =
+        sectionPipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
+      const optimizeSectionOutput =
+        sectionPipelineSolver.getStageOutput<SerializedHyperGraph>(
+          "optimizeSection",
+        )
+      const unravelOutput =
+        sectionPipelineSolver.getStageOutput<SerializedHyperGraph>("unravel")
+      const unravelSolver =
+        sectionPipelineSolver.getSolver<TinyHyperGraphUnravelSolver>("unravel")
+      const stageStats = sectionPipelineSolver.getStageStats()
 
-      const unravelReplay = loadSerializedHyperGraph(solveGraphOutput)
-      const unravelSearchStartTime = performance.now()
-      const unravelSolver = new TinyHyperGraphUnravelSolver(
-        unravelReplay.topology,
-        unravelReplay.problem,
-        unravelReplay.solution,
-        config.unravelOptions,
-      )
-      unravelSolver.solve()
-      const unravelSearchMs = performance.now() - unravelSearchStartTime
+      if (
+        !solveGraphOutput ||
+        !optimizeSectionOutput ||
+        !unravelOutput ||
+        !unravelSolver
+      ) {
+        throw new Error("pipeline did not produce solveGraph/optimize/unravel outputs")
+      }
+
+      const solveGraphMs = stageStats.solveGraph?.timeSpent ?? 0
+      const optimizeSectionMs = stageStats.optimizeSection?.timeSpent ?? 0
+      const unravelSearchMs = stageStats.unravel?.timeSpent ?? 0
+      totalSolveGraphMs += solveGraphMs
       totalUnravelSearchMs += unravelSearchMs
-      totalUnravelTotalMs += solveGraphMs + unravelSearchMs
+      totalUnravelTotalMs += optimizeSectionMs + unravelSearchMs
+
+      const baselineMaxRegionCost =
+        getSerializedOutputMaxRegionCost(solveGraphOutput)
+      const sectionFinalMaxRegionCost =
+        getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+      const unravelFinalMaxRegionCost =
+        getSerializedOutputMaxRegionCost(unravelOutput)
 
       if (unravelSolver.failed) {
         throw new Error(
-          unravelSolver.error ?? "unravel solver failed unexpectedly",
+          unravelSolver.error ?? "unravel stage failed unexpectedly",
         )
       }
 
-      const unravelFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
-        unravelSolver.getOutput(),
-      )
       const sectionDelta = baselineMaxRegionCost - sectionFinalMaxRegionCost
       const unravelDelta = baselineMaxRegionCost - unravelFinalMaxRegionCost
       const unravelVsSectionDelta =
@@ -296,7 +299,7 @@ export const runUnravelBenchmark = (
         solveGraphMs,
         sectionPipelineMs,
         unravelSearchMs,
-        unravelTotalMs: solveGraphMs + unravelSearchMs,
+        unravelTotalMs: optimizeSectionMs + unravelSearchMs,
         mutationDepth: Number(unravelSolver.stats.mutationDepth ?? 0),
         searchStatesExpanded: Number(
           unravelSolver.stats.searchStatesExpanded ?? 0,

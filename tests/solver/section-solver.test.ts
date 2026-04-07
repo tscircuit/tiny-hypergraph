@@ -5,6 +5,7 @@ import {
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
+  type TinyHyperGraphUnravelSolver,
 } from "lib/index"
 import {
   createSectionSolverFixturePortMask,
@@ -209,12 +210,23 @@ test("section pipeline searches multiple masks and commits an improving output o
     pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
       "optimizeSection",
     )
+  const unravelOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphUnravelSolver["getOutput"]>>(
+      "unravel",
+    )
 
   expect(solveGraphOutput).toBeDefined()
   expect(optimizeSectionOutput).toBeDefined()
+  expect(unravelOutput).toBeDefined()
   expect(
     getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
   ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
+  expect(getSerializedOutputMaxRegionCost(unravelOutput!)).toBeLessThanOrEqual(
+    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
+  )
+  expect(getSerializedOutputMaxRegionCost(pipelineSolver.getOutput()!)).toBe(
+    getSerializedOutputMaxRegionCost(unravelOutput!),
+  )
 })
 
 test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", () => {
