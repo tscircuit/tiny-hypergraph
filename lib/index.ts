@@ -12,6 +12,7 @@ export {
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
 export {
+  DEFAULT_UNRAVEL_SOLVER_OPTIONS,
   TinyHyperGraphUnravelSolver,
   TinyHyperGraphMultiSectionUnravelSolver,
   type TinyHyperGraphUnravelSolverOptions,

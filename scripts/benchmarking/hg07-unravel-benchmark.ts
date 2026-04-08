@@ -2,6 +2,7 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
+  DEFAULT_UNRAVEL_SOLVER_OPTIONS,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphUnravelSolver,
@@ -110,9 +111,14 @@ const IMPROVEMENT_EPSILON = 1e-9
 export const defaultUnravelBenchmarkConfig: UnravelBenchmarkConfig = {
   sampleCount: 20,
   unravelOptions: {
-    MAX_MUTATION_DEPTH: 2,
-    MAX_SEARCH_STATES: 8,
-    MAX_ENQUEUED_MUTATIONS_PER_STATE: 2,
+    MAX_MUTATION_DEPTH: DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_MUTATION_DEPTH,
+    MAX_SEARCH_STATES: DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SEARCH_STATES,
+    MAX_ENQUEUED_MUTATIONS_PER_STATE:
+      DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_ENQUEUED_MUTATIONS_PER_STATE,
+    MAX_SECTIONS: DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SECTIONS,
+    MAX_SECTION_ATTEMPTS_PER_ROOT_REGION:
+      DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION,
+    MIN_ROOT_REGION_COST: DEFAULT_UNRAVEL_SOLVER_OPTIONS.MIN_ROOT_REGION_COST,
   },
 }
 

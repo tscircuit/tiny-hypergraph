@@ -432,6 +432,32 @@ export interface TinyHyperGraphUnravelSolverOptions
   MIN_ROOT_REGION_COST?: number
 }
 
+/**
+ * Default unravel search profile tuned for score-per-second rather than
+ * exhaustive improvement. On the first 25 hg07 samples this retained about
+ * 79% of the section-overrun gain while cutting unravel search time by about 83%.
+ */
+export const DEFAULT_UNRAVEL_SOLVER_OPTIONS: Readonly<
+  Required<
+    Pick<
+      TinyHyperGraphUnravelSolverOptions,
+      | "MAX_MUTATION_DEPTH"
+      | "MAX_SEARCH_STATES"
+      | "MAX_ENQUEUED_MUTATIONS_PER_STATE"
+      | "MAX_SECTIONS"
+      | "MAX_SECTION_ATTEMPTS_PER_ROOT_REGION"
+      | "MIN_ROOT_REGION_COST"
+    >
+  >
+> = {
+  MAX_MUTATION_DEPTH: 1,
+  MAX_SEARCH_STATES: 3,
+  MAX_ENQUEUED_MUTATIONS_PER_STATE: 1,
+  MAX_SECTIONS: 2,
+  MAX_SECTION_ATTEMPTS_PER_ROOT_REGION: 1,
+  MIN_ROOT_REGION_COST: 0.05,
+}
+
 export class TinyHyperGraphUnravelSolver extends BaseSolver {
   baselineSolver: TinyHyperGraphSolver
   baselineSerializedHyperGraph: SerializedHyperGraph
@@ -447,9 +473,10 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
   layerVariantPortIdsByKey = new Map<string, PortId[]>()
   serializedPortIdByPortId: string[]
 
-  MAX_MUTATION_DEPTH = 2
-  MAX_SEARCH_STATES = 6
-  MAX_ENQUEUED_MUTATIONS_PER_STATE = 2
+  MAX_MUTATION_DEPTH = DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_MUTATION_DEPTH
+  MAX_SEARCH_STATES = DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SEARCH_STATES
+  MAX_ENQUEUED_MUTATIONS_PER_STATE =
+    DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_ENQUEUED_MUTATIONS_PER_STATE
   MUTATION_DEPTH_PENALTY = 1e-3
   IMPROVEMENT_EPSILON = DEFAULT_IMPROVEMENT_EPSILON
   MAX_ROOT_REGIONS = 1
@@ -1825,9 +1852,10 @@ export class TinyHyperGraphMultiSectionUnravelSolver extends BaseSolver {
   searchOptions: TinyHyperGraphUnravelSolverOptions
   sectionSolverOptions: TinyHyperGraphSectionSolverOptions
 
-  MAX_SECTIONS = 8
-  MAX_SECTION_ATTEMPTS_PER_ROOT_REGION = 2
-  MIN_ROOT_REGION_COST = DEFAULT_IMPROVEMENT_EPSILON
+  MAX_SECTIONS = DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SECTIONS
+  MAX_SECTION_ATTEMPTS_PER_ROOT_REGION =
+    DEFAULT_UNRAVEL_SOLVER_OPTIONS.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION
+  MIN_ROOT_REGION_COST = DEFAULT_UNRAVEL_SOLVER_OPTIONS.MIN_ROOT_REGION_COST
 
   completedSectionCount = 0
   attemptedSectionCount = 0
