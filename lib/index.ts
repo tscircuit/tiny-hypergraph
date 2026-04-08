@@ -13,5 +13,6 @@ export {
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
 export {
   TinyHyperGraphUnravelSolver,
+  TinyHyperGraphMultiSectionUnravelSolver,
   type TinyHyperGraphUnravelSolverOptions,
 } from "./unravel-solver"

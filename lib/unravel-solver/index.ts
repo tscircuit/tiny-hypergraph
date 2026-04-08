@@ -382,55 +382,6 @@ const createProblemWithPortSectionMask = (
   regionNetId: new Int32Array(problem.regionNetId),
 })
 
-const normalizePortSectionMaskToContiguousRouteSpans = (
-  topology: TinyHyperGraphTopology,
-  problem: TinyHyperGraphProblem,
-  solution: TinyHyperGraphSolution,
-  portSectionMask: Int8Array,
-) => {
-  const normalizedPortSectionMask = new Int8Array(portSectionMask)
-
-  for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-    const { orderedPortIds } = getOrderedRoutePath(
-      topology,
-      problem,
-      solution,
-      routeId,
-    )
-    let firstMaskedIndex: number | undefined
-    let lastMaskedIndex: number | undefined
-
-    for (let pathIndex = 0; pathIndex < orderedPortIds.length; pathIndex++) {
-      if (normalizedPortSectionMask[orderedPortIds[pathIndex]!] !== 1) {
-        continue
-      }
-
-      if (firstMaskedIndex === undefined) {
-        firstMaskedIndex = pathIndex
-      }
-      lastMaskedIndex = pathIndex
-    }
-
-    if (
-      firstMaskedIndex === undefined ||
-      lastMaskedIndex === undefined ||
-      firstMaskedIndex === lastMaskedIndex
-    ) {
-      continue
-    }
-
-    for (
-      let pathIndex = firstMaskedIndex;
-      pathIndex <= lastMaskedIndex;
-      pathIndex++
-    ) {
-      normalizedPortSectionMask[orderedPortIds[pathIndex]!] = 1
-    }
-  }
-
-  return normalizedPortSectionMask
-}
-
 const getOppositeRegionIdForPort = (
   topology: TinyHyperGraphTopology,
   portId: PortId,
@@ -468,6 +419,7 @@ const createGraphFingerprint = (serializedHyperGraph: SerializedHyperGraph) =>
 
 export interface TinyHyperGraphUnravelSolverOptions
   extends TinyHyperGraphSectionSolverOptions {
+  INITIAL_ROOT_REGION_IDS?: RegionId[]
   MAX_MUTATION_DEPTH?: number
   MAX_SEARCH_STATES?: number
   MAX_ENQUEUED_MUTATIONS_PER_STATE?: number
@@ -475,6 +427,9 @@ export interface TinyHyperGraphUnravelSolverOptions
   IMPROVEMENT_EPSILON?: number
   MAX_ROOT_REGIONS?: number
   MUTABLE_HOPS?: number
+  MAX_SECTIONS?: number
+  MAX_SECTION_ATTEMPTS_PER_ROOT_REGION?: number
+  MIN_ROOT_REGION_COST?: number
 }
 
 export class TinyHyperGraphUnravelSolver extends BaseSolver {
@@ -499,6 +454,7 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
   IMPROVEMENT_EPSILON = DEFAULT_IMPROVEMENT_EPSILON
   MAX_ROOT_REGIONS = 1
   MUTABLE_HOPS = 1
+  INITIAL_ROOT_REGION_IDS?: RegionId[]
 
   searchStartTime = 0
   expandedStateCount = 0
@@ -549,6 +505,9 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
     if (options?.MUTABLE_HOPS !== undefined) {
       this.MUTABLE_HOPS = options.MUTABLE_HOPS
     }
+    if (options?.INITIAL_ROOT_REGION_IDS) {
+      this.INITIAL_ROOT_REGION_IDS = [...options.INITIAL_ROOT_REGION_IDS]
+    }
 
     const baselineSectionSolver = new TinyHyperGraphSectionSolver(
       topology,
@@ -591,6 +550,7 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
       depth: 0,
       priority: this.bestSummary.maxRegionCost,
       mutationPath: [],
+      nextRootRegionIds: this.INITIAL_ROOT_REGION_IDS,
     }
 
     this.bestCostByFingerprint.set(
@@ -680,8 +640,8 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
 
   createSectionPortMaskForRootRegion(
     topology: TinyHyperGraphTopology,
-    problem: TinyHyperGraphProblem,
-    solution: TinyHyperGraphSolution,
+    _problem: TinyHyperGraphProblem,
+    _solution: TinyHyperGraphSolution,
     rootRegionId: RegionId,
   ) {
     const mutableRegionIds = getRegionIdsWithinHops(
@@ -691,12 +651,7 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
     )
     const sectionRegionIds = getAdjacentRegionIds(topology, mutableRegionIds)
 
-    return normalizePortSectionMaskToContiguousRouteSpans(
-      topology,
-      problem,
-      solution,
-      createPortSectionMaskForRegionIds(topology, sectionRegionIds),
-    )
+    return createPortSectionMaskForRegionIds(topology, sectionRegionIds)
   }
 
   createVisualizationSolver(
@@ -1250,11 +1205,9 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
       this.MUTABLE_HOPS,
     )
     const sectionRegionIds = getAdjacentRegionIds(topology, mutableRegionIds)
-    const portSectionMask = normalizePortSectionMaskToContiguousRouteSpans(
+    const portSectionMask = createPortSectionMaskForRegionIds(
       topology,
-      problem,
-      solution,
-      createPortSectionMaskForRegionIds(topology, sectionRegionIds),
+      sectionRegionIds,
     )
     const candidateProblem = createProblemWithPortSectionMask(
       problem,
@@ -1854,5 +1807,425 @@ export class TinyHyperGraphUnravelSolver extends BaseSolver {
     }
 
     return this.bestSerializedHyperGraph
+  }
+}
+
+export class TinyHyperGraphMultiSectionUnravelSolver extends BaseSolver {
+  baselineSolver: TinyHyperGraphSolver
+  baselineSerializedHyperGraph: SerializedHyperGraph
+  baselineOutputSummary: RegionCostSummary
+  currentSerializedHyperGraph: SerializedHyperGraph
+  currentReplaySolver: TinyHyperGraphSolver
+  currentTopology: TinyHyperGraphTopology
+  currentProblem: TinyHyperGraphProblem
+  currentSolution: TinyHyperGraphSolution
+  currentSummary: RegionCostSummary
+  declare activeSubSolver: TinyHyperGraphUnravelSolver | null
+
+  searchOptions: TinyHyperGraphUnravelSolverOptions
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions
+
+  MAX_SECTIONS = 8
+  MAX_SECTION_ATTEMPTS_PER_ROOT_REGION = 2
+  MIN_ROOT_REGION_COST = DEFAULT_IMPROVEMENT_EPSILON
+
+  completedSectionCount = 0
+  attemptedSectionCount = 0
+  successfulSectionCount = 0
+  stalledSectionCount = 0
+  failedSectionCount = 0
+  activeRootRegionId?: RegionId
+  attemptedRootRegionCount = new Map<RegionId, number>()
+  attemptedRootRegionIds: RegionId[] = []
+  completedRootRegionIds: RegionId[] = []
+
+  totalMutationDepth = 0
+  totalSearchStatesExpanded = 0
+  totalSearchStatesQueued = 0
+  totalGeneratedCandidateCount = 0
+  totalAttemptedCandidateCount = 0
+  totalSuccessfulMutationCount = 0
+  totalCandidateInitMs = 0
+  totalCandidateSolveMs = 0
+  totalCandidateReplayScoreMs = 0
+  totalIssueScanMs = 0
+  totalSearchMs = 0
+  appliedMutationPathLabels: string[] = []
+  appliedMutationPathTypes: string[] = []
+
+  constructor(
+    public topology: TinyHyperGraphTopology,
+    public problem: TinyHyperGraphProblem,
+    public initialSolution: TinyHyperGraphSolution,
+    options?: TinyHyperGraphUnravelSolverOptions,
+  ) {
+    super()
+
+    this.MAX_ITERATIONS = 1e6
+    this.searchOptions = { ...options }
+    this.sectionSolverOptions = {
+      ...DEFAULT_SECTION_SOLVER_OPTIONS,
+      ...options,
+    }
+    if (options?.MAX_SECTIONS !== undefined) {
+      this.MAX_SECTIONS = options.MAX_SECTIONS
+    }
+    if (options?.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION !== undefined) {
+      this.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION =
+        options.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION
+    }
+    if (options?.MIN_ROOT_REGION_COST !== undefined) {
+      this.MIN_ROOT_REGION_COST = options.MIN_ROOT_REGION_COST
+    }
+
+    const baselineSectionSolver = new TinyHyperGraphSectionSolver(
+      topology,
+      problem,
+      initialSolution,
+      this.sectionSolverOptions,
+    )
+    this.baselineSolver = baselineSectionSolver.baselineSolver
+    this.baselineSerializedHyperGraph = this.baselineSolver.getOutput()
+    this.baselineOutputSummary = getRegionCostSummary(this.baselineSolver)
+    this.currentSerializedHyperGraph = this.baselineSerializedHyperGraph
+    this.currentReplaySolver = this.baselineSolver
+    this.currentTopology = topology
+    this.currentProblem = problem
+    this.currentSolution = initialSolution
+    this.currentSummary = this.baselineOutputSummary
+  }
+
+  override _setup() {
+    this.refreshCurrentReplayState(this.currentSerializedHyperGraph)
+    this.updateLiveStats("initialized")
+  }
+
+  refreshCurrentReplayState(serializedHyperGraph: SerializedHyperGraph) {
+    const replay = loadSerializedHyperGraph(serializedHyperGraph)
+    const replayedSectionSolver = new TinyHyperGraphSectionSolver(
+      replay.topology,
+      replay.problem,
+      replay.solution,
+      this.sectionSolverOptions,
+    )
+
+    this.currentSerializedHyperGraph = serializedHyperGraph
+    this.currentTopology = replay.topology
+    this.currentProblem = replay.problem
+    this.currentSolution = replay.solution
+    this.currentReplaySolver = replayedSectionSolver.baselineSolver
+    this.currentSummary = getRegionCostSummary(this.currentReplaySolver)
+  }
+
+  getRankedRootRegions() {
+    return this.currentReplaySolver.state.regionIntersectionCaches
+      .map((regionIntersectionCache, regionId) => ({
+        regionId,
+        regionCost: regionIntersectionCache.existingRegionCost,
+      }))
+      .filter(({ regionCost }) => regionCost > this.MIN_ROOT_REGION_COST)
+      .sort((left, right) => right.regionCost - left.regionCost)
+  }
+
+  getNextRootRegionId() {
+    let bestRegionId: RegionId | undefined
+    let bestWeightedCost = 0
+
+    for (const { regionId, regionCost } of this.getRankedRootRegions()) {
+      const attempts = this.attemptedRootRegionCount.get(regionId) ?? 0
+      if (attempts >= this.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION) {
+        continue
+      }
+
+      const weightedRegionCost =
+        regionCost *
+        (1 - attempts / Math.max(this.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION, 1))
+
+      if (weightedRegionCost <= bestWeightedCost) {
+        continue
+      }
+
+      bestWeightedCost = weightedRegionCost
+      bestRegionId = regionId
+    }
+
+    return bestRegionId
+  }
+
+  startSectionSolver(rootRegionId: RegionId) {
+    this.activeRootRegionId = rootRegionId
+    this.attemptedSectionCount += 1
+    this.attemptedRootRegionIds.push(rootRegionId)
+    this.attemptedRootRegionCount.set(
+      rootRegionId,
+      (this.attemptedRootRegionCount.get(rootRegionId) ?? 0) + 1,
+    )
+    this.activeSubSolver = new TinyHyperGraphUnravelSolver(
+      this.currentTopology,
+      this.currentProblem,
+      this.currentSolution,
+      {
+        ...this.searchOptions,
+        INITIAL_ROOT_REGION_IDS: [rootRegionId],
+        MAX_ROOT_REGIONS: 1,
+      },
+    )
+  }
+
+  absorbCompletedSection(sectionSolver: TinyHyperGraphUnravelSolver) {
+    this.completedSectionCount += 1
+    this.totalMutationDepth += Number(sectionSolver.stats.mutationDepth ?? 0)
+    this.totalSearchStatesExpanded += Number(
+      sectionSolver.stats.searchStatesExpanded ?? 0,
+    )
+    this.totalSearchStatesQueued += Number(
+      sectionSolver.stats.searchStatesQueued ?? 0,
+    )
+    this.totalGeneratedCandidateCount += Number(
+      sectionSolver.stats.generatedCandidateCount ?? 0,
+    )
+    this.totalAttemptedCandidateCount += Number(
+      sectionSolver.stats.attemptedCandidateCount ?? 0,
+    )
+    this.totalSuccessfulMutationCount += Number(
+      sectionSolver.stats.successfulMutationCount ?? 0,
+    )
+    this.totalCandidateInitMs += Number(sectionSolver.stats.candidateInitMs ?? 0)
+    this.totalCandidateSolveMs += Number(sectionSolver.stats.candidateSolveMs ?? 0)
+    this.totalCandidateReplayScoreMs += Number(
+      sectionSolver.stats.candidateReplayScoreMs ?? 0,
+    )
+    this.totalIssueScanMs += Number(sectionSolver.stats.issueScanMs ?? 0)
+    this.totalSearchMs += Number(sectionSolver.stats.searchMs ?? 0)
+
+    if (sectionSolver.failed) {
+      this.failedSectionCount += 1
+      return
+    }
+
+    const optimized = Boolean(sectionSolver.stats.optimized)
+    if (!optimized) {
+      this.stalledSectionCount += 1
+      return
+    }
+
+    this.successfulSectionCount += 1
+    if (this.activeRootRegionId !== undefined) {
+      this.completedRootRegionIds.push(this.activeRootRegionId)
+    }
+    if (Array.isArray(sectionSolver.stats.mutationPathLabels)) {
+      this.appliedMutationPathLabels.push(
+        ...(sectionSolver.stats.mutationPathLabels as string[]),
+      )
+    }
+    if (Array.isArray(sectionSolver.stats.mutationPathTypes)) {
+      this.appliedMutationPathTypes.push(
+        ...(sectionSolver.stats.mutationPathTypes as string[]),
+      )
+    }
+
+    this.refreshCurrentReplayState(sectionSolver.getOutput())
+    this.attemptedRootRegionCount.clear()
+  }
+
+  updateLiveStats(phase: string) {
+    const activeSectionStats = this.activeSubSolver?.stats ?? {}
+    const activeMutationDepth = Number(activeSectionStats.mutationDepth ?? 0)
+    const activeMutationPathLabels = Array.isArray(
+      activeSectionStats.mutationPathLabels,
+    )
+      ? (activeSectionStats.mutationPathLabels as string[])
+      : []
+    const activeMutationPathTypes = Array.isArray(
+      activeSectionStats.mutationPathTypes,
+    )
+      ? (activeSectionStats.mutationPathTypes as string[])
+      : []
+
+    this.stats = {
+      ...this.stats,
+      searchPhase: phase,
+      baselineMaxRegionCost: this.baselineOutputSummary.maxRegionCost,
+      baselineTotalRegionCost: this.baselineOutputSummary.totalRegionCost,
+      currentMaxRegionCost: this.currentSummary.maxRegionCost,
+      currentTotalRegionCost: this.currentSummary.totalRegionCost,
+      finalMaxRegionCost: this.currentSummary.maxRegionCost,
+      finalTotalRegionCost: this.currentSummary.totalRegionCost,
+      delta:
+        this.baselineOutputSummary.maxRegionCost - this.currentSummary.maxRegionCost,
+      optimized:
+        compareRegionCostSummaries(this.currentSummary, this.baselineOutputSummary) <
+        0,
+      sectionsCompleted: this.completedSectionCount,
+      sectionsAttempted: this.attemptedSectionCount,
+      successfulSectionCount: this.successfulSectionCount,
+      stalledSectionCount: this.stalledSectionCount,
+      failedSectionCount: this.failedSectionCount,
+      activeRootRegionId: this.activeRootRegionId ?? null,
+      attemptedRootRegionIds: [...this.attemptedRootRegionIds],
+      completedRootRegionIds: [...this.completedRootRegionIds],
+      mutationDepth: this.totalMutationDepth + activeMutationDepth,
+      mutationPathLabels: [
+        ...this.appliedMutationPathLabels,
+        ...activeMutationPathLabels,
+      ],
+      mutationPathTypes: [...this.appliedMutationPathTypes, ...activeMutationPathTypes],
+      searchStatesExpanded:
+        this.totalSearchStatesExpanded +
+        Number(activeSectionStats.searchStatesExpanded ?? 0),
+      searchStatesQueued:
+        this.totalSearchStatesQueued +
+        Number(activeSectionStats.searchStatesQueued ?? 0),
+      generatedCandidateCount:
+        this.totalGeneratedCandidateCount +
+        Number(activeSectionStats.generatedCandidateCount ?? 0),
+      attemptedCandidateCount:
+        this.totalAttemptedCandidateCount +
+        Number(activeSectionStats.attemptedCandidateCount ?? 0),
+      successfulMutationCount:
+        this.totalSuccessfulMutationCount +
+        Number(activeSectionStats.successfulMutationCount ?? 0),
+      candidateInitMs:
+        this.totalCandidateInitMs + Number(activeSectionStats.candidateInitMs ?? 0),
+      candidateSolveMs:
+        this.totalCandidateSolveMs +
+        Number(activeSectionStats.candidateSolveMs ?? 0),
+      candidateReplayScoreMs:
+        this.totalCandidateReplayScoreMs +
+        Number(activeSectionStats.candidateReplayScoreMs ?? 0),
+      issueScanMs:
+        this.totalIssueScanMs + Number(activeSectionStats.issueScanMs ?? 0),
+      searchMs: this.totalSearchMs + Number(activeSectionStats.searchMs ?? 0),
+      activeSectionSearchPhase: activeSectionStats.searchPhase ?? null,
+      activeSectionPendingMutationCount:
+        Number(activeSectionStats.pendingMutationCount ?? 0) || 0,
+      activeSectionAttemptedCandidateCount:
+        Number(activeSectionStats.attemptedCandidateCount ?? 0) || 0,
+      activeSectionGeneratedCandidateCount:
+        Number(activeSectionStats.generatedCandidateCount ?? 0) || 0,
+    }
+  }
+
+  override _step() {
+    if (this.activeSubSolver) {
+      this.activeSubSolver.step()
+
+      if (this.activeSubSolver.failed || this.activeSubSolver.solved) {
+        const completedSectionSolver = this.activeSubSolver
+        this.activeSubSolver = null
+        this.absorbCompletedSection(completedSectionSolver)
+        this.activeRootRegionId = undefined
+        this.updateLiveStats(
+          completedSectionSolver.failed
+            ? "section-failed"
+            : Boolean(completedSectionSolver.stats.optimized)
+              ? "section-accepted"
+              : "section-stalled",
+        )
+        return
+      }
+
+      this.updateLiveStats("running-section")
+      return
+    }
+
+    if (
+      this.completedSectionCount >= this.MAX_SECTIONS ||
+      this.currentSummary.maxRegionCost <= this.MIN_ROOT_REGION_COST
+    ) {
+      this.updateLiveStats("completed")
+      this.solved = true
+      return
+    }
+
+    const nextRootRegionId = this.getNextRootRegionId()
+    if (nextRootRegionId === undefined) {
+      this.updateLiveStats("completed")
+      this.solved = true
+      return
+    }
+
+    this.startSectionSolver(nextRootRegionId)
+    this.updateLiveStats("spawning-section")
+  }
+
+  getSolvedSolver(): TinyHyperGraphSolver {
+    if (!this.solved || this.failed) {
+      throw new Error(
+        "TinyHyperGraphMultiSectionUnravelSolver does not have a solved output yet",
+      )
+    }
+
+    return this.currentReplaySolver
+  }
+
+  override visualize(): GraphicsObject {
+    if (this.activeSubSolver) {
+      const graphics = this.activeSubSolver.visualize()
+      graphics.title = [
+        "Unravel Multi Section",
+        `iter=${this.iterations}`,
+        `sections=${this.completedSectionCount}/${this.MAX_SECTIONS}`,
+        `successful=${this.successfulSectionCount}`,
+        this.activeRootRegionId !== undefined
+          ? `activeRoot=region-${this.activeRootRegionId}`
+          : undefined,
+        graphics.title,
+      ]
+        .filter(Boolean)
+        .join(" | ")
+      return graphics
+    }
+
+    const graphics = visualizeTinyGraph(this.currentReplaySolver, {
+      showIdlePortRegionConnectors: false,
+      showInitialRouteHints: false,
+    }) as GraphicsObject & {
+      circles?: any[]
+    }
+    graphics.circles ??= []
+
+    for (const { regionId, regionCost } of this.getRankedRootRegions().slice(0, 6)) {
+      const attempts = this.attemptedRootRegionCount.get(regionId) ?? 0
+      graphics.circles.push({
+        center: {
+          x: this.currentTopology.regionCenterX[regionId],
+          y: this.currentTopology.regionCenterY[regionId],
+        },
+        radius: Math.max(
+          this.currentTopology.regionWidth[regionId] ?? 0,
+          this.currentTopology.regionHeight[regionId] ?? 0,
+          0.15,
+        ) * 0.24,
+        fill: "rgba(245, 158, 11, 0.12)",
+        stroke: "rgba(245, 158, 11, 0.95)",
+        label: [
+          `region-${regionId}`,
+          `cost=${regionCost.toFixed(3)}`,
+          `attempts=${attempts}/${this.MAX_SECTION_ATTEMPTS_PER_ROOT_REGION}`,
+        ].join("\n"),
+      })
+    }
+
+    graphics.title = [
+      "Unravel Multi Section",
+      `iter=${this.iterations}`,
+      this.solved ? "solved" : "idle",
+      `sections=${this.completedSectionCount}/${this.MAX_SECTIONS}`,
+      `successful=${this.successfulSectionCount}`,
+      `stalled=${this.stalledSectionCount}`,
+      `finalMax=${this.currentSummary.maxRegionCost.toFixed(3)}`,
+    ].join(" | ")
+    return graphics
+  }
+
+  override getOutput() {
+    if (!this.solved || this.failed) {
+      throw new Error(
+        "TinyHyperGraphMultiSectionUnravelSolver does not have a solved output yet",
+      )
+    }
+
+    return this.currentSerializedHyperGraph
   }
 }

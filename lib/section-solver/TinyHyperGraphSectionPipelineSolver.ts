@@ -11,7 +11,7 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphUnravelSolverOptions } from "../unravel-solver"
-import { TinyHyperGraphUnravelSolver } from "../unravel-solver"
+import { TinyHyperGraphMultiSectionUnravelSolver } from "../unravel-solver"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
 
@@ -423,7 +423,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     },
     {
       solverName: "unravel",
-      solverClass: TinyHyperGraphUnravelSolver,
+      solverClass: TinyHyperGraphMultiSectionUnravelSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getUnravelStageParams(),
       onSolved: (instance: TinyHyperGraphSectionPipelineSolver) =>
@@ -611,7 +611,8 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   }
 
   captureUnravelStageStats() {
-    const unravelSolver = this.getSolver<TinyHyperGraphUnravelSolver>("unravel")
+    const unravelSolver =
+      this.getSolver<TinyHyperGraphMultiSectionUnravelSolver>("unravel")
     if (!unravelSolver) {
       return
     }

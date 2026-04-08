@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  TinyHyperGraphMultiSectionUnravelSolver,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   TinyHyperGraphSolver,
@@ -203,4 +204,41 @@ test("unravel solver keeps exploring sample002 after non-improving first-hop mut
   expect(Number(unravelSolver.stats.searchStatesExpanded)).toBeGreaterThan(1)
   expect(Number(unravelSolver.stats.attemptedCandidateCount)).toBeGreaterThan(3)
   expect(unravelSolver.iterations).toBeGreaterThan(6)
+})
+
+test("multi-section unravel solver re-seeds multiple hot sections on hg07 sample002", () => {
+  const sectionPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+  })
+
+  sectionPipelineSolver.solveUntilStage("unravel")
+
+  const optimizedOutput =
+    sectionPipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "optimizeSection",
+    )
+
+  expect(optimizedOutput).toBeDefined()
+
+  const replay = loadSerializedHyperGraph(optimizedOutput!)
+  const unravelSolver = new TinyHyperGraphMultiSectionUnravelSolver(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+    {
+      MAX_SECTIONS: 4,
+      MAX_SECTION_ATTEMPTS_PER_ROOT_REGION: 1,
+    },
+  )
+
+  unravelSolver.solve()
+
+  expect(unravelSolver.solved).toBe(true)
+  expect(unravelSolver.failed).toBe(false)
+  expect(Number(unravelSolver.stats.sectionsCompleted)).toBeGreaterThan(1)
+  expect(
+    Array.isArray(unravelSolver.stats.attemptedRootRegionIds)
+      ? new Set(unravelSolver.stats.attemptedRootRegionIds as number[]).size
+      : 0,
+  ).toBeGreaterThan(1)
 })

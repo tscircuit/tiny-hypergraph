@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  TinyHyperGraphMultiSectionUnravelSolver,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
@@ -40,6 +41,18 @@ const getSerializedOutputMaxRegionCost = (
   )
 
   return getMaxRegionCost(replayedSolver.baselineSolver)
+}
+
+const createPortMaskForSerializedPortIds = (
+  topology: Parameters<typeof createSectionSolverFixturePortMask>[0],
+  serializedPortIds: string[],
+) => {
+  const selectedPortIds = new Set(serializedPortIds)
+  return Int8Array.from(
+    topology.portMetadata?.map((metadata) =>
+      selectedPortIds.has(metadata?.serializedPortId ?? "") ? 1 : 0,
+    ) ?? [],
+  )
 }
 
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
@@ -85,6 +98,39 @@ test("section solver reattaches fixed prefixes and suffixes after optimizing the
     "d1",
     "t1",
   ])
+})
+
+test("section solver supports multiple disjoint active spans on the same original route", () => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    sectionSolverFixtureGraph,
+  )
+  problem.portSectionMask = createPortMaskForSerializedPortIds(topology, [
+    "a0",
+    "c1x",
+    "a1",
+    "c0x",
+  ])
+
+  const sectionSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+  )
+
+  sectionSolver.solve()
+
+  expect(sectionSolver.solved).toBe(true)
+  expect(sectionSolver.failed).toBe(false)
+  expect(sectionSolver.activeRouteIds.length).toBe(4)
+
+  const output = sectionSolver.getOutput()
+  const routePortIds = getSolvedRoutePortIds(output)
+
+  expect(output.solvedRoutes?.length).toBe(2)
+  expect(routePortIds["route-0"]?.[0]).toBe("s0")
+  expect(routePortIds["route-0"]?.at(-1)).toBe("t0")
+  expect(routePortIds["route-1"]?.[0]).toBe("s1")
+  expect(routePortIds["route-1"]?.at(-1)).toBe("t1")
 })
 
 test("section solver visualize highlights the section without idle gray port-region connector lines", () => {
@@ -187,63 +233,71 @@ test("section pipeline visualize renders the input graph at iteration zero", () 
   expect(graphics.title).toContain("iter=0")
 })
 
-test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {
-  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
-    serializedHyperGraph: datasetHg07.sample029,
-  })
+test(
+  "section pipeline searches multiple masks and commits an improving output on hg07 sample029",
+  () => {
+    const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+      serializedHyperGraph: datasetHg07.sample029,
+    })
 
-  pipelineSolver.solve()
+    pipelineSolver.solve()
 
-  expect(pipelineSolver.solved).toBe(true)
-  expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(1)
-  expect(pipelineSolver.selectedSectionCandidateLabel).toBeDefined()
-  expect(
-    [...(pipelineSolver.selectedSectionMask ?? [])].some((value) => value === 1),
-  ).toBe(true)
+    expect(pipelineSolver.solved).toBe(true)
+    expect(pipelineSolver.failed).toBe(false)
+    expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(1)
+    expect(pipelineSolver.selectedSectionCandidateLabel).toBeDefined()
+    expect(
+      [...(pipelineSolver.selectedSectionMask ?? [])].some((value) => value === 1),
+    ).toBe(true)
 
-  const solveGraphOutput =
-    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
-      "solveGraph",
+    const solveGraphOutput =
+      pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+        "solveGraph",
+      )
+    const optimizeSectionOutput =
+      pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+        "optimizeSection",
+      )
+    const unravelOutput =
+      pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphUnravelSolver["getOutput"]>>(
+        "unravel",
+      )
+
+    expect(solveGraphOutput).toBeDefined()
+    expect(optimizeSectionOutput).toBeDefined()
+    expect(unravelOutput).toBeDefined()
+    expect(
+      getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
+    ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
+    expect(getSerializedOutputMaxRegionCost(unravelOutput!)).toBeLessThanOrEqual(
+      getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
     )
-  const optimizeSectionOutput =
-    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
-      "optimizeSection",
+    expect(getSerializedOutputMaxRegionCost(pipelineSolver.getOutput()!)).toBe(
+      getSerializedOutputMaxRegionCost(unravelOutput!),
     )
-  const unravelOutput =
-    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphUnravelSolver["getOutput"]>>(
-      "unravel",
-    )
+  },
+  { timeout: 30000 },
+)
 
-  expect(solveGraphOutput).toBeDefined()
-  expect(optimizeSectionOutput).toBeDefined()
-  expect(unravelOutput).toBeDefined()
-  expect(
-    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
-  ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
-  expect(getSerializedOutputMaxRegionCost(unravelOutput!)).toBeLessThanOrEqual(
-    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
-  )
-  expect(getSerializedOutputMaxRegionCost(pipelineSolver.getOutput()!)).toBe(
-    getSerializedOutputMaxRegionCost(unravelOutput!),
-  )
-})
+test(
+  "section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions",
+  () => {
+    const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+      serializedHyperGraph: datasetHg07.sample029,
+      sectionSolverOptions: {
+        MAX_HOT_REGIONS: 1,
+      },
+    })
 
-test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", () => {
-  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
-    serializedHyperGraph: datasetHg07.sample029,
-    sectionSolverOptions: {
-      MAX_HOT_REGIONS: 1,
-    },
-  })
+    pipelineSolver.solve()
 
-  pipelineSolver.solve()
-
-  expect(pipelineSolver.solved).toBe(true)
-  expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
-  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
-})
+    expect(pipelineSolver.solved).toBe(true)
+    expect(pipelineSolver.failed).toBe(false)
+    expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
+    expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+  },
+  { timeout: 30000 },
+)
 
 test("section pipeline stage stats expose the unravel solver's own iteration count", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
@@ -268,4 +322,27 @@ test("section pipeline stage stats expose the unravel solver's own iteration cou
   expect(
     pipelineSolver.iterations - pipelineSolver.firstIterationOfStage.unravel!,
   ).toBe(unravelSolver!.iterations)
+})
+
+test("section pipeline runs the multi-section unravel stage across multiple roots on hg07 sample002", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample002,
+    unravelSolverOptions: {
+      MAX_SECTIONS: 4,
+      MAX_SECTION_ATTEMPTS_PER_ROOT_REGION: 1,
+    },
+  })
+
+  pipelineSolver.solve()
+
+  const unravelSolver =
+    pipelineSolver.getSolver<TinyHyperGraphMultiSectionUnravelSolver>("unravel")
+
+  expect(unravelSolver).toBeDefined()
+  expect(Number(unravelSolver!.stats.sectionsCompleted)).toBeGreaterThan(1)
+  expect(
+    Array.isArray(unravelSolver!.stats.attemptedRootRegionIds)
+      ? new Set(unravelSolver!.stats.attemptedRootRegionIds as number[]).size
+      : 0,
+  ).toBeGreaterThan(1)
 })

@@ -28,6 +28,7 @@ interface SolvedStateSnapshot {
 
 interface SectionRoutePlan {
   routeId: RouteId
+  originalRouteId: RouteId
   fixedSegments: Array<{
     regionId: RegionId
     fromPortId: PortId
@@ -36,6 +37,20 @@ interface SectionRoutePlan {
   activeStartPortId?: PortId
   activeEndPortId?: PortId
   forcedStartRegionId?: RegionId
+}
+
+interface OriginalRoutePlan {
+  routeId: RouteId
+  orderedPortIds: PortId[]
+  orderedRegionIds: RegionId[]
+  activeSpans: Array<{
+    syntheticRouteId: RouteId
+    activeStartIndex: number
+    activeEndIndex: number
+    activeStartPortId: PortId
+    activeEndPortId: PortId
+    forcedStartRegionId?: RegionId
+  }>
 }
 
 export interface TinyHyperGraphSectionSolverOptions
@@ -342,6 +357,149 @@ const getOrderedRoutePath = (
   }
 }
 
+const getMaskedRuns = (
+  orderedPortIds: PortId[],
+  portSectionMask: Int8Array,
+): Array<{ startIndex: number; endIndex: number }> => {
+  const maskedRuns: Array<{ startIndex: number; endIndex: number }> = []
+  let currentRunStartIndex: number | undefined
+
+  for (let portIndex = 0; portIndex < orderedPortIds.length; portIndex++) {
+    const portId = orderedPortIds[portIndex]!
+    const isMasked = portSectionMask[portId] === 1
+
+    if (isMasked && currentRunStartIndex === undefined) {
+      currentRunStartIndex = portIndex
+    } else if (!isMasked && currentRunStartIndex !== undefined) {
+      maskedRuns.push({
+        startIndex: currentRunStartIndex,
+        endIndex: portIndex - 1,
+      })
+      currentRunStartIndex = undefined
+    }
+  }
+
+  if (currentRunStartIndex !== undefined) {
+    maskedRuns.push({
+      startIndex: currentRunStartIndex,
+      endIndex: orderedPortIds.length - 1,
+    })
+  }
+
+  return maskedRuns
+}
+
+const getOrderedRoutePathFromRegionSegments = (
+  topology: TinyHyperGraphTopology,
+  routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+  routeId: RouteId,
+  startPortId: PortId,
+  endPortId: PortId,
+): {
+  orderedPortIds: PortId[]
+  orderedRegionIds: RegionId[]
+} => {
+  const routeSegments = new Map<
+    number,
+    {
+      regionId: RegionId
+      fromPortId: PortId
+      toPortId: PortId
+    }
+  >()
+  const segmentsByPort = new Map<PortId, number[]>()
+  let routeSegmentIndex = 0
+
+  for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+    for (const [segmentRouteId, fromPortId, toPortId] of routeSegmentsByRegion[
+      regionId
+    ] ?? []) {
+      if (segmentRouteId !== routeId) {
+        continue
+      }
+
+      routeSegments.set(routeSegmentIndex, {
+        regionId,
+        fromPortId,
+        toPortId,
+      })
+
+      const fromSegments = segmentsByPort.get(fromPortId) ?? []
+      fromSegments.push(routeSegmentIndex)
+      segmentsByPort.set(fromPortId, fromSegments)
+
+      const toSegments = segmentsByPort.get(toPortId) ?? []
+      toSegments.push(routeSegmentIndex)
+      segmentsByPort.set(toPortId, toSegments)
+
+      routeSegmentIndex += 1
+    }
+  }
+
+  if (routeSegments.size === 0) {
+    if (startPortId === endPortId) {
+      return {
+        orderedPortIds: [startPortId],
+        orderedRegionIds: [],
+      }
+    }
+
+    throw new Error(`Route ${routeId} does not have an existing solved path`)
+  }
+
+  const orderedPortIds = [startPortId]
+  const orderedRegionIds: RegionId[] = []
+  const usedSegmentIndices = new Set<number>()
+  let currentPortId = startPortId
+  let previousPortId: PortId | undefined
+
+  while (currentPortId !== endPortId) {
+    const nextSegmentIndices = (segmentsByPort.get(currentPortId) ?? []).filter(
+      (segmentIndex) => {
+        if (usedSegmentIndices.has(segmentIndex)) {
+          return false
+        }
+
+        const routeSegment = routeSegments.get(segmentIndex)!
+        const nextPortId =
+          routeSegment.fromPortId === currentPortId
+            ? routeSegment.toPortId
+            : routeSegment.fromPortId
+
+        return nextPortId !== previousPortId
+      },
+    )
+
+    if (nextSegmentIndices.length !== 1) {
+      throw new Error(
+        `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
+      )
+    }
+
+    const nextSegmentIndex = nextSegmentIndices[0]!
+    const nextSegment = routeSegments.get(nextSegmentIndex)!
+    const nextPortId =
+      nextSegment.fromPortId === currentPortId
+        ? nextSegment.toPortId
+        : nextSegment.fromPortId
+
+    usedSegmentIndices.add(nextSegmentIndex)
+    orderedRegionIds.push(nextSegment.regionId)
+    orderedPortIds.push(nextPortId)
+    previousPortId = currentPortId
+    currentPortId = nextPortId
+  }
+
+  if (usedSegmentIndices.size !== routeSegments.size) {
+    throw new Error(`Route ${routeId} contains disconnected solved segments`)
+  }
+
+  return {
+    orderedPortIds,
+    orderedRegionIds,
+  }
+}
+
 const applyRouteSegmentsToSolver = (
   solver: TinyHyperGraphSolver,
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
@@ -439,18 +597,24 @@ const createSectionRoutePlans = (
 ): {
   sectionProblem: TinyHyperGraphProblem
   routePlans: SectionRoutePlan[]
+  originalRoutePlans: OriginalRoutePlan[]
   activeRouteIds: RouteId[]
 } => {
-  const routeStartPort = new Int32Array(problem.routeStartPort)
-  const routeEndPort = new Int32Array(problem.routeEndPort)
+  const routeStartPort = [...problem.routeStartPort]
+  const routeEndPort = [...problem.routeEndPort]
+  const routeNet = [...problem.routeNet]
+  const routeMetadata = [...(problem.routeMetadata ?? [])]
   const routePlans: SectionRoutePlan[] = Array.from(
     { length: problem.routeCount },
     (_, routeId) => ({
       routeId,
+      originalRouteId: routeId,
       fixedSegments: [],
     }),
   )
+  const originalRoutePlans: OriginalRoutePlan[] = []
   const activeRouteIds: RouteId[] = []
+  let nextSyntheticRouteId = problem.routeCount
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
     const routePlan = routePlans[routeId]!
@@ -460,30 +624,14 @@ const createSectionRoutePlans = (
       solution,
       routeId,
     )
-    const maskedRuns: Array<{ startIndex: number; endIndex: number }> = []
-    let currentRunStartIndex: number | undefined
-
-    for (let portIndex = 0; portIndex < orderedPortIds.length; portIndex++) {
-      const portId = orderedPortIds[portIndex]!
-      const isMasked = problem.portSectionMask[portId] === 1
-
-      if (isMasked && currentRunStartIndex === undefined) {
-        currentRunStartIndex = portIndex
-      } else if (!isMasked && currentRunStartIndex !== undefined) {
-        maskedRuns.push({
-          startIndex: currentRunStartIndex,
-          endIndex: portIndex - 1,
-        })
-        currentRunStartIndex = undefined
-      }
+    const maskedRuns = getMaskedRuns(orderedPortIds, problem.portSectionMask)
+    const originalRoutePlan: OriginalRoutePlan = {
+      routeId,
+      orderedPortIds,
+      orderedRegionIds,
+      activeSpans: [],
     }
-
-    if (currentRunStartIndex !== undefined) {
-      maskedRuns.push({
-        startIndex: currentRunStartIndex,
-        endIndex: orderedPortIds.length - 1,
-      })
-    }
+    originalRoutePlans.push(originalRoutePlan)
 
     if (maskedRuns.length === 0) {
       for (let portIndex = 1; portIndex < orderedPortIds.length; portIndex++) {
@@ -496,64 +644,176 @@ const createSectionRoutePlans = (
       continue
     }
 
-    if (maskedRuns.length > 1) {
-      throw new Error(
-        `Route ${routeId} enters the section multiple times; only one contiguous section span is currently supported`,
+    const activeSegmentRanges = maskedRuns.map((maskedRun) => {
+      const activeStartIndex = Math.max(0, maskedRun.startIndex - 1)
+      const activeEndIndex = Math.min(
+        orderedPortIds.length - 1,
+        maskedRun.endIndex + 1,
       )
-    }
 
-    const maskedRun = maskedRuns[0]!
-    const activeStartIndex = Math.max(0, maskedRun.startIndex - 1)
-    const activeEndIndex = Math.min(
-      orderedPortIds.length - 1,
-      maskedRun.endIndex + 1,
-    )
+      if (activeEndIndex <= activeStartIndex) {
+        throw new Error(`Route ${routeId} does not have a valid section span`)
+      }
 
-    if (activeEndIndex <= activeStartIndex) {
-      throw new Error(`Route ${routeId} does not have a valid section span`)
-    }
-
-    for (let portIndex = 1; portIndex <= activeStartIndex; portIndex++) {
-      routePlan.fixedSegments.push({
-        regionId: orderedRegionIds[portIndex - 1]!,
-        fromPortId: orderedPortIds[portIndex - 1]!,
-        toPortId: orderedPortIds[portIndex]!,
-      })
-    }
+      return {
+        activeStartIndex,
+        activeEndIndex,
+      }
+    })
 
     for (
-      let portIndex = activeEndIndex + 1;
-      portIndex < orderedPortIds.length;
-      portIndex++
+      let segmentIndex = 0;
+      segmentIndex < orderedRegionIds.length;
+      segmentIndex++
     ) {
+      const isInActiveSegmentRange = activeSegmentRanges.some(
+        ({ activeStartIndex, activeEndIndex }) =>
+          segmentIndex >= activeStartIndex && segmentIndex < activeEndIndex,
+      )
+      if (isInActiveSegmentRange) {
+        continue
+      }
+
       routePlan.fixedSegments.push({
-        regionId: orderedRegionIds[portIndex - 1]!,
-        fromPortId: orderedPortIds[portIndex - 1]!,
-        toPortId: orderedPortIds[portIndex]!,
+        regionId: orderedRegionIds[segmentIndex]!,
+        fromPortId: orderedPortIds[segmentIndex]!,
+        toPortId: orderedPortIds[segmentIndex + 1]!,
       })
     }
 
-    routePlan.activeStartPortId = orderedPortIds[activeStartIndex]
-    routePlan.activeEndPortId = orderedPortIds[activeEndIndex]
-    routePlan.forcedStartRegionId = orderedRegionIds[activeStartIndex]
-    routeStartPort[routeId] = routePlan.activeStartPortId
-    routeEndPort[routeId] = routePlan.activeEndPortId
-    activeRouteIds.push(routeId)
+    for (const { activeStartIndex, activeEndIndex } of activeSegmentRanges) {
+      const syntheticRouteId = nextSyntheticRouteId++
+      const activeStartPortId = orderedPortIds[activeStartIndex]!
+      const activeEndPortId = orderedPortIds[activeEndIndex]!
+      const forcedStartRegionId = orderedRegionIds[activeStartIndex]
+
+      routePlans[syntheticRouteId] = {
+        routeId: syntheticRouteId,
+        originalRouteId: routeId,
+        fixedSegments: [],
+        activeStartPortId,
+        activeEndPortId,
+        forcedStartRegionId,
+      }
+      routeStartPort[syntheticRouteId] = activeStartPortId
+      routeEndPort[syntheticRouteId] = activeEndPortId
+      routeNet[syntheticRouteId] = problem.routeNet[routeId]!
+      routeMetadata[syntheticRouteId] = problem.routeMetadata?.[routeId]
+      activeRouteIds.push(syntheticRouteId)
+      originalRoutePlan.activeSpans.push({
+        syntheticRouteId,
+        activeStartIndex,
+        activeEndIndex,
+        activeStartPortId,
+        activeEndPortId,
+        forcedStartRegionId,
+      })
+    }
   }
 
   return {
     sectionProblem: {
-      routeCount: problem.routeCount,
+      routeCount: nextSyntheticRouteId,
       portSectionMask: new Int8Array(problem.portSectionMask),
-      routeMetadata: problem.routeMetadata,
-      routeStartPort,
-      routeEndPort,
-      routeNet: new Int32Array(problem.routeNet),
+      routeMetadata,
+      routeStartPort: Int32Array.from(routeStartPort),
+      routeEndPort: Int32Array.from(routeEndPort),
+      routeNet: Int32Array.from(routeNet),
       regionNetId: new Int32Array(problem.regionNetId),
     },
     routePlans,
+    originalRoutePlans,
     activeRouteIds,
   }
+}
+
+const mergeSectionRouteSegmentsToOriginalRoutes = (
+  topology: TinyHyperGraphTopology,
+  originalRoutePlans: OriginalRoutePlan[],
+  routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+) => {
+  const mergedRouteSegmentsByRegion = Array.from(
+    { length: topology.regionCount },
+    () => [] as [RouteId, PortId, PortId][],
+  )
+
+  const solvedSpanPaths = new Map<
+    RouteId,
+    {
+      orderedPortIds: PortId[]
+      orderedRegionIds: RegionId[]
+    }
+  >()
+
+  for (const originalRoutePlan of originalRoutePlans) {
+    for (const activeSpan of originalRoutePlan.activeSpans) {
+      solvedSpanPaths.set(
+        activeSpan.syntheticRouteId,
+        getOrderedRoutePathFromRegionSegments(
+          topology,
+          routeSegmentsByRegion,
+          activeSpan.syntheticRouteId,
+          activeSpan.activeStartPortId,
+          activeSpan.activeEndPortId,
+        ),
+      )
+    }
+  }
+
+  for (const originalRoutePlan of originalRoutePlans) {
+    const activeSpans = [...originalRoutePlan.activeSpans].sort(
+      (left, right) => left.activeStartIndex - right.activeStartIndex,
+    )
+    let segmentIndex = 0
+
+    for (const activeSpan of activeSpans) {
+      while (segmentIndex < activeSpan.activeStartIndex) {
+        mergedRouteSegmentsByRegion[
+          originalRoutePlan.orderedRegionIds[segmentIndex]!
+        ]!.push([
+          originalRoutePlan.routeId,
+          originalRoutePlan.orderedPortIds[segmentIndex]!,
+          originalRoutePlan.orderedPortIds[segmentIndex + 1]!,
+        ])
+        segmentIndex += 1
+      }
+
+      const solvedSpanPath = solvedSpanPaths.get(activeSpan.syntheticRouteId)
+      if (!solvedSpanPath) {
+        throw new Error(
+          `Route ${originalRoutePlan.routeId} is missing solved section span ${activeSpan.syntheticRouteId}`,
+        )
+      }
+
+      for (
+        let spanSegmentIndex = 0;
+        spanSegmentIndex < solvedSpanPath.orderedRegionIds.length;
+        spanSegmentIndex++
+      ) {
+        mergedRouteSegmentsByRegion[
+          solvedSpanPath.orderedRegionIds[spanSegmentIndex]!
+        ]!.push([
+          originalRoutePlan.routeId,
+          solvedSpanPath.orderedPortIds[spanSegmentIndex]!,
+          solvedSpanPath.orderedPortIds[spanSegmentIndex + 1]!,
+        ])
+      }
+      segmentIndex = activeSpan.activeEndIndex
+    }
+
+    while (segmentIndex < originalRoutePlan.orderedRegionIds.length) {
+      mergedRouteSegmentsByRegion[
+        originalRoutePlan.orderedRegionIds[segmentIndex]!
+      ]!.push([
+        originalRoutePlan.routeId,
+        originalRoutePlan.orderedPortIds[segmentIndex]!,
+        originalRoutePlan.orderedPortIds[segmentIndex + 1]!,
+      ])
+      segmentIndex += 1
+    }
+  }
+
+  return mergedRouteSegmentsByRegion
 }
 
 export const getActiveSectionRouteIds = (
@@ -856,6 +1116,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   optimizedSolver?: TinyHyperGraphSolver
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
+  originalRoutePlans: OriginalRoutePlan[] = []
 
   DISTANCE_TO_COST = 0.05
 
@@ -912,9 +1173,10 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   override _setup() {
     this.applySectionRipPolicy()
 
-    const { sectionProblem, routePlans, activeRouteIds } =
+    const { sectionProblem, routePlans, originalRoutePlans, activeRouteIds } =
       createSectionRoutePlans(this.topology, this.problem, this.initialSolution)
 
+    this.originalRoutePlans = originalRoutePlans
     this.activeRouteIds = activeRouteIds
 
     if (activeRouteIds.length === 0) {
@@ -974,10 +1236,15 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       return
     }
 
+    const mergedRegionSegments = mergeSectionRouteSegmentsToOriginalRoutes(
+      this.topology,
+      this.originalRoutePlans,
+      cloneRegionSegments(this.sectionSolver.state.regionSegments),
+    )
     const candidateSolver = createSolvedSolverFromRegionSegments(
       this.topology,
       this.problem,
-      cloneRegionSegments(this.sectionSolver.state.regionSegments),
+      mergedRegionSegments,
       getTinyHyperGraphSolverOptions(this),
     )
     const candidateSummary = summarizeRegionIntersectionCaches(
