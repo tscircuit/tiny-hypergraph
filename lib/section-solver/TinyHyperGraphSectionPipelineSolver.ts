@@ -10,6 +10,8 @@ import type {
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
+import type { TinyHyperGraphUnravelSolverOptions } from "../unravel-solver"
+import { TinyHyperGraphMultiSectionUnravelSolver } from "../unravel-solver"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
 
@@ -384,6 +386,7 @@ export interface TinyHyperGraphSectionPipelineInput {
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
+  unravelSolverOptions?: TinyHyperGraphUnravelSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
 }
 
@@ -417,6 +420,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
+    },
+    {
+      solverName: "unravel",
+      solverClass: TinyHyperGraphMultiSectionUnravelSolver,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
+        instance.getUnravelStageParams(),
+      onSolved: (instance: TinyHyperGraphSectionPipelineSolver) =>
+        instance.captureUnravelStageStats(),
     },
   ]
 
@@ -515,6 +526,28 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return [topology, problem, solution, sectionSolverOptions]
   }
 
+  getUnravelStageParams(): [
+    TinyHyperGraphTopology,
+    TinyHyperGraphProblem,
+    TinyHyperGraphSolution,
+    TinyHyperGraphUnravelSolverOptions | undefined,
+  ] {
+    const optimizedSerializedHyperGraph =
+      this.getStageOutput<SerializedHyperGraph>("optimizeSection")
+
+    if (!optimizedSerializedHyperGraph) {
+      throw new Error(
+        "optimizeSection did not produce a solved serialized hypergraph",
+      )
+    }
+
+    const { topology, problem, solution } = loadSerializedHyperGraph(
+      optimizedSerializedHyperGraph,
+    )
+
+    return [topology, problem, solution, this.inputProblem.unravelSolverOptions]
+  }
+
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = loadSerializedHyperGraph(
@@ -527,6 +560,109 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     }
 
     return this.initialVisualizationSolver
+  }
+
+  override _step() {
+    const pipelineStageDef = this.pipelineDef[this.currentPipelineStageIndex]
+
+    if (!pipelineStageDef) {
+      this.solved = true
+      return
+    }
+
+    if (this.activeSubSolver) {
+      this.activeSubSolver.step()
+
+      if (this.activeSubSolver.solved) {
+        this.endTimeOfStage[pipelineStageDef.solverName] = performance.now()
+        this.timeSpentOnStage[pipelineStageDef.solverName] =
+          this.endTimeOfStage[pipelineStageDef.solverName]! -
+          this.startTimeOfStage[pipelineStageDef.solverName]!
+
+        const output = this.activeSubSolver.getOutput()
+        if (output !== null) {
+          this.pipelineOutputs[pipelineStageDef.solverName] = output
+        }
+        pipelineStageDef.onSolved?.(this)
+        this.activeSubSolver = null
+        this.currentPipelineStageIndex++
+
+        if (!this.pipelineDef[this.currentPipelineStageIndex]) {
+          this.solved = true
+        }
+      } else if (this.activeSubSolver.failed) {
+        this.error = this.activeSubSolver.error
+        this.failed = true
+        this.activeSubSolver = null
+      }
+      return
+    }
+
+    const constructorParams = pipelineStageDef.getConstructorParams(this) as any[]
+    const SolverClass = pipelineStageDef.solverClass as new (
+      ...args: any[]
+    ) => typeof this.activeSubSolver
+    this.activeSubSolver = new SolverClass(...constructorParams)
+    ;(this as unknown as Record<string, unknown>)[pipelineStageDef.solverName] =
+      this.activeSubSolver
+    this.timeSpentOnStage[pipelineStageDef.solverName] = 0
+    this.startTimeOfStage[pipelineStageDef.solverName] = performance.now()
+    this.firstIterationOfStage[pipelineStageDef.solverName] = this.iterations
+  }
+
+  captureUnravelStageStats() {
+    const unravelSolver =
+      this.getSolver<TinyHyperGraphMultiSectionUnravelSolver>("unravel")
+    if (!unravelSolver) {
+      return
+    }
+
+    this.stats = {
+      ...this.stats,
+      unravelSolverIterations: unravelSolver.iterations,
+      unravelGeneratedCandidateCount:
+        Number(unravelSolver.stats.generatedCandidateCount) || 0,
+      unravelAttemptedCandidateCount:
+        Number(unravelSolver.stats.attemptedCandidateCount) || 0,
+      unravelSuccessfulMutationCount:
+        Number(unravelSolver.stats.successfulMutationCount) || 0,
+      unravelSearchStatesExpanded:
+        Number(unravelSolver.stats.searchStatesExpanded) || 0,
+      unravelSearchStatesQueued:
+        Number(unravelSolver.stats.searchStatesQueued) || 0,
+      unravelMutationDepth: Number(unravelSolver.stats.mutationDepth) || 0,
+    }
+  }
+
+  override getStageStats() {
+    const stageStats = super.getStageStats()
+
+    for (const [stageIndex, stage] of this.pipelineDef.entries()) {
+      const solverInstance = this.getSolver(stage.solverName)
+      if (!solverInstance) {
+        continue
+      }
+
+      const isCompleted = this.currentPipelineStageIndex > stageIndex
+      const isInProgress =
+        this.currentPipelineStageIndex === stageIndex &&
+        this.activeSubSolver === solverInstance
+
+      const startTime = this.startTimeOfStage[stage.solverName]
+      const endTime = this.endTimeOfStage[stage.solverName]
+
+      stageStats[stage.solverName] = {
+        timeSpent: isCompleted
+          ? this.timeSpentOnStage[stage.solverName] ?? 0
+          : isInProgress && startTime !== undefined
+            ? (endTime ?? performance.now()) - startTime
+            : this.timeSpentOnStage[stage.solverName] ?? 0,
+        iterations: solverInstance.iterations,
+        completed: isCompleted,
+      }
+    }
+
+    return stageStats
   }
 
   override initialVisualize() {
@@ -543,6 +679,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override getOutput() {
     return (
+      this.getStageOutput<SerializedHyperGraph>("unravel") ??
       this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
       this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
       null

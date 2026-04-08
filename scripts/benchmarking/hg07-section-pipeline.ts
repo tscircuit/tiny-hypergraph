@@ -23,8 +23,11 @@ type PipelineBenchmarkRow = {
   sample: string
   circuit: string
   baselineMaxRegionCost: number
+  sectionFinalMaxRegionCost: number
   finalMaxRegionCost: number
+  sectionDelta: number
   delta: number
+  unravelDelta: number
   activeRouteCount: number
   optimized: boolean
   selectedSectionCandidateLabel?: string
@@ -40,6 +43,7 @@ type PipelineBenchmarkRow = {
   sectionSearchCandidateSolveMs: number
   sectionSearchCandidateReplayScoreMs: number
   optimizeSectionStageMs: number
+  unravelStageMs: number
   baselineReplayMs: number
   finalReplayMs: number
   pipelineMs: number
@@ -59,6 +63,7 @@ type PipelineBenchmarkSummary = {
   totalSolveGraphSeconds: string
   totalSectionSearchSeconds: string
   totalOptimizeSectionStageSeconds: string
+  totalUnravelStageSeconds: string
   totalBaselineReplaySeconds: string
   totalFinalReplaySeconds: string
   totalPipelineSeconds: string
@@ -130,8 +135,11 @@ const formatImprovementRows = (rows: PipelineBenchmarkRow[]) =>
     sample: row.sample,
     circuit: row.circuit,
     baselineMaxRegionCost: round(row.baselineMaxRegionCost),
+    sectionFinalMaxRegionCost: round(row.sectionFinalMaxRegionCost),
     finalMaxRegionCost: round(row.finalMaxRegionCost),
+    sectionDelta: round(row.sectionDelta, 6),
     delta: round(row.delta, 6),
+    unravelDelta: round(row.unravelDelta, 6),
     activeRouteCount: row.activeRouteCount,
     generatedCandidateCount: row.sectionSearchGeneratedCandidateCount,
     candidateCount: row.sectionSearchCandidateCount,
@@ -149,6 +157,7 @@ const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
     solveGraphSeconds: formatSecondsCell(row.solveGraphMs),
     sectionSearchSeconds: formatSecondsCell(row.sectionSearchMs),
     optimizeSectionStageSeconds: formatSecondsCell(row.optimizeSectionStageMs),
+    unravelStageSeconds: formatSecondsCell(row.unravelStageMs),
     baselineReplaySeconds: formatSecondsCell(row.baselineReplayMs),
     finalReplaySeconds: formatSecondsCell(row.finalReplayMs),
     generatedCandidateCount: row.sectionSearchGeneratedCandidateCount,
@@ -162,7 +171,7 @@ const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
   }))
 
 console.log(
-  `running hg-07 section pipeline benchmark (solveGraph -> optimizeSection) sampleCount=${sampleCount}/${datasetModule.manifest.sampleCount}`,
+  `running hg-07 section pipeline benchmark (solveGraph -> optimizeSection -> unravel) sampleCount=${sampleCount}/${datasetModule.manifest.sampleCount}`,
 )
 
 const sampleMetas = datasetModule.manifest.samples.slice(0, sampleCount)
@@ -175,6 +184,7 @@ let totalDelta = 0
 let totalSolveGraphMs = 0
 let totalSectionSearchMs = 0
 let totalOptimizeSectionStageMs = 0
+let totalUnravelStageMs = 0
 let totalBaselineReplayMs = 0
 let totalFinalReplayMs = 0
 let totalPipelineMs = 0
@@ -213,15 +223,17 @@ for (const sampleMeta of sampleMetas) {
       pipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
     const optimizeSectionOutput =
       pipelineSolver.getStageOutput<SerializedHyperGraph>("optimizeSection")
+    const unravelOutput =
+      pipelineSolver.getStageOutput<SerializedHyperGraph>("unravel")
     const stageStats = pipelineSolver.getStageStats()
 
     if (!solveGraphSolver || !solveGraphOutput) {
       throw new Error("pipeline solveGraph stage did not produce a solver output")
     }
 
-    if (!sectionSolver || !optimizeSectionOutput) {
+    if (!sectionSolver || !optimizeSectionOutput || !unravelOutput) {
       throw new Error(
-        "pipeline optimizeSection stage did not produce a solver output",
+        "pipeline optimizeSection/unravel stages did not produce solver outputs",
       )
     }
 
@@ -230,14 +242,18 @@ for (const sampleMeta of sampleMetas) {
       getSerializedOutputMaxRegionCost(solveGraphOutput)
     const baselineReplayMs = performance.now() - baselineReplayStartTime
 
-    const finalReplayStartTime = performance.now()
-    const finalMaxRegionCost =
+    const sectionFinalMaxRegionCost =
       getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+    const finalReplayStartTime = performance.now()
+    const finalMaxRegionCost = getSerializedOutputMaxRegionCost(unravelOutput)
     const finalReplayMs = performance.now() - finalReplayStartTime
+    const sectionDelta = baselineMaxRegionCost - sectionFinalMaxRegionCost
     const delta = baselineMaxRegionCost - finalMaxRegionCost
+    const unravelDelta = sectionFinalMaxRegionCost - finalMaxRegionCost
     const optimized = delta > IMPROVEMENT_EPSILON
     const solveGraphMs = stageStats.solveGraph?.timeSpent ?? 0
     const optimizeSectionStageMs = stageStats.optimizeSection?.timeSpent ?? 0
+    const unravelStageMs = stageStats.unravel?.timeSpent ?? 0
     const sectionSearchMs = Number(pipelineSolver.stats.sectionSearchMs ?? 0)
     const sectionSearchCandidateCount = Number(
       pipelineSolver.stats.sectionSearchCandidateCount ?? 0,
@@ -269,6 +285,7 @@ for (const sampleMeta of sampleMetas) {
     totalSolveGraphMs += solveGraphMs
     totalSectionSearchMs += sectionSearchMs
     totalOptimizeSectionStageMs += optimizeSectionStageMs
+    totalUnravelStageMs += unravelStageMs
     totalBaselineReplayMs += baselineReplayMs
     totalFinalReplayMs += finalReplayMs
     totalPipelineMs += pipelineMs
@@ -292,8 +309,11 @@ for (const sampleMeta of sampleMetas) {
       sample: sampleMeta.sampleName,
       circuit: sampleMeta.circuitId,
       baselineMaxRegionCost,
+      sectionFinalMaxRegionCost,
       finalMaxRegionCost,
+      sectionDelta,
       delta,
+      unravelDelta,
       activeRouteCount: sectionSolver.activeRouteIds.length,
       optimized,
       selectedSectionCandidateLabel: pipelineSolver.selectedSectionCandidateLabel,
@@ -310,6 +330,7 @@ for (const sampleMeta of sampleMetas) {
       sectionSearchCandidateSolveMs,
       sectionSearchCandidateReplayScoreMs,
       optimizeSectionStageMs,
+      unravelStageMs,
       baselineReplayMs,
       finalReplayMs,
       pipelineMs,
@@ -333,8 +354,11 @@ for (const sampleMeta of sampleMetas) {
       sample: sampleMeta.sampleName,
       circuit: sampleMeta.circuitId,
       baselineMaxRegionCost: Number.NaN,
+      sectionFinalMaxRegionCost: Number.NaN,
       finalMaxRegionCost: Number.NaN,
+      sectionDelta: Number.NaN,
       delta: Number.NaN,
+      unravelDelta: Number.NaN,
       activeRouteCount: 0,
       optimized: false,
       sectionSearchGeneratedCandidateCount: 0,
@@ -348,6 +372,7 @@ for (const sampleMeta of sampleMetas) {
       sectionSearchCandidateSolveMs: 0,
       sectionSearchCandidateReplayScoreMs: 0,
       optimizeSectionStageMs: 0,
+      unravelStageMs: 0,
       baselineReplayMs: 0,
       finalReplayMs: 0,
       pipelineMs: performance.now() - sampleStartTime,
@@ -375,6 +400,7 @@ const summary: PipelineBenchmarkSummary = {
   totalSolveGraphSeconds: formatSeconds(totalSolveGraphMs),
   totalSectionSearchSeconds: formatSeconds(totalSectionSearchMs),
   totalOptimizeSectionStageSeconds: formatSeconds(totalOptimizeSectionStageMs),
+  totalUnravelStageSeconds: formatSeconds(totalUnravelStageMs),
   totalBaselineReplaySeconds: formatSeconds(totalBaselineReplayMs),
   totalFinalReplaySeconds: formatSeconds(totalFinalReplayMs),
   totalPipelineSeconds: formatSeconds(totalPipelineMs),
@@ -422,6 +448,10 @@ const performanceSummaryRows = [
   {
     key: "optimizeSectionStageSeconds",
     value: summary.totalOptimizeSectionStageSeconds,
+  },
+  {
+    key: "unravelStageSeconds",
+    value: summary.totalUnravelStageSeconds,
   },
   {
     key: "baselineReplaySeconds",

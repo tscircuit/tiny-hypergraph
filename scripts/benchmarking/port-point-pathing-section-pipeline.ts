@@ -3,8 +3,11 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import {
   convertPortPointPathingSolverInputToSerializedHyperGraph,
   TinyHyperGraphSectionPipelineSolver,
+  TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionCandidateFamily,
+  type TinyHyperGraphSolver,
 } from "../../lib/index"
+import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 
 const DEFAULT_INPUT_PATH =
   process.env.TINY_HYPERGRAPH_PORT_POINT_PATHING_INPUT ??
@@ -38,6 +41,27 @@ const parsePositiveIntegerArg = (flag: string, fallback: number) => {
 }
 
 const formatMs = (value: number) => `${value.toFixed(1)}ms`
+
+const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
+  solver.state.regionIntersectionCaches.reduce(
+    (maxRegionCost, regionIntersectionCache) =>
+      Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
+    0,
+  )
+
+const getSerializedOutputMaxRegionCost = (
+  serializedHyperGraph: SerializedHyperGraph,
+) => {
+  const { topology, problem, solution } =
+    loadSerializedHyperGraph(serializedHyperGraph)
+  const replaySolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+  )
+
+  return getMaxRegionCost(replaySolver.baselineSolver)
+}
 
 type BenchmarkCase = {
   label: string
@@ -97,12 +121,16 @@ const runBenchmarkCase = (
     totalCandidateCount += Number(
       pipelineSolver.stats.sectionSearchCandidateCount ?? 0,
     )
-    baselineMaxRegionCost = Number(
-      pipelineSolver.stats.sectionSearchBaselineMaxRegionCost ?? 0,
-    )
-    finalMaxRegionCost = Number(
-      pipelineSolver.stats.sectionSearchFinalMaxRegionCost ?? 0,
-    )
+    const solveGraphOutput =
+      pipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
+    const finalOutput = pipelineSolver.getOutput()
+
+    if (!solveGraphOutput || !finalOutput) {
+      throw new Error(`${benchmarkCase.label} did not produce pipeline output`)
+    }
+
+    baselineMaxRegionCost = getSerializedOutputMaxRegionCost(solveGraphOutput)
+    finalMaxRegionCost = getSerializedOutputMaxRegionCost(finalOutput)
     selectedSectionCandidateLabel = pipelineSolver.selectedSectionCandidateLabel
     selectedSectionCandidateFamily =
       pipelineSolver.selectedSectionCandidateFamily
