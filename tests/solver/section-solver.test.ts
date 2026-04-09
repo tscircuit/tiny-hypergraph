@@ -232,3 +232,32 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })
+
+test("section pipeline skips automatic search on low-baseline-cost circuits", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample007,
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.sectionSearchSkipped).toBe(true)
+  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBe(0)
+  expect(
+    [...(pipelineSolver.selectedSectionMask ?? [])].every((value) => value === 0),
+  ).toBe(true)
+
+  const solveGraphOutput =
+    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
+      "solveGraph",
+    )
+  const pipelineOutput = pipelineSolver.getOutput()
+
+  expect(solveGraphOutput).toBeDefined()
+  expect(pipelineOutput).toBeDefined()
+  expect(getSerializedOutputMaxRegionCost(pipelineOutput!)).toBeCloseTo(
+    getSerializedOutputMaxRegionCost(solveGraphOutput!),
+    10,
+  )
+})
