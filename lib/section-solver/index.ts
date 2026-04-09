@@ -49,6 +49,12 @@ export interface TinyHyperGraphSectionSolverOptions
    * falls back to this value before using its built-in default.
    */
   MAX_HOT_REGIONS?: number
+  /**
+   * Number of section candidates evaluated per chunk during automatic
+   * section-mask search. Higher values increase concurrency pressure and may
+   * improve throughput on larger datasets.
+   */
+  PARALLEL_CANDIDATE_SOLVE_LIMIT?: number
 }
 
 const applyTinyHyperGraphSectionSolverOptions = (
@@ -74,6 +80,10 @@ const applyTinyHyperGraphSectionSolverOptions = (
     solver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST =
       options.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST
   }
+  if (options.PARALLEL_CANDIDATE_SOLVE_LIMIT !== undefined) {
+    solver.PARALLEL_CANDIDATE_SOLVE_LIMIT =
+      options.PARALLEL_CANDIDATE_SOLVE_LIMIT
+  }
 }
 
 const getTinyHyperGraphSectionSolverOptions = (
@@ -85,6 +95,7 @@ const getTinyHyperGraphSectionSolverOptions = (
     solver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
     solver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+  PARALLEL_CANDIDATE_SOLVE_LIMIT: solver.PARALLEL_CANDIDATE_SOLVE_LIMIT,
 })
 
 const cloneRegionSegments = (
@@ -592,6 +603,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   MAX_RIPS = Number.POSITIVE_INFINITY
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
+  PARALLEL_CANDIDATE_SOLVE_LIMIT = 4
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -865,6 +877,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   MAX_RIPS = Number.POSITIVE_INFINITY
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = 10
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = 10
+  PARALLEL_CANDIDATE_SOLVE_LIMIT = 4
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
