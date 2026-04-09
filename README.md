@@ -1,6 +1,8 @@
 # tiny-hypergraph
 
-Tiny hypergraph implementation.
+Tiny hypergraph implementation. [Read more about HyperGraph Autorouting](https://blog.autorouting.com/p/hypergraph-autorouting), check out [online animated examples](https://tiny-hypergraph.vercel.app/?fixture=%7B%22path%22%3A%22pages%2Fdataset-hg07.page.tsx%22%7D)
+
+<img width="1036" height="1540" alt="image" src="https://github.com/user-attachments/assets/69f1f1f3-40e8-486c-9402-f2b22dd885c0" />
 
 ## Usage
 
