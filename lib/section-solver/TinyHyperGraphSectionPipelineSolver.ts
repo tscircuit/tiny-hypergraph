@@ -12,6 +12,11 @@ import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import { SimpleOverlapSectionPolicy } from "./SectionCandidateSelectionPolicy"
+import {
+  SectionSearchWorkerPool,
+  type WorkerCandidateInput,
+} from "./SectionSearchWorkerPool"
 
 /**
  * Candidate section families used by the automatic section-mask search.
@@ -81,6 +86,7 @@ const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
 const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
+const selectionPolicy = new SimpleOverlapSectionPolicy()
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -250,6 +256,7 @@ const findBestAutomaticSectionMask = (
   let bestPortSectionMask = new Int8Array(topology.portCount)
   let winningCandidateLabel: string | undefined
   let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
+  let winningRegionIds: RegionId[] = []
   let generatedCandidateCount = 0
   let candidateCount = 0
   let duplicateCandidateCount = 0
@@ -333,13 +340,20 @@ const findBestAutomaticSectionMask = (
           performance.now() - candidateReplayScoreStartTime
 
         if (
-          replayedFinalMaxRegionCost <
-          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
+          selectionPolicy.shouldReplace({
+            bestFinalMaxRegionCost,
+            nextFinalMaxRegionCost: replayedFinalMaxRegionCost,
+            baselineMaxRegionCost,
+            bestRegionIds: winningRegionIds,
+            nextRegionIds: candidate.regionIds,
+            epsilon: IMPROVEMENT_EPSILON,
+          })
         ) {
           bestFinalMaxRegionCost = replayedFinalMaxRegionCost
           bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
           winningCandidateLabel = candidate.label
           winningCandidateFamily = candidate.family
+          winningRegionIds = candidate.regionIds
         }
       }
     } catch {
@@ -365,6 +379,134 @@ const findBestAutomaticSectionMask = (
   }
 }
 
+export const runAutomaticSectionSearchWithWorkers = async (
+  solvedSolver: TinyHyperGraphSolver,
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+  solution: TinyHyperGraphSolution,
+  searchConfig: TinyHyperGraphSectionPipelineSearchConfig | undefined,
+  sectionSolverOptions: TinyHyperGraphSectionSolverOptions,
+): Promise<AutomaticSectionSearchResult> => {
+  const workerCount = searchConfig?.workerCount ?? 0
+  if (workerCount <= 1 || typeof Worker === "undefined") {
+    return findBestAutomaticSectionMask(
+      solvedSolver,
+      topology,
+      problem,
+      solution,
+      searchConfig,
+      sectionSolverOptions,
+    )
+  }
+
+  const searchStartTime = performance.now()
+  const baselineSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+    sectionSolverOptions,
+  )
+  const baselineMaxRegionCost = getMaxRegionCost(baselineSolver.baselineSolver)
+
+  const maxHotRegions =
+    searchConfig?.maxHotRegions ??
+    sectionSolverOptions.MAX_HOT_REGIONS ??
+    DEFAULT_MAX_HOT_REGIONS
+  const candidates = getSectionMaskCandidates(
+    solvedSolver,
+    topology,
+    maxHotRegions,
+    searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
+  )
+
+  const scoreBuffer =
+    typeof SharedArrayBuffer !== "undefined"
+      ? new SharedArrayBuffer(
+          Float64Array.BYTES_PER_ELEMENT * candidates.length,
+        )
+      : new ArrayBuffer(Float64Array.BYTES_PER_ELEMENT * candidates.length)
+  const scoreView = new Float64Array(scoreBuffer)
+  scoreView.fill(Number.POSITIVE_INFINITY)
+
+  const inputs: WorkerCandidateInput[] = candidates.map((candidate, index) => ({
+    index,
+    label: candidate.label,
+    family: candidate.family,
+    regionIds: candidate.regionIds,
+    portSectionMask: createPortSectionMaskForRegionIds(
+      topology,
+      candidate.regionIds,
+      candidate.portSelectionRule,
+    ),
+  }))
+
+  const pool = new SectionSearchWorkerPool(workerCount)
+  const results = await pool.runCandidates(
+    { topology, problem, solution, sectionSolverOptions, scoreBuffer },
+    inputs,
+  )
+
+  let bestFinalMaxRegionCost = baselineMaxRegionCost
+  let bestPortSectionMask = new Int8Array(topology.portCount)
+  let winningCandidateLabel: string | undefined
+  let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
+  let winningRegionIds: RegionId[] = []
+
+  for (const result of results) {
+    const candidate = candidates[result.index]
+    if (!candidate || !result.solved) continue
+
+    if (
+      selectionPolicy.shouldReplace({
+        bestFinalMaxRegionCost,
+        nextFinalMaxRegionCost:
+          scoreView[result.index] ?? Number.POSITIVE_INFINITY,
+        baselineMaxRegionCost,
+        bestRegionIds: winningRegionIds,
+        nextRegionIds: candidate.regionIds,
+        epsilon: IMPROVEMENT_EPSILON,
+      })
+    ) {
+      bestFinalMaxRegionCost =
+        scoreView[result.index] ?? Number.POSITIVE_INFINITY
+      bestPortSectionMask = new Int8Array(
+        inputs[result.index]?.portSectionMask ?? [],
+      )
+      winningCandidateLabel = candidate.label
+      winningCandidateFamily = candidate.family
+      winningRegionIds = candidate.regionIds
+    }
+  }
+
+  return {
+    portSectionMask: bestPortSectionMask,
+    baselineMaxRegionCost,
+    finalMaxRegionCost: bestFinalMaxRegionCost,
+    generatedCandidateCount: candidates.length,
+    candidateCount: results.filter((item) => item.candidateCounted).length,
+    duplicateCandidateCount: 0,
+    totalMs: performance.now() - searchStartTime,
+    baselineEvaluationMs: 0,
+    candidateEligibilityMs: results.reduce(
+      (acc, item) => acc + item.candidateEligibilityMs,
+      0,
+    ),
+    candidateInitMs: results.reduce(
+      (acc, item) => acc + item.candidateInitMs,
+      0,
+    ),
+    candidateSolveMs: results.reduce(
+      (acc, item) => acc + item.candidateSolveMs,
+      0,
+    ),
+    candidateReplayScoreMs: results.reduce(
+      (acc, item) => acc + item.candidateReplayScoreMs,
+      0,
+    ),
+    winningCandidateLabel,
+    winningCandidateFamily,
+  }
+}
 export interface TinyHyperGraphSectionMaskContext {
   serializedHyperGraph: SerializedHyperGraph
   solvedSerializedHyperGraph: SerializedHyperGraph
@@ -377,6 +519,11 @@ export interface TinyHyperGraphSectionMaskContext {
 export interface TinyHyperGraphSectionPipelineSearchConfig {
   maxHotRegions?: number
   candidateFamilies?: TinyHyperGraphSectionCandidateFamily[]
+  /**
+   * Optional parallel candidate evaluation using Web Workers (Bun + browser).
+   * Falls back to in-thread evaluation when Worker is unavailable.
+   */
+  workerCount?: number
 }
 
 export interface TinyHyperGraphSectionPipelineInput {
