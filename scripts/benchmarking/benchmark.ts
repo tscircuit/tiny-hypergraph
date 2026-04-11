@@ -34,7 +34,10 @@ type BenchmarkSampleResult = {
   durationMs: number
   baselineMaxRegionCost: number | null
   finalMaxRegionCost: number | null
+  baselineAvgRegionCost: number | null
+  finalAvgRegionCost: number | null
   delta: number | null
+  avgDelta: number | null
   optimized: boolean
   zeroFinalCost: boolean
   candidateCount: number
@@ -75,6 +78,7 @@ Summary metrics:
   - zero-final-max-region-cost rate
   - avg / P50 / P95 duration
   - avg baseline/final max region cost and avg delta
+  - avg baseline/final region cost and avg delta
 `
 
 const usageError = (message: string): never => {
@@ -145,7 +149,8 @@ const parseArgs = () => {
   return { limit, sampleName }
 }
 
-const formatSeconds = (durationMs: number) => `${(durationMs / 1000).toFixed(3)}s`
+const formatSeconds = (durationMs: number) =>
+  `${(durationMs / 1000).toFixed(3)}s`
 
 const formatMetric = (value: number | null, digits = 3) =>
   value === null ? "n/a" : value.toFixed(digits)
@@ -177,7 +182,17 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
     0,
   )
 
-const getSerializedOutputMaxRegionCost = (
+const getAverageRegionCost = (solver: TinyHyperGraphSolver) => {
+  const totalRegionCost = solver.state.regionIntersectionCaches.reduce(
+    (sum, regionIntersectionCache) =>
+      sum + regionIntersectionCache.existingRegionCost,
+    0,
+  )
+
+  return totalRegionCost / Math.max(1, solver.topology.regionCount)
+}
+
+const getSerializedOutputRegionCosts = (
   serializedHyperGraph: SerializedHyperGraph,
 ) => {
   const { topology, problem, solution } =
@@ -188,7 +203,10 @@ const getSerializedOutputMaxRegionCost = (
     solution,
   )
 
-  return getMaxRegionCost(replaySolver.baselineSolver)
+  return {
+    maxRegionCost: getMaxRegionCost(replaySolver.baselineSolver),
+    avgRegionCost: getAverageRegionCost(replaySolver.baselineSolver),
+  }
 }
 
 const getNextRunDirectory = async (resultsDir: string) => {
@@ -309,11 +327,17 @@ const main = async () => {
         throw new Error("pipeline did not produce both stage outputs")
       }
 
-      const baselineMaxRegionCost =
-        getSerializedOutputMaxRegionCost(solveGraphOutput)
-      const finalMaxRegionCost =
-        getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+      const baselineRegionCosts =
+        getSerializedOutputRegionCosts(solveGraphOutput)
+      const finalRegionCosts = getSerializedOutputRegionCosts(
+        optimizeSectionOutput,
+      )
+      const baselineMaxRegionCost = baselineRegionCosts.maxRegionCost
+      const finalMaxRegionCost = finalRegionCosts.maxRegionCost
+      const baselineAvgRegionCost = baselineRegionCosts.avgRegionCost
+      const finalAvgRegionCost = finalRegionCosts.avgRegionCost
       const delta = baselineMaxRegionCost - finalMaxRegionCost
+      const avgDelta = baselineAvgRegionCost - finalAvgRegionCost
       const durationMs = performance.now() - sampleStart
       const optimized = delta > IMPROVEMENT_EPSILON
       const candidateCount = Number(
@@ -333,13 +357,17 @@ const main = async () => {
         durationMs,
         baselineMaxRegionCost,
         finalMaxRegionCost,
+        baselineAvgRegionCost,
+        finalAvgRegionCost,
         delta,
+        avgDelta,
         optimized,
         zeroFinalCost: finalMaxRegionCost <= IMPROVEMENT_EPSILON,
         candidateCount,
         generatedCandidateCount,
         duplicateCandidateCount,
-        selectedCandidateLabel: pipelineSolver.selectedSectionCandidateLabel ?? null,
+        selectedCandidateLabel:
+          pipelineSolver.selectedSectionCandidateLabel ?? null,
         selectedCandidateFamily:
           pipelineSolver.selectedSectionCandidateFamily ?? null,
         error: null,
@@ -359,12 +387,11 @@ const main = async () => {
           `duration=${formatSeconds(durationMs)}`,
         ].join(" "),
       )
-      console.log(
-        `# no artifacts written`
-      )
+      console.log(`# no artifacts written`)
     } catch (error) {
       const durationMs = performance.now() - sampleStart
-      const errorMessage = error instanceof Error ? error.stack ?? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
       const sampleDir = path.join(runDir, sampleMeta.sampleName)
       const logsPath = path.join(sampleDir, "logs.txt")
       const snapshotPath = path.join(sampleDir, "snapshot.png")
@@ -382,7 +409,7 @@ const main = async () => {
       } catch (snapshotError) {
         snapshotErrorMessage =
           snapshotError instanceof Error
-            ? snapshotError.stack ?? snapshotError.message
+            ? (snapshotError.stack ?? snapshotError.message)
             : String(snapshotError)
       }
 
@@ -409,7 +436,10 @@ const main = async () => {
         durationMs,
         baselineMaxRegionCost: null,
         finalMaxRegionCost: null,
+        baselineAvgRegionCost: null,
+        finalAvgRegionCost: null,
         delta: null,
+        avgDelta: null,
         optimized: false,
         zeroFinalCost: false,
         candidateCount: 0,
@@ -456,7 +486,18 @@ const main = async () => {
   const finalCosts = successfulResults
     .map((result) => result.finalMaxRegionCost)
     .filter((value): value is number => value !== null)
-  const candidateCounts = successfulResults.map((result) => result.candidateCount)
+  const baselineAvgRegionCosts = successfulResults
+    .map((result) => result.baselineAvgRegionCost)
+    .filter((value): value is number => value !== null)
+  const finalAvgRegionCosts = successfulResults
+    .map((result) => result.finalAvgRegionCost)
+    .filter((value): value is number => value !== null)
+  const candidateCounts = successfulResults.map(
+    (result) => result.candidateCount,
+  )
+  const avgDeltas = successfulResults
+    .map((result) => result.avgDelta)
+    .filter((value): value is number => value !== null)
   const successCount = successfulResults.length
   const improvedCount = successfulResults.filter(
     (result) => result.optimized,
@@ -470,9 +511,18 @@ const main = async () => {
   console.log(
     `zero-final-max-region-cost rate: ${formatPercent(zeroFinalCostCount, successCount)}`,
   )
-  console.log(`avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`)
+  console.log(
+    `avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`,
+  )
   console.log(`avg final max region cost: ${average(finalCosts).toFixed(3)}`)
   console.log(`avg max region delta: ${average(deltas).toFixed(3)}`)
+  console.log(
+    `avg baseline region cost: ${average(baselineAvgRegionCosts).toFixed(6)}`,
+  )
+  console.log(
+    `avg final region cost: ${average(finalAvgRegionCosts).toFixed(6)}`,
+  )
+  console.log(`avg region cost delta: ${average(avgDeltas).toFixed(6)}`)
   console.log(`avg candidate count: ${average(candidateCounts).toFixed(3)}`)
   console.log(`avg duration: ${formatSeconds(average(durations))}`)
   console.log(`P50 duration: ${formatSeconds(percentile(durations, 50))}`)
