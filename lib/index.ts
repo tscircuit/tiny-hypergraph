@@ -11,3 +11,7 @@ export {
   type TinyHyperGraphSectionPipelineInput,
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
+export {
+  TinyHyperGraphBusAwareSolver,
+  type TinyHyperGraphBusAwareSolverOptions,
+} from "./bus-aware-solver/TinyHyperGraphBusAwareSolver"

@@ -155,8 +155,17 @@ const createProblemWithPortSectionMask = (
   routeMetadata: problem.routeMetadata,
   routeStartPort: new Int32Array(problem.routeStartPort),
   routeEndPort: new Int32Array(problem.routeEndPort),
+  routeStartPortCandidates: problem.routeStartPortCandidates?.map(
+    (candidatePortIds) =>
+      candidatePortIds ? [...candidatePortIds] : undefined,
+  ),
+  routeEndPortCandidates: problem.routeEndPortCandidates?.map(
+    (candidatePortIds) =>
+      candidatePortIds ? [...candidatePortIds] : undefined,
+  ),
   routeNet: new Int32Array(problem.routeNet),
   regionNetId: new Int32Array(problem.regionNetId),
+  suggestedSolverOptions: problem.suggestedSolverOptions,
 })
 
 const getSectionMaskCandidates = (

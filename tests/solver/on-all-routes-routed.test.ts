@@ -24,6 +24,7 @@ const createRegionCache = (
 
 const createTestSolver = (
   options?: ConstructorParameters<typeof TinyHyperGraphSolver>[2],
+  problemOverrides?: Partial<TinyHyperGraphProblem>,
 ) => {
   const portCount = 4
   const regionCount = 2
@@ -66,6 +67,7 @@ const createTestSolver = (
     routeEndPort,
     routeNet,
     regionNetId: new Int32Array(regionCount).fill(-1),
+    ...problemOverrides,
   }
 
   return new TinyHyperGraphSolver(topology, problem, options)
@@ -156,4 +158,25 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
+})
+
+test("problem suggested solver options apply before explicit constructor overrides", () => {
+  const solver = createTestSolver(
+    {
+      RIP_THRESHOLD_START: 0.12,
+      MAX_ITERATIONS: 1234,
+    },
+    {
+      suggestedSolverOptions: {
+        STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR: 4,
+        RIP_THRESHOLD_START: 0.3,
+        RIP_THRESHOLD_END: 1,
+      },
+    },
+  )
+
+  expect(solver.STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR).toBe(4)
+  expect(solver.RIP_THRESHOLD_START).toBe(0.12)
+  expect(solver.RIP_THRESHOLD_END).toBe(1)
+  expect(solver.MAX_ITERATIONS).toBe(1234)
 })

@@ -5,11 +5,11 @@ import {
   createEmptyRegionIntersectionCache,
   getTinyHyperGraphSolverOptions,
   type RegionCostSummary,
-  TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolution,
-  type TinyHyperGraphTopology,
+  TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
+  type TinyHyperGraphTopology,
 } from "../core"
 import { shuffle } from "../shuffle"
 import type {
@@ -22,6 +22,7 @@ import { visualizeTinyGraph } from "../visualizeTinyGraph"
 
 interface SolvedStateSnapshot {
   portAssignment: Int32Array
+  portAssignedRouteId: Int32Array
   regionSegments: Array<[RouteId, PortId, PortId][]>
   regionIntersectionCaches: RegionIntersectionCache[]
 }
@@ -52,9 +53,7 @@ export interface TinyHyperGraphSectionSolverOptions
 }
 
 const applyTinyHyperGraphSectionSolverOptions = (
-  solver:
-    | TinyHyperGraphSectionSearchSolver
-    | TinyHyperGraphSectionSolver,
+  solver: TinyHyperGraphSectionSearchSolver | TinyHyperGraphSectionSolver,
   options?: TinyHyperGraphSectionSolverOptions,
 ) => {
   applyTinyHyperGraphSolverOptions(solver, options)
@@ -118,6 +117,7 @@ const cloneSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,
 ): SolvedStateSnapshot => ({
   portAssignment: new Int32Array(snapshot.portAssignment),
+  portAssignedRouteId: new Int32Array(snapshot.portAssignedRouteId),
   regionSegments: cloneRegionSegments(snapshot.regionSegments),
   regionIntersectionCaches: snapshot.regionIntersectionCaches.map(
     cloneRegionIntersectionCache,
@@ -130,8 +130,10 @@ const restoreSolvedStateSnapshot = (
 ) => {
   const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
   solver.state.portAssignment = clonedSnapshot.portAssignment
+  solver.state.portAssignedRouteId = clonedSnapshot.portAssignedRouteId
   solver.state.regionSegments = clonedSnapshot.regionSegments
-  solver.state.regionIntersectionCaches = clonedSnapshot.regionIntersectionCaches
+  solver.state.regionIntersectionCaches =
+    clonedSnapshot.regionIntersectionCaches
 }
 
 const summarizeRegionIntersectionCaches = (
@@ -245,7 +247,8 @@ const getOrderedRoutePath = (
   orderedRegionIds: RegionId[]
 } => {
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
-  const routeSegmentRegionIds = solution.solvedRoutePathRegionIds?.[routeId] ?? []
+  const routeSegmentRegionIds =
+    solution.solvedRoutePathRegionIds?.[routeId] ?? []
   const startPortId = problem.routeStartPort[routeId]
   const endPortId = problem.routeEndPort[routeId]
 
@@ -347,6 +350,7 @@ const applyRouteSegmentsToSolver = (
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
 ) => {
   solver.state.portAssignment.fill(-1)
+  solver.state.portAssignedRouteId.fill(-1)
   solver.state.regionSegments = Array.from(
     { length: solver.topology.regionCount },
     () => [],
@@ -376,6 +380,8 @@ const applyRouteSegmentsToSolver = (
       ])
       solver.state.portAssignment[fromPortId] = solver.state.currentRouteNetId
       solver.state.portAssignment[toPortId] = solver.state.currentRouteNetId
+      solver.state.portAssignedRouteId[fromPortId] = routeId
+      solver.state.portAssignedRouteId[toPortId] = routeId
       solver.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
   }
@@ -548,8 +554,11 @@ const createSectionRoutePlans = (
       routeMetadata: problem.routeMetadata,
       routeStartPort,
       routeEndPort,
+      routeStartPortCandidates: undefined,
+      routeEndPortCandidates: undefined,
       routeNet: new Int32Array(problem.routeNet),
       regionNetId: new Int32Array(problem.regionNetId),
+      suggestedSolverOptions: problem.suggestedSolverOptions,
     },
     routePlans,
     activeRouteIds,
@@ -609,6 +618,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.applyFixedSegments()
     this.fixedSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
+      portAssignedRouteId: this.state.portAssignedRouteId,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
     })
@@ -616,7 +626,11 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   applyFixedSegments() {
     for (const routePlan of this.routePlans) {
-      for (const { regionId, fromPortId, toPortId } of routePlan.fixedSegments) {
+      for (const {
+        regionId,
+        fromPortId,
+        toPortId,
+      } of routePlan.fixedSegments) {
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,
@@ -625,6 +639,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
         ])
         this.state.portAssignment[fromPortId] = this.state.currentRouteNetId
         this.state.portAssignment[toPortId] = this.state.currentRouteNetId
+        this.state.portAssignedRouteId[fromPortId] = routePlan.routeId
+        this.state.portAssignedRouteId[toPortId] = routePlan.routeId
         this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
       }
     }
@@ -644,6 +660,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.bestSummary = summary
     this.bestSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
+      portAssignedRouteId: this.state.portAssignedRouteId,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
     })
@@ -858,6 +875,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   activeRouteIds: RouteId[] = []
 
   DISTANCE_TO_COST = 0.05
+  TRAVEL_DISTANCE_TO_COST = 0.002
+  STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR = 0
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -877,6 +896,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     options?: TinyHyperGraphSectionSolverOptions,
   ) {
     super()
+    applyTinyHyperGraphSectionSolverOptions(this, problem.suggestedSolverOptions)
     applyTinyHyperGraphSectionSolverOptions(this, options)
     this.baselineSolver = createSolvedSolverFromSolution(
       topology,
@@ -944,7 +964,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       sectionBaselineMaxRegionCost: this.sectionBaselineSummary.maxRegionCost,
-      sectionBaselineTotalRegionCost: this.sectionBaselineSummary.totalRegionCost,
+      sectionBaselineTotalRegionCost:
+        this.sectionBaselineSummary.totalRegionCost,
       effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
       effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
       effectiveMaxRips: this.MAX_RIPS,

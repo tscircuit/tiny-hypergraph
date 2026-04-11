@@ -1,5 +1,24 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 
+export const PORT_POINT_PATHING_SOLVER_TUNING_KEY =
+  "__portPointPathingSolverTuning"
+
+export interface PortPointPathingSolverFlags {
+  FORCE_CENTER_FIRST?: boolean
+  RIPPING_ENABLED?: boolean
+}
+
+export interface PortPointPathingSolverWeights {
+  START_RIPPING_PF_THRESHOLD?: number
+  END_RIPPING_PF_THRESHOLD?: number
+  STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR?: number
+}
+
+export interface PortPointPathingSolverTuning {
+  flags?: PortPointPathingSolverFlags
+  weights?: PortPointPathingSolverWeights
+}
+
 export interface SerializedHyperGraphPortPointPathingSolverParams {
   format: "serialized-hg-port-point-pathing-solver-params"
   graph: {
@@ -7,6 +26,8 @@ export interface SerializedHyperGraphPortPointPathingSolverParams {
     ports: SerializedHyperGraph["ports"]
   }
   connections: NonNullable<SerializedHyperGraph["connections"]>
+  flags?: PortPointPathingSolverFlags
+  weights?: PortPointPathingSolverWeights
 }
 
 export type SerializedHyperGraphPortPointPathingSolverInput =
@@ -52,9 +73,29 @@ export const convertPortPointPathingSolverInputToSerializedHyperGraph = (
     )
   }
 
-  return {
+  const serializedHyperGraph = {
     regions: params.graph.regions,
     ports: params.graph.ports,
     connections: params.connections,
+  } as SerializedHyperGraph & {
+    [PORT_POINT_PATHING_SOLVER_TUNING_KEY]?: PortPointPathingSolverTuning
   }
+
+  if (params.flags || params.weights) {
+    Object.defineProperty(
+      serializedHyperGraph,
+      PORT_POINT_PATHING_SOLVER_TUNING_KEY,
+      {
+        value: {
+          flags: params.flags,
+          weights: params.weights,
+        } satisfies PortPointPathingSolverTuning,
+        enumerable: false,
+        configurable: true,
+        writable: true,
+      },
+    )
+  }
+
+  return serializedHyperGraph
 }

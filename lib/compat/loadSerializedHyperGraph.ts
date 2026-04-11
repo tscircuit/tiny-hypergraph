@@ -2,8 +2,13 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import type {
   TinyHyperGraphProblem,
   TinyHyperGraphSolution,
+  TinyHyperGraphSolverOptions,
   TinyHyperGraphTopology,
 } from "../index"
+import {
+  PORT_POINT_PATHING_SOLVER_TUNING_KEY,
+  type PortPointPathingSolverTuning,
+} from "./convertPortPointPathingSolverInputToSerializedHyperGraph"
 
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
@@ -261,6 +266,130 @@ const getCentermostPortIdForRegion = (
   return sortedPortIds[0]
 }
 
+type ConnectionPointLike = {
+  x?: unknown
+  y?: unknown
+  layer?: unknown
+}
+
+type ConnectionWithSimpleRoute = NonNullable<
+  SerializedHyperGraph["connections"]
+>[number] & {
+  _bus?: {
+    id?: unknown
+    order?: unknown
+    orderingVector?: unknown
+  }
+  simpleRouteConnection?: {
+    pointsToConnect?: ConnectionPointLike[]
+  }
+}
+
+const BUS_ENDPOINT_CANDIDATE_LIMIT = 4
+
+const getLayerZForConnectionPoint = (layer: unknown): number | undefined => {
+  if (typeof layer !== "string") {
+    return undefined
+  }
+
+  switch (layer.toLowerCase()) {
+    case "top":
+      return 0
+    case "bottom":
+      return 1
+    case "inner1":
+      return 2
+    case "inner2":
+      return 3
+    default:
+      return undefined
+  }
+}
+
+const getClosestPortIdsForConnectionEndpoint = (
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+  endpointIndex: 0 | 1,
+  region: SerializedHyperGraph["regions"][number] | undefined,
+  portById: Map<string, SerializedHyperGraph["ports"][number]>,
+  limit = 1,
+): string[] => {
+  const point = (connection as ConnectionWithSimpleRoute).simpleRouteConnection
+    ?.pointsToConnect?.[endpointIndex]
+
+  if (
+    !region ||
+    !point ||
+    typeof point.x !== "number" ||
+    typeof point.y !== "number"
+  ) {
+    return []
+  }
+
+  const preferredZ = getLayerZForConnectionPoint(point.layer)
+  const scoredPortIds: Array<{
+    portId: string
+    score: number
+    centerDistance: number
+  }> = []
+
+  for (const pointId of region.pointIds) {
+    const port = portById.get(pointId)
+
+    if (!port) {
+      continue
+    }
+
+    const portX = Number(port.d?.x)
+    const portY = Number(port.d?.y)
+
+    if (!Number.isFinite(portX) || !Number.isFinite(portY)) {
+      continue
+    }
+
+    const portZ = Number(port.d?.z ?? 0)
+    const layerPenalty =
+      preferredZ !== undefined && portZ !== preferredZ ? 1_000 : 0
+    const distance = Math.hypot(portX - point.x, portY - point.y)
+    const centerDistance = Number(
+      port.d?.distToCentermostPortOnZ ?? Number.POSITIVE_INFINITY,
+    )
+    scoredPortIds.push({
+      portId: pointId,
+      score: distance + layerPenalty,
+      centerDistance,
+    })
+  }
+
+  scoredPortIds.sort(
+    (left, right) =>
+      left.score - right.score ||
+      left.centerDistance - right.centerDistance ||
+      left.portId.localeCompare(right.portId),
+  )
+
+  return scoredPortIds.slice(0, limit).map(({ portId }) => portId)
+}
+
+const getClosestPortIdForConnectionEndpoint = (
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+  endpointIndex: 0 | 1,
+  region: SerializedHyperGraph["regions"][number] | undefined,
+  portById: Map<string, SerializedHyperGraph["ports"][number]>,
+): string | undefined =>
+  getClosestPortIdsForConnectionEndpoint(
+    connection,
+    endpointIndex,
+    region,
+    portById,
+  )[0]
+
+const isBusConnection = (
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+): boolean => {
+  const bus = (connection as ConnectionWithSimpleRoute)._bus
+  return bus !== undefined && typeof bus === "object" && bus !== null
+}
+
 const getSharedPortIdsForConnection = (
   serializedHyperGraph: SerializedHyperGraph,
   connection: NonNullable<SerializedHyperGraph["connections"]>[number],
@@ -275,6 +404,42 @@ const getSharedPortIdsForConnection = (
     )
     .map((port) => port.portId)
 
+const getSuggestedSolverOptionsFromSerializedHyperGraph = (
+  serializedHyperGraph: SerializedHyperGraph,
+): TinyHyperGraphSolverOptions | undefined => {
+  const tuning = (
+    serializedHyperGraph as SerializedHyperGraph & {
+      [PORT_POINT_PATHING_SOLVER_TUNING_KEY]?: PortPointPathingSolverTuning
+    }
+  )[PORT_POINT_PATHING_SOLVER_TUNING_KEY]
+  const weights = tuning?.weights
+
+  if (!weights) {
+    return undefined
+  }
+
+  const suggestedSolverOptions: TinyHyperGraphSolverOptions = {}
+
+  if (typeof weights.START_RIPPING_PF_THRESHOLD === "number") {
+    suggestedSolverOptions.RIP_THRESHOLD_START =
+      weights.START_RIPPING_PF_THRESHOLD
+  }
+  if (typeof weights.END_RIPPING_PF_THRESHOLD === "number") {
+    suggestedSolverOptions.RIP_THRESHOLD_END = weights.END_RIPPING_PF_THRESHOLD
+  }
+  if (
+    typeof weights.STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR === "number" &&
+    weights.STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR > 0
+  ) {
+    suggestedSolverOptions.STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR =
+      weights.STRAIGHT_LINE_DEVIATION_PENALTY_FACTOR
+  }
+
+  return Object.keys(suggestedSolverOptions).length > 0
+    ? suggestedSolverOptions
+    : undefined
+}
+
 export const loadSerializedHyperGraph = (
   serializedHyperGraph: SerializedHyperGraph,
 ): {
@@ -282,10 +447,13 @@ export const loadSerializedHyperGraph = (
   problem: TinyHyperGraphProblem
   solution: TinyHyperGraphSolution
 } => {
+  const suggestedSolverOptions =
+    getSuggestedSolverOptionsFromSerializedHyperGraph(serializedHyperGraph)
   const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
   const regionIdToIndex = new Map<string, number>()
   const portIdToIndex = new Map<string, number>()
   const portById = new Map<string, SerializedHyperGraph["ports"][number]>()
+  const regionById = new Map<string, SerializedHyperGraph["regions"][number]>()
   const solvedRouteByConnectionId = new Map(
     (filteredHyperGraph.solvedRoutes ?? []).map((route) => [
       route.connection.connectionId,
@@ -295,6 +463,7 @@ export const loadSerializedHyperGraph = (
 
   filteredHyperGraph.regions.forEach((region, regionIndex) => {
     regionIdToIndex.set(region.regionId, regionIndex)
+    regionById.set(region.regionId, region)
   })
 
   filteredHyperGraph.ports.forEach((port, portIndex) => {
@@ -389,11 +558,11 @@ export const loadSerializedHyperGraph = (
     regionNetCandidates[regionIndex]!.add(netIndex)
   }
 
-  connections.forEach((connection) => {
+  for (const connection of connections) {
     const netIndex = getNetIndex(connection)
     assignRegionNet(connection.startRegionId, netIndex)
     assignRegionNet(connection.endRegionId, netIndex)
-  })
+  }
 
   regionNetCandidates.forEach((candidateNetIndexes, regionIndex) => {
     if (candidateNetIndexes.size === 1) {
@@ -424,25 +593,62 @@ export const loadSerializedHyperGraph = (
   const portSectionMask = new Int8Array(portCount).fill(1)
   const routeStartPort = new Int32Array(routeCount)
   const routeEndPort = new Int32Array(routeCount)
+  const routeStartPortCandidates = Array.from(
+    { length: routeCount },
+    () => undefined as number[] | undefined,
+  )
+  const routeEndPortCandidates = Array.from(
+    { length: routeCount },
+    () => undefined as number[] | undefined,
+  )
   const routeNet = new Int32Array(routeCount)
 
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
+    const startRegion = regionById.get(connection.startRegionId)
+    const endRegion = regionById.get(connection.endRegionId)
+    const preferredStartPortId = getClosestPortIdForConnectionEndpoint(
+      connection,
+      0,
+      startRegion,
+      portById,
+    )
+    const preferredEndPortId = getClosestPortIdForConnectionEndpoint(
+      connection,
+      1,
+      endRegion,
+      portById,
+    )
+    const busStartPortIds = isBusConnection(connection)
+      ? getClosestPortIdsForConnectionEndpoint(
+          connection,
+          0,
+          startRegion,
+          portById,
+          BUS_ENDPOINT_CANDIDATE_LIMIT,
+        )
+      : []
+    const busEndPortIds = isBusConnection(connection)
+      ? getClosestPortIdsForConnectionEndpoint(
+          connection,
+          1,
+          endRegion,
+          portById,
+          BUS_ENDPOINT_CANDIDATE_LIMIT,
+        )
+      : []
     const fallbackStartPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.startRegionId,
-      ),
+      startRegion,
       portById,
     )
-    const fallbackEndPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.endRegionId,
-      ),
-      portById,
-    )
+    const fallbackEndPortId = getCentermostPortIdForRegion(endRegion, portById)
 
-    const startPortId = solvedRoute?.path[0]?.portId ?? fallbackStartPortId
+    const startPortId =
+      solvedRoute?.path[0]?.portId ??
+      preferredStartPortId ??
+      fallbackStartPortId
     const endPortId =
       solvedRoute?.path[solvedRoute.path.length - 1]?.portId ??
+      preferredEndPortId ??
       fallbackEndPortId
 
     const startPortIndex =
@@ -458,6 +664,20 @@ export const loadSerializedHyperGraph = (
 
     routeStartPort[routeIndex] = startPortIndex
     routeEndPort[routeIndex] = endPortIndex
+
+    const startPortCandidateIndexes = busStartPortIds
+      .map((portId) => portIdToIndex.get(portId))
+      .filter((portId): portId is number => portId !== undefined)
+    const endPortCandidateIndexes = busEndPortIds
+      .map((portId) => portIdToIndex.get(portId))
+      .filter((portId): portId is number => portId !== undefined)
+
+    if (startPortCandidateIndexes.length > 1) {
+      routeStartPortCandidates[routeIndex] = startPortCandidateIndexes
+    }
+    if (endPortCandidateIndexes.length > 1) {
+      routeEndPortCandidates[routeIndex] = endPortCandidateIndexes
+    }
 
     routeNet[routeIndex] = getNetIndex(connection)
   })
@@ -491,8 +711,11 @@ export const loadSerializedHyperGraph = (
     routeMetadata: routableConnections.map(({ connection }) => connection),
     routeStartPort,
     routeEndPort,
+    routeStartPortCandidates,
+    routeEndPortCandidates,
     routeNet,
     regionNetId,
+    suggestedSolverOptions,
   }
 
   const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =

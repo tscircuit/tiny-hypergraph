@@ -1,10 +1,10 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { useEffect, useState } from "react"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  TinyHyperGraphBusAwareSolver,
   convertPortPointPathingSolverInputToSerializedHyperGraph,
-  TinyHyperGraphSolver,
 } from "lib/index"
+import { useEffect, useState } from "react"
 import { Debugger } from "./components/Debugger"
 
 const cm5ioFixtureUrl = new URL(
@@ -74,16 +74,21 @@ export default function Cm5ioPage() {
   return (
     <div className="flex h-screen flex-col gap-3 p-3">
       <div className="rounded border border-slate-300 bg-white p-3 text-sm text-slate-700">
-        CM5IO hypergraph with pre-annotated bus groups. The debugger uses the
-        fixed bus-routing path and a `MAX_ITERATIONS` budget of `50_000`.
+        CM5IO hypergraph with pre-annotated bus groups. The debugger uses
+        a bus-aware explore/complete pipeline: aggressive endpoint exploration,
+        completion from the best partial, and iterative hotspot group repair.
       </div>
       <div className="min-h-0 flex-1">
         <Debugger
           serializedHyperGraph={serializedHyperGraph}
           createSolver={(graph) => {
             const { topology, problem } = loadSerializedHyperGraph(graph)
-            return new TinyHyperGraphSolver(topology, problem, {
-              MAX_ITERATIONS: 50_000,
+            return new TinyHyperGraphBusAwareSolver(topology, problem, {
+              EXPLORATION_MAX_ITERATIONS: 50_000,
+              COMPLETION_MAX_ITERATIONS: 200_000,
+              HOTSPOT_REPAIR_MAX_ITERATIONS: 50_000,
+              HOTSPOT_GROUP_REPAIR_ROUNDS: 5,
+              HOTSPOT_GROUP_CANDIDATE_LIMIT: 6,
             })
           }}
         />

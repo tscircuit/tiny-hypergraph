@@ -153,6 +153,137 @@ const getRouteSegmentsByRoute = (
   return routeSegmentsByRoute
 }
 
+const getNominalRoutePortCandidates = (
+  solver: TinyHyperGraphSolver,
+  routeId: number,
+  endpoint: "start" | "end",
+): PortId[] => {
+  const primaryPortId =
+    endpoint === "start"
+      ? solver.problem.routeStartPort[routeId]
+      : solver.problem.routeEndPort[routeId]
+  const extraPortIds =
+    endpoint === "start"
+      ? solver.problem.routeStartPortCandidates?.[routeId]
+      : solver.problem.routeEndPortCandidates?.[routeId]
+  const normalizedPortIds: PortId[] = []
+  const seenPortIds = new Set<PortId>()
+
+  for (const portId of extraPortIds ?? []) {
+    if (seenPortIds.has(portId)) {
+      continue
+    }
+
+    seenPortIds.add(portId)
+    normalizedPortIds.push(portId)
+  }
+
+  if (!seenPortIds.has(primaryPortId)) {
+    normalizedPortIds.push(primaryPortId)
+  }
+
+  return normalizedPortIds
+}
+
+const getRouteEndpointAssignmentScore = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+  candidatePortIds: PortId[],
+): number => {
+  const directMatchIndex = candidatePortIds.indexOf(portId)
+  if (directMatchIndex !== -1) {
+    return directMatchIndex
+  }
+
+  let minDistance = Number.POSITIVE_INFINITY
+  for (const candidatePortId of candidatePortIds) {
+    const dx = solver.topology.portX[portId] - solver.topology.portX[candidatePortId]
+    const dy = solver.topology.portY[portId] - solver.topology.portY[candidatePortId]
+    minDistance = Math.min(minDistance, Math.hypot(dx, dy))
+  }
+
+  return 1_000 + minDistance
+}
+
+const getActualRouteEndpoints = (
+  solver: TinyHyperGraphSolver,
+  routeId: number,
+  routeSegments: RouteSegment[],
+): {
+  startPortId: PortId
+  endPortId: PortId
+} => {
+  if (routeSegments.length === 0) {
+    return {
+      startPortId: solver.problem.routeStartPort[routeId],
+      endPortId: solver.problem.routeEndPort[routeId],
+    }
+  }
+
+  const segmentCountByPort = new Map<PortId, number>()
+  for (const routeSegment of routeSegments) {
+    segmentCountByPort.set(
+      routeSegment.fromPortId,
+      (segmentCountByPort.get(routeSegment.fromPortId) ?? 0) + 1,
+    )
+    segmentCountByPort.set(
+      routeSegment.toPortId,
+      (segmentCountByPort.get(routeSegment.toPortId) ?? 0) + 1,
+    )
+  }
+
+  const endpointPortIds = [...segmentCountByPort.entries()]
+    .filter(([, segmentCount]) => segmentCount === 1)
+    .map(([portId]) => portId)
+
+  if (endpointPortIds.length !== 2) {
+    return {
+      startPortId: solver.problem.routeStartPort[routeId],
+      endPortId: solver.problem.routeEndPort[routeId],
+    }
+  }
+
+  const [leftEndpointPortId, rightEndpointPortId] = endpointPortIds
+  const nominalStartPortIds = getNominalRoutePortCandidates(
+    solver,
+    routeId,
+    "start",
+  )
+  const nominalEndPortIds = getNominalRoutePortCandidates(solver, routeId, "end")
+  const forwardScore =
+    getRouteEndpointAssignmentScore(
+      solver,
+      leftEndpointPortId!,
+      nominalStartPortIds,
+    ) +
+    getRouteEndpointAssignmentScore(
+      solver,
+      rightEndpointPortId!,
+      nominalEndPortIds,
+    )
+  const reverseScore =
+    getRouteEndpointAssignmentScore(
+      solver,
+      rightEndpointPortId!,
+      nominalStartPortIds,
+    ) +
+    getRouteEndpointAssignmentScore(
+      solver,
+      leftEndpointPortId!,
+      nominalEndPortIds,
+    )
+
+  return forwardScore <= reverseScore
+    ? {
+        startPortId: leftEndpointPortId!,
+        endPortId: rightEndpointPortId!,
+      }
+    : {
+        startPortId: rightEndpointPortId!,
+        endPortId: leftEndpointPortId!,
+      }
+}
+
 const getOppositeRegionIdForPort = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
@@ -184,8 +315,11 @@ const getOrderedRoutePath = (
     throw new Error(`Route ${routeId} has no solved segments`)
   }
 
-  const startPortId = solver.problem.routeStartPort[routeId]
-  const endPortId = solver.problem.routeEndPort[routeId]
+  const { startPortId, endPortId } = getActualRouteEndpoints(
+    solver,
+    routeId,
+    routeSegments,
+  )
   const segmentsByPort = new Map<
     PortId,
     Array<RouteSegment & { segmentIndex: number }>
