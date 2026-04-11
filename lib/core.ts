@@ -210,12 +210,100 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
+const IMPROVEMENT_EPSILON = 1e-9
+
 interface SegmentGeometryScratch {
   lesserAngle: number
   greaterAngle: number
   layerMask: number
   entryExitLayerChanges: number
 }
+
+interface SolvedRouteSegment {
+  regionId: RegionId
+  fromPortId: PortId
+  toPortId: PortId
+}
+
+interface OrderedRoutePath {
+  orderedPortIds: PortId[]
+  orderedRegionIds: RegionId[]
+}
+
+interface RoutePortTraversal {
+  routeId: RouteId
+  portId: PortId
+  regionId1: RegionId
+  regionId2: RegionId
+  otherPortIdInRegion1: PortId
+  otherPortIdInRegion2: PortId
+  edgeKey: string
+  solvedSegmentIndex?: number
+}
+
+const cloneRegionIntersectionCache = (
+  regionIntersectionCache: RegionIntersectionCache,
+): RegionIntersectionCache => ({
+  netIds: new Int32Array(regionIntersectionCache.netIds),
+  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
+  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
+  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  existingCrossingLayerIntersections:
+    regionIntersectionCache.existingCrossingLayerIntersections,
+  existingSameLayerIntersections:
+    regionIntersectionCache.existingSameLayerIntersections,
+  existingEntryExitLayerChanges:
+    regionIntersectionCache.existingEntryExitLayerChanges,
+  existingRegionCost: regionIntersectionCache.existingRegionCost,
+  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+})
+
+const cloneRegionSegments = (
+  regionSegments: Array<[RouteId, PortId, PortId][]>,
+): Array<[RouteId, PortId, PortId][]> =>
+  regionSegments.map((segments) =>
+    segments.map(
+      ([routeId, fromPortId, toPortId]) =>
+        [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
+    ),
+  )
+
+const compareRegionCostSummaries = (
+  left: RegionCostSummary,
+  right: RegionCostSummary,
+) => {
+  if (
+    Math.abs(left.maxRegionCost - right.maxRegionCost) > IMPROVEMENT_EPSILON
+  ) {
+    return left.maxRegionCost - right.maxRegionCost
+  }
+
+  return left.totalRegionCost - right.totalRegionCost
+}
+
+const summarizeRegionCostsForRegionIds = (
+  regionIds: RegionId[],
+  getRegionCache: (regionId: RegionId) => RegionIntersectionCache | undefined,
+): RegionCostSummary => {
+  let maxRegionCost = 0
+  let totalRegionCost = 0
+
+  for (const regionId of regionIds) {
+    const regionCost = getRegionCache(regionId)?.existingRegionCost ?? 0
+    maxRegionCost = Math.max(maxRegionCost, regionCost)
+    totalRegionCost += regionCost
+  }
+
+  return {
+    maxRegionCost,
+    totalRegionCost,
+  }
+}
+
+const getRegionPairKey = (regionId1: RegionId, regionId2: RegionId) =>
+  regionId1 < regionId2
+    ? `${regionId1}:${regionId2}`
+    : `${regionId2}:${regionId1}`
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
@@ -511,8 +599,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
-    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
+  }
+
+  protected canRewriteSolvedRoute(_routeId: RouteId): boolean {
+    return true
   }
 
   populateSegmentGeometryScratch(
@@ -525,15 +618,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const port1IncidentRegions = topology.incidentPortRegion[port1Id]
     const port2IncidentRegions = topology.incidentPortRegion[port2Id]
     const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+      port1IncidentRegions[0] === regionId ||
+      port1IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
+        : (topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id])
     const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+      port2IncidentRegions[0] === regionId ||
+      port2IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+        : (topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id])
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
@@ -544,13 +639,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return scratch
   }
 
-  appendSegmentToRegionCache(
+  buildNextRegionIntersectionCache(
+    regionCache: RegionIntersectionCache,
     regionId: RegionId,
+    routeNetId: NetId,
     port1Id: PortId,
     port2Id: PortId,
-  ) {
-    const { topology, state } = this
-    const regionCache = state.regionIntersectionCaches[regionId]
+  ): RegionIntersectionCache {
+    const { topology } = this
     const segmentGeometry = this.populateSegmentGeometryScratch(
       regionId,
       port1Id,
@@ -562,7 +658,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newEntryExitLayerChanges,
     ] = countNewIntersectionsWithValues(
       regionCache,
-      state.currentRouteNetId!,
+      routeNetId,
       segmentGeometry.lesserAngle,
       segmentGeometry.greaterAngle,
       segmentGeometry.layerMask,
@@ -572,7 +668,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const netIds = new Int32Array(nextLength)
     netIds.set(regionCache.netIds)
-    netIds[nextLength - 1] = state.currentRouteNetId!
+    netIds[nextLength - 1] = routeNetId
 
     const lesserAngles = new Int32Array(nextLength)
     lesserAngles.set(regionCache.lesserAngles)
@@ -595,7 +691,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
     const existingSegmentCount = lesserAngles.length
 
-    state.regionIntersectionCaches[regionId] = {
+    return {
       netIds,
       lesserAngles,
       greaterAngles,
@@ -616,11 +712,42 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  getSolvedPathSegments(finalCandidate: Candidate): Array<{
-    regionId: RegionId
-    fromPortId: PortId
-    toPortId: PortId
-  }> {
+  appendSegmentToRegionCache(
+    regionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ) {
+    const { state } = this
+    state.regionIntersectionCaches[regionId] =
+      this.buildNextRegionIntersectionCache(
+        state.regionIntersectionCaches[regionId]!,
+        regionId,
+        state.currentRouteNetId!,
+        port1Id,
+        port2Id,
+      )
+  }
+
+  computeRegionIntersectionCacheFromSegments(
+    regionId: RegionId,
+    regionSegments: [RouteId, PortId, PortId][],
+  ): RegionIntersectionCache {
+    let regionCache = createEmptyRegionIntersectionCache()
+
+    for (const [routeId, fromPortId, toPortId] of regionSegments) {
+      regionCache = this.buildNextRegionIntersectionCache(
+        regionCache,
+        regionId,
+        this.problem.routeNet[routeId]!,
+        fromPortId,
+        toPortId,
+      )
+    }
+
+    return regionCache
+  }
+
+  getSolvedPathSegments(finalCandidate: Candidate): SolvedRouteSegment[] {
     const { state } = this
     const candidatePath: Candidate[] = []
     let cursor: Candidate | undefined = finalCandidate
@@ -630,11 +757,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       cursor = cursor.prevCandidate
     }
 
-    const solvedSegments: Array<{
-      regionId: RegionId
-      fromPortId: PortId
-      toPortId: PortId
-    }> = []
+    const solvedSegments: SolvedRouteSegment[] = []
 
     for (let i = 1; i < candidatePath.length; i++) {
       solvedSegments.push({
@@ -654,6 +777,665 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return solvedSegments
+  }
+
+  getOrderedRoutePathFromRegionSegments(
+    routeId: RouteId,
+    regionSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+  ): OrderedRoutePath | null {
+    const routeSegments: SolvedRouteSegment[] = []
+
+    for (
+      let regionId = 0;
+      regionId < regionSegmentsByRegion.length;
+      regionId++
+    ) {
+      for (const [
+        segmentRouteId,
+        fromPortId,
+        toPortId,
+      ] of regionSegmentsByRegion[regionId] ?? []) {
+        if (segmentRouteId !== routeId) {
+          continue
+        }
+
+        routeSegments.push({
+          regionId,
+          fromPortId,
+          toPortId,
+        })
+      }
+    }
+
+    const startPortId = this.problem.routeStartPort[routeId]
+    const endPortId = this.problem.routeEndPort[routeId]
+
+    if (routeSegments.length === 0) {
+      return startPortId === endPortId
+        ? {
+            orderedPortIds: [startPortId],
+            orderedRegionIds: [],
+          }
+        : null
+    }
+
+    const segmentsByPort = new Map<
+      PortId,
+      Array<{
+        segmentIndex: number
+        regionId: RegionId
+        fromPortId: PortId
+        toPortId: PortId
+      }>
+    >()
+
+    routeSegments.forEach((routeSegment, segmentIndex) => {
+      const indexedSegment = {
+        segmentIndex,
+        ...routeSegment,
+      }
+
+      const fromPortSegments = segmentsByPort.get(routeSegment.fromPortId) ?? []
+      fromPortSegments.push(indexedSegment)
+      segmentsByPort.set(routeSegment.fromPortId, fromPortSegments)
+
+      const toPortSegments = segmentsByPort.get(routeSegment.toPortId) ?? []
+      toPortSegments.push(indexedSegment)
+      segmentsByPort.set(routeSegment.toPortId, toPortSegments)
+    })
+
+    const orderedPortIds = [startPortId]
+    const orderedRegionIds: RegionId[] = []
+    const usedSegmentIndices = new Set<number>()
+    let currentPortId = startPortId
+    let previousPortId: PortId | undefined
+
+    while (currentPortId !== endPortId) {
+      const nextSegments = (segmentsByPort.get(currentPortId) ?? []).filter(
+        ({ segmentIndex, fromPortId, toPortId }) => {
+          if (usedSegmentIndices.has(segmentIndex)) {
+            return false
+          }
+
+          const nextPortId =
+            fromPortId === currentPortId ? toPortId : fromPortId
+          return nextPortId !== previousPortId
+        },
+      )
+
+      if (nextSegments.length !== 1) {
+        return null
+      }
+
+      const nextSegment = nextSegments[0]!
+      const nextPortId =
+        nextSegment.fromPortId === currentPortId
+          ? nextSegment.toPortId
+          : nextSegment.fromPortId
+
+      usedSegmentIndices.add(nextSegment.segmentIndex)
+      orderedRegionIds.push(nextSegment.regionId)
+      orderedPortIds.push(nextPortId)
+      previousPortId = currentPortId
+      currentPortId = nextPortId
+    }
+
+    return usedSegmentIndices.size === routeSegments.length
+      ? {
+          orderedPortIds,
+          orderedRegionIds,
+        }
+      : null
+  }
+
+  getRoutePortTraversalsFromOrderedPath(
+    routeId: RouteId,
+    orderedRoutePath: OrderedRoutePath,
+  ): RoutePortTraversal[] {
+    const traversals: RoutePortTraversal[] = []
+
+    for (
+      let portIndex = 1;
+      portIndex < orderedRoutePath.orderedPortIds.length - 1;
+      portIndex++
+    ) {
+      const portId = orderedRoutePath.orderedPortIds[portIndex]!
+      const previousPortId = orderedRoutePath.orderedPortIds[portIndex - 1]!
+      const nextPortId = orderedRoutePath.orderedPortIds[portIndex + 1]!
+      const previousRegionId = orderedRoutePath.orderedRegionIds[portIndex - 1]!
+      const nextRegionId = orderedRoutePath.orderedRegionIds[portIndex]!
+      const incidentRegionIds = this.topology.incidentPortRegion[portId] ?? []
+      const regionId1 = incidentRegionIds[0]
+      const regionId2 = incidentRegionIds[1]
+
+      if (regionId1 === undefined || regionId2 === undefined) {
+        continue
+      }
+
+      if (regionId1 === previousRegionId && regionId2 === nextRegionId) {
+        traversals.push({
+          routeId,
+          portId,
+          regionId1,
+          regionId2,
+          otherPortIdInRegion1: previousPortId,
+          otherPortIdInRegion2: nextPortId,
+          edgeKey: getRegionPairKey(regionId1, regionId2),
+        })
+        continue
+      }
+
+      if (regionId1 === nextRegionId && regionId2 === previousRegionId) {
+        traversals.push({
+          routeId,
+          portId,
+          regionId1,
+          regionId2,
+          otherPortIdInRegion1: nextPortId,
+          otherPortIdInRegion2: previousPortId,
+          edgeKey: getRegionPairKey(regionId1, regionId2),
+        })
+      }
+    }
+
+    return traversals
+  }
+
+  getRoutePortTraversalsFromSolvedSegments(
+    routeId: RouteId,
+    solvedSegments: SolvedRouteSegment[],
+  ): RoutePortTraversal[] {
+    const traversals: RoutePortTraversal[] = []
+
+    for (
+      let segmentIndex = 0;
+      segmentIndex < solvedSegments.length - 1;
+      segmentIndex++
+    ) {
+      const leftSegment = solvedSegments[segmentIndex]!
+      const rightSegment = solvedSegments[segmentIndex + 1]!
+
+      if (leftSegment.toPortId !== rightSegment.fromPortId) {
+        continue
+      }
+
+      const portId = leftSegment.toPortId
+      const incidentRegionIds = this.topology.incidentPortRegion[portId] ?? []
+      const regionId1 = incidentRegionIds[0]
+      const regionId2 = incidentRegionIds[1]
+
+      if (regionId1 === undefined || regionId2 === undefined) {
+        continue
+      }
+
+      if (
+        regionId1 === leftSegment.regionId &&
+        regionId2 === rightSegment.regionId
+      ) {
+        traversals.push({
+          routeId,
+          portId,
+          regionId1,
+          regionId2,
+          otherPortIdInRegion1: leftSegment.fromPortId,
+          otherPortIdInRegion2: rightSegment.toPortId,
+          edgeKey: getRegionPairKey(regionId1, regionId2),
+          solvedSegmentIndex: segmentIndex,
+        })
+        continue
+      }
+
+      if (
+        regionId1 === rightSegment.regionId &&
+        regionId2 === leftSegment.regionId
+      ) {
+        traversals.push({
+          routeId,
+          portId,
+          regionId1,
+          regionId2,
+          otherPortIdInRegion1: rightSegment.toPortId,
+          otherPortIdInRegion2: leftSegment.fromPortId,
+          edgeKey: getRegionPairKey(regionId1, regionId2),
+          solvedSegmentIndex: segmentIndex,
+        })
+      }
+    }
+
+    return traversals
+  }
+
+  getOtherPortIdForTraversalRegion(
+    traversal: RoutePortTraversal,
+    regionId: RegionId,
+  ): PortId | undefined {
+    if (traversal.regionId1 === regionId) {
+      return traversal.otherPortIdInRegion1
+    }
+
+    if (traversal.regionId2 === regionId) {
+      return traversal.otherPortIdInRegion2
+    }
+
+    return undefined
+  }
+
+  replacePortInRouteSegment(
+    regionSegments: [RouteId, PortId, PortId][],
+    routeId: RouteId,
+    otherPortId: PortId,
+    oldPortId: PortId,
+    newPortId: PortId,
+  ): boolean {
+    for (
+      let segmentIndex = 0;
+      segmentIndex < regionSegments.length;
+      segmentIndex++
+    ) {
+      const [segmentRouteId, port1Id, port2Id] = regionSegments[segmentIndex]!
+
+      if (segmentRouteId !== routeId) {
+        continue
+      }
+
+      const matchesSegment =
+        (port1Id === otherPortId && port2Id === oldPortId) ||
+        (port1Id === oldPortId && port2Id === otherPortId)
+
+      if (!matchesSegment) {
+        continue
+      }
+
+      regionSegments[segmentIndex] = [
+        routeId,
+        port1Id === oldPortId ? newPortId : port1Id,
+        port2Id === oldPortId ? newPortId : port2Id,
+      ]
+      return true
+    }
+
+    return false
+  }
+
+  isPortCompatibleWithRouteNet(routeId: RouteId, portId: PortId): boolean {
+    const routeNetId = this.problem.routeNet[routeId]
+    const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
+
+    if (!reservedNetIds) {
+      return true
+    }
+
+    for (const netId of reservedNetIds) {
+      if (netId !== routeNetId) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  isPortUsableByRouteAfterSwap(
+    routeId: RouteId,
+    portId: PortId,
+    regionSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+    ignoredRouteIds: RouteId[],
+  ): boolean {
+    if (!this.isPortCompatibleWithRouteNet(routeId, portId)) {
+      return false
+    }
+
+    const ignoredRouteIdSet = new Set(ignoredRouteIds)
+    const routeNetId = this.problem.routeNet[routeId]
+
+    for (const regionSegments of regionSegmentsByRegion) {
+      for (const [segmentRouteId, port1Id, port2Id] of regionSegments) {
+        if (ignoredRouteIdSet.has(segmentRouteId)) {
+          continue
+        }
+
+        if (port1Id !== portId && port2Id !== portId) {
+          continue
+        }
+
+        if (this.problem.routeNet[segmentRouteId] !== routeNetId) {
+          return false
+        }
+      }
+    }
+
+    return true
+  }
+
+  rebuildPortAssignmentsFromRegionSegments() {
+    const { state } = this
+    state.portAssignment.fill(-1)
+
+    for (const regionSegments of state.regionSegments) {
+      for (const [routeId, port1Id, port2Id] of regionSegments) {
+        const routeNetId = this.problem.routeNet[routeId]
+        state.portAssignment[port1Id] = routeNetId
+        state.portAssignment[port2Id] = routeNetId
+      }
+    }
+  }
+
+  tryCreateImprovingPortSwap(
+    currentTraversal: RoutePortTraversal,
+    otherTraversal: RoutePortTraversal,
+    currentRoutePortIds: Set<PortId>,
+    otherRoutePortIds: Set<PortId>,
+    regionSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+    regionIntersectionCaches: RegionIntersectionCache[],
+  ):
+    | {
+        affectedRegionIds: RegionId[]
+        candidateRegionSegmentsById: Map<RegionId, [RouteId, PortId, PortId][]>
+        candidateRegionCachesById: Map<RegionId, RegionIntersectionCache>
+      }
+    | undefined {
+    if (currentTraversal.portId === otherTraversal.portId) {
+      return
+    }
+
+    if (
+      currentRoutePortIds.has(otherTraversal.portId) ||
+      otherRoutePortIds.has(currentTraversal.portId)
+    ) {
+      return
+    }
+
+    if (
+      !this.isPortUsableByRouteAfterSwap(
+        currentTraversal.routeId,
+        otherTraversal.portId,
+        regionSegmentsByRegion,
+        [otherTraversal.routeId],
+      ) ||
+      !this.isPortUsableByRouteAfterSwap(
+        otherTraversal.routeId,
+        currentTraversal.portId,
+        regionSegmentsByRegion,
+        [currentTraversal.routeId],
+      )
+    ) {
+      return
+    }
+
+    const affectedRegionIds = [
+      ...new Set([
+        currentTraversal.regionId1,
+        currentTraversal.regionId2,
+        otherTraversal.regionId1,
+        otherTraversal.regionId2,
+      ]),
+    ]
+    const candidateRegionSegmentsById = new Map<
+      RegionId,
+      [RouteId, PortId, PortId][]
+    >(
+      affectedRegionIds.map((regionId) => [
+        regionId,
+        regionSegmentsByRegion[regionId]!.map(
+          ([routeId, fromPortId, toPortId]) =>
+            [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
+        ),
+      ]),
+    )
+
+    for (const regionId of affectedRegionIds) {
+      const currentOtherPortId = this.getOtherPortIdForTraversalRegion(
+        currentTraversal,
+        regionId,
+      )
+      const otherOtherPortId = this.getOtherPortIdForTraversalRegion(
+        otherTraversal,
+        regionId,
+      )
+
+      if (
+        currentOtherPortId === undefined ||
+        otherOtherPortId === undefined ||
+        currentOtherPortId === otherTraversal.portId ||
+        otherOtherPortId === currentTraversal.portId
+      ) {
+        return
+      }
+
+      const candidateRegionSegments = candidateRegionSegmentsById.get(regionId)
+      if (
+        !candidateRegionSegments ||
+        !this.replacePortInRouteSegment(
+          candidateRegionSegments,
+          currentTraversal.routeId,
+          currentOtherPortId,
+          currentTraversal.portId,
+          otherTraversal.portId,
+        ) ||
+        !this.replacePortInRouteSegment(
+          candidateRegionSegments,
+          otherTraversal.routeId,
+          otherOtherPortId,
+          otherTraversal.portId,
+          currentTraversal.portId,
+        )
+      ) {
+        return
+      }
+    }
+
+    const currentSummary = summarizeRegionCostsForRegionIds(
+      affectedRegionIds,
+      (regionId) => regionIntersectionCaches[regionId],
+    )
+    const candidateRegionCachesById = new Map<
+      RegionId,
+      RegionIntersectionCache
+    >(
+      affectedRegionIds.map((regionId) => [
+        regionId,
+        this.computeRegionIntersectionCacheFromSegments(
+          regionId,
+          candidateRegionSegmentsById.get(regionId)!,
+        ),
+      ]),
+    )
+    const candidateSummary = summarizeRegionCostsForRegionIds(
+      affectedRegionIds,
+      (regionId) => candidateRegionCachesById.get(regionId),
+    )
+
+    return compareRegionCostSummaries(candidateSummary, currentSummary) < 0
+      ? {
+          affectedRegionIds,
+          candidateRegionSegmentsById,
+          candidateRegionCachesById,
+        }
+      : undefined
+  }
+
+  untangleRecentlySolvedRoute(
+    currentRouteId: RouteId,
+    solvedSegments: SolvedRouteSegment[],
+  ): {
+    regionSegmentsByRegion: Array<[RouteId, PortId, PortId][]>
+    regionIntersectionCaches: RegionIntersectionCache[]
+    dirtyRegionIds: Set<RegionId>
+    acceptedSwapCount: number
+  } {
+    const { state } = this
+    const workingRegionSegments = cloneRegionSegments(state.regionSegments)
+    const workingRegionIntersectionCaches = state.regionIntersectionCaches.map(
+      cloneRegionIntersectionCache,
+    )
+    const dirtyRegionIds = new Set<RegionId>()
+    const mutableSolvedSegments = solvedSegments.map((segment) => ({
+      ...segment,
+    }))
+
+    for (const { regionId, fromPortId, toPortId } of mutableSolvedSegments) {
+      workingRegionSegments[regionId]!.push([
+        currentRouteId,
+        fromPortId,
+        toPortId,
+      ])
+      workingRegionIntersectionCaches[regionId] =
+        this.buildNextRegionIntersectionCache(
+          workingRegionIntersectionCaches[regionId]!,
+          regionId,
+          state.currentRouteNetId!,
+          fromPortId,
+          toPortId,
+        )
+      dirtyRegionIds.add(regionId)
+    }
+
+    let acceptedSwapCount = 0
+
+    while (true) {
+      const currentRoutePath = this.getOrderedRoutePathFromRegionSegments(
+        currentRouteId,
+        workingRegionSegments,
+      )
+      if (!currentRoutePath) {
+        break
+      }
+
+      const currentRoutePortIds = new Set(currentRoutePath.orderedPortIds)
+      const currentTraversals = this.getRoutePortTraversalsFromSolvedSegments(
+        currentRouteId,
+        mutableSolvedSegments,
+      )
+      const otherRouteContextByRouteId = new Map<
+        RouteId,
+        {
+          portIds: Set<PortId>
+          traversals: RoutePortTraversal[]
+        }
+      >()
+      let appliedSwap = false
+
+      for (const currentTraversal of currentTraversals) {
+        const currentRegionCost1 =
+          workingRegionIntersectionCaches[currentTraversal.regionId1]
+            ?.existingRegionCost ?? 0
+        const currentRegionCost2 =
+          workingRegionIntersectionCaches[currentTraversal.regionId2]
+            ?.existingRegionCost ?? 0
+
+        if (
+          currentRegionCost1 <= IMPROVEMENT_EPSILON &&
+          currentRegionCost2 <= IMPROVEMENT_EPSILON
+        ) {
+          continue
+        }
+
+        const routeIdsInRegion1 = new Set(
+          workingRegionSegments[currentTraversal.regionId1]!.map(
+            ([routeId]) => routeId,
+          ),
+        )
+        const candidateRouteIds = new Set<RouteId>()
+
+        for (const [routeId] of workingRegionSegments[
+          currentTraversal.regionId2
+        ]!) {
+          if (
+            routeId === currentRouteId ||
+            !routeIdsInRegion1.has(routeId) ||
+            !this.canRewriteSolvedRoute(routeId)
+          ) {
+            continue
+          }
+
+          candidateRouteIds.add(routeId)
+        }
+
+        for (const otherRouteId of candidateRouteIds) {
+          let otherRouteContext = otherRouteContextByRouteId.get(otherRouteId)
+
+          if (!otherRouteContext) {
+            const otherRoutePath = this.getOrderedRoutePathFromRegionSegments(
+              otherRouteId,
+              workingRegionSegments,
+            )
+            if (!otherRoutePath) {
+              continue
+            }
+
+            otherRouteContext = {
+              portIds: new Set(otherRoutePath.orderedPortIds),
+              traversals: this.getRoutePortTraversalsFromOrderedPath(
+                otherRouteId,
+                otherRoutePath,
+              ),
+            }
+            otherRouteContextByRouteId.set(otherRouteId, otherRouteContext)
+          }
+
+          for (const otherTraversal of otherRouteContext.traversals) {
+            if (otherTraversal.edgeKey !== currentTraversal.edgeKey) {
+              continue
+            }
+
+            const swapResult = this.tryCreateImprovingPortSwap(
+              currentTraversal,
+              otherTraversal,
+              currentRoutePortIds,
+              otherRouteContext.portIds,
+              workingRegionSegments,
+              workingRegionIntersectionCaches,
+            )
+
+            if (!swapResult) {
+              continue
+            }
+
+            for (const regionId of swapResult.affectedRegionIds) {
+              workingRegionSegments[regionId] =
+                swapResult.candidateRegionSegmentsById.get(regionId)!
+              workingRegionIntersectionCaches[regionId] =
+                swapResult.candidateRegionCachesById.get(regionId)!
+              dirtyRegionIds.add(regionId)
+            }
+
+            if (currentTraversal.solvedSegmentIndex !== undefined) {
+              const leftSolvedSegment =
+                mutableSolvedSegments[currentTraversal.solvedSegmentIndex]
+              const rightSolvedSegment =
+                mutableSolvedSegments[currentTraversal.solvedSegmentIndex + 1]
+
+              if (leftSolvedSegment && rightSolvedSegment) {
+                leftSolvedSegment.toPortId = otherTraversal.portId
+                rightSolvedSegment.fromPortId = otherTraversal.portId
+              }
+            }
+
+            acceptedSwapCount += 1
+            appliedSwap = true
+            break
+          }
+
+          if (appliedSwap) {
+            break
+          }
+        }
+
+        if (appliedSwap) {
+          break
+        }
+      }
+
+      if (!appliedSwap) {
+        break
+      }
+    }
+
+    return {
+      regionSegmentsByRegion: workingRegionSegments,
+      regionIntersectionCaches: workingRegionIntersectionCaches,
+      dirtyRegionIds,
+      acceptedSwapCount,
+    }
   }
 
   resetRoutingStateForRerip() {
@@ -757,16 +1539,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (currentRouteId === undefined) return
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
+    const untangledRoute = this.untangleRecentlySolvedRoute(
+      currentRouteId,
+      solvedSegments,
+    )
 
-    for (const { regionId, fromPortId, toPortId } of solvedSegments) {
-      state.regionSegments[regionId].push([
-        currentRouteId,
-        fromPortId,
-        toPortId,
-      ])
-      state.portAssignment[fromPortId] = state.currentRouteNetId!
-      state.portAssignment[toPortId] = state.currentRouteNetId!
-      this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+    for (const regionId of untangledRoute.dirtyRegionIds) {
+      state.regionSegments[regionId] =
+        untangledRoute.regionSegmentsByRegion[regionId]!
+      state.regionIntersectionCaches[regionId] =
+        untangledRoute.regionIntersectionCaches[regionId]!
+    }
+    this.rebuildPortAssignmentsFromRegionSegments()
+    this.stats = {
+      ...this.stats,
+      untangleAcceptedSwapCount:
+        (this.stats.untangleAcceptedSwapCount ?? 0) +
+        untangledRoute.acceptedSwapCount,
     }
 
     state.candidateQueue.clear()

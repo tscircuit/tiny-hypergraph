@@ -52,9 +52,7 @@ export interface TinyHyperGraphSectionSolverOptions
 }
 
 const applyTinyHyperGraphSectionSolverOptions = (
-  solver:
-    | TinyHyperGraphSectionSearchSolver
-    | TinyHyperGraphSectionSolver,
+  solver: TinyHyperGraphSectionSearchSolver | TinyHyperGraphSectionSolver,
   options?: TinyHyperGraphSectionSolverOptions,
 ) => {
   applyTinyHyperGraphSolverOptions(solver, options)
@@ -131,7 +129,8 @@ const restoreSolvedStateSnapshot = (
   const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
   solver.state.portAssignment = clonedSnapshot.portAssignment
   solver.state.regionSegments = clonedSnapshot.regionSegments
-  solver.state.regionIntersectionCaches = clonedSnapshot.regionIntersectionCaches
+  solver.state.regionIntersectionCaches =
+    clonedSnapshot.regionIntersectionCaches
 }
 
 const summarizeRegionIntersectionCaches = (
@@ -245,7 +244,8 @@ const getOrderedRoutePath = (
   orderedRegionIds: RegionId[]
 } => {
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
-  const routeSegmentRegionIds = solution.solvedRoutePathRegionIds?.[routeId] ?? []
+  const routeSegmentRegionIds =
+    solution.solvedRoutePathRegionIds?.[routeId] ?? []
   const startPortId = problem.routeStartPort[routeId]
   const endPortId = problem.routeEndPort[routeId]
 
@@ -616,7 +616,11 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   applyFixedSegments() {
     for (const routePlan of this.routePlans) {
-      for (const { regionId, fromPortId, toPortId } of routePlan.fixedSegments) {
+      for (const {
+        regionId,
+        fromPortId,
+        toPortId,
+      } of routePlan.fixedSegments) {
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,
@@ -673,6 +677,10 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     }
 
     return super.getStartingNextRegionId(routeId, startingPortId)
+  }
+
+  protected override canRewriteSolvedRoute(routeId: RouteId): boolean {
+    return this.activeRouteIds.includes(routeId)
   }
 
   override resetRoutingStateForRerip() {
@@ -944,7 +952,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       sectionBaselineMaxRegionCost: this.sectionBaselineSummary.maxRegionCost,
-      sectionBaselineTotalRegionCost: this.sectionBaselineSummary.totalRegionCost,
+      sectionBaselineTotalRegionCost:
+        this.sectionBaselineSummary.totalRegionCost,
       effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
       effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
       effectiveMaxRips: this.MAX_RIPS,
