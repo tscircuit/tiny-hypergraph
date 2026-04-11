@@ -25,6 +25,7 @@ type RouteMetadataWithConnectionPoint = {
   endRegionId?: unknown
   _bus?: {
     id?: unknown
+    order?: unknown
   }
   simpleRouteConnection?: {
     pointsToConnect?: Array<{
@@ -47,6 +48,13 @@ type HotRegionGroupCandidate = {
   hotspotMemberCount: number
 }
 
+type SelfIntersectingBusGroup = {
+  groupId: string
+  totalIntersections: number
+  sameLayerIntersections: number
+  crossLayerIntersections: number
+}
+
 type SectionPolishCandidateFamily = "self-touch" | "onehop-all"
 
 type SectionPolishCandidate = {
@@ -62,6 +70,8 @@ export interface TinyHyperGraphBusAwareSolverOptions
   COMPLETION_MAX_ITERATIONS?: number
   HOTSPOT_REPAIR_MAX_ITERATIONS?: number
   ALTERNATING_REPAIR_CYCLES?: number
+  REPRESENTATIVE_CORRIDOR_ROUNDS?: number
+  REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT?: number
   SECTION_POLISH_ROUNDS?: number
   SECTION_POLISH_MAX_HOT_REGIONS?: number
   SECTION_POLISH_MAX_ITERATIONS?: number
@@ -221,6 +231,167 @@ const getHotRegionGroupCandidates = (
         left.groupId.localeCompare(right.groupId),
     )
     .slice(0, maxCandidates)
+}
+
+const intervalsCross = (
+  leftLesserAngle: number,
+  leftGreaterAngle: number,
+  rightLesserAngle: number,
+  rightGreaterAngle: number,
+) => {
+  const rightLesserIsInsideLeftInterval =
+    leftLesserAngle < rightLesserAngle &&
+    rightLesserAngle < leftGreaterAngle
+  const rightGreaterIsInsideLeftInterval =
+    leftLesserAngle < rightGreaterAngle &&
+    rightGreaterAngle < leftGreaterAngle
+
+  return rightLesserIsInsideLeftInterval !== rightGreaterIsInsideLeftInterval
+}
+
+const getSelfIntersectingBusGroups = (
+  problem: TinyHyperGraphProblem,
+  solvedSolver: TinyHyperGraphSolver,
+  maxGroups: number,
+): SelfIntersectingBusGroup[] => {
+  const routeGroupIds = getRouteGroupIds(problem)
+  const groupStats = new Map<
+    string,
+    {
+      sameLayerIntersections: number
+      crossLayerIntersections: number
+    }
+  >()
+
+  for (
+    let regionId = 0;
+    regionId < solvedSolver.topology.regionCount;
+    regionId++
+  ) {
+    const regionSegments = solvedSolver.state.regionSegments[regionId] ?? []
+    const regionIntersectionCache =
+      solvedSolver.state.regionIntersectionCaches[regionId]
+
+    for (let leftIndex = 0; leftIndex < regionSegments.length; leftIndex++) {
+      const [leftRouteId] = regionSegments[leftIndex]!
+      const leftGroupId = routeGroupIds[leftRouteId]!
+      if (leftGroupId.startsWith("single:")) {
+        continue
+      }
+
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < regionSegments.length;
+        rightIndex++
+      ) {
+        const [rightRouteId] = regionSegments[rightIndex]!
+        if (problem.routeNet[leftRouteId] === problem.routeNet[rightRouteId]) {
+          continue
+        }
+
+        const rightGroupId = routeGroupIds[rightRouteId]!
+        if (leftGroupId !== rightGroupId) {
+          continue
+        }
+
+        if (
+          !intervalsCross(
+            regionIntersectionCache.lesserAngles[leftIndex]!,
+            regionIntersectionCache.greaterAngles[leftIndex]!,
+            regionIntersectionCache.lesserAngles[rightIndex]!,
+            regionIntersectionCache.greaterAngles[rightIndex]!,
+          )
+        ) {
+          continue
+        }
+
+        const sameLayer =
+          (regionIntersectionCache.layerMasks[leftIndex]! &
+            regionIntersectionCache.layerMasks[rightIndex]!) !==
+          0
+        const groupStat = groupStats.get(leftGroupId) ?? {
+          sameLayerIntersections: 0,
+          crossLayerIntersections: 0,
+        }
+
+        if (sameLayer) {
+          groupStat.sameLayerIntersections += 1
+        } else {
+          groupStat.crossLayerIntersections += 1
+        }
+
+        groupStats.set(leftGroupId, groupStat)
+      }
+    }
+  }
+
+  return [...groupStats.entries()]
+    .map(([groupId, groupStat]) => ({
+      groupId,
+      totalIntersections:
+        groupStat.sameLayerIntersections + groupStat.crossLayerIntersections,
+      sameLayerIntersections: groupStat.sameLayerIntersections,
+      crossLayerIntersections: groupStat.crossLayerIntersections,
+    }))
+    .sort(
+      (left, right) =>
+        right.totalIntersections - left.totalIntersections ||
+        right.sameLayerIntersections - left.sameLayerIntersections ||
+        right.crossLayerIntersections - left.crossLayerIntersections ||
+        left.groupId.localeCompare(right.groupId),
+    )
+    .slice(0, maxGroups)
+}
+
+const getRepresentativeRouteId = (
+  problem: TinyHyperGraphProblem,
+  groupId: string,
+): RouteId | undefined => {
+  const busRoutes: Array<{ routeId: RouteId; order: number }> = []
+
+  for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+    const routeMetadata = problem.routeMetadata?.[routeId] as
+      | RouteMetadataWithConnectionPoint
+      | undefined
+    if (routeMetadata?._bus?.id !== groupId) {
+      continue
+    }
+
+    const order =
+      typeof routeMetadata._bus?.order === "number"
+        ? routeMetadata._bus.order
+        : routeId
+    busRoutes.push({ routeId, order })
+  }
+
+  busRoutes.sort(
+    (left, right) => left.order - right.order || left.routeId - right.routeId,
+  )
+
+  return busRoutes[Math.floor((busRoutes.length - 1) / 2)]?.routeId
+}
+
+const getRouteRegionIds = (
+  solvedSolver: TinyHyperGraphSolver,
+  routeId: RouteId,
+): RegionId[] => {
+  const routeRegionIds: RegionId[] = []
+
+  for (
+    let regionId = 0;
+    regionId < solvedSolver.topology.regionCount;
+    regionId++
+  ) {
+    if (
+      solvedSolver.state.regionSegments[regionId]?.some(
+        ([candidateRouteId]) => candidateRouteId === routeId,
+      )
+    ) {
+      routeRegionIds.push(regionId)
+    }
+  }
+
+  return routeRegionIds
 }
 
 const getRegionAdjacency = (
@@ -549,6 +720,8 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
   COMPLETION_MAX_ITERATIONS = 200_000
   HOTSPOT_REPAIR_MAX_ITERATIONS = 50_000
   ALTERNATING_REPAIR_CYCLES = 3
+  REPRESENTATIVE_CORRIDOR_ROUNDS = 3
+  REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT = 6
   SECTION_POLISH_ROUNDS = 3
   SECTION_POLISH_MAX_HOT_REGIONS = 4
   SECTION_POLISH_MAX_ITERATIONS = 500_000
@@ -582,6 +755,14 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
     }
     if (options?.ALTERNATING_REPAIR_CYCLES !== undefined) {
       this.ALTERNATING_REPAIR_CYCLES = options.ALTERNATING_REPAIR_CYCLES
+    }
+    if (options?.REPRESENTATIVE_CORRIDOR_ROUNDS !== undefined) {
+      this.REPRESENTATIVE_CORRIDOR_ROUNDS =
+        options.REPRESENTATIVE_CORRIDOR_ROUNDS
+    }
+    if (options?.REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT !== undefined) {
+      this.REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT =
+        options.REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT
     }
     if (options?.SECTION_POLISH_ROUNDS !== undefined) {
       this.SECTION_POLISH_ROUNDS = options.SECTION_POLISH_ROUNDS
@@ -658,15 +839,19 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
     return penaltyEntries
   }
 
-  private runHotspotGroupRepair(initialSolver: TinyHyperGraphSolver): {
+  private runHotspotGroupRepair(
+    initialSolver: TinyHyperGraphSolver,
+    problem: TinyHyperGraphProblem = this.problem,
+    topology: TinyHyperGraphTopology = this.topology,
+  ): {
     solver: TinyHyperGraphSolver
     initialHotRegion?: HotRegion
     finalHotRegion?: HotRegion
     committedGroupIds: string[]
   } {
-    const routeGroupIds = getRouteGroupIds(this.problem)
+    const routeGroupIds = getRouteGroupIds(problem)
     const routeIdsByGroupId = getRouteIdsByGroupId(routeGroupIds)
-    const regionAdjacency = getRegionAdjacency(this.topology)
+    const regionAdjacency = getRegionAdjacency(topology)
     const committedGroupIds: string[] = []
 
     let currentSolver = initialSolver
@@ -702,8 +887,8 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
 
       for (const candidateGroup of candidateGroups) {
         const repairSolver = new AcceptOnAllRoutesSolver(
-          this.topology,
-          cloneProblem(this.problem),
+          topology,
+          cloneProblem(problem),
           this.getStageOptions(this.HOTSPOT_REPAIR_MAX_ITERATIONS),
         )
         repairSolver.replayRoutedStateFromRegionSegments(
@@ -860,6 +1045,249 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
     }
   }
 
+  private runAlternatingRepair(
+    initialSolver: TinyHyperGraphSolver,
+    problem: TinyHyperGraphProblem = this.problem,
+    topology: TinyHyperGraphTopology = this.topology,
+  ): {
+    solver: TinyHyperGraphSolver
+    committedGroupIds: string[]
+    committedSectionCandidateLabels: string[]
+    alternatingRepairCycleCount: number
+  } {
+    let currentSolver = initialSolver
+    const committedGroupIds: string[] = []
+    const committedSectionCandidateLabels: string[] = []
+    let alternatingRepairCycleCount = 0
+
+    for (
+      let cycleIndex = 0;
+      cycleIndex < this.ALTERNATING_REPAIR_CYCLES;
+      cycleIndex++
+    ) {
+      const preRepairCost = getMaxRegionCost(currentSolver)
+      const repairResult = this.runHotspotGroupRepair(
+        currentSolver,
+        problem,
+        topology,
+      )
+      const repairCost = getMaxRegionCost(repairResult.solver)
+      const repairImproved = repairCost < preRepairCost - Number.EPSILON
+
+      if (repairImproved) {
+        this.hotspotRepairSolver = repairResult.solver as AcceptOnAllRoutesSolver
+        currentSolver = repairResult.solver
+        committedGroupIds.push(...repairResult.committedGroupIds)
+      }
+
+      const preSectionCost = getMaxRegionCost(currentSolver)
+      const sectionPolishResult = this.runIterativeSectionPolish(currentSolver)
+      const sectionPolishCost = getMaxRegionCost(sectionPolishResult.solver)
+      const sectionPolishImproved =
+        sectionPolishCost < preSectionCost - Number.EPSILON
+
+      if (sectionPolishImproved) {
+        currentSolver = sectionPolishResult.solver
+        committedSectionCandidateLabels.push(
+          ...sectionPolishResult.committedCandidateLabels,
+        )
+      }
+
+      if (!repairImproved && !sectionPolishImproved) {
+        break
+      }
+
+      alternatingRepairCycleCount += 1
+      maybeRunBunGc()
+    }
+
+    return {
+      solver: currentSolver,
+      committedGroupIds,
+      committedSectionCandidateLabels,
+      alternatingRepairCycleCount,
+    }
+  }
+
+  private runRepresentativeCorridorPolish(initialSolver: TinyHyperGraphSolver): {
+    solver: TinyHyperGraphSolver
+    committedGroupIds: string[]
+    committedRepresentativeRouteIds: RouteId[]
+    hotspotRepairCommittedGroupIds: string[]
+    sectionPolishCommittedLabels: string[]
+    alternatingRepairCycleCount: number
+  } {
+    if (
+      this.REPRESENTATIVE_CORRIDOR_ROUNDS <= 0 ||
+      this.REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT <= 0
+    ) {
+      return {
+        solver: initialSolver,
+        committedGroupIds: [],
+        committedRepresentativeRouteIds: [],
+        hotspotRepairCommittedGroupIds: [],
+        sectionPolishCommittedLabels: [],
+        alternatingRepairCycleCount: 0,
+      }
+    }
+
+    let currentGraph = initialSolver.getOutput()
+    if (!currentGraph) {
+      return {
+        solver: initialSolver,
+        committedGroupIds: [],
+        committedRepresentativeRouteIds: [],
+        hotspotRepairCommittedGroupIds: [],
+        sectionPolishCommittedLabels: [],
+        alternatingRepairCycleCount: 0,
+      }
+    }
+
+    let currentSolver = initialSolver
+    const committedGroupIds: string[] = []
+    const committedRepresentativeRouteIds: RouteId[] = []
+    const hotspotRepairCommittedGroupIds: string[] = []
+    const sectionPolishCommittedLabels: string[] = []
+    let alternatingRepairCycleCount = 0
+
+    for (
+      let corridorRound = 0;
+      corridorRound < this.REPRESENTATIVE_CORRIDOR_ROUNDS;
+      corridorRound++
+    ) {
+      const { topology, problem, solution } = loadSerializedHyperGraph(currentGraph)
+      problem.routeMetadata = this.problem.routeMetadata
+      const replaySolver = createSolvedSolverFromSolution(
+        topology,
+        problem,
+        solution,
+        this.baseStageOptions,
+      )
+      const baselineMaxRegionCost = getMaxRegionCost(replaySolver)
+      let bestCandidateCost = baselineMaxRegionCost
+      let bestCandidateGroupId: string | undefined
+      let bestRepresentativeRouteId: RouteId | undefined
+      let bestCandidateOutput:
+        | ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+        | undefined
+      let bestCandidateSolver: TinyHyperGraphSolver | undefined
+      let bestCandidateProblem: TinyHyperGraphProblem | undefined
+      let bestCandidateTopology: TinyHyperGraphTopology | undefined
+
+      for (const candidateGroup of getSelfIntersectingBusGroups(
+        problem,
+        replaySolver,
+        this.REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT,
+      )) {
+        const representativeRouteId = getRepresentativeRouteId(
+          problem,
+          candidateGroup.groupId,
+        )
+        if (representativeRouteId === undefined) {
+          continue
+        }
+
+        const regionIds = getRouteRegionIds(replaySolver, representativeRouteId)
+        if (regionIds.length === 0) {
+          continue
+        }
+
+        const candidateProblem = cloneProblem(problem)
+        candidateProblem.portSectionMask = createPortSectionMaskForRegionIds(
+          topology,
+          regionIds,
+          "all-incident-regions-selected",
+        )
+
+        const sectionSolver = new TinyHyperGraphSectionSolver(
+          topology,
+          candidateProblem,
+          solution,
+          this.getSectionPolishSolverOptions(),
+        )
+        sectionSolver.solve()
+
+        if (!sectionSolver.solved || sectionSolver.failed) {
+          maybeRunBunGc()
+          continue
+        }
+
+        const candidateOutput = sectionSolver.getOutput()
+        const replayedCandidate = loadSerializedHyperGraph(candidateOutput)
+        replayedCandidate.problem.routeMetadata = this.problem.routeMetadata
+        const replayedCandidateSolver = createSolvedSolverFromSolution(
+          replayedCandidate.topology,
+          replayedCandidate.problem,
+          replayedCandidate.solution,
+          this.baseStageOptions,
+        )
+        const candidateCost = getMaxRegionCost(replayedCandidateSolver)
+
+        if (candidateCost < bestCandidateCost - Number.EPSILON) {
+          bestCandidateCost = candidateCost
+          bestCandidateGroupId = candidateGroup.groupId
+          bestRepresentativeRouteId = representativeRouteId
+          bestCandidateOutput = candidateOutput
+          bestCandidateSolver = replayedCandidateSolver
+          bestCandidateProblem = replayedCandidate.problem
+          bestCandidateTopology = replayedCandidate.topology
+        }
+
+        maybeRunBunGc()
+      }
+
+      if (
+        !bestCandidateOutput ||
+        !bestCandidateSolver ||
+        !bestCandidateGroupId ||
+        bestRepresentativeRouteId === undefined ||
+        !bestCandidateProblem ||
+        !bestCandidateTopology
+      ) {
+        break
+      }
+
+      currentGraph = bestCandidateOutput
+      currentSolver = bestCandidateSolver
+      committedGroupIds.push(bestCandidateGroupId)
+      committedRepresentativeRouteIds.push(bestRepresentativeRouteId)
+      maybeRunBunGc()
+
+      const alternatingRepairWithCurrentProblem = this.runAlternatingRepair(
+        currentSolver,
+        bestCandidateProblem,
+        bestCandidateTopology,
+      )
+      hotspotRepairCommittedGroupIds.push(
+        ...alternatingRepairWithCurrentProblem.committedGroupIds,
+      )
+      sectionPolishCommittedLabels.push(
+        ...alternatingRepairWithCurrentProblem.committedSectionCandidateLabels,
+      )
+      alternatingRepairCycleCount +=
+        alternatingRepairWithCurrentProblem.alternatingRepairCycleCount
+
+      if (
+        getMaxRegionCost(alternatingRepairWithCurrentProblem.solver) <
+        getMaxRegionCost(currentSolver) - Number.EPSILON
+      ) {
+        currentSolver = alternatingRepairWithCurrentProblem.solver
+        currentGraph = currentSolver.getOutput() ?? currentGraph
+      }
+
+      maybeRunBunGc()
+    }
+
+    return {
+      solver: currentSolver,
+      committedGroupIds,
+      committedRepresentativeRouteIds,
+      hotspotRepairCommittedGroupIds,
+      sectionPolishCommittedLabels,
+      alternatingRepairCycleCount,
+    }
+  }
+
   override _setup() {
     const aggressiveProblem = createAggressiveEndpointProblem(
       this.topology,
@@ -896,57 +1324,52 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
     let committedGroupIds: string[] = []
     let committedSectionCandidateLabels: string[] = []
     let alternatingRepairCycleCount = 0
+    let representativeCorridorCommittedGroupIds: string[] = []
+    let representativeCorridorCommittedRepresentativeRouteIds: RouteId[] = []
+    let representativeCorridorHotspotRepairCommittedGroupIds: string[] = []
+    let representativeCorridorSectionPolishCommittedLabels: string[] = []
+    let representativeCorridorAlternatingRepairCycleCount = 0
 
     if (this.completionSolver.solved) {
       hottestRegion = getHotRegions(this.completionSolver)[0]
-
-      let postProcessSolver: TinyHyperGraphSolver = this.completionSolver
-
-      for (
-        let cycleIndex = 0;
-        cycleIndex < this.ALTERNATING_REPAIR_CYCLES;
-        cycleIndex++
-      ) {
-        const preRepairCost = getMaxRegionCost(postProcessSolver)
-        const repairResult = this.runHotspotGroupRepair(postProcessSolver)
-        const repairCost = getMaxRegionCost(repairResult.solver)
-        const repairImproved = repairCost < preRepairCost - Number.EPSILON
-
-        if (repairImproved) {
-          this.hotspotRepairSolver =
-            repairResult.solver as AcceptOnAllRoutesSolver
-          postProcessSolver = repairResult.solver
-          committedGroupIds.push(...repairResult.committedGroupIds)
-        }
-
-        const preSectionCost = getMaxRegionCost(postProcessSolver)
-        const sectionPolishResult = this.runIterativeSectionPolish(
-          postProcessSolver,
-        )
-        const sectionPolishCost = getMaxRegionCost(sectionPolishResult.solver)
-        const sectionPolishImproved =
-          sectionPolishCost < preSectionCost - Number.EPSILON
-
-        if (sectionPolishImproved) {
-          postProcessSolver = sectionPolishResult.solver
-          committedSectionCandidateLabels.push(
-            ...sectionPolishResult.committedCandidateLabels,
-          )
-        }
-
-        if (!repairImproved && !sectionPolishImproved) {
-          break
-        }
-
-        alternatingRepairCycleCount += 1
-      }
+      const alternatingRepairResult = this.runAlternatingRepair(
+        this.completionSolver,
+      )
+      const alternatingRepairSolver = alternatingRepairResult.solver
+      committedGroupIds = alternatingRepairResult.committedGroupIds
+      committedSectionCandidateLabels =
+        alternatingRepairResult.committedSectionCandidateLabels
+      alternatingRepairCycleCount =
+        alternatingRepairResult.alternatingRepairCycleCount
 
       if (
-        getMaxRegionCost(postProcessSolver) <
+        getMaxRegionCost(alternatingRepairSolver) <
         getMaxRegionCost(finalSolver) - Number.EPSILON
       ) {
-        finalSolver = postProcessSolver
+        finalSolver = alternatingRepairSolver
         finalStage = "alternating_hotspot_repair"
+      }
+
+      const representativeCorridorResult = this.runRepresentativeCorridorPolish(
+        finalSolver,
+      )
+      representativeCorridorCommittedGroupIds =
+        representativeCorridorResult.committedGroupIds
+      representativeCorridorCommittedRepresentativeRouteIds =
+        representativeCorridorResult.committedRepresentativeRouteIds
+      representativeCorridorHotspotRepairCommittedGroupIds =
+        representativeCorridorResult.hotspotRepairCommittedGroupIds
+      representativeCorridorSectionPolishCommittedLabels =
+        representativeCorridorResult.sectionPolishCommittedLabels
+      representativeCorridorAlternatingRepairCycleCount =
+        representativeCorridorResult.alternatingRepairCycleCount
+
+      if (
+        getMaxRegionCost(representativeCorridorResult.solver) <
+        getMaxRegionCost(finalSolver) - Number.EPSILON
+      ) {
+        finalSolver = representativeCorridorResult.solver
+        finalStage = "representative_corridor_polish"
       }
     }
 
@@ -970,6 +1393,17 @@ export class TinyHyperGraphBusAwareSolver extends BaseSolver {
       hotspotRepairCommittedGroupIds: committedGroupIds,
       sectionPolishCommittedCount: committedSectionCandidateLabels.length,
       sectionPolishCommittedLabels: committedSectionCandidateLabels,
+      representativeCorridorCommittedGroupCount:
+        representativeCorridorCommittedGroupIds.length,
+      representativeCorridorCommittedGroupIds,
+      representativeCorridorCommittedRepresentativeRouteIds,
+      representativeCorridorAlternatingRepairCycleCount,
+      representativeCorridorHotspotRepairCommittedGroupCount:
+        representativeCorridorHotspotRepairCommittedGroupIds.length,
+      representativeCorridorHotspotRepairCommittedGroupIds,
+      representativeCorridorSectionPolishCommittedCount:
+        representativeCorridorSectionPolishCommittedLabels.length,
+      representativeCorridorSectionPolishCommittedLabels,
       hotspotRegionId: hottestRegion?.regionId ?? null,
       hotspotRegionCost: hottestRegion?.cost ?? null,
       hotspotRouteCount: hottestRegion?.routes.length ?? 0,
@@ -1019,6 +1453,8 @@ const getBaseStageOptions = (
     COMPLETION_MAX_ITERATIONS,
     HOTSPOT_REPAIR_MAX_ITERATIONS,
     ALTERNATING_REPAIR_CYCLES,
+    REPRESENTATIVE_CORRIDOR_ROUNDS,
+    REPRESENTATIVE_CORRIDOR_CANDIDATE_LIMIT,
     SECTION_POLISH_ROUNDS,
     SECTION_POLISH_MAX_HOT_REGIONS,
     SECTION_POLISH_MAX_ITERATIONS,
