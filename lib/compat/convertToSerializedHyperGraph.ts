@@ -280,7 +280,10 @@ const getSerializedConnection = (
       ? routeMetadata.mutuallyConnectedNetworkId
       : undefined
 
+  const connectionMetadata = isRecord(routeMetadata) ? { ...routeMetadata } : {}
+
   return {
+    ...connectionMetadata,
     connectionId: metadataConnectionId ?? `route-${routeId}`,
     startRegionId: metadataStartRegionId ?? startRegionId,
     endRegionId: metadataEndRegionId ?? endRegionId,

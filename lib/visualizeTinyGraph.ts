@@ -734,6 +734,7 @@ export const visualizeTinyHyperGraph = (
   const pendingCount =
     solver.state.unroutedRoutes.length +
     (solver.state.currentRouteId === undefined ? 0 : 1)
+  const pendingBusOperationCount = solver.getPendingFixedBusOperationCount()
   const sectionPortCount = sectionPortMask
     ? sectionPortMask.reduce(
         (count, inSection) => count + Number(inSection === 1),
@@ -744,6 +745,9 @@ export const visualizeTinyHyperGraph = (
     "Tiny HyperGraph",
     `iter=${solver.iterations}`,
     `pending=${pendingCount}`,
+    pendingBusOperationCount > 0
+      ? `pendingBusOps=${pendingBusOperationCount}`
+      : undefined,
     sectionPortMask ? `sectionPorts=${sectionPortCount}` : undefined,
     solver.failed ? "failed" : solver.solved ? "solved" : "running",
   ]

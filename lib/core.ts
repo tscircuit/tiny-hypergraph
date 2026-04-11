@@ -1,5 +1,10 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import {
+  computeTinyHyperGraphBusRouteGuides,
+  computeTinyHyperGraphFixedBusRouteSegments,
+  type TinyHyperGraphFixedRouteSegmentOperation,
+} from "./bus-routing"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
@@ -220,6 +225,15 @@ interface SegmentGeometryScratch {
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private _busRoutesSetupDone = false
+  private fixedBusRouteSegmentOperations?: TinyHyperGraphFixedRouteSegmentOperation[]
+  private pendingFixedBusRouteSegmentOperations?: TinyHyperGraphFixedRouteSegmentOperation[]
+  private mutableRouteIds?: RouteId[]
+  private guidedRegionIdsByRouteId?: Array<RegionId[] | undefined>
+  private guidedRegionIndexByRouteId?: Array<Map<RegionId, number> | undefined>
+  private preferredBoundaryPortIdsByRouteId?: Array<PortId[] | undefined>
+  private guidedRouteIdsInSolveOrder?: RouteId[]
+  private unguidedRouteIds?: RouteId[]
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
     greaterAngle: 0,
@@ -234,6 +248,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+  BUS_FIXED_REGION_CONGESTION_COST_FACTOR = 0.1
+  BUS_BOUNDARY_PORT_PREFERENCE_DISTANCE_TO_COST = 0.02
+  BUS_NON_PREFERRED_BOUNDARY_PORT_PENALTY = 0.02
 
   override MAX_ITERATIONS = 1e6
 
@@ -315,11 +332,229 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   override _setup() {
+    if (!this._busRoutesSetupDone) {
+      this.setupFixedBusRoutes()
+    }
     void this.problemSetup
+  }
+
+  setupFixedBusRoutes() {
+    this._busRoutesSetupDone = true
+
+    const fixedBusRouteSegments = computeTinyHyperGraphFixedBusRouteSegments(
+      this.topology,
+      this.problem,
+    )
+    if (!fixedBusRouteSegments) {
+      this.setupBusRouteGuides()
+      return
+    }
+
+    const fixedRouteIdSet = new Set(fixedBusRouteSegments.fixedRouteIds)
+    this.fixedBusRouteSegmentOperations = [
+      ...fixedBusRouteSegments.orderedRouteSegmentOperations,
+    ]
+    this.pendingFixedBusRouteSegmentOperations = [
+      ...fixedBusRouteSegments.orderedRouteSegmentOperations,
+    ]
+
+    for (
+      let regionId = 0;
+      regionId < fixedBusRouteSegments.routeSegmentsByRegion.length;
+      regionId++
+    ) {
+      const fixedRouteSegmentsInRegion =
+        fixedBusRouteSegments.routeSegmentsByRegion[regionId] ?? []
+      if (fixedRouteSegmentsInRegion.length === 0) {
+        continue
+      }
+
+      const approximateRegionCapacity = Math.max(
+        1,
+        this.topology.regionIncidentPorts[regionId]!.length,
+      )
+      this.state.regionCongestionCost[regionId] +=
+        (fixedRouteSegmentsInRegion.length / approximateRegionCapacity) *
+        this.BUS_FIXED_REGION_CONGESTION_COST_FACTOR
+    }
+
+    this.mutableRouteIds = range(this.problem.routeCount).filter(
+      (routeId) => !fixedRouteIdSet.has(routeId),
+    )
+    this.state.unroutedRoutes = [...this.mutableRouteIds]
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+    }
+  }
+
+  setupBusRouteGuides() {
+    this._busRoutesSetupDone = true
+
+    const busRouteGuides = computeTinyHyperGraphBusRouteGuides(
+      this.topology,
+      this.problem,
+    )
+    if (!busRouteGuides) {
+      this.unguidedRouteIds = range(this.problem.routeCount)
+      return
+    }
+
+    this.guidedRegionIdsByRouteId = busRouteGuides.guidedRegionIdsByRouteId
+    this.guidedRegionIndexByRouteId =
+      busRouteGuides.guidedRegionIdsByRouteId.map((guidedRegionIds) =>
+        guidedRegionIds
+          ? new Map(
+              guidedRegionIds.map((regionId, regionIndex) => [
+                regionId,
+                regionIndex,
+              ]),
+            )
+          : undefined,
+      )
+    this.preferredBoundaryPortIdsByRouteId =
+      busRouteGuides.preferredBoundaryPortIdsByRouteId
+    this.guidedRouteIdsInSolveOrder = [
+      ...busRouteGuides.guidedRouteIdsInSolveOrder,
+    ]
+    const guidedRouteIdSet = new Set(this.guidedRouteIdsInSolveOrder)
+    this.unguidedRouteIds = range(this.problem.routeCount).filter(
+      (routeId) => !guidedRouteIdSet.has(routeId),
+    )
+    this.state.unroutedRoutes = this.getRouteIdsInSolveOrderForRip(0)
+  }
+
+  getRouteIdsInSolveOrderForRip(ripCount: number) {
+    return [
+      ...(this.guidedRouteIdsInSolveOrder ?? []),
+      ...shuffle(
+        [...(this.unguidedRouteIds ?? range(this.problem.routeCount))],
+        ripCount,
+      ),
+    ]
+  }
+
+  getPendingFixedBusOperationCount() {
+    return this.pendingFixedBusRouteSegmentOperations?.length ?? 0
+  }
+
+  hasPendingFixedBusOperations() {
+    return this.getPendingFixedBusOperationCount() > 0
+  }
+
+  applyFixedBusRouteSegmentOperation(
+    operation: TinyHyperGraphFixedRouteSegmentOperation,
+  ) {
+    const { routeId, regionId, fromPortId, toPortId } = operation
+    const routeNetId = this.problem.routeNet[routeId]
+
+    this.state.regionSegments[regionId]!.push([routeId, fromPortId, toPortId])
+    this.state.portAssignment[fromPortId] = routeNetId
+    this.state.portAssignment[toPortId] = routeNetId
+  }
+
+  applyNextFixedBusRouteSegmentOperation() {
+    const nextOperation = this.pendingFixedBusRouteSegmentOperations?.shift()
+    if (!nextOperation) {
+      return false
+    }
+
+    this.applyFixedBusRouteSegmentOperation(nextOperation)
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+      fixedBusLastRouteId: nextOperation.routeId,
+      fixedBusLastRegionId: nextOperation.regionId,
+    }
+
+    return true
+  }
+
+  getGuidedRegionIds(routeId: RouteId) {
+    return this.guidedRegionIdsByRouteId?.[routeId]
+  }
+
+  getGuidedRegionIndex(routeId: RouteId, regionId: RegionId) {
+    return this.guidedRegionIndexByRouteId?.[routeId]?.get(regionId)
+  }
+
+  getGuidedFinalRegionId(routeId: RouteId) {
+    const guidedRegionIds = this.getGuidedRegionIds(routeId)
+    return guidedRegionIds?.[guidedRegionIds.length - 1]
+  }
+
+  getExpectedNextGuidedRegionId(routeId: RouteId, regionId: RegionId) {
+    const guidedRegionIds = this.getGuidedRegionIds(routeId)
+    const guidedRegionIndex = this.getGuidedRegionIndex(routeId, regionId)
+    if (
+      !guidedRegionIds ||
+      guidedRegionIndex === undefined ||
+      guidedRegionIndex < 0
+    ) {
+      return undefined
+    }
+
+    return guidedRegionIds[guidedRegionIndex + 1]
+  }
+
+  getPreferredBoundaryPortId(routeId: RouteId, regionId: RegionId) {
+    const guidedRegionIndex = this.getGuidedRegionIndex(routeId, regionId)
+    if (guidedRegionIndex === undefined || guidedRegionIndex < 0) {
+      return undefined
+    }
+
+    return this.preferredBoundaryPortIdsByRouteId?.[routeId]?.[
+      guidedRegionIndex
+    ]
+  }
+
+  getGuidedBoundaryPortPreferenceCost(
+    routeId: RouteId,
+    regionId: RegionId,
+    boundaryPortId: PortId,
+  ) {
+    const preferredBoundaryPortId = this.getPreferredBoundaryPortId(
+      routeId,
+      regionId,
+    )
+    if (
+      preferredBoundaryPortId === undefined ||
+      preferredBoundaryPortId === boundaryPortId
+    ) {
+      return 0
+    }
+
+    const preferredBoundaryPortAssignedNetId =
+      this.state.portAssignment[preferredBoundaryPortId]
+    if (
+      this.isPortReservedForDifferentNet(preferredBoundaryPortId) ||
+      (preferredBoundaryPortAssignedNetId !== -1 &&
+        preferredBoundaryPortAssignedNetId !== this.state.currentRouteNetId)
+    ) {
+      return 0
+    }
+
+    const dx =
+      this.topology.portX[boundaryPortId] -
+      this.topology.portX[preferredBoundaryPortId]
+    const dy =
+      this.topology.portY[boundaryPortId] -
+      this.topology.portY[preferredBoundaryPortId]
+
+    return (
+      this.BUS_NON_PREFERRED_BOUNDARY_PORT_PENALTY +
+      Math.hypot(dx, dy) * this.BUS_BOUNDARY_PORT_PREFERENCE_DISTANCE_TO_COST
+    )
   }
 
   override _step() {
     const { problem, topology, state } = this
+
+    if (this.applyNextFixedBusRouteSegmentOperation()) {
+      return
+    }
 
     if (state.currentRouteId === undefined) {
       if (state.unroutedRoutes.length === 0) {
@@ -379,11 +614,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    const currentRouteId = state.currentRouteId!
+    const guidedFinalRegionId = this.getGuidedFinalRegionId(currentRouteId)
+    const expectedNextGuidedRegionId = this.getExpectedNextGuidedRegionId(
+      currentRouteId,
+      currentCandidate.nextRegionId,
+    )
 
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
+        if (
+          guidedFinalRegionId !== undefined &&
+          currentCandidate.nextRegionId !== guidedFinalRegionId
+        ) {
+          continue
+        }
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
@@ -396,7 +643,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
-      const g = this.computeG(currentCandidate, neighborPortId)
+      let g = this.computeG(currentCandidate, neighborPortId)
       if (!Number.isFinite(g)) continue
       const h = this.computeH(neighborPortId)
 
@@ -408,9 +655,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       if (
         nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
+        this.isRegionReservedForDifferentNet(nextRegionId) ||
+        (expectedNextGuidedRegionId !== undefined &&
+          nextRegionId !== expectedNextGuidedRegionId) ||
+        (expectedNextGuidedRegionId === undefined &&
+          guidedFinalRegionId !== undefined)
       ) {
         continue
+      }
+
+      if (expectedNextGuidedRegionId !== undefined) {
+        g += this.getGuidedBoundaryPortPreferenceCost(
+          currentRouteId,
+          currentCandidate.nextRegionId,
+          neighborPortId,
+        )
       }
 
       const newCandidate = {
@@ -475,17 +734,65 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): RegionId | undefined {
     const startingIncidentRegions =
       this.topology.incidentPortRegion[startingPortId] ?? []
+    const guidedRegionIds = this.getGuidedRegionIds(routeId)
+    if (guidedRegionIds?.length) {
+      const guidedStartingRegionId = guidedRegionIds[0]
+      return startingIncidentRegions.includes(guidedStartingRegionId)
+        ? guidedStartingRegionId
+        : undefined
+    }
     const currentRouteNetId = this.problem.routeNet[routeId]
+    const endPortId = this.problem.routeEndPort[routeId]
 
-    return (
-      startingIncidentRegions.find(
-        (regionId) => this.problem.regionNetId[regionId] === -1,
-      ) ??
-      startingIncidentRegions.find(
-        (regionId) => this.problem.regionNetId[regionId] === currentRouteNetId,
-      ) ??
-      startingIncidentRegions[0]
-    )
+    return [...startingIncidentRegions].sort((leftRegionId, rightRegionId) => {
+      const leftIncidentPortCount =
+        this.topology.regionIncidentPorts[leftRegionId]?.length ?? 0
+      const rightIncidentPortCount =
+        this.topology.regionIncidentPorts[rightRegionId]?.length ?? 0
+      const leftIsDeadEnd = leftIncidentPortCount <= 1 ? 1 : 0
+      const rightIsDeadEnd = rightIncidentPortCount <= 1 ? 1 : 0
+
+      if (leftIsDeadEnd !== rightIsDeadEnd) {
+        return leftIsDeadEnd - rightIsDeadEnd
+      }
+
+      const leftReservedNetId = this.problem.regionNetId[leftRegionId]
+      const rightReservedNetId = this.problem.regionNetId[rightRegionId]
+      const leftPriority =
+        leftReservedNetId === -1
+          ? 0
+          : leftReservedNetId === currentRouteNetId
+            ? 1
+            : 2
+      const rightPriority =
+        rightReservedNetId === -1
+          ? 0
+          : rightReservedNetId === currentRouteNetId
+            ? 1
+            : 2
+
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority
+      }
+
+      if (leftIncidentPortCount !== rightIncidentPortCount) {
+        return rightIncidentPortCount - leftIncidentPortCount
+      }
+
+      const leftDistanceToEnd = Math.hypot(
+        this.topology.regionCenterX[leftRegionId] -
+          this.topology.portX[endPortId],
+        this.topology.regionCenterY[leftRegionId] -
+          this.topology.portY[endPortId],
+      )
+      const rightDistanceToEnd = Math.hypot(
+        this.topology.regionCenterX[rightRegionId] -
+          this.topology.portX[endPortId],
+        this.topology.regionCenterY[rightRegionId] -
+          this.topology.portY[endPortId],
+      )
+      return leftDistanceToEnd - rightDistanceToEnd
+    })[0]
   }
 
   isPortReservedForDifferentNet(portId: PortId): boolean {
@@ -511,7 +818,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
-    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
@@ -525,15 +833,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const port1IncidentRegions = topology.incidentPortRegion[port1Id]
     const port2IncidentRegions = topology.incidentPortRegion[port2Id]
     const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+      port1IncidentRegions[0] === regionId ||
+      port1IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
+        : (topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id])
     const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+      port2IncidentRegions[0] === regionId ||
+      port2IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+        : (topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id])
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
@@ -670,10 +980,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    this.pendingFixedBusRouteSegmentOperations = undefined
+    if (this.fixedBusRouteSegmentOperations) {
+      for (const operation of this.fixedBusRouteSegmentOperations) {
+        this.applyFixedBusRouteSegmentOperation(operation)
+      }
+    }
+    state.unroutedRoutes = this.fixedBusRouteSegmentOperations
+      ? shuffle(
+          [...(this.mutableRouteIds ?? range(problem.routeCount))],
+          state.ripCount,
+        )
+      : this.getRouteIdsInSolveOrderForRip(state.ripCount)
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+      fixedBusLastRouteId: undefined,
+      fixedBusLastRegionId: undefined,
+    }
   }
 
   onAllRoutesRouted() {
