@@ -1,4 +1,8 @@
 export * from "./core"
+export {
+  TinyHyperGraphBusRoutingSolver,
+  type TinyHyperGraphBusRoutingSolverOptions,
+} from "./bus-routing/TinyHyperGraphBusRoutingSolver"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 export {
   TinyHyperGraphSectionSolver,
