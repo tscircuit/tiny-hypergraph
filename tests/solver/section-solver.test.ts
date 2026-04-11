@@ -41,6 +41,17 @@ const getSerializedOutputMaxRegionCost = (
   return getMaxRegionCost(replayedSolver.baselineSolver)
 }
 
+const createDisjointSectionPortMask = (topology: Parameters<
+  typeof createSectionSolverFixturePortMask
+>[0]) => {
+  const disjointSectionPortIds = new Set(["a0", "a1", "d0", "d1"])
+  return Int8Array.from(
+    topology.portMetadata?.map((metadata) =>
+      disjointSectionPortIds.has(metadata?.serializedPortId) ? 1 : 0,
+    ) ?? [],
+  )
+}
+
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
   const { topology, problem, solution } = loadSerializedHyperGraph(
     sectionSolverFixtureGraph,
@@ -84,6 +95,34 @@ test("section solver reattaches fixed prefixes and suffixes after optimizing the
     "d1",
     "t1",
   ])
+})
+
+test("section solver bridges disjoint masked runs into one contiguous reroute span", () => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    sectionSolverFixtureGraph,
+  )
+  problem.portSectionMask = createDisjointSectionPortMask(topology)
+
+  const sectionSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+  )
+
+  sectionSolver.solve()
+
+  expect(sectionSolver.solved).toBe(true)
+  expect(sectionSolver.failed).toBe(false)
+  expect(sectionSolver.activeRouteIds).toEqual([0, 1])
+  expect(getMaxRegionCost(sectionSolver.getSolvedSolver())).toBeLessThan(
+    getMaxRegionCost(sectionSolver.baselineSolver),
+  )
+
+  const optimizedRoutePortIds = getSolvedRoutePortIds(sectionSolver.getOutput())
+  expect(optimizedRoutePortIds["route-0"]?.slice(0, 2)).toEqual(["s0", "a0"])
+  expect(optimizedRoutePortIds["route-0"]?.slice(-2)).toEqual(["d0", "t0"])
+  expect(optimizedRoutePortIds["route-1"]?.slice(0, 2)).toEqual(["s1", "a1"])
+  expect(optimizedRoutePortIds["route-1"]?.slice(-2)).toEqual(["d1", "t1"])
 })
 
 test("section solver visualize highlights the section without idle gray port-region connector lines", () => {

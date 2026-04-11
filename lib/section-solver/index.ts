@@ -404,7 +404,7 @@ const createSolvedSolverFromRegionSegments = (
   return solver
 }
 
-const createSolvedSolverFromSolution = (
+export const createSolvedSolverFromSolution = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
@@ -449,6 +449,7 @@ const createSectionRoutePlans = (
 } => {
   const routeStartPort = new Int32Array(problem.routeStartPort)
   const routeEndPort = new Int32Array(problem.routeEndPort)
+  const sectionPortSectionMask = new Int8Array(problem.portSectionMask)
   const routePlans: SectionRoutePlan[] = Array.from(
     { length: problem.routeCount },
     (_, routeId) => ({
@@ -502,21 +503,28 @@ const createSectionRoutePlans = (
       continue
     }
 
-    if (maskedRuns.length > 1) {
-      throw new Error(
-        `Route ${routeId} enters the section multiple times; only one contiguous section span is currently supported`,
-      )
-    }
-
-    const maskedRun = maskedRuns[0]!
-    const activeStartIndex = Math.max(0, maskedRun.startIndex - 1)
+    const firstMaskedRun = maskedRuns[0]!
+    const lastMaskedRun = maskedRuns[maskedRuns.length - 1]!
+    const activeStartIndex = Math.max(0, firstMaskedRun.startIndex - 1)
     const activeEndIndex = Math.min(
       orderedPortIds.length - 1,
-      maskedRun.endIndex + 1,
+      lastMaskedRun.endIndex + 1,
     )
 
     if (activeEndIndex <= activeStartIndex) {
       throw new Error(`Route ${routeId} does not have a valid section span`)
+    }
+
+    // When a route touches the section multiple times, bridge the gaps so the
+    // rerouted span stays contiguous instead of rejecting the mask outright.
+    if (maskedRuns.length > 1) {
+      for (
+        let portIndex = activeStartIndex;
+        portIndex <= activeEndIndex;
+        portIndex++
+      ) {
+        sectionPortSectionMask[orderedPortIds[portIndex]!] = 1
+      }
     }
 
     for (let portIndex = 1; portIndex <= activeStartIndex; portIndex++) {
@@ -550,7 +558,7 @@ const createSectionRoutePlans = (
   return {
     sectionProblem: {
       routeCount: problem.routeCount,
-      portSectionMask: new Int8Array(problem.portSectionMask),
+      portSectionMask: sectionPortSectionMask,
       routeMetadata: problem.routeMetadata,
       routeStartPort,
       routeEndPort,

@@ -76,7 +76,8 @@ export default function Cm5ioPage() {
       <div className="rounded border border-slate-300 bg-white p-3 text-sm text-slate-700">
         CM5IO hypergraph with pre-annotated bus groups. The debugger uses
         a bus-aware explore/complete pipeline: aggressive endpoint exploration,
-        completion from the best partial, and iterative hotspot group repair.
+        completion from the best partial, then alternating rounds of hotspot
+        group repair and section polish around the remaining hotspots.
       </div>
       <div className="min-h-0 flex-1">
         <Debugger
@@ -87,8 +88,12 @@ export default function Cm5ioPage() {
               EXPLORATION_MAX_ITERATIONS: 50_000,
               COMPLETION_MAX_ITERATIONS: 200_000,
               HOTSPOT_REPAIR_MAX_ITERATIONS: 50_000,
+              ALTERNATING_REPAIR_CYCLES: 3,
               HOTSPOT_GROUP_REPAIR_ROUNDS: 5,
               HOTSPOT_GROUP_CANDIDATE_LIMIT: 6,
+              SECTION_POLISH_ROUNDS: 3,
+              SECTION_POLISH_MAX_HOT_REGIONS: 4,
+              SECTION_POLISH_MAX_ITERATIONS: 500_000,
             })
           }}
         />
