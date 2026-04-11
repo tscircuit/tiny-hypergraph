@@ -3,6 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "scripts": {
+    "build": "vite build",
     "start": "cosmos",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
@@ -18,7 +19,9 @@
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
     "graphics-debug": "^0.0.90",
+    "react": "^19.2.5",
     "react-cosmos-plugin-vite": "^7.2.0",
+    "react-dom": "^19.2.5",
     "stack-svgs": "^0.0.1",
     "vite": "^8.0.1"
   },
