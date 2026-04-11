@@ -262,6 +262,9 @@ const getSerializedConnection = (
   endRegionId: string,
 ): SerializedConnection => {
   const routeMetadata = solver.problem.routeMetadata?.[routeId]
+  const baseConnection = isRecord(routeMetadata)
+    ? { ...routeMetadata }
+    : ({} as Record<string, unknown>)
   const metadataConnectionId =
     isRecord(routeMetadata) && typeof routeMetadata.connectionId === "string"
       ? routeMetadata.connectionId
@@ -281,6 +284,7 @@ const getSerializedConnection = (
       : undefined
 
   return {
+    ...baseConnection,
     connectionId: metadataConnectionId ?? `route-${routeId}`,
     startRegionId: metadataStartRegionId ?? startRegionId,
     endRegionId: metadataEndRegionId ?? endRegionId,
