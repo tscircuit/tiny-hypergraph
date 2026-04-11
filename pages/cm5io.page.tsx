@@ -1,10 +1,10 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { useEffect, useState } from "react"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
   convertPortPointPathingSolverInputToSerializedHyperGraph,
   TinyHyperGraphSolver,
 } from "lib/index"
+import { useEffect, useState } from "react"
 import { Debugger } from "./components/Debugger"
 
 const cm5ioFixtureUrl = new URL(
