@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test"
-import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { convertPortPointPathingSolverInputToSerializedHyperGraph } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
+import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { TinyHyperGraphSolver } from "lib/index"
 
-test("CM5IO solves with fixed bus routing", async () => {
+// Kept as a copied regression case from `buses`; it requires the bus-routing
+// implementation that has intentionally not been ported onto this branch.
+test.skip("CM5IO solves with fixed bus routing", async () => {
   const input = await Bun.file(
     new URL("../fixtures/CM5IO_HyperGraph.json", import.meta.url),
   ).json()

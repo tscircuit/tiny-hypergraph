@@ -6,7 +6,13 @@
     "indentStyle": "space"
   },
   "files": {
-    "includes": ["**", "!**/cosmos-export", "!**/dist", "!**/package.json"]
+    "includes": [
+      "**",
+      "!**/cosmos-export",
+      "!**/dist",
+      "!**/package.json",
+      "!**/tests/fixtures/CM5IO_HyperGraph.json"
+    ]
   },
   "javascript": {
     "formatter": {
