@@ -45,9 +45,17 @@ interface RouteRegionPathResult {
   cost: number
 }
 
+export interface TinyHyperGraphFixedRouteSegmentOperation {
+  routeId: RouteId
+  regionId: RegionId
+  fromPortId: PortId
+  toPortId: PortId
+}
+
 export interface TinyHyperGraphFixedRouteSegments {
   fixedRouteIds: RouteId[]
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>
+  orderedRouteSegmentOperations: TinyHyperGraphFixedRouteSegmentOperation[]
 }
 
 export interface TinyHyperGraphBusRouteGuides {
@@ -599,6 +607,187 @@ const sortPortIdsByOrderingVector = (
     return leftPortId - rightPortId
   })
 
+const getPortIdsByLayer = (
+  topology: TinyHyperGraphTopology,
+  portIds: PortId[],
+) => {
+  const portIdsByLayer = new Map<number, PortId[]>()
+
+  for (const portId of portIds) {
+    const layer = topology.portZ[portId]!
+    const layerPortIds = portIdsByLayer.get(layer) ?? []
+    layerPortIds.push(portId)
+    portIdsByLayer.set(layer, layerPortIds)
+  }
+
+  return portIdsByLayer
+}
+
+const getNeighborRegionPairKeysByRegionPairKey = (
+  routeRegionPaths: RouteRegionPath[],
+) => {
+  const neighborRegionPairKeysByRegionPairKey = new Map<string, Set<string>>()
+
+  for (const routeRegionPath of routeRegionPaths) {
+    const routeRegionPairKeys: string[] = []
+
+    for (
+      let regionIndex = 1;
+      regionIndex < routeRegionPath.regionIds.length;
+      regionIndex++
+    ) {
+      routeRegionPairKeys.push(
+        getRegionPairKey(
+          routeRegionPath.regionIds[regionIndex - 1]!,
+          routeRegionPath.regionIds[regionIndex]!,
+        ),
+      )
+    }
+
+    for (
+      let pairIndex = 1;
+      pairIndex < routeRegionPairKeys.length;
+      pairIndex++
+    ) {
+      const previousRegionPairKey = routeRegionPairKeys[pairIndex - 1]!
+      const currentRegionPairKey = routeRegionPairKeys[pairIndex]!
+      const previousNeighbors =
+        neighborRegionPairKeysByRegionPairKey.get(previousRegionPairKey) ??
+        new Set<string>()
+      const currentNeighbors =
+        neighborRegionPairKeysByRegionPairKey.get(currentRegionPairKey) ??
+        new Set<string>()
+
+      previousNeighbors.add(currentRegionPairKey)
+      currentNeighbors.add(previousRegionPairKey)
+      neighborRegionPairKeysByRegionPairKey.set(
+        previousRegionPairKey,
+        previousNeighbors,
+      )
+      neighborRegionPairKeysByRegionPairKey.set(
+        currentRegionPairKey,
+        currentNeighbors,
+      )
+    }
+  }
+
+  return neighborRegionPairKeysByRegionPairKey
+}
+
+const getPreferredBusLayer = (
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+  busDefinition: TinyHyperGraphBusDefinition,
+) => {
+  const layerScoreByLayer = new Map<number, number>()
+
+  for (const routeId of busDefinition.routeIds) {
+    const startLayer = topology.portZ[problem.routeStartPort[routeId]]!
+    const endLayer = topology.portZ[problem.routeEndPort[routeId]]!
+
+    layerScoreByLayer.set(
+      startLayer,
+      (layerScoreByLayer.get(startLayer) ?? 0) + 1,
+    )
+    layerScoreByLayer.set(endLayer, (layerScoreByLayer.get(endLayer) ?? 0) + 1)
+  }
+
+  let preferredLayer: number | undefined
+  let preferredLayerScore = Number.NEGATIVE_INFINITY
+
+  for (const [layer, layerScore] of layerScoreByLayer) {
+    if (
+      layerScore > preferredLayerScore ||
+      (layerScore === preferredLayerScore &&
+        (preferredLayer === undefined || layer < preferredLayer))
+    ) {
+      preferredLayer = layer
+      preferredLayerScore = layerScore
+    }
+  }
+
+  return preferredLayer
+}
+
+const getPreferredBoundaryLayer = ({
+  layerPortIdsEntries,
+  preferredLayer,
+  neighboringLayers,
+  requiredPortCount,
+}: {
+  layerPortIdsEntries: Array<[number, PortId[]]>
+  preferredLayer?: number
+  neighboringLayers: number[]
+  requiredPortCount: number
+}) => {
+  if (layerPortIdsEntries.length === 0) {
+    return undefined
+  }
+
+  const feasibleLayerPortIdsEntries = layerPortIdsEntries.filter(
+    ([, layerPortIds]) => layerPortIds.length >= requiredPortCount,
+  )
+  const candidateLayerPortIdsEntries =
+    feasibleLayerPortIdsEntries.length > 0
+      ? feasibleLayerPortIdsEntries
+      : layerPortIdsEntries
+
+  let selectedLayer: number | undefined
+  let selectedLayerScore = Number.NEGATIVE_INFINITY
+
+  for (const [layer, layerPortIds] of candidateLayerPortIdsEntries) {
+    const neighboringLayerMatches = neighboringLayers.filter(
+      (neighboringLayer) => neighboringLayer === layer,
+    ).length
+    const layerScore =
+      neighboringLayerMatches * 1000 +
+      (preferredLayer === layer ? 100 : 0) +
+      layerPortIds.length
+
+    if (
+      layerScore > selectedLayerScore ||
+      (layerScore === selectedLayerScore &&
+        (selectedLayer === undefined || layer < selectedLayer))
+    ) {
+      selectedLayer = layer
+      selectedLayerScore = layerScore
+    }
+  }
+
+  return selectedLayer
+}
+
+const getPortIdsSortedByLayerPreference = ({
+  topology,
+  portIdsByLayer,
+  orderingVector,
+  preferredLayer,
+}: {
+  topology: TinyHyperGraphTopology
+  portIdsByLayer: Map<number, PortId[]>
+  orderingVector: { x: number; y: number }
+  preferredLayer?: number
+}) => {
+  const sortedLayers = [...portIdsByLayer.entries()]
+    .sort(([leftLayer, leftPortIds], [rightLayer, rightPortIds]) => {
+      const leftPreferredScore = leftLayer === preferredLayer ? 1 : 0
+      const rightPreferredScore = rightLayer === preferredLayer ? 1 : 0
+
+      if (leftPreferredScore !== rightPreferredScore) {
+        return rightPreferredScore - leftPreferredScore
+      }
+      if (leftPortIds.length !== rightPortIds.length) {
+        return rightPortIds.length - leftPortIds.length
+      }
+      return leftLayer - rightLayer
+    })
+    .map(([, layerPortIds]) =>
+      sortPortIdsByOrderingVector(topology, layerPortIds, orderingVector),
+    )
+
+  return sortedLayers.flat()
+}
+
 const getAverage = (values: number[]) =>
   values.reduce((sum, value) => sum + value, 0) / values.length
 
@@ -622,6 +811,7 @@ const fitIncreasingIndexesToDesiredPositions = (
 
 const assignBoundaryPortIdsForBus = (
   topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
   busDefinition: TinyHyperGraphBusDefinition,
   routeRegionPaths: RouteRegionPath[],
   sharedPortIdsByRegionPair: Map<string, PortId[]>,
@@ -637,6 +827,14 @@ const assignBoundaryPortIdsForBus = (
   const routeIdsByRegionPair = new Map<string, RouteId[]>()
   const localRouteOrderByRegionId = new Map<RegionId, Map<RouteId, number>>()
   const activeRouteCountByRegionId = new Int32Array(topology.regionCount)
+  const preferredBusLayer = getPreferredBusLayer(
+    topology,
+    problem,
+    busDefinition,
+  )
+  const neighborRegionPairKeysByRegionPairKey =
+    getNeighborRegionPairKeysByRegionPairKey(routeRegionPaths)
+  const selectedLayerByRegionPairKey = new Map<string, number>()
 
   for (const routeRegionPath of routeRegionPaths) {
     for (
@@ -677,7 +875,13 @@ const assignBoundaryPortIdsForBus = (
     )
   }
 
-  for (const [regionPairKey, routeIds] of routeIdsByRegionPair) {
+  for (const [regionPairKey, routeIds] of [
+    ...routeIdsByRegionPair.entries(),
+  ].sort(
+    ([leftRegionPairKey, leftRouteIds], [rightRegionPairKey, rightRouteIds]) =>
+      rightRouteIds.length - leftRouteIds.length ||
+      leftRegionPairKey.localeCompare(rightRegionPairKey),
+  )) {
     const sharedPortIds = (
       sharedPortIdsByRegionPair.get(regionPairKey) ?? []
     ).filter((portId) => !reservedPortIds.has(portId))
@@ -687,11 +891,42 @@ const assignBoundaryPortIdsForBus = (
       )
     }
 
-    const sortedSharedPortIds = sortPortIdsByOrderingVector(
-      topology,
-      sharedPortIds,
-      busDefinition.orderingVector,
-    )
+    const portIdsByLayer = getPortIdsByLayer(topology, sharedPortIds)
+    const neighboringLayers = [
+      ...(neighborRegionPairKeysByRegionPairKey.get(regionPairKey) ?? []),
+    ]
+      .map((neighborRegionPairKey) =>
+        selectedLayerByRegionPairKey.get(neighborRegionPairKey),
+      )
+      .filter((layer): layer is number => layer !== undefined)
+    const preferredBoundaryLayer = getPreferredBoundaryLayer({
+      layerPortIdsEntries: [...portIdsByLayer.entries()],
+      preferredLayer: preferredBusLayer,
+      neighboringLayers,
+      requiredPortCount: routeIds.length,
+    })
+    const preferredLayerPortIds =
+      preferredBoundaryLayer !== undefined
+        ? portIdsByLayer.get(preferredBoundaryLayer)
+        : undefined
+
+    if (preferredBoundaryLayer !== undefined) {
+      selectedLayerByRegionPairKey.set(regionPairKey, preferredBoundaryLayer)
+    }
+
+    const sortedSharedPortIds =
+      preferredLayerPortIds && preferredLayerPortIds.length >= routeIds.length
+        ? sortPortIdsByOrderingVector(
+            topology,
+            preferredLayerPortIds,
+            busDefinition.orderingVector,
+          )
+        : getPortIdsSortedByLayerPreference({
+            topology,
+            portIdsByLayer,
+            orderingVector: busDefinition.orderingVector,
+            preferredLayer: preferredBoundaryLayer,
+          })
     const sortedRouteIds = [...routeIds].sort(
       (leftRouteId, rightRouteId) =>
         busDefinition.routeOrderByRouteId.get(leftRouteId)! -
@@ -792,6 +1027,12 @@ const addRoutePathSegmentsToResult = (
       fromPortId,
       toPortId,
     ])
+    result.orderedRouteSegmentOperations.push({
+      routeId,
+      regionId: routeRegionIds[regionIndex]!,
+      fromPortId,
+      toPortId,
+    })
   }
 }
 
@@ -817,6 +1058,7 @@ export const computeTinyHyperGraphFixedBusRouteSegments = (
       { length: topology.regionCount },
       () => [],
     ),
+    orderedRouteSegmentOperations: [],
   }
   const reservedPortIds = new Set<PortId>()
   const globalEdgeUsageByRegionPair = new Map<string, number>()
@@ -899,6 +1141,7 @@ export const computeTinyHyperGraphFixedBusRouteSegments = (
 
     const boundaryPortIdsByRouteId = assignBoundaryPortIdsForBus(
       topology,
+      problem,
       busDefinition,
       routeRegionPaths,
       sharedPortIdsByRegionPair,
@@ -1061,6 +1304,7 @@ export const computeTinyHyperGraphBusRouteGuides = (
 
     const preferredBoundaryPortIdsForBusByRouteId = assignBoundaryPortIdsForBus(
       topology,
+      problem,
       busDefinition,
       routeRegionPaths,
       sharedPortIdsByRegionPair,

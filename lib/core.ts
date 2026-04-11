@@ -3,6 +3,7 @@ import type { GraphicsObject } from "graphics-debug"
 import {
   computeTinyHyperGraphBusRouteGuides,
   computeTinyHyperGraphFixedBusRouteSegments,
+  type TinyHyperGraphFixedRouteSegmentOperation,
 } from "./bus-routing"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
@@ -221,65 +222,12 @@ interface SegmentGeometryScratch {
   entryExitLayerChanges: number
 }
 
-interface SolvedStateSnapshot {
-  portAssignment: Int32Array
-  regionSegments: Array<[RouteId, PortId, PortId][]>
-  regionIntersectionCaches: RegionIntersectionCache[]
-}
-
-const cloneRegionSegments = (
-  regionSegments: Array<[RouteId, PortId, PortId][]>,
-): Array<[RouteId, PortId, PortId][]> =>
-  regionSegments.map((segments) =>
-    segments.map(
-      ([routeId, fromPortId, toPortId]) =>
-        [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
-    ),
-  )
-
-const cloneRegionIntersectionCache = (
-  regionIntersectionCache: RegionIntersectionCache,
-): RegionIntersectionCache => ({
-  netIds: new Int32Array(regionIntersectionCache.netIds),
-  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
-  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
-  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
-  existingCrossingLayerIntersections:
-    regionIntersectionCache.existingCrossingLayerIntersections,
-  existingSameLayerIntersections:
-    regionIntersectionCache.existingSameLayerIntersections,
-  existingEntryExitLayerChanges:
-    regionIntersectionCache.existingEntryExitLayerChanges,
-  existingRegionCost: regionIntersectionCache.existingRegionCost,
-  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
-})
-
-const cloneSolvedStateSnapshot = (
-  snapshot: SolvedStateSnapshot,
-): SolvedStateSnapshot => ({
-  portAssignment: new Int32Array(snapshot.portAssignment),
-  regionSegments: cloneRegionSegments(snapshot.regionSegments),
-  regionIntersectionCaches: snapshot.regionIntersectionCaches.map(
-    cloneRegionIntersectionCache,
-  ),
-})
-
-const restoreSolvedStateSnapshot = (
-  solver: TinyHyperGraphSolver,
-  snapshot: SolvedStateSnapshot,
-) => {
-  const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
-  solver.state.portAssignment = clonedSnapshot.portAssignment
-  solver.state.regionSegments = clonedSnapshot.regionSegments
-  solver.state.regionIntersectionCaches =
-    clonedSnapshot.regionIntersectionCaches
-}
-
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
   private _busRoutesSetupDone = false
-  private busFixedSnapshot?: SolvedStateSnapshot
+  private fixedBusRouteSegmentOperations?: TinyHyperGraphFixedRouteSegmentOperation[]
+  private pendingFixedBusRouteSegmentOperations?: TinyHyperGraphFixedRouteSegmentOperation[]
   private mutableRouteIds?: RouteId[]
   private guidedRegionIdsByRouteId?: Array<RegionId[] | undefined>
   private guidedRegionIndexByRouteId?: Array<Map<RegionId, number> | undefined>
@@ -403,6 +351,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const fixedRouteIdSet = new Set(fixedBusRouteSegments.fixedRouteIds)
+    this.fixedBusRouteSegmentOperations = [
+      ...fixedBusRouteSegments.orderedRouteSegmentOperations,
+    ]
+    this.pendingFixedBusRouteSegmentOperations = [
+      ...fixedBusRouteSegments.orderedRouteSegmentOperations,
+    ]
 
     for (
       let regionId = 0;
@@ -413,21 +367,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         fixedBusRouteSegments.routeSegmentsByRegion[regionId] ?? []
       if (fixedRouteSegmentsInRegion.length === 0) {
         continue
-      }
-
-      for (const [
-        routeId,
-        fromPortId,
-        toPortId,
-      ] of fixedRouteSegmentsInRegion) {
-        const routeNetId = this.problem.routeNet[routeId]
-        this.state.regionSegments[regionId]!.push([
-          routeId,
-          fromPortId,
-          toPortId,
-        ])
-        this.state.portAssignment[fromPortId] = routeNetId
-        this.state.portAssignment[toPortId] = routeNetId
       }
 
       const approximateRegionCapacity = Math.max(
@@ -443,11 +382,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       (routeId) => !fixedRouteIdSet.has(routeId),
     )
     this.state.unroutedRoutes = [...this.mutableRouteIds]
-    this.busFixedSnapshot = cloneSolvedStateSnapshot({
-      portAssignment: this.state.portAssignment,
-      regionSegments: this.state.regionSegments,
-      regionIntersectionCaches: this.state.regionIntersectionCaches,
-    })
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+    }
   }
 
   setupBusRouteGuides() {
@@ -494,6 +433,43 @@ export class TinyHyperGraphSolver extends BaseSolver {
         ripCount,
       ),
     ]
+  }
+
+  getPendingFixedBusOperationCount() {
+    return this.pendingFixedBusRouteSegmentOperations?.length ?? 0
+  }
+
+  hasPendingFixedBusOperations() {
+    return this.getPendingFixedBusOperationCount() > 0
+  }
+
+  applyFixedBusRouteSegmentOperation(
+    operation: TinyHyperGraphFixedRouteSegmentOperation,
+  ) {
+    const { routeId, regionId, fromPortId, toPortId } = operation
+    const routeNetId = this.problem.routeNet[routeId]
+
+    this.state.regionSegments[regionId]!.push([routeId, fromPortId, toPortId])
+    this.state.portAssignment[fromPortId] = routeNetId
+    this.state.portAssignment[toPortId] = routeNetId
+  }
+
+  applyNextFixedBusRouteSegmentOperation() {
+    const nextOperation = this.pendingFixedBusRouteSegmentOperations?.shift()
+    if (!nextOperation) {
+      return false
+    }
+
+    this.applyFixedBusRouteSegmentOperation(nextOperation)
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+      fixedBusLastRouteId: nextOperation.routeId,
+      fixedBusLastRegionId: nextOperation.regionId,
+    }
+
+    return true
   }
 
   getGuidedRegionIds(routeId: RouteId) {
@@ -575,6 +551,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override _step() {
     const { problem, topology, state } = this
+
+    if (this.applyNextFixedBusRouteSegmentOperation()) {
+      return
+    }
 
     if (state.currentRouteId === undefined) {
       if (state.unroutedRoutes.length === 0) {
@@ -989,20 +969,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
 
-    if (this.busFixedSnapshot) {
-      restoreSolvedStateSnapshot(this, this.busFixedSnapshot)
-      state.currentRouteNetId = undefined
-      state.currentRouteId = undefined
-      state.unroutedRoutes = shuffle(
-        [...(this.mutableRouteIds ?? range(problem.routeCount))],
-        state.ripCount,
-      )
-      state.candidateQueue.clear()
-      this.resetCandidateBestCosts()
-      state.goalPortId = -1
-      return
-    }
-
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
       { length: topology.regionCount },
@@ -1014,10 +980,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = this.getRouteIdsInSolveOrderForRip(state.ripCount)
+    this.pendingFixedBusRouteSegmentOperations = undefined
+    if (this.fixedBusRouteSegmentOperations) {
+      for (const operation of this.fixedBusRouteSegmentOperations) {
+        this.applyFixedBusRouteSegmentOperation(operation)
+      }
+    }
+    state.unroutedRoutes = this.fixedBusRouteSegmentOperations
+      ? shuffle(
+          [...(this.mutableRouteIds ?? range(problem.routeCount))],
+          state.ripCount,
+        )
+      : this.getRouteIdsInSolveOrderForRip(state.ripCount)
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+    this.stats = {
+      ...this.stats,
+      fixedBusOperationsRemaining: this.getPendingFixedBusOperationCount(),
+      fixedBusOperationsTotal: this.fixedBusRouteSegmentOperations?.length ?? 0,
+      fixedBusLastRouteId: undefined,
+      fixedBusLastRegionId: undefined,
+    }
   }
 
   onAllRoutesRouted() {
