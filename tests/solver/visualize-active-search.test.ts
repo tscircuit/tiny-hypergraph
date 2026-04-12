@@ -24,3 +24,26 @@ test("visualize renders an active search iteration without throwing", () => {
   expect((graphics.points ?? []).length).toBeGreaterThan(0)
   expect((graphics.lines ?? []).length).toBeGreaterThan(0)
 })
+
+test("visualize assigns z-layer labels to region and port objects", () => {
+  const { topology, problem } = loadSerializedHyperGraph(datasetHg07.sample002)
+  const solver = new TinyHyperGraphSolver(topology, problem)
+  const graphics = solver.visualize()
+
+  const expectedRegionLayer = `z${datasetHg07.sample002.regions[0]!.d!.availableZ!.join(",")}`
+  const expectedPortLayer = `z${datasetHg07.sample002.ports[0]!.d!.z}`
+
+  const region0Rect = (graphics.rects ?? []).find((rect) =>
+    rect.label?.includes("region: region-0"),
+  )
+  const port0Circle = (graphics.circles ?? []).find((circle) =>
+    circle.label?.includes(`port: ${datasetHg07.sample002.ports[0]!.portId}`),
+  )
+  const startEndpoint = (graphics.points ?? []).find((point) =>
+    point.label?.includes("endpoint: start"),
+  )
+
+  expect(region0Rect?.layer).toBe(expectedRegionLayer)
+  expect(port0Circle?.layer).toBe(expectedPortLayer)
+  expect(startEndpoint?.layer).toMatch(/^z\d+(,\d+)*$/)
+})

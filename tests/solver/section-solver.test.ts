@@ -186,6 +186,23 @@ test("section pipeline visualize renders the input graph at iteration zero", () 
   expect(graphics.title).toContain("iter=0")
 })
 
+test("section pipeline visualize infers z-layer labels from incident ports", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: sectionSolverFixtureGraph,
+  })
+
+  const graphics = pipelineSolver.visualize()
+  const startRegionRect = (graphics.rects ?? []).find((rect) =>
+    rect.label?.includes("region: region-0"),
+  )
+  const startPortCircle = (graphics.circles ?? []).find((circle) =>
+    circle.label?.includes("port: s0"),
+  )
+
+  expect(startRegionRect?.layer).toBe("z0")
+  expect(startPortCircle?.layer).toBe("z0")
+})
+
 test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: datasetHg07.sample029,

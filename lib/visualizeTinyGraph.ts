@@ -20,7 +20,6 @@ type RgbaColor = {
 export interface TinyHyperGraphVisualizationOptions {
   highlightSectionMask?: boolean
   sectionPortMask?: Int8Array
-  showIdlePortRegionConnectors?: boolean
   showInitialRouteHints?: boolean
   showOnlySectionPortsOnIdle?: boolean
 }
@@ -32,6 +31,30 @@ const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
 const mixColorChannel = (from: number, to: number, amount: number) =>
   Math.round(from + (to - from) * amount)
+
+const getZLayerLabel = (layers: readonly number[]): string | undefined => {
+  const normalizedLayers = layers.filter(
+    (layer): layer is number => Number.isInteger(layer) && layer >= 0,
+  )
+
+  if (normalizedLayers.length === 0) {
+    return undefined
+  }
+
+  return `z${normalizedLayers.join(",")}`
+}
+
+const getAvailableZFromMask = (mask: number): number[] => {
+  const availableZ: number[] = []
+
+  for (let z = 0; z < 31; z++) {
+    if ((mask & (1 << z)) !== 0) {
+      availableZ.push(z)
+    }
+  }
+
+  return availableZ
+}
 
 const mixColor = (base: RgbaColor, overlay: RgbaColor, amount: number) => ({
   r: mixColorChannel(base.r, overlay.r, amount),
@@ -121,6 +144,43 @@ const getRegionCenter = (solver: TinyHyperGraphSolver, regionId: RegionId) => ({
   y: solver.topology.regionCenterY[regionId],
 })
 
+const getRegionVisualizationLayer = (
+  solver: TinyHyperGraphSolver,
+  regionId: RegionId,
+): string | undefined => {
+  const regionMetadata = solver.topology.regionMetadata?.[regionId]
+  const metadataAvailableZ = Array.isArray(regionMetadata?.availableZ)
+    ? regionMetadata.availableZ.filter(
+        (layer: unknown): layer is number =>
+          typeof layer === "number" &&
+          Number.isInteger(layer) &&
+          layer >= 0,
+      )
+    : []
+
+  if (metadataAvailableZ.length > 0) {
+    return getZLayerLabel(metadataAvailableZ)
+  }
+
+  const maskLayers = getAvailableZFromMask(
+    solver.topology.regionAvailableZMask?.[regionId] ?? 0,
+  )
+
+  if (maskLayers.length > 0) {
+    return getZLayerLabel(maskLayers)
+  }
+
+  const incidentPortLayers = [
+    ...new Set(
+      (solver.topology.regionIncidentPorts[regionId] ?? []).map(
+        (portId) => solver.topology.portZ[portId],
+      ),
+    ),
+  ].sort((left, right) => left - right)
+
+  return getZLayerLabel(incidentPortLayers)
+}
+
 const getRegionCostLabel = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
@@ -204,6 +264,11 @@ const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
     y: portPoint.y + layerOffset,
   }
 }
+
+const getPortVisualizationLayer = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+): string | undefined => getZLayerLabel([solver.topology.portZ[portId]])
 
 const getPortIdentifierLabel = (
   solver: TinyHyperGraphSolver,
@@ -404,6 +469,7 @@ const pushRoutePortZPoints = (
           x: portPoint.x,
           y: portPoint.y,
           color: getRouteColor(solver, routeId, 1),
+          layer: getPortVisualizationLayer(solver, portId),
           label: formatLabel(
             `route: ${getRouteLabel(solver, routeId)}`,
             getPortIdentifierLabel(solver, portId),
@@ -463,6 +529,7 @@ const pushRouteEndpoints = (
       x: startPoint.x,
       y: startPoint.y,
       color: routeColor,
+      layer: getPortVisualizationLayer(solver, startPortId),
       label: formatLabel(
         `route: ${routeLabel}`,
         routeNetLabel,
@@ -476,6 +543,7 @@ const pushRouteEndpoints = (
       x: endPoint.x,
       y: endPoint.y,
       color: routeColor,
+      layer: getPortVisualizationLayer(solver, endPortId),
       label: formatLabel(
         `route: ${routeLabel}`,
         routeNetLabel,
@@ -532,6 +600,7 @@ const pushCandidates = (
       x: portPoint.x,
       y: portPoint.y,
       color: isNext ? "green" : "rgba(128, 128, 128, 0.25)",
+      layer: getPortVisualizationLayer(solver, candidate.portId),
       label: formatLabel(
         getPortLabel(solver, candidate.portId, routeId),
         getPortZLabel(solver, candidate.portId),
@@ -580,6 +649,7 @@ const pushSectionMaskOverlay = (
     const center = getRegionCenter(solver, regionId)
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
+    const regionLayer = getRegionVisualizationLayer(solver, regionId)
     const label = formatLabel(
       "section region",
       getRegionCostLabel(solver, regionId),
@@ -591,6 +661,7 @@ const pushSectionMaskOverlay = (
         fill: sectionFill,
         stroke: sectionStroke,
         strokeWidth: 2,
+        layer: regionLayer,
         label,
       })
     } else {
@@ -600,6 +671,7 @@ const pushSectionMaskOverlay = (
         height: Math.max(height - REGION_RECT_GAP, 0.05),
         fill: sectionFill,
         stroke: sectionStroke,
+        layer: regionLayer,
         label,
       })
     }
@@ -613,6 +685,7 @@ const pushSectionMaskOverlay = (
       radius: 0.07,
       fill: "rgba(251, 191, 36, 0.18)",
       stroke: sectionStroke,
+      layer: getPortVisualizationLayer(solver, portId),
       label: formatLabel(
         getPortLabel(solver, portId),
         getPortZLabel(solver, portId),
@@ -647,17 +720,23 @@ export const visualizeTinyHyperGraph = (
     const center = getRegionCenter(solver, regionId)
     const width = bounds.maxX - bounds.minX
     const height = bounds.maxY - bounds.minY
+    const regionLayer = getRegionVisualizationLayer(solver, regionId)
 
     const baseFill = toRgbaString(getBaseRegionFillColor(solver, regionId))
 
     if (Array.isArray(polygon) && polygon.length >= 3) {
-      graphics.polygons.push({ points: polygon, fill: baseFill })
+      graphics.polygons.push({
+        points: polygon,
+        fill: baseFill,
+        layer: regionLayer,
+      })
     } else {
       graphics.rects.push({
         center,
         width: Math.max(width - REGION_RECT_GAP, 0.05),
         height: Math.max(height - REGION_RECT_GAP, 0.05),
         fill: getRegionRectFill(solver, regionId),
+        layer: regionLayer,
         label: getRegionCostLabel(solver, regionId),
       })
     }
@@ -682,8 +761,6 @@ export const visualizeTinyHyperGraph = (
         continue
       }
 
-      const portPoint = getPortRenderPoint(solver, portId)
-
       graphics.circles.push({
         center: getPortCircleCenter(solver, portId),
         radius: 0.05,
@@ -691,29 +768,11 @@ export const visualizeTinyHyperGraph = (
           solver.topology.portZ[portId] > 0
             ? "rgba(52, 152, 219, 0.55)"
             : "rgba(128, 128, 128, 0.5)",
+        layer: getPortVisualizationLayer(solver, portId),
         label: formatLabel(
           getPortLabel(solver, portId),
           getPortZLabel(solver, portId),
         ),
-      })
-
-      const [region1Id, region2Id] =
-        solver.topology.incidentPortRegion[portId] ?? []
-      if (
-        options.showIdlePortRegionConnectors === false ||
-        region1Id === undefined ||
-        region2Id === undefined
-      ) {
-        continue
-      }
-
-      graphics.lines.push({
-        points: [
-          getRegionCenter(solver, region1Id),
-          portPoint,
-          getRegionCenter(solver, region2Id),
-        ],
-        strokeColor: "rgba(100, 100, 100, 0.3)",
       })
     }
 
