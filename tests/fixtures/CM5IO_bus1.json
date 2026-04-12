@@ -1,10 +1,5 @@
 {
   "busId": "bus1",
-  "orderingAxis": "x",
-  "orderingVector": {
-    "x": 1,
-    "y": 0
-  },
   "pointIds": [
     "pcb_port_196",
     "pcb_port_198",
@@ -33,12 +28,7 @@
         "pcb_port_641"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 0,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -48,12 +38,7 @@
         "pcb_port_631"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 1,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -63,12 +48,7 @@
         "pcb_port_629"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 2,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -78,12 +58,7 @@
         "pcb_port_625"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 3,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -93,12 +68,7 @@
         "pcb_port_623"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 4,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -108,12 +78,7 @@
         "pcb_port_619"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 5,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -123,12 +88,7 @@
         "pcb_port_617"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 6,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -138,12 +98,7 @@
         "pcb_port_613"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 7,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     },
     {
@@ -153,12 +108,7 @@
         "pcb_port_611"
       ],
       "_bus": {
-        "id": "bus1",
-        "order": 8,
-        "orderingVector": {
-          "x": 1,
-          "y": 0
-        }
+        "id": "bus1"
       }
     }
   ]

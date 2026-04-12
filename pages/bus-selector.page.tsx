@@ -33,8 +33,6 @@ type ViewState = {
   scale: number
 }
 
-type OrderAxis = "auto" | "x" | "y"
-
 type RoutePoint = {
   pointId: string
   x: number
@@ -75,8 +73,6 @@ type ConnectionEdge = {
   connectionId: string
   pointIds: string[]
   pathPointIds: string[]
-  midpointX: number
-  midpointY: number
   componentId?: string
 }
 
@@ -108,11 +104,6 @@ type SelectionPatch = {
   pointIds: string[]
   _bus: {
     id: string
-    order: number
-    orderingVector: {
-      x: 0 | 1
-      y: 0 | 1
-    }
   }
 }
 
@@ -355,21 +346,10 @@ const buildEditorData = (
       }
     }
 
-    const midpoint =
-      resolvedPoints.reduce(
-        (acc, point) => ({
-          x: acc.x + point.x,
-          y: acc.y + point.y,
-        }),
-        { x: 0, y: 0 },
-      )
-
     connections.push({
       connectionId: connection.connectionId,
       pointIds: uniquePointIds,
       pathPointIds: resolvedPoints.map((point) => point.pointId),
-      midpointX: midpoint.x / resolvedPoints.length,
-      midpointY: midpoint.y / resolvedPoints.length,
     })
   }
 
@@ -509,31 +489,6 @@ const screenToWorld = (
   x: view.centerX + (x - width / 2) / view.scale,
   y: view.centerY - (y - height / 2) / view.scale,
 })
-
-const getSelectionAxis = (
-  connections: ConnectionEdge[],
-  axisMode: OrderAxis,
-): "x" | "y" => {
-  if (axisMode !== "auto") {
-    return axisMode
-  }
-
-  if (connections.length <= 1) {
-    return "x"
-  }
-
-  const xs = connections.map((connection) => connection.midpointX)
-  const ys = connections.map((connection) => connection.midpointY)
-  const xSpread = Math.max(...xs) - Math.min(...xs)
-  const ySpread = Math.max(...ys) - Math.min(...ys)
-
-  return xSpread >= ySpread ? "x" : "y"
-}
-
-const getOrderingVector = (axis: "x" | "y") =>
-  axis === "x"
-    ? ({ x: 1, y: 0 } as const)
-    : ({ x: 0, y: 1 } as const)
 
 const getVisibleWorldBounds = (
   view: ViewState,
@@ -1123,8 +1078,6 @@ export default function BusSelectorPage() {
   )
   const [hoveredPointId, setHoveredPointId] = useState<string>()
   const [busLabel, setBusLabel] = useState("bus-name")
-  const [orderAxis, setOrderAxis] = useState<OrderAxis>("auto")
-  const [reverseOrder, setReverseOrder] = useState(false)
   const [copyStatus, setCopyStatus] = useState<string>()
 
   useEffect(() => {
@@ -1201,38 +1154,19 @@ export default function BusSelectorPage() {
     .filter((point): point is PointNode => Boolean(point))
     .sort((left, right) => left.pointId.localeCompare(right.pointId))
 
-  const resolvedOrderAxis = getSelectionAxis(selectedConnections, orderAxis)
-  const orderingVector = getOrderingVector(resolvedOrderAxis)
-  const orderedConnections = [...selectedConnections].sort((left, right) => {
-    const leftValue =
-      resolvedOrderAxis === "x" ? left.midpointX : left.midpointY
-    const rightValue =
-      resolvedOrderAxis === "x" ? right.midpointX : right.midpointY
-
-    if (leftValue !== rightValue) {
-      return reverseOrder ? rightValue - leftValue : leftValue - rightValue
-    }
-
-    return left.connectionId.localeCompare(right.connectionId)
-  })
-
   const effectiveBusLabel = busLabel.trim() || "bus-name"
-  const selectionPatches: SelectionPatch[] = orderedConnections.map(
-    (connection, order) => ({
+  const selectionPatches: SelectionPatch[] = selectedConnections.map(
+    (connection) => ({
       connectionId: connection.connectionId,
       pointIds: connection.pointIds,
       _bus: {
         id: effectiveBusLabel,
-        order,
-        orderingVector,
       },
     }),
   )
   const copyPayload = JSON.stringify(
     {
       busId: effectiveBusLabel,
-      orderingAxis: resolvedOrderAxis,
-      orderingVector,
       pointIds: selectedPoints.map((point) => point.pointId),
       connectionPatches: selectionPatches,
     },
@@ -1316,45 +1250,6 @@ export default function BusSelectorPage() {
             />
           </label>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-sm text-stone-700">
-              <span className="mb-2 block font-medium text-stone-900">
-                Order Axis
-              </span>
-              <select
-                className="w-full rounded-xl border border-stone-300 bg-stone-50 px-3 py-2 text-sm text-stone-950 outline-none transition focus:border-amber-400 focus:bg-white"
-                onChange={(event) => {
-                  const nextValue = event.currentTarget.value as OrderAxis
-                  setOrderAxis(nextValue)
-                  setCopyStatus(undefined)
-                }}
-                value={orderAxis}
-              >
-                <option value="auto">Auto</option>
-                <option value="x">X</option>
-                <option value="y">Y</option>
-              </select>
-            </label>
-
-            <label className="flex items-end gap-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
-              <input
-                checked={reverseOrder}
-                className="h-4 w-4 rounded border-stone-300 text-amber-500 focus:ring-amber-400"
-                onChange={(event) => {
-                  setReverseOrder(event.currentTarget.checked)
-                  setCopyStatus(undefined)
-                }}
-                type="checkbox"
-              />
-              <span>
-                Reverse generated order
-                <span className="block text-xs text-stone-500">
-                  Current axis resolves to {resolvedOrderAxis.toUpperCase()}.
-                </span>
-              </span>
-            </label>
-          </div>
-
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 transition hover:border-amber-400 hover:bg-amber-100"
@@ -1403,7 +1298,7 @@ export default function BusSelectorPage() {
         <section className="min-h-0 rounded-[1.5rem] border border-stone-300 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold text-stone-950">
-              Ordered Bus Members
+              Bus Members
             </div>
             <div className="text-xs text-stone-500">
               {selectionPatches.length} entries
@@ -1421,13 +1316,8 @@ export default function BusSelectorPage() {
                   key={patch.connectionId}
                   className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-3"
                 >
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium text-stone-950">
-                      {patch.connectionId}
-                    </span>
-                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
-                      order {patch._bus.order}
-                    </span>
+                  <div className="text-sm font-medium text-stone-950">
+                    {patch.connectionId}
                   </div>
                   <div className="mt-2 text-xs leading-5 text-stone-600">
                     {patch.pointIds.join("  •  ")}
