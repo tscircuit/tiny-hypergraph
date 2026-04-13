@@ -482,6 +482,36 @@ const pushRoutePortZPoints = (
   }
 }
 
+const pushUnassignedPorts = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  for (let portId = 0; portId < solver.topology.portCount; portId++) {
+    if (solver.state.portAssignment[portId] !== -1) {
+      continue
+    }
+
+    graphics.circles.push({
+      center: getPortCircleCenter(solver, portId),
+      radius: 0.04,
+      fill:
+        solver.topology.portZ[portId] > 0
+          ? "rgba(52, 152, 219, 0.18)"
+          : "rgba(148, 163, 184, 0.22)",
+      stroke:
+        solver.topology.portZ[portId] > 0
+          ? "rgba(52, 152, 219, 0.6)"
+          : "rgba(100, 116, 139, 0.65)",
+      layer: getPortVisualizationLayer(solver, portId),
+      label: formatLabel(
+        getPortLabel(solver, portId),
+        getPortZLabel(solver, portId),
+        "assignment: unassigned",
+      ),
+    })
+  }
+}
+
 const pushInitialRouteHints = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
@@ -782,6 +812,7 @@ export const visualizeTinyHyperGraph = (
   } else {
     pushSolvedRegionSegments(solver, graphics)
     pushRoutePortZPoints(solver, graphics)
+    pushUnassignedPorts(solver, graphics)
     pushActiveRoute(solver, graphics)
     pushCandidates(solver, graphics)
   }
