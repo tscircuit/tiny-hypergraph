@@ -840,7 +840,6 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   override visualize(): GraphicsObject {
     return visualizeTinyGraph(this, {
       highlightSectionMask: true,
-      showIdlePortRegionConnectors: false,
       showInitialRouteHints: false,
       showOnlySectionPortsOnIdle: true,
     })
@@ -1025,7 +1024,6 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
     return visualizeTinyGraph(this.baselineSolver, {
       highlightSectionMask: true,
-      showIdlePortRegionConnectors: false,
       showInitialRouteHints: false,
       showOnlySectionPortsOnIdle: true,
     })
