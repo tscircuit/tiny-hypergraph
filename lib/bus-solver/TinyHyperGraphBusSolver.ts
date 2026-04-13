@@ -13,9 +13,9 @@ import { visualizeTinyGraph } from "../visualizeTinyGraph"
 import { deriveBusTraceOrder, type BusTraceOrder } from "./deriveBusTraceOrder"
 import {
   doSegmentsConflict,
-  getDistanceFromPortToPolyline,
   getPortDistance,
   getPortProjection,
+  getWeightedDistanceFromPortToPolyline,
 } from "./geometry"
 
 export interface TinyHyperGraphBusSolverOptions
@@ -49,6 +49,7 @@ interface BusSolveState {
   phase: "center" | "outer" | "done"
   currentOuterTraceCursor: number
   centerlinePortIds?: PortId[]
+  centerlineHasLayerChanges: boolean
   reservedPortIds: Set<PortId>
   solvedTraceStates: Array<BusTraceState | undefined>
   solvedTraceCosts: Float64Array
@@ -67,6 +68,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   BUS_TRACE_SEPARATION = 0.1
   BUS_ALIGNMENT_COST_FACTOR = 0.2
   BUS_HEURISTIC_WEIGHT = 1.5
+  BUS_LAYER_DISTANCE_COST = 100
 
   readonly busTraceOrder: BusTraceOrder
 
@@ -237,6 +239,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         this.getVisualizationUnroutedRouteIds(activeRouteId)
 
       const graphics = visualizeTinyGraph(this)
+      this.removeActiveRouteHint(graphics, activeRouteId)
+      this.pushBusTraceCandidatePaths(
+        graphics,
+        this.buildVisualizationBusTraceStates(activeRouteId),
+        activeRouteId,
+      )
       this.pushActiveCandidateOverlay(graphics)
       return graphics
     } finally {
@@ -253,6 +261,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       phase: "center",
       currentOuterTraceCursor: 0,
       centerlinePortIds: undefined,
+      centerlineHasLayerChanges: false,
       reservedPortIds: new Set(),
       solvedTraceStates: Array.from(
         { length: this.problem.routeCount },
@@ -339,6 +348,213 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       h: 0,
       f: 0,
     }
+  }
+
+  private getCurrentVisualizationTraceState(routeId: RouteId) {
+    if (this.busState.lastExpandedCandidate?.state.routeId === routeId) {
+      return this.busState.lastExpandedCandidate.state
+    }
+
+    const activeTraceSearch = this.busState.activeTraceSearch
+    if (!activeTraceSearch || activeTraceSearch.routeId !== routeId) {
+      return undefined
+    }
+
+    let bestCandidate: TraceSearchCandidate | undefined
+    for (const candidate of activeTraceSearch.candidateQueue.toArray()) {
+      if (
+        !bestCandidate ||
+        compareTraceCandidates(candidate, bestCandidate) < 0
+      ) {
+        bestCandidate = candidate
+      }
+    }
+
+    return bestCandidate?.state
+  }
+
+  private buildVisualizationBusTraceStates(activeRouteId: RouteId) {
+    const traceStates = [...this.busState.solvedTraceStates]
+    const reservedPortIds = new Set(this.busState.reservedPortIds)
+    let centerlinePortIds = this.busState.centerlinePortIds
+    let centerlineHasLayerChanges = this.busState.centerlineHasLayerChanges
+
+    const activeTraceIndex = this.busTraceOrder.traces.findIndex(
+      (trace) => trace.routeId === activeRouteId,
+    )
+    const activeTraceState =
+      this.getCurrentVisualizationTraceState(activeRouteId)
+
+    if (activeTraceIndex !== -1 && activeTraceState) {
+      traceStates[activeTraceIndex] = activeTraceState
+
+      const activePathPortIds = this.getTracePathPortIds(activeTraceState)
+      for (const portId of activePathPortIds) {
+        reservedPortIds.add(portId)
+      }
+
+      if (activeTraceIndex === this.centerTraceIndex) {
+        centerlinePortIds = activePathPortIds
+        centerlineHasLayerChanges = this.doesPathChangeLayers(activePathPortIds)
+      }
+    }
+
+    for (const traceIndex of [
+      this.centerTraceIndex,
+      ...this.outerTraceIndices,
+    ]) {
+      if (traceStates[traceIndex]) {
+        continue
+      }
+
+      if (traceIndex !== this.centerTraceIndex && !centerlinePortIds) {
+        continue
+      }
+
+      const previewTraceState = this.solveVisualizationTracePath(traceIndex, {
+        reservedPortIds,
+        centerlinePortIds,
+        centerlineHasLayerChanges,
+      })
+
+      if (!previewTraceState) {
+        continue
+      }
+
+      traceStates[traceIndex] = previewTraceState
+
+      const previewPathPortIds = this.getTracePathPortIds(previewTraceState)
+      for (const portId of previewPathPortIds) {
+        reservedPortIds.add(portId)
+      }
+
+      if (traceIndex === this.centerTraceIndex) {
+        centerlinePortIds = previewPathPortIds
+        centerlineHasLayerChanges =
+          this.doesPathChangeLayers(previewPathPortIds)
+      }
+    }
+
+    return traceStates
+  }
+
+  private solveVisualizationTracePath(
+    traceIndex: number,
+    options: {
+      reservedPortIds: ReadonlySet<PortId>
+      centerlinePortIds?: readonly PortId[]
+      centerlineHasLayerChanges: boolean
+    },
+  ) {
+    const routeId = this.busTraceOrder.traces[traceIndex]!.routeId
+    const startState = this.createStartingTraceState(routeId)
+    const startPortId = this.problem.routeStartPort[routeId]!
+    const goalPortId = this.problem.routeEndPort[routeId]!
+
+    if (
+      traceIndex !== this.centerTraceIndex &&
+      (options.reservedPortIds.has(startPortId) ||
+        options.reservedPortIds.has(goalPortId))
+    ) {
+      return undefined
+    }
+
+    if (startState.atGoal) {
+      return startState
+    }
+
+    const candidateQueue = new MinHeap<TraceSearchCandidate>(
+      [],
+      compareTraceCandidates,
+    )
+    const bestCostByTraceState = new Map<string, number>()
+    const startH = this.computeTraceHeuristic(startState)
+
+    candidateQueue.queue({
+      state: startState,
+      g: 0,
+      h: startH,
+      f:
+        startH *
+        (traceIndex === this.centerTraceIndex ? 1 : this.BUS_HEURISTIC_WEIGHT),
+    })
+    bestCostByTraceState.set(this.getTraceStateKey(startState), 0)
+
+    while (candidateQueue.length > 0) {
+      const currentCandidate = candidateQueue.dequeue()
+      if (!currentCandidate) {
+        break
+      }
+
+      const currentBestCost = bestCostByTraceState.get(
+        this.getTraceStateKey(currentCandidate.state),
+      )
+      if (
+        currentBestCost !== undefined &&
+        currentCandidate.g > currentBestCost + BUS_CANDIDATE_EPSILON
+      ) {
+        continue
+      }
+
+      if (currentCandidate.state.atGoal) {
+        return currentCandidate.state
+      }
+
+      for (const move of this.getAvailableTraceMoves(currentCandidate.state)) {
+        if (
+          this.isMoveBlockedByBusConstraints(traceIndex, move, {
+            reservedPortIds: options.reservedPortIds,
+            centerlinePortIds: options.centerlinePortIds,
+            centerlineHasLayerChanges: options.centerlineHasLayerChanges,
+          })
+        ) {
+          continue
+        }
+
+        let nextG =
+          currentCandidate.g + move.segmentLength * this.DISTANCE_TO_COST
+        if (
+          traceIndex !== this.centerTraceIndex &&
+          options.centerlinePortIds &&
+          options.centerlinePortIds.length > 0
+        ) {
+          nextG +=
+            this.computeTraceAlignmentCost(
+              traceIndex,
+              options.centerlinePortIds,
+              move.nextState.portId,
+            ) * this.BUS_ALIGNMENT_COST_FACTOR
+        }
+
+        const nextH = this.computeTraceHeuristic(move.nextState)
+        const nextF =
+          nextG +
+          nextH *
+            (traceIndex === this.centerTraceIndex
+              ? 1
+              : this.BUS_HEURISTIC_WEIGHT)
+
+        const nextStateKey = this.getTraceStateKey(move.nextState)
+        const existingBestCost = bestCostByTraceState.get(nextStateKey)
+
+        if (
+          existingBestCost !== undefined &&
+          nextG >= existingBestCost - BUS_CANDIDATE_EPSILON
+        ) {
+          continue
+        }
+
+        bestCostByTraceState.set(nextStateKey, nextG)
+        candidateQueue.queue({
+          state: move.nextState,
+          g: nextG,
+          h: nextH,
+          f: nextF,
+        })
+      }
+    }
+
+    return undefined
   }
 
   private startNextTraceSearch() {
@@ -544,8 +760,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private isMoveBlockedByBusConstraints(
     traceIndex: number,
     move: { nextState: BusTraceState; segmentLength: number },
+    options?: {
+      reservedPortIds?: ReadonlySet<PortId>
+      centerlinePortIds?: readonly PortId[]
+      centerlineHasLayerChanges?: boolean
+    },
   ) {
-    if (this.busState.reservedPortIds.has(move.nextState.portId)) {
+    const reservedPortIds =
+      options?.reservedPortIds ?? this.busState.reservedPortIds
+    if (reservedPortIds.has(move.nextState.portId)) {
       return true
     }
 
@@ -553,7 +776,18 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return false
     }
 
-    const centerlinePortIds = this.busState.centerlinePortIds
+    if (
+      !(
+        options?.centerlineHasLayerChanges ??
+        this.busState.centerlineHasLayerChanges
+      ) &&
+      this.doesMoveChangeLayers(move)
+    ) {
+      return true
+    }
+
+    const centerlinePortIds =
+      options?.centerlinePortIds ?? this.busState.centerlinePortIds
     if (!centerlinePortIds || centerlinePortIds.length === 0) {
       return true
     }
@@ -640,13 +874,42 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const traceMetadata = this.busTraceOrder.traces[traceIndex]!
     const targetDistance =
       this.BUS_TRACE_SEPARATION * traceMetadata.distanceFromCenter
-    const actualDistance = getDistanceFromPortToPolyline(
+    const actualDistance = getWeightedDistanceFromPortToPolyline(
       this.topology,
       candidatePortId,
       centerlinePortIds,
+      this.BUS_LAYER_DISTANCE_COST,
     )
 
     return Math.abs(actualDistance - targetDistance)
+  }
+
+  private doesMoveChangeLayers(move: {
+    nextState: BusTraceState
+    segmentLength: number
+  }) {
+    const fromPortId = move.nextState.prevState?.portId
+    if (fromPortId === undefined) {
+      return false
+    }
+
+    return (
+      this.topology.portZ[fromPortId] !==
+      this.topology.portZ[move.nextState.portId]
+    )
+  }
+
+  private doesPathChangeLayers(portIds: readonly PortId[]) {
+    for (let index = 1; index < portIds.length; index++) {
+      if (
+        this.topology.portZ[portIds[index - 1]!] !==
+        this.topology.portZ[portIds[index]!]
+      ) {
+        return true
+      }
+    }
+
+    return false
   }
 
   private computeTraceHeuristic(traceState: BusTraceState) {
@@ -769,6 +1032,89 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
   }
 
+  private getVisualizationRouteColor(routeId: RouteId, alpha = 0.8) {
+    const routeNet = this.problem.routeNet[routeId]
+    const routeLabel =
+      this.problem.routeMetadata?.[routeId]?.connectionId ?? `route-${routeId}`
+    const hashSource = `${routeNet}:${routeLabel}`
+
+    let hash = 0
+    for (let index = 0; index < hashSource.length; index++) {
+      hash = hashSource.charCodeAt(index) * 17777 + ((hash << 5) - hash)
+    }
+
+    const hue = Math.abs(hash) % 360
+    return `hsla(${hue}, 70%, 50%, ${alpha})`
+  }
+
+  private removeActiveRouteHint(
+    graphics: GraphicsObject,
+    activeRouteId: RouteId,
+  ) {
+    const activeRouteLabel =
+      this.problem.routeMetadata?.[activeRouteId]?.connectionId ??
+      `route-${activeRouteId}`
+
+    graphics.lines = (graphics.lines ?? []).filter(
+      (line) =>
+        !(line.strokeDash === "10 5" && line.label === activeRouteLabel),
+    )
+  }
+
+  private pushBusTraceCandidatePaths(
+    graphics: GraphicsObject,
+    traceStates: Array<BusTraceState | undefined>,
+    activeRouteId: RouteId,
+  ) {
+    graphics.lines ??= []
+    graphics.points ??= []
+
+    for (
+      let traceIndex = 0;
+      traceIndex < this.busTraceOrder.traces.length;
+      traceIndex++
+    ) {
+      const trace = this.busTraceOrder.traces[traceIndex]!
+      const traceState = traceStates[traceIndex]
+
+      if (trace.routeId === activeRouteId) {
+        continue
+      }
+
+      if (this.busState.solvedTraceStates[traceIndex] || !traceState) {
+        continue
+      }
+
+      const pathPortIds = this.getTracePathPortIds(traceState)
+      if (pathPortIds.length < 2) {
+        continue
+      }
+
+      const pathPoints = pathPortIds.map((portId) =>
+        this.getPortRenderPoint(portId),
+      )
+      const finalPortId = pathPortIds[pathPortIds.length - 1]!
+      const routeColor = this.getVisualizationRouteColor(trace.routeId, 0.7)
+
+      graphics.lines.push({
+        points: pathPoints,
+        strokeColor: routeColor,
+        strokeDash: "4 2",
+        label: ["candidate path", `route: ${trace.connectionId}`].join("\n"),
+      })
+
+      graphics.points.push({
+        ...this.getPortRenderPoint(finalPortId),
+        color: this.getVisualizationRouteColor(trace.routeId, 1),
+        label: [
+          "candidate path",
+          `route: ${trace.connectionId}`,
+          `port: ${finalPortId}`,
+        ].join("\n"),
+      })
+    }
+  }
+
   private pushActiveCandidateOverlay(graphics: GraphicsObject) {
     const activeCandidate = this.busState.lastExpandedCandidate
     if (!activeCandidate) {
@@ -834,6 +1180,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     if (traceIndex === this.centerTraceIndex) {
       this.busState.centerlinePortIds = pathPortIds
+      this.busState.centerlineHasLayerChanges =
+        this.doesPathChangeLayers(pathPortIds)
       if (this.outerTraceIndices.length === 0) {
         this.busState.phase = "done"
         this.solved = true

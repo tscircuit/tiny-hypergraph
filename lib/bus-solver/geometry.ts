@@ -90,6 +90,15 @@ const getPointToPointDistance = (
   y2: number,
 ) => Math.hypot(x1 - x2, y1 - y2)
 
+const getPointToPointDistance3d = (
+  x1: number,
+  y1: number,
+  z1: number,
+  x2: number,
+  y2: number,
+  z2: number,
+) => Math.hypot(x1 - x2, y1 - y2, z1 - z2)
+
 const getPointToSegmentDistance = (
   px: number,
   py: number,
@@ -114,6 +123,47 @@ const getPointToSegmentDistance = (
   const projectionY = ay + abY * t
 
   return getPointToPointDistance(px, py, projectionX, projectionY)
+}
+
+const getPointToSegmentDistance3d = (
+  px: number,
+  py: number,
+  pz: number,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+) => {
+  const abX = bx - ax
+  const abY = by - ay
+  const abZ = bz - az
+  const abLengthSquared = abX * abX + abY * abY + abZ * abZ
+
+  if (abLengthSquared <= EPSILON) {
+    return getPointToPointDistance3d(px, py, pz, ax, ay, az)
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      ((px - ax) * abX + (py - ay) * abY + (pz - az) * abZ) / abLengthSquared,
+    ),
+  )
+  const projectionX = ax + abX * t
+  const projectionY = ay + abY * t
+  const projectionZ = az + abZ * t
+
+  return getPointToPointDistance3d(
+    px,
+    py,
+    pz,
+    projectionX,
+    projectionY,
+    projectionZ,
+  )
 }
 
 export const getDistanceFromPortToPolyline = (
@@ -146,6 +196,55 @@ export const getDistanceFromPortToPolyline = (
         start.y,
         end.x,
         end.y,
+      ),
+    )
+  }
+
+  return bestDistance
+}
+
+export const getWeightedDistanceFromPortToPolyline = (
+  topology: TinyHyperGraphTopology,
+  portId: PortId,
+  polylinePortIds: readonly PortId[],
+  zDistanceScale: number,
+) => {
+  if (polylinePortIds.length === 0) {
+    return Number.POSITIVE_INFINITY
+  }
+
+  const point = getPortPoint(topology, portId)
+  const pointZ = point.z * zDistanceScale
+
+  if (polylinePortIds.length === 1) {
+    const anchor = getPortPoint(topology, polylinePortIds[0]!)
+    return getPointToPointDistance3d(
+      point.x,
+      point.y,
+      pointZ,
+      anchor.x,
+      anchor.y,
+      anchor.z * zDistanceScale,
+    )
+  }
+
+  let bestDistance = Number.POSITIVE_INFINITY
+
+  for (let index = 1; index < polylinePortIds.length; index++) {
+    const start = getPortPoint(topology, polylinePortIds[index - 1]!)
+    const end = getPortPoint(topology, polylinePortIds[index]!)
+    bestDistance = Math.min(
+      bestDistance,
+      getPointToSegmentDistance3d(
+        point.x,
+        point.y,
+        pointZ,
+        start.x,
+        start.y,
+        start.z * zDistanceScale,
+        end.x,
+        end.y,
+        end.z * zDistanceScale,
       ),
     )
   }

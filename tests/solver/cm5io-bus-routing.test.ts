@@ -37,9 +37,29 @@ test("CM5IO bus1 bus solver expands one search candidate per step", async () => 
   const activeCandidatePoint = (graphics.points ?? []).find((point) =>
     point.label?.includes("active candidate"),
   )
+  const previewCandidateLines = (graphics.lines ?? []).filter((line) =>
+    line.label?.includes("candidate path"),
+  )
+  const renderedTraceIds = new Set(
+    solver.busTraceOrder.traces
+      .map((trace) => trace.connectionId)
+      .filter((connectionId) =>
+        (graphics.lines ?? []).some((line) =>
+          line.label?.includes(connectionId),
+        ),
+      ),
+  )
 
   expect(activeCandidatePoint?.label).toContain("active candidate")
   expect(activeCandidatePoint?.label).toContain("route: source_trace_108")
+  expect(previewCandidateLines.length).toBeGreaterThan(0)
+  expect(renderedTraceIds.size).toBeGreaterThan(1)
+  expect((graphics.lines ?? []).some((line) => line.strokeDash === "3 3")).toBe(
+    false,
+  )
+  expect(
+    (graphics.lines ?? []).some((line) => line.strokeDash === "10 5"),
+  ).toBe(false)
 })
 
 test("CM5IO bus1 solves with fixed-centerline bus routing", async () => {
