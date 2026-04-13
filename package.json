@@ -18,10 +18,12 @@
     "@tscircuit/hypergraph": "^0.0.71",
     "@tscircuit/solver-utils": "^0.0.17",
     "@types/bun": "latest",
-    "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
     "graphics-debug": "^0.0.90",
+    "react": "^19.2.0",
+    "react-cosmos": "^7.2.0",
     "react-cosmos-plugin-vite": "^7.2.0",
+    "react-dom": "^19.2.0",
     "stack-svgs": "^0.0.1",
     "vite": "^8.0.1"
   },

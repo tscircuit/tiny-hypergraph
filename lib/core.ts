@@ -210,6 +210,21 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
+const compareRegionCostSummaries = (
+  left: RegionCostSummary,
+  right: RegionCostSummary,
+) => {
+  if (left.totalRegionCost !== right.totalRegionCost) {
+    return left.totalRegionCost - right.totalRegionCost
+  }
+
+  if (left.maxRegionCost !== right.maxRegionCost) {
+    return left.maxRegionCost - right.maxRegionCost
+  }
+
+  return 0
+}
+
 interface SegmentGeometryScratch {
   lesserAngle: number
   greaterAngle: number
@@ -488,6 +503,36 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  getSharedRegionIdsForPorts(port1Id: PortId, port2Id: PortId): RegionId[] {
+    const port1IncidentRegions = this.topology.incidentPortRegion[port1Id] ?? []
+    const port2IncidentRegions = this.topology.incidentPortRegion[port2Id] ?? []
+
+    return port1IncidentRegions.filter((regionId) =>
+      port2IncidentRegions.includes(regionId),
+    )
+  }
+
+  getAlternateRegionIdForSegment(
+    regionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ): RegionId | undefined {
+    const sharedRegionIds = this.getSharedRegionIdsForPorts(port1Id, port2Id)
+
+    if (sharedRegionIds.length < 2 || !sharedRegionIds.includes(regionId)) {
+      return undefined
+    }
+
+    return sharedRegionIds.find((sharedRegionId) => sharedRegionId !== regionId)
+  }
+
+  canRebalanceRegionAssignment(
+    currentRegionId: RegionId,
+    nextRegionId: RegionId,
+  ): boolean {
+    return true
+  }
+
   isPortReservedForDifferentNet(portId: PortId): boolean {
     const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
     if (!reservedNetIds) {
@@ -511,7 +556,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
-    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
@@ -525,15 +571,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const port1IncidentRegions = topology.incidentPortRegion[port1Id]
     const port2IncidentRegions = topology.incidentPortRegion[port2Id]
     const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+      port1IncidentRegions[0] === regionId ||
+      port1IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
+        : (topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id])
     const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+      port2IncidentRegions[0] === regionId ||
+      port2IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+        : (topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id])
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
@@ -548,9 +596,26 @@ export class TinyHyperGraphSolver extends BaseSolver {
     regionId: RegionId,
     port1Id: PortId,
     port2Id: PortId,
-  ) {
-    const { topology, state } = this
-    const regionCache = state.regionIntersectionCaches[regionId]
+  ): RegionIntersectionCache {
+    const nextRegionIntersectionCache = this.createNextRegionIntersectionCache(
+      regionId,
+      this.state.regionIntersectionCaches[regionId]!,
+      this.state.currentRouteNetId!,
+      port1Id,
+      port2Id,
+    )
+    this.state.regionIntersectionCaches[regionId] = nextRegionIntersectionCache
+    return nextRegionIntersectionCache
+  }
+
+  createNextRegionIntersectionCache(
+    regionId: RegionId,
+    regionCache: RegionIntersectionCache,
+    routeNetId: NetId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ): RegionIntersectionCache {
+    const { topology } = this
     const segmentGeometry = this.populateSegmentGeometryScratch(
       regionId,
       port1Id,
@@ -562,7 +627,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newEntryExitLayerChanges,
     ] = countNewIntersectionsWithValues(
       regionCache,
-      state.currentRouteNetId!,
+      routeNetId,
       segmentGeometry.lesserAngle,
       segmentGeometry.greaterAngle,
       segmentGeometry.layerMask,
@@ -572,7 +637,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const netIds = new Int32Array(nextLength)
     netIds.set(regionCache.netIds)
-    netIds[nextLength - 1] = state.currentRouteNetId!
+    netIds[nextLength - 1] = routeNetId
 
     const lesserAngles = new Int32Array(nextLength)
     lesserAngles.set(regionCache.lesserAngles)
@@ -595,7 +660,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
     const existingSegmentCount = lesserAngles.length
 
-    state.regionIntersectionCaches[regionId] = {
+    return {
       netIds,
       lesserAngles,
       greaterAngles,
@@ -613,6 +678,114 @@ export class TinyHyperGraphSolver extends BaseSolver {
         existingSegmentCount,
         topology.regionAvailableZMask?.[regionId] ?? 0,
       ),
+    }
+  }
+
+  createRegionIntersectionCacheForSegments(
+    regionId: RegionId,
+    regionSegments: Array<[RouteId, PortId, PortId]>,
+  ): RegionIntersectionCache {
+    let regionIntersectionCache = createEmptyRegionIntersectionCache()
+
+    for (const [routeId, port1Id, port2Id] of regionSegments) {
+      regionIntersectionCache = this.createNextRegionIntersectionCache(
+        regionId,
+        regionIntersectionCache,
+        this.problem.routeNet[routeId]!,
+        port1Id,
+        port2Id,
+      )
+    }
+
+    return regionIntersectionCache
+  }
+
+  rebalanceRegionAssignments() {
+    let didChange = true
+
+    while (didChange) {
+      didChange = false
+
+      for (let regionId = 0; regionId < this.topology.regionCount; regionId++) {
+        const regionSegments = this.state.regionSegments[regionId]!
+        let segmentIndex = 0
+
+        while (segmentIndex < regionSegments.length) {
+          const [routeId, fromPortId, toPortId] = regionSegments[segmentIndex]!
+          const alternateRegionId = this.getAlternateRegionIdForSegment(
+            regionId,
+            fromPortId,
+            toPortId,
+          )
+
+          if (
+            alternateRegionId === undefined ||
+            !this.canRebalanceRegionAssignment(regionId, alternateRegionId)
+          ) {
+            segmentIndex += 1
+            continue
+          }
+
+          const nextSourceRegionSegments = regionSegments.filter(
+            (_, currentSegmentIndex) => currentSegmentIndex !== segmentIndex,
+          )
+          const movedSegment: [RouteId, PortId, PortId] = [
+            routeId,
+            fromPortId,
+            toPortId,
+          ]
+          const nextTargetRegionSegments = [
+            ...this.state.regionSegments[alternateRegionId]!,
+            movedSegment,
+          ]
+          const currentSummary: RegionCostSummary = {
+            maxRegionCost: Math.max(
+              this.state.regionIntersectionCaches[regionId]!.existingRegionCost,
+              this.state.regionIntersectionCaches[alternateRegionId]!
+                .existingRegionCost,
+            ),
+            totalRegionCost:
+              this.state.regionIntersectionCaches[regionId]!
+                .existingRegionCost +
+              this.state.regionIntersectionCaches[alternateRegionId]!
+                .existingRegionCost,
+          }
+          const nextSourceRegionCache =
+            this.createRegionIntersectionCacheForSegments(
+              regionId,
+              nextSourceRegionSegments,
+            )
+          const nextTargetRegionCache =
+            this.createRegionIntersectionCacheForSegments(
+              alternateRegionId,
+              nextTargetRegionSegments,
+            )
+          const nextSummary: RegionCostSummary = {
+            maxRegionCost: Math.max(
+              nextSourceRegionCache.existingRegionCost,
+              nextTargetRegionCache.existingRegionCost,
+            ),
+            totalRegionCost:
+              nextSourceRegionCache.existingRegionCost +
+              nextTargetRegionCache.existingRegionCost,
+          }
+
+          if (
+            compareRegionCostSummaries(nextSummary, currentSummary) >=
+            -Number.EPSILON
+          ) {
+            segmentIndex += 1
+            continue
+          }
+
+          regionSegments.splice(segmentIndex, 1)
+          this.state.regionSegments[alternateRegionId]!.push(movedSegment)
+          this.state.regionIntersectionCaches[regionId] = nextSourceRegionCache
+          this.state.regionIntersectionCaches[alternateRegionId] =
+            nextTargetRegionCache
+          didChange = true
+        }
+      }
     }
   }
 
@@ -768,6 +941,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.portAssignment[toPortId] = state.currentRouteNetId!
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
+
+    this.rebalanceRegionAssignments()
 
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
