@@ -961,11 +961,12 @@ const BusCanvas = ({
   }
 
   const handleWheel = (event: ReactWheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
     if (!view || canvasSize.width === 0 || canvasSize.height === 0) {
       return
     }
-
-    event.preventDefault()
 
     const relativePoint = getCanvasRelativePoint(event.clientX, event.clientY)
     if (!relativePoint) {
@@ -991,16 +992,16 @@ const BusCanvas = ({
   }
 
   return (
-    <div className="relative h-full min-h-[28rem] overflow-hidden rounded-[1.5rem] border border-stone-300 bg-stone-50">
+    <div className="relative h-full min-h-[28rem] overflow-hidden overscroll-none rounded-[1.5rem] border border-stone-300 bg-stone-50">
       <div ref={containerRef} className="absolute inset-0">
         <canvas
           ref={canvasRef}
-          className="h-full w-full touch-none"
+          className="h-full w-full touch-none overscroll-none"
           onPointerDown={handlePointerDown}
           onPointerLeave={handlePointerLeave}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onWheel={handleWheel}
+          onWheelCapture={handleWheel}
           style={{
             cursor: isDragging
               ? "grabbing"
@@ -1079,6 +1080,32 @@ export default function BusSelectorPage() {
   const [hoveredPointId, setHoveredPointId] = useState<string>()
   const [busLabel, setBusLabel] = useState("bus-name")
   const [copyStatus, setCopyStatus] = useState<string>()
+
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const previousStyles = {
+      htmlOverflow: html.style.overflow,
+      htmlOverscrollBehavior: html.style.overscrollBehavior,
+      bodyMargin: body.style.margin,
+      bodyOverflow: body.style.overflow,
+      bodyOverscrollBehavior: body.style.overscrollBehavior,
+    }
+
+    html.style.overflow = "hidden"
+    html.style.overscrollBehavior = "none"
+    body.style.margin = "0"
+    body.style.overflow = "hidden"
+    body.style.overscrollBehavior = "none"
+
+    return () => {
+      html.style.overflow = previousStyles.htmlOverflow
+      html.style.overscrollBehavior = previousStyles.htmlOverscrollBehavior
+      body.style.margin = previousStyles.bodyMargin
+      body.style.overflow = previousStyles.bodyOverflow
+      body.style.overscrollBehavior = previousStyles.bodyOverscrollBehavior
+    }
+  }, [])
 
   useEffect(() => {
     let isCancelled = false
@@ -1201,8 +1228,8 @@ export default function BusSelectorPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col gap-3 bg-[linear-gradient(180deg,#fafaf9_0%,#f5f5f4_100%)] p-3 lg:flex-row">
-      <div className="min-h-0 min-w-0 flex-1">
+    <div className="box-border flex h-[100dvh] overflow-hidden bg-[linear-gradient(180deg,#fafaf9_0%,#f5f5f4_100%)] p-3 lg:flex-row lg:gap-3">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <BusCanvas
           editorData={editorData}
           hoveredPointId={hoveredPointId}
@@ -1212,7 +1239,7 @@ export default function BusSelectorPage() {
         />
       </div>
 
-      <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-[28rem]">
+      <aside className="mt-3 flex max-h-[40dvh] w-full shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain lg:mt-0 lg:max-h-none lg:min-h-0 lg:w-[28rem]">
         <section className="rounded-[1.5rem] border border-stone-300 bg-white p-4 shadow-sm">
           <div className="text-sm font-semibold text-stone-950">
             Selection Rules
@@ -1356,28 +1383,7 @@ export default function BusSelectorPage() {
           )}
         </section>
 
-        <section className="min-h-0 flex-1 rounded-[1.5rem] border border-stone-300 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-stone-950">
-              Copy Preview
-            </div>
-            <div className="text-xs text-stone-500">
-              {_formatBytes(copyPayload.length)}
-            </div>
-          </div>
-          <textarea
-            className="mt-3 h-full min-h-[16rem] w-full resize-none rounded-xl border border-stone-200 bg-stone-50 p-3 font-mono text-xs leading-5 text-stone-900 outline-none"
-            readOnly
-            value={copyPayload}
-          />
-        </section>
       </aside>
     </div>
   )
-}
-
-const _formatBytes = (size: number) => {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
