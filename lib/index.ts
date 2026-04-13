@@ -1,4 +1,5 @@
 export * from "./core"
+export * from "./region-graph"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 export {
   TinyHyperGraphSectionSolver,
