@@ -7,6 +7,10 @@ export interface SerializedHyperGraphPortPointPathingSolverParams {
     ports: SerializedHyperGraph["ports"]
   }
   connections: NonNullable<SerializedHyperGraph["connections"]>
+  effort?: unknown
+  flags?: unknown
+  layerCount?: unknown
+  weights?: unknown
 }
 
 export type SerializedHyperGraphPortPointPathingSolverInput =
@@ -24,7 +28,7 @@ const isSerializedHyperGraphPortPointPathingSolverParams = (
   Array.isArray((value as { graph?: { ports?: unknown } }).graph?.ports) &&
   Array.isArray((value as { connections?: unknown }).connections)
 
-const getSinglePortPointPathingSolverParams = (
+export const getSinglePortPointPathingSolverParams = (
   input: SerializedHyperGraphPortPointPathingSolverInput,
 ) => {
   if (!Array.isArray(input)) {
@@ -40,7 +44,6 @@ const getSinglePortPointPathingSolverParams = (
 
   return params
 }
-
 export const convertPortPointPathingSolverInputToSerializedHyperGraph = (
   input: SerializedHyperGraphPortPointPathingSolverInput,
 ): SerializedHyperGraph => {
