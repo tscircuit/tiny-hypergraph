@@ -5,6 +5,8 @@
   "scripts": {
     "build": "cosmos-export",
     "start": "cosmos",
+    "format": "biome format . --write",
+    "format:check": "biome format .",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
