@@ -7,6 +7,41 @@ import {
   type ConnectionPatchSelection,
 } from "lib/index"
 
+test("CM5IO bus1 bus solver expands one search candidate per step", async () => {
+  const fullInput = await Bun.file(
+    new URL("../fixtures/CM5IO_HyperGraph.json", import.meta.url),
+  ).json()
+  const busSelection = (await Bun.file(
+    new URL("../fixtures/CM5IO_bus1.json", import.meta.url),
+  ).json()) as ConnectionPatchSelection
+  const serializedHyperGraph =
+    convertPortPointPathingSolverInputToSerializedHyperGraph(
+      filterPortPointPathingSolverInputByConnectionPatches(
+        fullInput,
+        busSelection,
+      ),
+    )
+  const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
+  const solver = new TinyHyperGraphBusSolver(topology, problem)
+
+  solver.step()
+
+  expect(solver.iterations).toBe(1)
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(false)
+  expect(solver.stats.busPhase).toBe("center")
+  expect(solver.stats.currentTraceConnectionId).toBe("source_trace_108")
+  expect(solver.stats.openCandidateCount).toBeGreaterThan(0)
+
+  const graphics = solver.visualize()
+  const activeCandidatePoint = (graphics.points ?? []).find((point) =>
+    point.label?.includes("active candidate"),
+  )
+
+  expect(activeCandidatePoint?.label).toContain("active candidate")
+  expect(activeCandidatePoint?.label).toContain("route: source_trace_108")
+})
+
 test("CM5IO bus1 solves with fixed-centerline bus routing", async () => {
   const fullInput = await Bun.file(
     new URL("../fixtures/CM5IO_HyperGraph.json", import.meta.url),
