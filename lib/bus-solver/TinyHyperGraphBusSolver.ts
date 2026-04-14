@@ -2627,7 +2627,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return true
   }
 
-  private getRouteConnectionId(routeId: RouteId) {
+  protected override getRouteConnectionId(routeId: RouteId) {
     return (
       this.problem.routeMetadata?.[routeId]?.connectionId ?? `route-${routeId}`
     )
