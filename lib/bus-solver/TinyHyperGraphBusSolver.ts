@@ -410,7 +410,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private buildUsableCenterlineSharedZ0PortsByRegionPair() {
     this.usableCenterlineSharedZ0PortsByRegionPair.clear()
 
-    for (const [regionPairKey, sharedPortIds] of this.sharedZ0PortsByRegionPair) {
+    for (const [regionPairKey, sharedPortIds] of this
+      .sharedZ0PortsByRegionPair) {
       const usablePortIds = sharedPortIds.filter((portId) =>
         this.isUsableCenterlineBoundaryPort(portId),
       )
@@ -512,8 +513,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      for (const regionPairKey of this
-        .usableCenterlineSharedZ0PortsByRegionPair.keys()) {
+      for (const regionPairKey of this.usableCenterlineSharedZ0PortsByRegionPair.keys()) {
         const separatorIndex = regionPairKey.indexOf(":")
         const regionAId = Number(regionPairKey.slice(0, separatorIndex))
         const regionBId = Number(regionPairKey.slice(separatorIndex + 1))
@@ -2201,9 +2201,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
   private isManualCenterFinishRegion(regionId: RegionId) {
     const hopDistance = this.centerGoalHopDistanceByRegion[regionId]
-    return (
-      hopDistance >= 0 && hopDistance <= this.MANUAL_CENTER_FINISH_MAX_HOPS
-    )
+    return hopDistance >= 0 && hopDistance <= this.MANUAL_CENTER_FINISH_MAX_HOPS
   }
 
   override getAdditionalRegionLabel(regionId: RegionId) {
@@ -2307,8 +2305,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         }
       })
       .sort(
-        (left, right) =>
-          left.score - right.score || left.portId - right.portId,
+        (left, right) => left.score - right.score || left.portId - right.portId,
       )
 
     return candidatePortOptions.slice(
@@ -2326,7 +2323,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       .join("|")
   }
 
-  private getManualCenterFinishCandidates(currentCandidate: BusCenterCandidate) {
+  private getManualCenterFinishCandidates(
+    currentCandidate: BusCenterCandidate,
+  ) {
     const currentRegionId = currentCandidate.nextRegionId
     if (
       currentRegionId === undefined ||
@@ -2338,7 +2337,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const goalPortId = this.problem.routeEndPort[this.centerRouteId]!
     const candidateKeys = new Set<string>()
     const completionCandidates: BusCenterCandidate[] = []
-    const currentHopDistance = this.centerGoalHopDistanceByRegion[currentRegionId]
+    const currentHopDistance =
+      this.centerGoalHopDistanceByRegion[currentRegionId]
     const baseCost = currentCandidate.busCost ?? currentCandidate.g
 
     const search = (
@@ -2383,7 +2383,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       for (const nextRegionId of this.centerlineNeighborRegionIdsByRegion[
         regionId
       ] ?? []) {
-        if (this.centerGoalHopDistanceByRegion[nextRegionId] !== nextHopDistance) {
+        if (
+          this.centerGoalHopDistanceByRegion[nextRegionId] !== nextHopDistance
+        ) {
           continue
         }
 
@@ -2410,9 +2412,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
             candidate.portId,
             portOption.portId,
           )
-          const nextCost =
-            accumulatedCost +
-            portOption.score
+          const nextCost = accumulatedCost + portOption.score
           const nextCandidate: BusCenterCandidate = {
             portId: portOption.portId,
             nextRegionId,
@@ -2433,10 +2433,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     search(currentCandidate, currentRegionId, currentHopDistance, baseCost)
 
     return completionCandidates
-      .sort(
-        (left, right) =>
-          left.g - right.g || left.portId - right.portId,
-      )
+      .sort((left, right) => left.g - right.g || left.portId - right.portId)
       .slice(0, this.MANUAL_CENTER_FINISH_CANDIDATE_LIMIT)
   }
 
