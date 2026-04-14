@@ -283,8 +283,7 @@ test("CM5IO bus1 solved visualize only shows final traces", async () => {
 
   expect(
     (graphics.points ?? []).some(
-      (point) =>
-        typeof point.label === "string" && point.label.includes("g: "),
+      (point) => typeof point.label === "string" && point.label.includes("g: "),
     ),
   ).toBe(false)
   expect(
