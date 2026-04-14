@@ -8,7 +8,7 @@ const CM5IO_FIXTURE_URL = new URL(
   import.meta.url,
 )
 
-const MAX_ITERATIONS = 1_000_000
+const MAX_ITERATIONS = 10_000_000
 
 const formatSeconds = (durationMs: number) =>
   `${(durationMs / 1000).toFixed(3)}s`
