@@ -114,8 +114,9 @@ export default function Cm5ioBus1RoutingPage() {
       <div className="rounded border border-slate-300 bg-white p-3 text-sm text-slate-700">
         CM5IO <code>bus1</code> routed by the centerline-only bus solver. One
         centerline candidate is expanded per step, the rest of the bus is
-        inferred from nearby z=0 boundary ports, and the end fanout is filled in
-        once the centerline reaches its destination.
+        inferred from nearby z=0 boundary ports, and regions marked with
+        <code>bus end-manual hop</code> switch the centerline over to the
+        manual two-hop finish logic near the destination.
       </div>
       <div className="min-h-0 flex-1">
         <Debugger

@@ -70,6 +70,36 @@ test("CM5IO bus1 evaluates one centerline candidate per step and visualizes all 
   ).toBe(true)
 })
 
+test("CM5IO bus1 marks the centerline end-manual regions in visualize labels", async () => {
+  const solver = await createCm5ioBus1Solver()
+  const graphics = solver.visualize()
+  const regionLabels = (graphics.rects ?? [])
+    .map((rect) => rect.label)
+    .filter((label): label is string => typeof label === "string")
+
+  expect(
+    regionLabels.some(
+      (label) =>
+        label.includes("region: region-228") &&
+        label.includes("bus end-manual hop: 0"),
+    ),
+  ).toBe(true)
+  expect(
+    regionLabels.some(
+      (label) =>
+        label.includes("region: region-224") &&
+        label.includes("bus end-manual hop: 1"),
+    ),
+  ).toBe(true)
+  expect(
+    regionLabels.some(
+      (label) =>
+        label.includes("region: region-11") &&
+        label.includes("bus end-manual hop: 2"),
+    ),
+  ).toBe(true)
+})
+
 test("CM5IO bus1 keeps boundary port ordering stable through centerline direction changes", async () => {
   const solver = await createCm5ioBus1Solver()
   const internal = solver as any
@@ -181,6 +211,7 @@ test("CM5IO bus1 never accepts an intersecting centerline bus solution", async (
 
   solver.solve()
 
+  expect(solver.iterations).toBeLessThanOrEqual(200)
   expect(solver.stats.busCenterConnectionId).toBe("source_trace_108")
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
