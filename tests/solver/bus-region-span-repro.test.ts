@@ -74,9 +74,12 @@ test("repro: six-trace slit middle requires spanning both middle regions", () =>
   expect(routesUsingMidRight.length).toBeGreaterThan(0)
 })
 
-test("repro: current bus solver fails on the split-middle span fixture", () => {
+test("repro: bus solver spans both middle regions on the split-middle fixture", () => {
   const { topology, problem } = loadSerializedHyperGraph(busRegionSpanFixture)
   const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 50_000,
+  })
+  const plainSolver = new TinyHyperGraphSolver(topology, problem, {
     MAX_ITERATIONS: 50_000,
   })
   const regionIndexBySerializedId = getRegionIndexBySerializedId(topology)
@@ -94,8 +97,50 @@ test("repro: current bus solver fails on the split-middle span fixture", () => {
   ).toBeGreaterThan(2)
 
   busSolver.solve()
+  plainSolver.solve()
 
-  expect(busSolver.solved).toBe(false)
-  expect(busSolver.failed).toBe(true)
-  expect(busSolver.error).toBeTruthy()
+  expect(busSolver.solved).toBe(true)
+  expect(busSolver.failed).toBe(false)
+
+  const solvedRoutes = busSolver.getOutput().solvedRoutes ?? []
+  const routesUsingMidLeft = solvedRoutes.filter((route) =>
+    route.path.some((node) => node.nextRegionId === "mid-left"),
+  )
+  const routesUsingMidRight = solvedRoutes.filter((route) =>
+    route.path.some((node) => node.nextRegionId === "mid-right"),
+  )
+  const sameLayerIntersectionCount =
+    busSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingSameLayerIntersections,
+      0,
+    )
+  const crossingLayerIntersectionCount =
+    busSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingCrossingLayerIntersections,
+      0,
+    )
+  const plainSameLayerIntersectionCount =
+    plainSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingSameLayerIntersections,
+      0,
+    )
+  const plainCrossingLayerIntersectionCount =
+    plainSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingCrossingLayerIntersections,
+      0,
+    )
+
+  expect(solvedRoutes).toHaveLength(BUS_REGION_SPAN_ROUTE_COUNT)
+  expect(routesUsingMidLeft.length).toBeGreaterThan(0)
+  expect(routesUsingMidRight.length).toBeGreaterThan(0)
+  expect(sameLayerIntersectionCount).toBeLessThanOrEqual(
+    plainSameLayerIntersectionCount,
+  )
+  expect(crossingLayerIntersectionCount).toBeLessThanOrEqual(
+    plainCrossingLayerIntersectionCount,
+  )
 })

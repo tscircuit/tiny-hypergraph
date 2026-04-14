@@ -32,6 +32,7 @@ import {
   type BoundaryStep,
   type BusCenterCandidate,
   type BusPreview,
+  type PreviewRoutingStateSnapshot,
   type TinyHyperGraphBusSolverOptions,
   type TracePreview,
   type TraceSegment,
@@ -50,6 +51,24 @@ import {
   snapshotPreviewRoutingState as snapshotPreviewRoutingStateValue,
 } from "./previewRoutingState"
 
+interface AlongsideTraceSearchNode {
+  portId: PortId
+  regionId: RegionId
+  segments: TraceSegment[]
+  guideProgress: number
+  travelCost: number
+  priority: number
+  visitedPortIds: Set<PortId>
+  visitedStateKeys: Set<string>
+}
+
+interface AlongsideTraceSearchOption {
+  segments: TraceSegment[]
+  terminalPortId: PortId
+  terminalRegionId: RegionId
+  searchScore: number
+}
+
 export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   BUS_END_MARGIN_STEPS = 3
   BUS_MAX_REMAINDER_STEPS = 8
@@ -63,6 +82,13 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   MANUAL_CENTER_FINISH_MAX_HOPS = 2
   MANUAL_CENTER_FINISH_PORT_OPTIONS_PER_BOUNDARY = 6
   MANUAL_CENTER_FINISH_CANDIDATE_LIMIT = 24
+  TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT = 6
+  TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH = 24
+  TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT = 8
+  TRACE_ALONGSIDE_LANE_WEIGHT = 1
+  TRACE_ALONGSIDE_REGRESSION_WEIGHT = 2
+  BUS_INTERSECTION_PREVIEW_PENALTY = 20
+  PARTIAL_INTERSECTION_EXPANSION_THRESHOLD = 2
 
   readonly busTraceOrder: BusTraceOrder
   readonly centerTraceIndex: number
@@ -80,6 +106,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private readonly regionIndexBySerializedId = new Map<string, RegionId>()
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
+  private bestCompleteFallbackPreview?: BusPreview
+  private bestCompleteFallbackSnapshot?: PreviewRoutingStateSnapshot
+  private bestCompleteFallbackIntersectionCount = Number.POSITIVE_INFINITY
+  private bestCompleteFallbackCost = Number.POSITIVE_INFINITY
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -166,6 +196,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
     this.lastExpandedCandidate = undefined
     this.lastPreview = undefined
+    this.bestCompleteFallbackPreview = undefined
+    this.bestCompleteFallbackSnapshot = undefined
+    this.bestCompleteFallbackIntersectionCount = Number.POSITIVE_INFINITY
+    this.bestCompleteFallbackCost = Number.POSITIVE_INFINITY
     clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
     this.resetCandidateBestCosts()
     this.state.candidateQueue = new MinHeap([], compareBusCandidatesByF)
@@ -206,6 +240,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       | BusCenterCandidate
       | undefined
     if (!currentCandidate) {
+      if (this.tryAcceptBestCompleteFallbackPreview()) {
+        return
+      }
+
       this.failed = true
       this.error =
         "Centerline candidates are exhausted without a non-intersecting bus solution"
@@ -235,8 +273,21 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const hasIntersections =
       preview.sameLayerIntersectionCount > 0 ||
       preview.crossingLayerIntersectionCount > 0
+    const totalIntersectionCount =
+      preview.sameLayerIntersectionCount + preview.crossingLayerIntersectionCount
     const hasInferenceFailure =
       preview.reason !== undefined && !hasIntersections
+    const allowIntersectingPartialExpansion =
+      !currentCandidate.atGoal &&
+      totalIntersectionCount <= this.PARTIAL_INTERSECTION_EXPANSION_THRESHOLD
+
+    if (
+      currentCandidate.atGoal &&
+      preview.completeTraceCount === this.problem.routeCount &&
+      totalIntersectionCount > 0
+    ) {
+      this.maybeStoreBestCompleteFallbackPreview(preview, totalIntersectionCount)
+    }
 
     if (
       currentCandidate.atGoal &&
@@ -249,7 +300,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return
     }
 
-    if (!hasIntersections && !hasInferenceFailure && !currentCandidate.atGoal) {
+    if (
+      (!hasIntersections || allowIntersectingPartialExpansion) &&
+      !hasInferenceFailure &&
+      !currentCandidate.atGoal
+    ) {
       for (const nextCandidate of this.getAvailableCenterMoves(
         currentCandidate,
       )) {
@@ -267,6 +322,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     if (this.state.candidateQueue.length === 0) {
+      if (this.tryAcceptBestCompleteFallbackPreview()) {
+        return
+      }
+
       this.failed = true
       this.error =
         preview.reason ??
@@ -358,7 +417,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         totalLength: completeBusPreview.totalLength,
         totalCost:
           completeBusPreview.totalLength * this.DISTANCE_TO_COST +
-          totalRegionCost,
+          totalRegionCost +
+          totalIntersectionCount * this.BUS_INTERSECTION_PREVIEW_PENALTY,
         completeTraceCount: completeBusPreview.tracePreviews.length,
         sameLayerIntersectionCount,
         crossingLayerIntersectionCount,
@@ -439,7 +499,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       totalCost:
         totalLength * this.DISTANCE_TO_COST +
         totalRegionCost +
-        totalPreviewCost,
+        totalPreviewCost +
+        totalIntersectionCount * this.BUS_INTERSECTION_PREVIEW_PENALTY,
       completeTraceCount: tracePreviews.filter((preview) => preview.complete)
         .length,
       sameLayerIntersectionCount,
@@ -526,7 +587,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     const localOwners = new Map(usedPortOwners)
-    ensurePortOwnership(routeId, startPortId, localOwners)
+    if (!ensurePortOwnership(routeId, startPortId, localOwners)) {
+      return undefined
+    }
 
     const segments: TraceSegment[] = []
     let currentPortId = startPortId
@@ -583,7 +646,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
     const targetGuideProgress = getPolylineLength(this.topology, centerPortIds)
     const minSharedStepCount = 0
-    let bestPreview: TracePreview | undefined
+    let bestExactPreview: TracePreview | undefined
     let bestScore = Number.POSITIVE_INFINITY
     let bestSharedStepCount = -1
 
@@ -621,12 +684,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       const score = shortfallPenalty * 2 + overshootPenalty * 4 + lagPenalty
 
       if (
-        !bestPreview ||
+        !bestExactPreview ||
         score < bestScore - BUS_CANDIDATE_EPSILON ||
         (Math.abs(score - bestScore) <= BUS_CANDIDATE_EPSILON &&
           sharedStepCount > bestSharedStepCount)
       ) {
-        bestPreview = {
+        bestExactPreview = {
           ...prefixPreview,
           previewCost: score,
         }
@@ -635,7 +698,63 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
     }
 
-    return bestPreview
+    if (!bestExactPreview) {
+      return undefined
+    }
+
+    if (bestSharedStepCount > 0) {
+      return bestExactPreview
+    }
+
+    const searchPrefixPreview = this.buildPrefixTracePreview(
+      traceIndex,
+      bestSharedStepCount,
+      boundarySteps,
+      boundaryPortIdsByStep,
+      usedPortOwners,
+    )
+    if (!searchPrefixPreview || searchPrefixPreview.terminalRegionId === undefined) {
+      return bestExactPreview
+    }
+
+    const guidePortIds = getGuidePortIds(centerPath, bestSharedStepCount)
+    const alongsideOptions = this.searchTraceAlongsideOptions({
+      traceIndex,
+      startPortId: searchPrefixPreview.terminalPortId,
+      startRegionId: searchPrefixPreview.terminalRegionId,
+      guidePortIds,
+      usedPortOwners,
+      targetGuideProgress: getPolylineLength(this.topology, guidePortIds),
+      maxSteps: this.getPartialTraceSearchMaxSteps(maxSharedStepCount),
+      maxOptions: 1,
+      initialVisitedPortIds: this.getTracePreviewVisitedPortIds(
+        searchPrefixPreview,
+      ),
+      initialVisitedStateKeys:
+        this.getTracePreviewSearchStartStateKeys(searchPrefixPreview),
+    })
+    const bestAlongsideOption = alongsideOptions[0]
+
+    if (!bestAlongsideOption) {
+      return bestExactPreview
+    }
+
+    const searchScore =
+      bestAlongsideOption.searchScore + maxSharedStepCount * this.tracePitch
+    if ((bestExactPreview.previewCost ?? Number.POSITIVE_INFINITY) <= searchScore) {
+      return bestExactPreview
+    }
+
+    return {
+      ...searchPrefixPreview,
+      segments: [
+        ...searchPrefixPreview.segments,
+        ...bestAlongsideOption.segments,
+      ],
+      terminalPortId: bestAlongsideOption.terminalPortId,
+      terminalRegionId: bestAlongsideOption.terminalRegionId,
+      previewCost: searchScore,
+    }
   }
 
   private buildCompleteTracePreviewOptions(
@@ -656,6 +775,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     const routeId = this.busTraceOrder.traces[traceIndex]!.routeId
     const previewOptions: TracePreview[] = []
+    const previewOptionKeys = new Set<string>()
 
     for (
       let sharedStepCount = boundarySteps.length;
@@ -689,7 +809,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      const remainderSegments = this.inferEndRemainderSegments(
+      const greedyRemainderSegments = this.inferEndRemainderSegmentsGreedy(
         traceIndex,
         currentPortId,
         currentRegionId,
@@ -697,21 +817,252 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         sharedStepCount,
         usedPortOwners,
       )
-      if (!remainderSegments) {
-        continue
+
+      if (greedyRemainderSegments) {
+        const greedySegments = [
+          ...prefixPreview.segments,
+          ...greedyRemainderSegments,
+        ]
+        const greedyPreviewKey = this.getTracePreviewPathKey(
+          greedySegments,
+          this.problem.routeEndPort[routeId]!,
+          undefined,
+        )
+
+        if (!previewOptionKeys.has(greedyPreviewKey)) {
+          previewOptionKeys.add(greedyPreviewKey)
+          previewOptions.push({
+            traceIndex,
+            routeId,
+            segments: greedySegments,
+            complete: true,
+            terminalPortId: this.problem.routeEndPort[routeId]!,
+            previewCost: 0,
+          })
+        }
       }
 
-      previewOptions.push({
-        traceIndex,
-        routeId,
-        segments: [...prefixPreview.segments, ...remainderSegments],
-        complete: true,
-        terminalPortId: this.problem.routeEndPort[routeId]!,
-        previewCost: 0,
-      })
+      if (sharedStepCount === 0 || !greedyRemainderSegments) {
+        const remainingBoundaryStepCount = Math.max(
+          boundarySteps.length - sharedStepCount,
+          0,
+        )
+        const guidePortIds = getGuidePortIds(centerPath, sharedStepCount)
+        const completionOptions = this.searchTraceAlongsideOptions({
+          traceIndex,
+          startPortId: prefixPreview.terminalPortId,
+          startRegionId: prefixPreview.terminalRegionId!,
+          guidePortIds,
+          usedPortOwners,
+          goalPortId: this.problem.routeEndPort[routeId]!,
+          maxSteps: this.getCompleteTraceSearchMaxSteps(
+            remainingBoundaryStepCount,
+          ),
+          maxOptions: this.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT,
+          initialVisitedPortIds: this.getTracePreviewVisitedPortIds(
+            prefixPreview,
+          ),
+          initialVisitedStateKeys:
+            this.getTracePreviewSearchStartStateKeys(prefixPreview),
+        })
+
+        for (const completionOption of completionOptions) {
+          const combinedSegments = [
+            ...prefixPreview.segments,
+            ...completionOption.segments,
+          ]
+          const previewKey = this.getTracePreviewPathKey(
+            combinedSegments,
+            this.problem.routeEndPort[routeId]!,
+            undefined,
+          )
+
+          if (previewOptionKeys.has(previewKey)) {
+            continue
+          }
+
+          previewOptionKeys.add(previewKey)
+          previewOptions.push({
+            traceIndex,
+            routeId,
+            segments: combinedSegments,
+            complete: true,
+            terminalPortId: this.problem.routeEndPort[routeId]!,
+            previewCost: completionOption.searchScore,
+          })
+        }
+      }
     }
 
     return previewOptions
+      .sort(
+        (left, right) =>
+          (left.previewCost ?? 0) - (right.previewCost ?? 0) ||
+          getTracePreviewLength(this.topology, left) -
+            getTracePreviewLength(this.topology, right),
+      )
+      .slice(0, this.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT)
+  }
+
+  private inferEndRemainderSegmentsGreedy(
+    traceIndex: number,
+    startPortId: PortId,
+    startRegionId: RegionId,
+    centerPath: BusCenterCandidate[],
+    sharedStepCount: number,
+    usedPortOwners: ReadonlyMap<PortId, RouteId>,
+  ): TraceSegment[] | undefined {
+    const routeId = this.busTraceOrder.traces[traceIndex]!.routeId
+    const endPortId = this.problem.routeEndPort[routeId]!
+
+    if (this.topology.portZ[endPortId] !== 0) {
+      return undefined
+    }
+
+    if (isPortIncidentToRegion(this.topology, endPortId, startRegionId)) {
+      if (
+        ensurePortOwnership(routeId, endPortId, new Map(usedPortOwners)) &&
+        startPortId !== endPortId
+      ) {
+        return [
+          {
+            regionId: startRegionId,
+            fromPortId: startPortId,
+            toPortId: endPortId,
+          },
+        ]
+      }
+
+      return []
+    }
+
+    const guidePortIds = getGuidePortIds(centerPath, sharedStepCount)
+    const goalTransitRegionIds =
+      this.topology.incidentPortRegion[endPortId]?.filter(
+        (regionId) => regionId !== undefined,
+      ) ?? []
+    const currentNetId = this.problem.routeNet[routeId]!
+    const localOwners = new Map(usedPortOwners)
+    if (!ensurePortOwnership(routeId, startPortId, localOwners)) {
+      return undefined
+    }
+
+    const visitedStates = new Set([`${startPortId}:${startRegionId}`])
+    const segments: TraceSegment[] = []
+    let currentPortId = startPortId
+    let currentRegionId = startRegionId
+
+    for (
+      let stepIndex = 0;
+      stepIndex < this.BUS_MAX_REMAINDER_STEPS;
+      stepIndex++
+    ) {
+      if (isPortIncidentToRegion(this.topology, endPortId, currentRegionId)) {
+        if (!ensurePortOwnership(routeId, endPortId, localOwners)) {
+          return undefined
+        }
+
+        if (currentPortId !== endPortId) {
+          segments.push({
+            regionId: currentRegionId,
+            fromPortId: currentPortId,
+            toPortId: endPortId,
+          })
+        }
+
+        return segments
+      }
+
+      let bestMove:
+        | {
+            boundaryPortId: PortId
+            nextRegionId: RegionId
+            score: number
+          }
+        | undefined
+
+      for (const boundaryPortId of this.topology.regionIncidentPorts[
+        currentRegionId
+      ] ?? []) {
+        if (
+          boundaryPortId === currentPortId ||
+          this.topology.portZ[boundaryPortId] !== 0
+        ) {
+          continue
+        }
+
+        const nextRegionId =
+          this.topology.incidentPortRegion[boundaryPortId]?.[0] ===
+          currentRegionId
+            ? this.topology.incidentPortRegion[boundaryPortId]?.[1]
+            : this.topology.incidentPortRegion[boundaryPortId]?.[0]
+
+        if (
+          nextRegionId === undefined ||
+          this.isRegionReservedForDifferentBusNet(currentNetId, nextRegionId) ||
+          visitedStates.has(`${boundaryPortId}:${nextRegionId}`)
+        ) {
+          continue
+        }
+
+        const owner = localOwners.get(boundaryPortId)
+        if (owner !== undefined && owner !== routeId) {
+          continue
+        }
+
+        const goalDistance = getPortDistance(
+          this.topology,
+          boundaryPortId,
+          endPortId,
+        )
+        const guideDistance = getDistanceFromPortToPolyline(
+          this.topology,
+          boundaryPortId,
+          guidePortIds,
+        )
+        const sidePenalty = this.getTraceSidePenalty(traceIndex, boundaryPortId)
+        const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId)
+          ? -5
+          : 0
+        const score =
+          guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
+          goalDistance * this.BUS_REMAINDER_GOAL_WEIGHT +
+          sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
+          goalRegionBonus
+
+        if (
+          !bestMove ||
+          score < bestMove.score - BUS_CANDIDATE_EPSILON ||
+          (Math.abs(score - bestMove.score) <= BUS_CANDIDATE_EPSILON &&
+            boundaryPortId < bestMove.boundaryPortId)
+        ) {
+          bestMove = {
+            boundaryPortId,
+            nextRegionId,
+            score,
+          }
+        }
+      }
+
+      if (!bestMove) {
+        return undefined
+      }
+
+      if (!ensurePortOwnership(routeId, bestMove.boundaryPortId, localOwners)) {
+        return undefined
+      }
+
+      segments.push({
+        regionId: currentRegionId,
+        fromPortId: currentPortId,
+        toPortId: bestMove.boundaryPortId,
+      })
+      currentPortId = bestMove.boundaryPortId
+      currentRegionId = bestMove.nextRegionId
+      visitedStates.add(`${currentPortId}:${currentRegionId}`)
+    }
+
+    return undefined
   }
 
   private buildBestCompleteBusPreview(
@@ -923,165 +1274,506 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
   }
 
-  private inferEndRemainderSegments(
-    traceIndex: number,
-    startPortId: PortId,
-    startRegionId: RegionId,
-    centerPath: BusCenterCandidate[],
-    sharedStepCount: number,
-    usedPortOwners: ReadonlyMap<PortId, RouteId>,
-  ): TraceSegment[] | undefined {
+  private searchTraceAlongsideOptions({
+    traceIndex,
+    startPortId,
+    startRegionId,
+    guidePortIds,
+    usedPortOwners,
+    maxSteps,
+    maxOptions,
+    targetGuideProgress,
+    goalPortId,
+    initialVisitedPortIds = [],
+    initialVisitedStateKeys = [],
+  }: {
+    traceIndex: number
+    startPortId: PortId
+    startRegionId: RegionId
+    guidePortIds: readonly PortId[]
+    usedPortOwners: ReadonlyMap<PortId, RouteId>
+    maxSteps: number
+    maxOptions: number
+    targetGuideProgress?: number
+    goalPortId?: PortId
+    initialVisitedPortIds?: readonly PortId[]
+    initialVisitedStateKeys?: readonly string[]
+  }): AlongsideTraceSearchOption[] {
     const routeId = this.busTraceOrder.traces[traceIndex]!.routeId
-    const endPortId = this.problem.routeEndPort[routeId]!
+    const effectiveGuidePortIds =
+      guidePortIds.length > 0 ? guidePortIds : [startPortId]
+    const initialGuideProgress = getPortProgressAlongPolyline(
+      this.topology,
+      startPortId,
+      effectiveGuidePortIds,
+    )
+    const visitedPortIds = new Set<PortId>(initialVisitedPortIds)
+    const visitedStateKeys = new Set(initialVisitedStateKeys)
+    visitedPortIds.add(startPortId)
+    visitedStateKeys.add(
+      this.getTraceSearchStateKey(startPortId, startRegionId),
+    )
 
-    if (this.topology.portZ[endPortId] !== 0) {
-      return undefined
+    const initialNode: AlongsideTraceSearchNode = {
+      portId: startPortId,
+      regionId: startRegionId,
+      segments: [],
+      guideProgress: initialGuideProgress,
+      travelCost: 0,
+      priority:
+        goalPortId === undefined
+          ? this.getPartialTraceSearchPriority(
+              traceIndex,
+              startPortId,
+              effectiveGuidePortIds,
+              initialGuideProgress,
+              0,
+              targetGuideProgress ?? 0,
+            )
+          : this.getCompleteTraceSearchPriority(
+              traceIndex,
+              routeId,
+              startPortId,
+              effectiveGuidePortIds,
+              0,
+            ),
+      visitedPortIds,
+      visitedStateKeys,
     }
 
-    if (isPortIncidentToRegion(this.topology, endPortId, startRegionId)) {
-      if (
-        ensurePortOwnership(routeId, endPortId, new Map(usedPortOwners)) &&
-        startPortId !== endPortId
-      ) {
-        return [
-          {
-            regionId: startRegionId,
-            fromPortId: startPortId,
-            toPortId: endPortId,
-          },
-        ]
+    const searchOptions: AlongsideTraceSearchOption[] = []
+    const searchOptionKeys = new Set<string>()
+    const pushOption = (option: AlongsideTraceSearchOption) => {
+      const optionKey = this.getTracePreviewPathKey(
+        option.segments,
+        option.terminalPortId,
+        option.terminalRegionId,
+      )
+
+      if (searchOptionKeys.has(optionKey)) {
+        return
       }
 
-      return []
+      searchOptionKeys.add(optionKey)
+      searchOptions.push(option)
+    }
+    const tryCompleteFromNode = (node: AlongsideTraceSearchNode) => {
+      if (
+        goalPortId === undefined ||
+        !isPortIncidentToRegion(this.topology, goalPortId, node.regionId)
+      ) {
+        return
+      }
+
+      const owner = usedPortOwners.get(goalPortId)
+      if (owner !== undefined && owner !== routeId) {
+        return
+      }
+
+      const completionSegments =
+        node.portId === goalPortId
+          ? node.segments
+          : [
+              ...node.segments,
+              {
+                regionId: node.regionId,
+                fromPortId: node.portId,
+                toPortId: goalPortId,
+              },
+            ]
+      const completionTravelCost =
+        node.travelCost +
+        (node.portId === goalPortId
+          ? 0
+          : getPortDistance(this.topology, node.portId, goalPortId) *
+            this.DISTANCE_TO_COST)
+
+      pushOption({
+        segments: completionSegments,
+        terminalPortId: goalPortId,
+        terminalRegionId: node.regionId,
+        searchScore: this.getCompleteTraceSearchPriority(
+          traceIndex,
+          routeId,
+          goalPortId,
+          effectiveGuidePortIds,
+          completionTravelCost,
+        ),
+      })
+    }
+    const tryPartialFromNode = (node: AlongsideTraceSearchNode) => {
+      if (targetGuideProgress === undefined) {
+        return
+      }
+
+      pushOption({
+        segments: node.segments,
+        terminalPortId: node.portId,
+        terminalRegionId: node.regionId,
+        searchScore: this.getPartialTraceSearchPriority(
+          traceIndex,
+          node.portId,
+          effectiveGuidePortIds,
+          node.guideProgress,
+          node.travelCost,
+          targetGuideProgress,
+        ),
+      })
     }
 
-    const guidePortIds = getGuidePortIds(centerPath, sharedStepCount)
-    const goalTransitRegionIds =
-      this.topology.incidentPortRegion[endPortId]?.filter(
-        (regionId) => regionId !== undefined,
-      ) ?? []
-    const currentNetId = this.problem.routeNet[routeId]!
-    const localOwners = new Map(usedPortOwners)
-    if (!ensurePortOwnership(routeId, startPortId, localOwners)) {
-      return undefined
-    }
+    let beam = [initialNode]
+    tryCompleteFromNode(initialNode)
+    tryPartialFromNode(initialNode)
 
-    const visitedStates = new Set([`${startPortId}:${startRegionId}`])
-    const segments: TraceSegment[] = []
-    let currentPortId = startPortId
-    let currentRegionId = startRegionId
+    for (let stepIndex = 0; stepIndex < maxSteps && beam.length > 0; stepIndex++) {
+      const nextBeamCandidates: AlongsideTraceSearchNode[] = []
 
-    for (
-      let stepIndex = 0;
-      stepIndex < this.BUS_MAX_REMAINDER_STEPS;
-      stepIndex++
-    ) {
-      if (isPortIncidentToRegion(this.topology, endPortId, currentRegionId)) {
-        if (!ensurePortOwnership(routeId, endPortId, localOwners)) {
-          return undefined
-        }
+      for (const node of beam) {
+        const moveCandidates: AlongsideTraceSearchNode[] = []
 
-        if (currentPortId !== endPortId) {
-          segments.push({
-            regionId: currentRegionId,
-            fromPortId: currentPortId,
-            toPortId: endPortId,
+        for (const boundaryPortId of this.topology.regionIncidentPorts[
+          node.regionId
+        ] ?? []) {
+          if (
+            boundaryPortId === node.portId ||
+            this.topology.portZ[boundaryPortId] !== 0 ||
+            node.visitedPortIds.has(boundaryPortId)
+          ) {
+            continue
+          }
+
+          const nextRegionId = this.getOppositeRegionId(
+            boundaryPortId,
+            node.regionId,
+          )
+
+          if (
+            nextRegionId === undefined ||
+            this.isRegionReservedForDifferentBusNet(
+              this.problem.routeNet[routeId]!,
+              nextRegionId,
+            )
+          ) {
+            continue
+          }
+
+          const owner = usedPortOwners.get(boundaryPortId)
+          if (owner !== undefined && owner !== routeId) {
+            continue
+          }
+
+          const nextStateKey = this.getTraceSearchStateKey(
+            boundaryPortId,
+            nextRegionId,
+          )
+          if (node.visitedStateKeys.has(nextStateKey)) {
+            continue
+          }
+
+          const nextGuideProgress = getPortProgressAlongPolyline(
+            this.topology,
+            boundaryPortId,
+            effectiveGuidePortIds,
+          )
+          const regressionPenalty =
+            Math.max(0, node.guideProgress - nextGuideProgress) *
+            this.TRACE_ALONGSIDE_REGRESSION_WEIGHT
+          const nextTravelCost =
+            node.travelCost +
+            getPortDistance(this.topology, node.portId, boundaryPortId) *
+              this.DISTANCE_TO_COST +
+            regressionPenalty
+          const nextVisitedPortIds = new Set(node.visitedPortIds)
+          const nextVisitedStateKeys = new Set(node.visitedStateKeys)
+          nextVisitedPortIds.add(boundaryPortId)
+          nextVisitedStateKeys.add(nextStateKey)
+
+          moveCandidates.push({
+            portId: boundaryPortId,
+            regionId: nextRegionId,
+            segments: [
+              ...node.segments,
+              {
+                regionId: node.regionId,
+                fromPortId: node.portId,
+                toPortId: boundaryPortId,
+              },
+            ],
+            guideProgress: nextGuideProgress,
+            travelCost: nextTravelCost,
+            priority:
+              goalPortId === undefined
+                ? this.getPartialTraceSearchPriority(
+                    traceIndex,
+                    boundaryPortId,
+                    effectiveGuidePortIds,
+                    nextGuideProgress,
+                    nextTravelCost,
+                    targetGuideProgress ?? 0,
+                  )
+                : this.getCompleteTraceSearchPriority(
+                    traceIndex,
+                    routeId,
+                    boundaryPortId,
+                    effectiveGuidePortIds,
+                    nextTravelCost,
+                  ),
+            visitedPortIds: nextVisitedPortIds,
+            visitedStateKeys: nextVisitedStateKeys,
           })
         }
 
-        return segments
+        moveCandidates
+          .sort(
+            (left, right) =>
+              left.priority - right.priority ||
+              left.portId - right.portId ||
+              left.regionId - right.regionId,
+          )
+          .slice(0, this.TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT)
+          .forEach((candidate) => {
+            nextBeamCandidates.push(candidate)
+            tryCompleteFromNode(candidate)
+            tryPartialFromNode(candidate)
+          })
       }
 
-      let bestMove:
-        | {
-            boundaryPortId: PortId
-            nextRegionId: RegionId
-            score: number
-          }
-        | undefined
-
-      for (const boundaryPortId of this.topology.regionIncidentPorts[
-        currentRegionId
-      ] ?? []) {
-        if (
-          boundaryPortId === currentPortId ||
-          this.topology.portZ[boundaryPortId] !== 0
-        ) {
-          continue
-        }
-
-        const nextRegionId =
-          this.topology.incidentPortRegion[boundaryPortId]?.[0] ===
-          currentRegionId
-            ? this.topology.incidentPortRegion[boundaryPortId]?.[1]
-            : this.topology.incidentPortRegion[boundaryPortId]?.[0]
-
-        if (
-          nextRegionId === undefined ||
-          this.isRegionReservedForDifferentBusNet(currentNetId, nextRegionId) ||
-          visitedStates.has(`${boundaryPortId}:${nextRegionId}`)
-        ) {
-          continue
-        }
-
-        const owner = localOwners.get(boundaryPortId)
-        if (owner !== undefined && owner !== routeId) {
-          continue
-        }
-
-        const goalDistance = getPortDistance(
-          this.topology,
-          boundaryPortId,
-          endPortId,
+      const bestCandidateByStateKey = new Map<string, AlongsideTraceSearchNode>()
+      for (const candidate of nextBeamCandidates) {
+        const candidateStateKey = this.getTraceSearchStateKey(
+          candidate.portId,
+          candidate.regionId,
         )
-        const guideDistance = getDistanceFromPortToPolyline(
-          this.topology,
-          boundaryPortId,
-          guidePortIds,
-        )
-        const sidePenalty = this.getTraceSidePenalty(traceIndex, boundaryPortId)
-        const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId)
-          ? -5
-          : 0
-        const score =
-          guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
-          goalDistance * this.BUS_REMAINDER_GOAL_WEIGHT +
-          sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
-          goalRegionBonus
+        const existingCandidate =
+          bestCandidateByStateKey.get(candidateStateKey)
 
         if (
-          !bestMove ||
-          score < bestMove.score - BUS_CANDIDATE_EPSILON ||
-          (Math.abs(score - bestMove.score) <= BUS_CANDIDATE_EPSILON &&
-            boundaryPortId < bestMove.boundaryPortId)
+          !existingCandidate ||
+          candidate.priority <
+            existingCandidate.priority - BUS_CANDIDATE_EPSILON ||
+          (Math.abs(candidate.priority - existingCandidate.priority) <=
+            BUS_CANDIDATE_EPSILON &&
+            candidate.segments.length < existingCandidate.segments.length)
         ) {
-          bestMove = {
-            boundaryPortId,
-            nextRegionId,
-            score,
-          }
+          bestCandidateByStateKey.set(candidateStateKey, candidate)
         }
       }
 
-      if (!bestMove) {
-        return undefined
-      }
-
-      if (!ensurePortOwnership(routeId, bestMove.boundaryPortId, localOwners)) {
-        return undefined
-      }
-
-      segments.push({
-        regionId: currentRegionId,
-        fromPortId: currentPortId,
-        toPortId: bestMove.boundaryPortId,
-      })
-      currentPortId = bestMove.boundaryPortId
-      currentRegionId = bestMove.nextRegionId
-      visitedStates.add(`${currentPortId}:${currentRegionId}`)
+      beam = [...bestCandidateByStateKey.values()]
+        .sort(
+          (left, right) =>
+            left.priority - right.priority ||
+            left.portId - right.portId ||
+            left.regionId - right.regionId,
+        )
+        .slice(0, this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH)
     }
 
-    return undefined
+    return searchOptions
+      .sort(
+        (left, right) =>
+          left.searchScore - right.searchScore ||
+          left.segments.length - right.segments.length,
+      )
+      .slice(0, maxOptions)
+  }
+
+  private getPartialTraceSearchPriority(
+    traceIndex: number,
+    portId: PortId,
+    guidePortIds: readonly PortId[],
+    guideProgress: number,
+    travelCost: number,
+    targetGuideProgress: number,
+  ) {
+    const guideDistance = getDistanceFromPortToPolyline(
+      this.topology,
+      portId,
+      guidePortIds,
+    )
+    const lanePenalty = this.getTraceLanePenalty(traceIndex, portId)
+    const sidePenalty = this.getTraceSidePenalty(traceIndex, portId)
+    const shortfallPenalty = Math.max(0, targetGuideProgress - guideProgress)
+    const overshootPenalty = Math.max(0, guideProgress - targetGuideProgress)
+
+    return (
+      travelCost +
+      guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
+      lanePenalty * this.TRACE_ALONGSIDE_LANE_WEIGHT +
+      sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
+      shortfallPenalty * 2 +
+      overshootPenalty * 4
+    )
+  }
+
+  private getCompleteTraceSearchPriority(
+    traceIndex: number,
+    routeId: RouteId,
+    portId: PortId,
+    guidePortIds: readonly PortId[],
+    travelCost: number,
+  ) {
+    const guideDistance = getDistanceFromPortToPolyline(
+      this.topology,
+      portId,
+      guidePortIds,
+    )
+    const lanePenalty = this.getTraceLanePenalty(traceIndex, portId)
+    const sidePenalty = this.getTraceSidePenalty(traceIndex, portId)
+    const goalHeuristic =
+      this.problemSetup.portHCostToEndOfRoute[
+        portId * this.problem.routeCount + routeId
+      ]
+
+    return (
+      travelCost +
+      guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
+      lanePenalty * this.TRACE_ALONGSIDE_LANE_WEIGHT +
+      sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
+      goalHeuristic * this.BUS_REMAINDER_GOAL_WEIGHT
+    )
+  }
+
+  private getTracePreviewSearchStartStateKeys(tracePreview: TracePreview) {
+    const visitedStateKeys: string[] = []
+    let currentPortId = this.problem.routeStartPort[tracePreview.routeId]!
+    let currentRegionId = this.getStartingNextRegionId(
+      tracePreview.routeId,
+      currentPortId,
+    )
+
+    if (currentRegionId === undefined) {
+      return visitedStateKeys
+    }
+
+    visitedStateKeys.push(
+      this.getTraceSearchStateKey(currentPortId, currentRegionId),
+    )
+
+    for (const segment of tracePreview.segments) {
+      currentPortId = segment.toPortId
+      const nextRegionId = this.getOppositeRegionId(currentPortId, segment.regionId)
+
+      if (nextRegionId === undefined) {
+        break
+      }
+
+      currentRegionId = nextRegionId
+      visitedStateKeys.push(
+        this.getTraceSearchStateKey(currentPortId, currentRegionId),
+      )
+    }
+
+    return visitedStateKeys
+  }
+
+  private getTracePreviewVisitedPortIds(tracePreview: TracePreview) {
+    const visitedPortIds = new Set<PortId>([
+      this.problem.routeStartPort[tracePreview.routeId]!,
+    ])
+
+    for (const segment of tracePreview.segments) {
+      visitedPortIds.add(segment.fromPortId)
+      visitedPortIds.add(segment.toPortId)
+    }
+
+    return [...visitedPortIds]
+  }
+
+  private getTraceSearchStateKey(portId: PortId, regionId: RegionId) {
+    return `${portId}:${regionId}`
+  }
+
+  private getTracePreviewPathKey(
+    segments: readonly TraceSegment[],
+    terminalPortId: PortId,
+    terminalRegionId?: RegionId,
+  ) {
+    return [
+      ...segments.map(
+        (segment) =>
+          `${segment.regionId}:${segment.fromPortId}->${segment.toPortId}`,
+      ),
+      `end:${terminalPortId}:${terminalRegionId ?? -1}`,
+    ].join("|")
+  }
+
+  private getOppositeRegionId(portId: PortId, regionId: RegionId) {
+    const incidentRegionIds = this.topology.incidentPortRegion[portId] ?? []
+    return incidentRegionIds[0] === regionId
+      ? incidentRegionIds[1]
+      : incidentRegionIds[0]
+  }
+
+  private getPartialTraceSearchMaxSteps(remainingBoundaryStepCount: number) {
+    return Math.max(
+      0,
+      Math.min(
+        Math.max(1, remainingBoundaryStepCount + 1),
+        4,
+      ),
+    )
+  }
+
+  private getCompleteTraceSearchMaxSteps(remainingBoundaryStepCount: number) {
+    return Math.max(
+      0,
+      Math.min(
+        Math.max(
+          2,
+          remainingBoundaryStepCount * 2 + this.BUS_MAX_REMAINDER_STEPS,
+        ),
+        this.BUS_MAX_REMAINDER_STEPS * 3,
+      ),
+    )
+  }
+
+  private maybeStoreBestCompleteFallbackPreview(
+    preview: BusPreview,
+    totalIntersectionCount: number,
+  ) {
+    if (
+      totalIntersectionCount > this.bestCompleteFallbackIntersectionCount ||
+      (totalIntersectionCount === this.bestCompleteFallbackIntersectionCount &&
+        preview.totalCost >= this.bestCompleteFallbackCost)
+    ) {
+      return
+    }
+
+    this.bestCompleteFallbackPreview = {
+      ...preview,
+      reason: undefined,
+      tracePreviews: preview.tracePreviews.map((tracePreview) => ({
+        ...tracePreview,
+        segments: tracePreview.segments.map((segment) => ({ ...segment })),
+      })),
+    }
+    this.bestCompleteFallbackSnapshot = snapshotPreviewRoutingStateValue(
+      this.state,
+    )
+    this.bestCompleteFallbackIntersectionCount = totalIntersectionCount
+    this.bestCompleteFallbackCost = preview.totalCost
+  }
+
+  private tryAcceptBestCompleteFallbackPreview() {
+    if (
+      !this.bestCompleteFallbackPreview ||
+      !this.bestCompleteFallbackSnapshot
+    ) {
+      return false
+    }
+
+    restorePreviewRoutingStateValue(
+      this.state,
+      this.bestCompleteFallbackSnapshot,
+    )
+    this.lastPreview = this.bestCompleteFallbackPreview
+    this.solved = true
+    this.failed = false
+    this.error = null
+    this.state.unroutedRoutes = []
+    this.updateBusStats()
+    return true
   }
 
   private isUsableCenterlineBoundaryPort(portId: PortId) {
@@ -1486,6 +2178,18 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     return Math.abs(offset)
+  }
+
+  private getTraceLanePenalty(traceIndex: number, portId: PortId) {
+    const trace = this.busTraceOrder.traces[traceIndex]!
+    const projection = getPortProjection(
+      this.topology,
+      portId,
+      this.busTraceOrder.normalX,
+      this.busTraceOrder.normalY,
+    )
+
+    return Math.abs(projection - trace.score)
   }
 
   private computeCenterHeuristic(portId: PortId, nextRegionId?: RegionId) {
