@@ -834,6 +834,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override tryFinalAcceptance() {
     if (!this.bestSnapshot) {
+      super.tryFinalAcceptance()
       return
     }
 
