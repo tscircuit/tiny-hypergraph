@@ -168,7 +168,8 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     sectionSolver.sectionSolver?.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
   ).toBe(3)
   expect(
-    sectionSolver.sectionSolver?.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
+    sectionSolver.sectionSolver
+      ?.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST,
   ).toBe(2)
 })
 
@@ -215,23 +216,25 @@ test("section pipeline searches multiple masks and commits an improving output o
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(1)
   expect(pipelineSolver.selectedSectionCandidateLabel).toBeDefined()
   expect(
-    [...(pipelineSolver.selectedSectionMask ?? [])].some((value) => value === 1),
+    [...(pipelineSolver.selectedSectionMask ?? [])].some(
+      (value) => value === 1,
+    ),
   ).toBe(true)
 
   const solveGraphOutput =
-    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
-      "solveGraph",
-    )
+    pipelineSolver.getStageOutput<
+      ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+    >("solveGraph")
   const optimizeSectionOutput =
-    pipelineSolver.getStageOutput<ReturnType<TinyHyperGraphSectionSolver["getOutput"]>>(
-      "optimizeSection",
-    )
+    pipelineSolver.getStageOutput<
+      ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+    >("optimizeSection")
 
   expect(solveGraphOutput).toBeDefined()
   expect(optimizeSectionOutput).toBeDefined()
-  expect(
-    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
-  ).toBeLessThan(getSerializedOutputMaxRegionCost(solveGraphOutput!))
+  expect(getSerializedOutputMaxRegionCost(optimizeSectionOutput!)).toBeLessThan(
+    getSerializedOutputMaxRegionCost(solveGraphOutput!),
+  )
 })
 
 test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", () => {

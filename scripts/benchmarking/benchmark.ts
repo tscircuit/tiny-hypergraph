@@ -145,7 +145,8 @@ const parseArgs = () => {
   return { limit, sampleName }
 }
 
-const formatSeconds = (durationMs: number) => `${(durationMs / 1000).toFixed(3)}s`
+const formatSeconds = (durationMs: number) =>
+  `${(durationMs / 1000).toFixed(3)}s`
 
 const formatMetric = (value: number | null, digits = 3) =>
   value === null ? "n/a" : value.toFixed(digits)
@@ -311,8 +312,9 @@ const main = async () => {
 
       const baselineMaxRegionCost =
         getSerializedOutputMaxRegionCost(solveGraphOutput)
-      const finalMaxRegionCost =
-        getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+      const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
+        optimizeSectionOutput,
+      )
       const delta = baselineMaxRegionCost - finalMaxRegionCost
       const durationMs = performance.now() - sampleStart
       const optimized = delta > IMPROVEMENT_EPSILON
@@ -339,7 +341,8 @@ const main = async () => {
         candidateCount,
         generatedCandidateCount,
         duplicateCandidateCount,
-        selectedCandidateLabel: pipelineSolver.selectedSectionCandidateLabel ?? null,
+        selectedCandidateLabel:
+          pipelineSolver.selectedSectionCandidateLabel ?? null,
         selectedCandidateFamily:
           pipelineSolver.selectedSectionCandidateFamily ?? null,
         error: null,
@@ -359,12 +362,11 @@ const main = async () => {
           `duration=${formatSeconds(durationMs)}`,
         ].join(" "),
       )
-      console.log(
-        `# no artifacts written`
-      )
+      console.log(`# no artifacts written`)
     } catch (error) {
       const durationMs = performance.now() - sampleStart
-      const errorMessage = error instanceof Error ? error.stack ?? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
       const sampleDir = path.join(runDir, sampleMeta.sampleName)
       const logsPath = path.join(sampleDir, "logs.txt")
       const snapshotPath = path.join(sampleDir, "snapshot.png")
@@ -382,7 +384,7 @@ const main = async () => {
       } catch (snapshotError) {
         snapshotErrorMessage =
           snapshotError instanceof Error
-            ? snapshotError.stack ?? snapshotError.message
+            ? (snapshotError.stack ?? snapshotError.message)
             : String(snapshotError)
       }
 
@@ -456,7 +458,9 @@ const main = async () => {
   const finalCosts = successfulResults
     .map((result) => result.finalMaxRegionCost)
     .filter((value): value is number => value !== null)
-  const candidateCounts = successfulResults.map((result) => result.candidateCount)
+  const candidateCounts = successfulResults.map(
+    (result) => result.candidateCount,
+  )
   const successCount = successfulResults.length
   const improvedCount = successfulResults.filter(
     (result) => result.optimized,
@@ -470,7 +474,9 @@ const main = async () => {
   console.log(
     `zero-final-max-region-cost rate: ${formatPercent(zeroFinalCostCount, successCount)}`,
   )
-  console.log(`avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`)
+  console.log(
+    `avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`,
+  )
   console.log(`avg final max region cost: ${average(finalCosts).toFixed(3)}`)
   console.log(`avg max region delta: ${average(deltas).toFixed(3)}`)
   console.log(`avg candidate count: ${average(candidateCounts).toFixed(3)}`)
