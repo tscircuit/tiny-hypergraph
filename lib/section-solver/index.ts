@@ -16,6 +16,7 @@ import type {
   PortId,
   RegionId,
   RegionIntersectionCache,
+  RipCongestionMode,
   RouteId,
 } from "../types"
 import { visualizeTinyGraph } from "../visualizeTinyGraph"
@@ -52,9 +53,7 @@ export interface TinyHyperGraphSectionSolverOptions
 }
 
 const applyTinyHyperGraphSectionSolverOptions = (
-  solver:
-    | TinyHyperGraphSectionSearchSolver
-    | TinyHyperGraphSectionSolver,
+  solver: TinyHyperGraphSectionSearchSolver | TinyHyperGraphSectionSolver,
   options?: TinyHyperGraphSectionSolverOptions,
 ) => {
   applyTinyHyperGraphSolverOptions(solver, options)
@@ -104,6 +103,8 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  fromPortIds: new Int32Array(regionIntersectionCache.fromPortIds),
+  toPortIds: new Int32Array(regionIntersectionCache.toPortIds),
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -131,7 +132,8 @@ const restoreSolvedStateSnapshot = (
   const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
   solver.state.portAssignment = clonedSnapshot.portAssignment
   solver.state.regionSegments = clonedSnapshot.regionSegments
-  solver.state.regionIntersectionCaches = clonedSnapshot.regionIntersectionCaches
+  solver.state.regionIntersectionCaches =
+    clonedSnapshot.regionIntersectionCaches
 }
 
 const summarizeRegionIntersectionCaches = (
@@ -245,7 +247,8 @@ const getOrderedRoutePath = (
   orderedRegionIds: RegionId[]
 } => {
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
-  const routeSegmentRegionIds = solution.solvedRoutePathRegionIds?.[routeId] ?? []
+  const routeSegmentRegionIds =
+    solution.solvedRoutePathRegionIds?.[routeId] ?? []
   const startPortId = problem.routeStartPort[routeId]
   const endPortId = problem.routeEndPort[routeId]
 
@@ -363,6 +366,9 @@ const applyRouteSegmentsToSolver = (
   solver.state.goalPortId = -1
   solver.state.ripCount = 0
   solver.state.regionCongestionCost.fill(0)
+  solver.state.portCongestionCost.fill(0)
+  solver.state.intersectionPenaltyPoints = []
+  solver.state.pendingIntersectionPenaltyPoints = []
 
   for (let regionId = 0; regionId < routeSegmentsByRegion.length; regionId++) {
     for (const [routeId, fromPortId, toPortId] of routeSegmentsByRegion[
@@ -382,6 +388,7 @@ const applyRouteSegmentsToSolver = (
 
   solver.state.currentRouteId = undefined
   solver.state.currentRouteNetId = undefined
+  solver.state.pendingIntersectionPenaltyPoints = []
   solver.solved = true
   solver.failed = false
   solver.error = null
@@ -615,8 +622,15 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   }
 
   applyFixedSegments() {
+    const previousTrackingState = this.recordIntersectionPenaltyPoints
+    this.recordIntersectionPenaltyPoints = false
+
     for (const routePlan of this.routePlans) {
-      for (const { regionId, fromPortId, toPortId } of routePlan.fixedSegments) {
+      for (const {
+        regionId,
+        fromPortId,
+        toPortId,
+      } of routePlan.fixedSegments) {
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,
@@ -629,8 +643,10 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       }
     }
 
+    this.recordIntersectionPenaltyPoints = previousTrackingState
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
+    this.state.pendingIntersectionPenaltyPoints = []
   }
 
   captureBestState(summary: RegionCostSummary) {
@@ -696,6 +712,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+    this.state.pendingIntersectionPenaltyPoints = []
   }
 
   override onAllRoutesRouted() {
@@ -789,15 +806,19 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       return
     }
 
-    for (
-      let mutableRegionIndex = 0;
-      mutableRegionIndex < this.mutableRegionIds.length;
-      mutableRegionIndex++
-    ) {
-      const regionId = this.mutableRegionIds[mutableRegionIndex]!
-      state.regionCongestionCost[regionId] +=
-        mutableRegionCosts[mutableRegionIndex]! *
-        this.RIP_CONGESTION_REGION_COST_FACTOR
+    if (this.RIP_CONGESTION_MODE === "penalty-points") {
+      this.applyPendingIntersectionPenaltyPoints()
+    } else {
+      for (
+        let mutableRegionIndex = 0;
+        mutableRegionIndex < this.mutableRegionIds.length;
+        mutableRegionIndex++
+      ) {
+        const regionId = this.mutableRegionIds[mutableRegionIndex]!
+        state.regionCongestionCost[regionId] +=
+          mutableRegionCosts[mutableRegionIndex]! *
+          this.RIP_CONGESTION_REGION_COST_FACTOR
+      }
     }
 
     state.ripCount += 1
@@ -812,11 +833,15 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   override onOutOfCandidates() {
     const { state } = this
 
-    for (const regionId of this.mutableRegionIds) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
-      state.regionCongestionCost[regionId] +=
-        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+    if (this.RIP_CONGESTION_MODE === "penalty-points") {
+      this.applyPendingIntersectionPenaltyPoints()
+    } else {
+      for (const regionId of this.mutableRegionIds) {
+        const regionCost =
+          state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+        state.regionCongestionCost[regionId] +=
+          regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+      }
     }
 
     state.ripCount += 1
@@ -866,6 +891,10 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = 10
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+  RIP_CONGESTION_MODE: RipCongestionMode = "penalty-points"
+  INTERSECTION_PENALTY_POINT_RADIUS = 1.4
+  INTERSECTION_PENALTY_POINT_FALLOFF = 2
+  INTERSECTION_PENALTY_POINT_MAGNITUDE = 0.4
 
   override MAX_ITERATIONS = 1e6
 
@@ -943,7 +972,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       sectionBaselineMaxRegionCost: this.sectionBaselineSummary.maxRegionCost,
-      sectionBaselineTotalRegionCost: this.sectionBaselineSummary.totalRegionCost,
+      sectionBaselineTotalRegionCost:
+        this.sectionBaselineSummary.totalRegionCost,
       effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
       effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
       effectiveMaxRips: this.MAX_RIPS,

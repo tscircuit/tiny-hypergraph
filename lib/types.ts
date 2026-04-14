@@ -15,6 +15,7 @@ export type LesserAngle = number
 export type Z1 = number
 export type GreaterAngle = number
 export type Z2 = number
+export type RipCongestionMode = "region" | "penalty-points"
 
 export type DynamicAnglePair = [NetId, LesserAngle, Z1, GreaterAngle, Z2]
 export interface DynamicAnglePairArrays {
@@ -25,11 +26,21 @@ export interface DynamicAnglePairArrays {
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  fromPortIds: Int32Array
+  toPortIds: Int32Array
   existingSameLayerIntersections: Integer
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer
   existingRegionCost: number
   existingSegmentCount: number
+}
+
+export interface IntersectionPenaltyPoint {
+  x: number
+  y: number
+  magnitude: number
+  radius: number
+  falloff: number
 }
 
 export type SameLayerIntersectionCount = number

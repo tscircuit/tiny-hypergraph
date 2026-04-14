@@ -1,5 +1,28 @@
 import type { DynamicAnglePair, DynamicAnglePairArrays } from "./types"
 
+export const doAngleIntervalsCross = (
+  leftLesserAngle: number,
+  leftGreaterAngle: number,
+  rightLesserAngle: number,
+  rightGreaterAngle: number,
+) => {
+  const rightLesserAngleIsInsideLeftInterval =
+    leftLesserAngle < rightLesserAngle && rightLesserAngle < leftGreaterAngle
+  const rightGreaterAngleIsInsideLeftInterval =
+    leftLesserAngle < rightGreaterAngle && rightGreaterAngle < leftGreaterAngle
+  const leftLesserAngleIsInsideRightInterval =
+    rightLesserAngle < leftLesserAngle && leftLesserAngle < rightGreaterAngle
+  const leftGreaterAngleIsInsideRightInterval =
+    rightLesserAngle < leftGreaterAngle && leftGreaterAngle < rightGreaterAngle
+
+  return (
+    rightLesserAngleIsInsideLeftInterval !==
+      rightGreaterAngleIsInsideLeftInterval &&
+    leftLesserAngleIsInsideRightInterval !==
+      leftGreaterAngleIsInsideRightInterval
+  )
+}
+
 export const createDynamicAnglePairArrays = (
   anglePairs: Array<DynamicAnglePair>,
 ): DynamicAnglePairArrays => {
@@ -40,12 +63,16 @@ export const countNewIntersectionsWithValues = (
   for (let i = 0; i < netIds.length; i++) {
     if (newNet === netIds[i]) continue
 
-    const lesserAngleIsInsideInterval =
-      newLesserAngle < lesserAngles[i] && lesserAngles[i] < newGreaterAngle
-    const greaterAngleIsInsideInterval =
-      newLesserAngle < greaterAngles[i] && greaterAngles[i] < newGreaterAngle
-
-    if (lesserAngleIsInsideInterval === greaterAngleIsInsideInterval) continue
+    if (
+      !doAngleIntervalsCross(
+        newLesserAngle,
+        newGreaterAngle,
+        lesserAngles[i]!,
+        greaterAngles[i]!,
+      )
+    ) {
+      continue
+    }
 
     if ((newLayerMask & layerMasks[i]) !== 0) {
       sameLayerIntersectionCount++

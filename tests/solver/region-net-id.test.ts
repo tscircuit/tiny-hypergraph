@@ -13,6 +13,8 @@ const createRegionCache = (
   lesserAngles: new Int32Array(0),
   greaterAngles: new Int32Array(0),
   layerMasks: new Int32Array(0),
+  fromPortIds: new Int32Array(0),
+  toPortIds: new Int32Array(0),
   existingCrossingLayerIntersections: 0,
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
@@ -51,7 +53,9 @@ test("solver does not traverse regions reserved for a different net", () => {
     regionNetId: Int32Array.from([-1, 1, -1, -1, -1]),
   }
 
-  const solver = new TinyHyperGraphSolver(topology, problem)
+  const solver = new TinyHyperGraphSolver(topology, problem, {
+    RIP_CONGESTION_MODE: "region",
+  })
   solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
 
   solver.step()

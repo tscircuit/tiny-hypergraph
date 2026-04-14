@@ -11,6 +11,7 @@ import {
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
+  type TinyHyperGraphSolverOptions,
 } from "../../lib/index"
 
 type DatasetModule = Record<string, unknown> & {
@@ -56,6 +57,16 @@ Run the hg07 section-pipeline benchmark and write per-sample artifacts under ./r
 Options:
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
+  --rip-congestion-mode MODE
+                  Use \`region\` or \`penalty-points\`.
+  --region-cost-factor N
+                  Region-mode rerip congestion factor.
+  --penalty-radius N
+                  Penalty-point radius in board units.
+  --penalty-falloff N
+                  Penalty-point falloff exponent.
+  --penalty-magnitude N
+                  Penalty-point magnitude before falloff.
   --help          Show this help text.
 
 Examples:
@@ -63,6 +74,8 @@ Examples:
   ./benchmark.sh --limit 20
   ./benchmark.sh --sample 2
   ./benchmark.sh --sample sample002
+  ./benchmark.sh --rip-congestion-mode region
+  ./benchmark.sh --penalty-radius 0.8 --penalty-falloff 1.5 --penalty-magnitude 0.2
 
 Outputs:
   - Incremental progress lines always include duration=... for hillclimbing workflows.
@@ -100,6 +113,7 @@ const formatSampleName = (value: string): string => {
 const parseArgs = () => {
   let limit: number | null = null
   let sampleName: string | null = null
+  const solverOptions: TinyHyperGraphSolverOptions = {}
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -133,6 +147,82 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--rip-congestion-mode") {
+      const rawValue = process.argv[index + 1]
+      if (rawValue !== "region" && rawValue !== "penalty-points") {
+        usageError(
+          `Invalid --rip-congestion-mode value: ${rawValue ?? "<missing>"}`,
+        )
+      }
+
+      const ripCongestionMode: NonNullable<
+        TinyHyperGraphSolverOptions["RIP_CONGESTION_MODE"]
+      > = rawValue as NonNullable<
+        TinyHyperGraphSolverOptions["RIP_CONGESTION_MODE"]
+      >
+      solverOptions.RIP_CONGESTION_MODE = ripCongestionMode
+      index += 1
+      continue
+    }
+
+    if (arg === "--region-cost-factor") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue)) {
+        usageError(
+          `Invalid --region-cost-factor value: ${rawValue ?? "<missing>"}`,
+        )
+      }
+
+      solverOptions.RIP_CONGESTION_REGION_COST_FACTOR = parsedValue
+      index += 1
+      continue
+    }
+
+    if (arg === "--penalty-radius") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(`Invalid --penalty-radius value: ${rawValue ?? "<missing>"}`)
+      }
+
+      solverOptions.INTERSECTION_PENALTY_POINT_RADIUS = parsedValue
+      index += 1
+      continue
+    }
+
+    if (arg === "--penalty-falloff") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(
+          `Invalid --penalty-falloff value: ${rawValue ?? "<missing>"}`,
+        )
+      }
+
+      solverOptions.INTERSECTION_PENALTY_POINT_FALLOFF = parsedValue
+      index += 1
+      continue
+    }
+
+    if (arg === "--penalty-magnitude") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(
+          `Invalid --penalty-magnitude value: ${rawValue ?? "<missing>"}`,
+        )
+      }
+
+      solverOptions.INTERSECTION_PENALTY_POINT_MAGNITUDE = parsedValue
+      index += 1
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -142,10 +232,16 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName }
+  return {
+    limit,
+    sampleName,
+    solverOptions:
+      Object.keys(solverOptions).length > 0 ? solverOptions : undefined,
+  }
 }
 
-const formatSeconds = (durationMs: number) => `${(durationMs / 1000).toFixed(3)}s`
+const formatSeconds = (durationMs: number) =>
+  `${(durationMs / 1000).toFixed(3)}s`
 
 const formatMetric = (value: number | null, digits = 3) =>
   value === null ? "n/a" : value.toFixed(digits)
@@ -269,7 +365,7 @@ const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
 const main = async () => {
-  const { limit, sampleName } = parseArgs()
+  const { limit, sampleName, solverOptions } = parseArgs()
   const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
@@ -291,6 +387,7 @@ const main = async () => {
     try {
       const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
         serializedHyperGraph,
+        sectionSolverOptions: solverOptions,
       })
       pipelineSolver.solve()
 
@@ -311,8 +408,9 @@ const main = async () => {
 
       const baselineMaxRegionCost =
         getSerializedOutputMaxRegionCost(solveGraphOutput)
-      const finalMaxRegionCost =
-        getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+      const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
+        optimizeSectionOutput,
+      )
       const delta = baselineMaxRegionCost - finalMaxRegionCost
       const durationMs = performance.now() - sampleStart
       const optimized = delta > IMPROVEMENT_EPSILON
@@ -339,7 +437,8 @@ const main = async () => {
         candidateCount,
         generatedCandidateCount,
         duplicateCandidateCount,
-        selectedCandidateLabel: pipelineSolver.selectedSectionCandidateLabel ?? null,
+        selectedCandidateLabel:
+          pipelineSolver.selectedSectionCandidateLabel ?? null,
         selectedCandidateFamily:
           pipelineSolver.selectedSectionCandidateFamily ?? null,
         error: null,
@@ -359,12 +458,11 @@ const main = async () => {
           `duration=${formatSeconds(durationMs)}`,
         ].join(" "),
       )
-      console.log(
-        `# no artifacts written`
-      )
+      console.log(`# no artifacts written`)
     } catch (error) {
       const durationMs = performance.now() - sampleStart
-      const errorMessage = error instanceof Error ? error.stack ?? error.message : String(error)
+      const errorMessage =
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
       const sampleDir = path.join(runDir, sampleMeta.sampleName)
       const logsPath = path.join(sampleDir, "logs.txt")
       const snapshotPath = path.join(sampleDir, "snapshot.png")
@@ -375,6 +473,7 @@ const main = async () => {
       try {
         const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
           serializedHyperGraph,
+          sectionSolverOptions: solverOptions,
         })
         const png = await getSnapshotPng(pipelineSolver)
         await writeFile(snapshotPath, png)
@@ -382,7 +481,7 @@ const main = async () => {
       } catch (snapshotError) {
         snapshotErrorMessage =
           snapshotError instanceof Error
-            ? snapshotError.stack ?? snapshotError.message
+            ? (snapshotError.stack ?? snapshotError.message)
             : String(snapshotError)
       }
 
@@ -456,7 +555,9 @@ const main = async () => {
   const finalCosts = successfulResults
     .map((result) => result.finalMaxRegionCost)
     .filter((value): value is number => value !== null)
-  const candidateCounts = successfulResults.map((result) => result.candidateCount)
+  const candidateCounts = successfulResults.map(
+    (result) => result.candidateCount,
+  )
   const successCount = successfulResults.length
   const improvedCount = successfulResults.filter(
     (result) => result.optimized,
@@ -470,7 +571,9 @@ const main = async () => {
   console.log(
     `zero-final-max-region-cost rate: ${formatPercent(zeroFinalCostCount, successCount)}`,
   )
-  console.log(`avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`)
+  console.log(
+    `avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`,
+  )
   console.log(`avg final max region cost: ${average(finalCosts).toFixed(3)}`)
   console.log(`avg max region delta: ${average(deltas).toFixed(3)}`)
   console.log(`avg candidate count: ${average(candidateCounts).toFixed(3)}`)

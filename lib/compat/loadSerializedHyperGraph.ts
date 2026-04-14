@@ -351,14 +351,14 @@ export const loadSerializedHyperGraph = (
     portX[portIndex] = Number(port.d?.x ?? 0)
     portY[portIndex] = Number(port.d?.y ?? 0)
     portZ[portIndex] = Number(port.d?.z ?? 0)
-    portAngleForRegion1[portIndex] = computePortAngle(
-      port,
-      filteredHyperGraph.regions[region1Index],
-    )
-    portAngleForRegion2[portIndex] = computePortAngle(
-      port,
-      filteredHyperGraph.regions[region2Index],
-    )
+    portAngleForRegion1[portIndex] =
+      typeof port.d?.angleForRegion1 === "number"
+        ? Number(port.d.angleForRegion1)
+        : computePortAngle(port, filteredHyperGraph.regions[region1Index])
+    portAngleForRegion2[portIndex] =
+      typeof port.d?.angleForRegion2 === "number"
+        ? Number(port.d.angleForRegion2)
+        : computePortAngle(port, filteredHyperGraph.regions[region2Index])
   })
 
   const connections = filteredHyperGraph.connections ?? []
