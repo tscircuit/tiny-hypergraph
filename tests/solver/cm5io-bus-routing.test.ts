@@ -101,7 +101,8 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
   })
 
   const boundarySteps = internal.getBoundarySteps(centerPath)
-  const boundaryPortIdsByStep = internal.assignBoundaryPortsForPath(boundarySteps)
+  const boundaryPortIdsByStep =
+    internal.assignBoundaryPortsForPath(boundarySteps)
   const firstBoundaryPorts = boundaryPortIdsByStep[0]
   const turningBoundaryStep = boundarySteps.at(-1)
   const turningBoundaryPorts = boundaryPortIdsByStep.at(-1)
@@ -115,9 +116,11 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
   expect(
     firstBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
   ).toEqual(
-    [...firstBoundaryPorts.map((portId: number) => solver.topology.portX[portId])].sort(
-      (left, right) => right - left,
-    ),
+    [
+      ...firstBoundaryPorts.map(
+        (portId: number) => solver.topology.portX[portId],
+      ),
+    ].sort((left, right) => right - left),
   )
   expect(
     turningBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
@@ -155,7 +158,8 @@ test("CM5IO bus1 preserves start-side order on the first boundary fanout", async
   centerPath[1].prevRegionId = centerPath[0].nextRegionId
 
   const boundarySteps = internal.getBoundarySteps(centerPath)
-  const firstBoundaryPorts = internal.assignBoundaryPortsForPath(boundarySteps)[0]
+  const firstBoundaryPorts =
+    internal.assignBoundaryPortsForPath(boundarySteps)[0]
 
   expect(boundarySteps).toHaveLength(1)
   expect(firstBoundaryPorts).toEqual([
@@ -164,9 +168,11 @@ test("CM5IO bus1 preserves start-side order on the first boundary fanout", async
   expect(
     firstBoundaryPorts.map((portId: number) => solver.topology.portY[portId]),
   ).toEqual(
-    [...firstBoundaryPorts.map((portId: number) => solver.topology.portY[portId])].sort(
-      (left, right) => right - left,
-    ),
+    [
+      ...firstBoundaryPorts.map(
+        (portId: number) => solver.topology.portY[portId],
+      ),
+    ].sort((left, right) => right - left),
   )
 })
 
@@ -186,15 +192,18 @@ test("CM5IO bus1 never accepts an intersecting centerline bus solution", async (
     ),
   ).toBeGreaterThan(0)
 
-  const sameLayerIntersectionCount = solver.state.regionIntersectionCaches.reduce(
-    (total, regionCache) => total + regionCache.existingSameLayerIntersections,
-    0,
-  )
-  const crossingLayerIntersectionCount = solver.state.regionIntersectionCaches.reduce(
-    (total, regionCache) =>
-      total + regionCache.existingCrossingLayerIntersections,
-    0,
-  )
+  const sameLayerIntersectionCount =
+    solver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingSameLayerIntersections,
+      0,
+    )
+  const crossingLayerIntersectionCount =
+    solver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingCrossingLayerIntersections,
+      0,
+    )
 
   expect(sameLayerIntersectionCount).toBe(0)
   expect(crossingLayerIntersectionCount).toBe(0)

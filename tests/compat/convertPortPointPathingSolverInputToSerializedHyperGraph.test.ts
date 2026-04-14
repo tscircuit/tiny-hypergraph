@@ -2,8 +2,8 @@ import { expect, test } from "bun:test"
 import { convertPortPointPathingSolverInputToSerializedHyperGraph } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 
 test("convertPortPointPathingSolverInputToSerializedHyperGraph flattens solver params into a serialized hypergraph", () => {
-  const serializedHyperGraph = convertPortPointPathingSolverInputToSerializedHyperGraph(
-    [
+  const serializedHyperGraph =
+    convertPortPointPathingSolverInputToSerializedHyperGraph([
       {
         format: "serialized-hg-port-point-pathing-solver-params",
         graph: {
@@ -32,8 +32,7 @@ test("convertPortPointPathingSolverInputToSerializedHyperGraph flattens solver p
           },
         ],
       },
-    ],
-  )
+    ])
 
   expect(serializedHyperGraph).toEqual({
     regions: [

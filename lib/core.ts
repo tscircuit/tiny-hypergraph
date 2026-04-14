@@ -511,7 +511,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
-    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
@@ -525,15 +526,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const port1IncidentRegions = topology.incidentPortRegion[port1Id]
     const port2IncidentRegions = topology.incidentPortRegion[port2Id]
     const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+      port1IncidentRegions[0] === regionId ||
+      port1IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
+        : (topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id])
     const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+      port2IncidentRegions[0] === regionId ||
+      port2IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+        : (topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id])
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2

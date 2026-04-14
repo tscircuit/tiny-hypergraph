@@ -74,8 +74,8 @@ export default function Cm5ioPage() {
   return (
     <div className="flex h-screen flex-col gap-3 p-3">
       <div className="rounded border border-slate-300 bg-white p-3 text-sm text-slate-700">
-        CM5IO hypergraph fixture. The debugger uses a `MAX_ITERATIONS` budget
-        of `50_000`.
+        CM5IO hypergraph fixture. The debugger uses a `MAX_ITERATIONS` budget of
+        `50_000`.
       </div>
       <div className="min-h-0 flex-1">
         <Debugger

@@ -110,7 +110,9 @@ const variants: BenchmarkVariant[] = [
   },
 ]
 
-const baselineResult = runSectionSolverBenchmark(legacySectionSolverBenchmarkConfig)
+const baselineResult = runSectionSolverBenchmark(
+  legacySectionSolverBenchmarkConfig,
+)
 const baselineScore = baselineResult.summary.avgMaxRegionDelta
 const baselineElapsedMs = baselineResult.summary.elapsedMs
 

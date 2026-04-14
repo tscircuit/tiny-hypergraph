@@ -156,7 +156,9 @@ const formatPerformanceRows = (rows: PipelineBenchmarkRow[]) =>
     duplicateCandidateCount: row.sectionSearchDuplicateCandidateCount,
     avgCandidateSeconds:
       row.sectionSearchCandidateCount > 0
-        ? formatSecondsCell(row.sectionSearchMs / row.sectionSearchCandidateCount)
+        ? formatSecondsCell(
+            row.sectionSearchMs / row.sectionSearchCandidateCount,
+          )
         : "0.00s",
     candidateSolveSeconds: formatSecondsCell(row.sectionSearchCandidateSolveMs),
   }))
@@ -216,7 +218,9 @@ for (const sampleMeta of sampleMetas) {
     const stageStats = pipelineSolver.getStageStats()
 
     if (!solveGraphSolver || !solveGraphOutput) {
-      throw new Error("pipeline solveGraph stage did not produce a solver output")
+      throw new Error(
+        "pipeline solveGraph stage did not produce a solver output",
+      )
     }
 
     if (!sectionSolver || !optimizeSectionOutput) {
@@ -231,8 +235,9 @@ for (const sampleMeta of sampleMetas) {
     const baselineReplayMs = performance.now() - baselineReplayStartTime
 
     const finalReplayStartTime = performance.now()
-    const finalMaxRegionCost =
-      getSerializedOutputMaxRegionCost(optimizeSectionOutput)
+    const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
+      optimizeSectionOutput,
+    )
     const finalReplayMs = performance.now() - finalReplayStartTime
     const delta = baselineMaxRegionCost - finalMaxRegionCost
     const optimized = delta > IMPROVEMENT_EPSILON
@@ -296,7 +301,8 @@ for (const sampleMeta of sampleMetas) {
       delta,
       activeRouteCount: sectionSolver.activeRouteIds.length,
       optimized,
-      selectedSectionCandidateLabel: pipelineSolver.selectedSectionCandidateLabel,
+      selectedSectionCandidateLabel:
+        pipelineSolver.selectedSectionCandidateLabel,
       selectedSectionCandidateFamily:
         pipelineSolver.selectedSectionCandidateFamily,
       sectionSearchGeneratedCandidateCount,
@@ -393,17 +399,15 @@ const summary: PipelineBenchmarkSummary = {
       ? formatSeconds(totalSectionSearchMs / totalCandidateCount)
       : "0.00s",
   totalCandidateSolveSeconds: formatSeconds(totalCandidateSolveMs),
-  totalCandidateReplayScoreSeconds: formatSeconds(
-    totalCandidateReplayScoreMs,
-  ),
+  totalCandidateReplayScoreSeconds: formatSeconds(totalCandidateReplayScoreMs),
   totalCandidateInitSeconds: formatSeconds(totalCandidateInitMs),
-  totalCandidateEligibilitySeconds: formatSeconds(
-    totalCandidateEligibilityMs,
-  ),
+  totalCandidateEligibilitySeconds: formatSeconds(totalCandidateEligibilityMs),
 }
 
 const topImprovedRows = rows
-  .filter((row) => Number.isFinite(row.delta) && row.delta > IMPROVEMENT_EPSILON)
+  .filter(
+    (row) => Number.isFinite(row.delta) && row.delta > IMPROVEMENT_EPSILON,
+  )
   .sort((left, right) => right.delta - left.delta)
   .slice(0, 10)
 const slowestRows = rows
@@ -412,7 +416,9 @@ const slowestRows = rows
   .slice(0, 10)
 
 const topRegressedRows = rows
-  .filter((row) => Number.isFinite(row.delta) && row.delta < -IMPROVEMENT_EPSILON)
+  .filter(
+    (row) => Number.isFinite(row.delta) && row.delta < -IMPROVEMENT_EPSILON,
+  )
   .sort((left, right) => left.delta - right.delta)
   .slice(0, 10)
 const performanceSummaryRows = [

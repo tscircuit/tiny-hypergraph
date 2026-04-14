@@ -80,11 +80,10 @@ export const ambiguousRouteOutputFixture: SerializedHyperGraph = {
     {
       connection,
       requiredRip: false,
-      path: createSolvedRoutePath(["s", "u", "v", "t"], [
-        "upper",
-        "lower",
-        "lower",
-      ]),
+      path: createSolvedRoutePath(
+        ["s", "u", "v", "t"],
+        ["upper", "lower", "lower"],
+      ),
     },
   ],
 }

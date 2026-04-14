@@ -109,7 +109,11 @@ const getRegionPairKey = (regionAId: RegionId, regionBId: RegionId) =>
 const computeMedianTracePitch = (busTraceOrder: BusTraceOrder) => {
   const deltas: number[] = []
 
-  for (let traceIndex = 1; traceIndex < busTraceOrder.traces.length; traceIndex++) {
+  for (
+    let traceIndex = 1;
+    traceIndex < busTraceOrder.traces.length;
+    traceIndex++
+  ) {
     deltas.push(
       busTraceOrder.traces[traceIndex]!.score -
         busTraceOrder.traces[traceIndex - 1]!.score,
@@ -190,7 +194,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
     }
     for (let portId = 0; portId < this.topology.portCount; portId++) {
-      const serializedPortId = this.topology.portMetadata?.[portId]?.serializedPortId
+      const serializedPortId =
+        this.topology.portMetadata?.[portId]?.serializedPortId
       if (typeof serializedPortId === "string") {
         this.portIndexBySerializedId.set(serializedPortId, portId)
       }
@@ -248,10 +253,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const startHeuristic =
       this.computeCenterHeuristic(startPortId, startNextRegionId) *
       this.problem.routeCount
-    this.setCandidateBestCost(
-      this.getHopId(startPortId, startNextRegionId),
-      0,
-    )
+    this.setCandidateBestCost(this.getHopId(startPortId, startNextRegionId), 0)
     this.state.candidateQueue.queue({
       portId: startPortId,
       nextRegionId: startNextRegionId,
@@ -267,8 +269,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return
     }
 
-    const currentCandidate =
-      this.state.candidateQueue.dequeue() as BusCenterCandidate | undefined
+    const currentCandidate = this.state.candidateQueue.dequeue() as
+      | BusCenterCandidate
+      | undefined
     if (!currentCandidate) {
       this.failed = true
       this.error =
@@ -299,7 +302,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const hasIntersections =
       preview.sameLayerIntersectionCount > 0 ||
       preview.crossingLayerIntersectionCount > 0
-    const hasInferenceFailure = preview.reason !== undefined && !hasIntersections
+    const hasInferenceFailure =
+      preview.reason !== undefined && !hasIntersections
 
     if (
       currentCandidate.atGoal &&
@@ -313,7 +317,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     if (!hasIntersections && !hasInferenceFailure && !currentCandidate.atGoal) {
-      for (const nextCandidate of this.getAvailableCenterMoves(currentCandidate)) {
+      for (const nextCandidate of this.getAvailableCenterMoves(
+        currentCandidate,
+      )) {
         const nextCandidateHopId = this.getHopId(
           nextCandidate.portId,
           nextCandidate.nextRegionId,
@@ -353,7 +359,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      const [regionAId, regionBId] = this.topology.incidentPortRegion[portId] ?? []
+      const [regionAId, regionBId] =
+        this.topology.incidentPortRegion[portId] ?? []
       if (regionAId === undefined || regionBId === undefined) {
         continue
       }
@@ -365,7 +372,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       this.sharedZ0PortsByRegionPair.set(regionPairKey, sharedPortIds)
     }
 
-    for (const [regionPairKey, sharedPortIds] of this.sharedZ0PortsByRegionPair) {
+    for (const [regionPairKey, sharedPortIds] of this
+      .sharedZ0PortsByRegionPair) {
       sharedPortIds.sort((leftPortId, rightPortId) => {
         const leftProjection = getPortProjection(
           this.topology,
@@ -415,7 +423,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      for (const [regionPairKey, sharedPortIds] of this.sharedZ0PortsByRegionPair) {
+      for (const [regionPairKey, sharedPortIds] of this
+        .sharedZ0PortsByRegionPair) {
         if (sharedPortIds.length < this.problem.routeCount) {
           continue
         }
@@ -466,7 +475,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
 
     return (
-      incidentRegionIds.find((regionId) => regionId !== preferredOuterRegionId) ??
+      incidentRegionIds.find(
+        (regionId) => regionId !== preferredOuterRegionId,
+      ) ??
       incidentRegionIds[0] ??
       -1
     )
@@ -511,7 +522,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       routeStartPort: new Int32Array([
         this.problem.routeStartPort[this.centerRouteId]!,
       ]),
-      routeEndPort: new Int32Array([this.problem.routeEndPort[this.centerRouteId]!]),
+      routeEndPort: new Int32Array([
+        this.problem.routeEndPort[this.centerRouteId]!,
+      ]),
       routeNet: new Int32Array([this.problem.routeNet[this.centerRouteId]!]),
       regionNetId: this.problem.regionNetId,
     }
@@ -570,10 +583,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       const h = atGoal ? 0 : this.computeCenterHeuristic(portId)
       const candidate: BusCenterCandidate = {
         portId,
-        nextRegionId:
-          atGoal
-            ? previousCandidate?.nextRegionId ?? this.centerGoalTransitRegionId
-            : mappedNextRegionId ?? previousCandidate?.nextRegionId ?? -1,
+        nextRegionId: atGoal
+          ? (previousCandidate?.nextRegionId ?? this.centerGoalTransitRegionId)
+          : (mappedNextRegionId ?? previousCandidate?.nextRegionId ?? -1),
         g: cumulativeG,
         h,
         f: atGoal ? cumulativeG : cumulativeG + h,
@@ -589,7 +601,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return plannedCandidates
   }
 
-  private evaluateCandidate(candidate: BusCenterCandidate): BusPreview | undefined {
+  private evaluateCandidate(
+    candidate: BusCenterCandidate,
+  ): BusPreview | undefined {
     this.clearPreviewRoutingState()
     this.state.currentRouteId = this.centerRouteId
     this.state.currentRouteNetId = this.centerRouteNetId
@@ -606,10 +620,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         boundaryPortIdsByStep,
       )
       if (!completeBusPreview) {
-        const {
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-        } = this.getPreviewIntersectionCounts()
+        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+          this.getPreviewIntersectionCounts()
         return {
           tracePreviews: [],
           totalLength: 0,
@@ -621,10 +633,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         }
       }
 
-      const {
-        sameLayerIntersectionCount,
-        crossingLayerIntersectionCount,
-      } = this.getPreviewIntersectionCounts()
+      const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+        this.getPreviewIntersectionCounts()
       const totalRegionCost = this.getPreviewRegionCost()
       const totalIntersectionCount =
         sameLayerIntersectionCount + crossingLayerIntersectionCount
@@ -632,7 +642,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         tracePreviews: completeBusPreview.tracePreviews,
         totalLength: completeBusPreview.totalLength,
         totalCost:
-          completeBusPreview.totalLength * this.DISTANCE_TO_COST + totalRegionCost,
+          completeBusPreview.totalLength * this.DISTANCE_TO_COST +
+          totalRegionCost,
         completeTraceCount: completeBusPreview.tracePreviews.length,
         sameLayerIntersectionCount,
         crossingLayerIntersectionCount,
@@ -651,11 +662,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     for (const traceIndex of this.commitTraceIndices) {
       const tracePreview =
         traceIndex === this.centerTraceIndex
-          ? this.buildCenterlineTracePreview(
-              centerPath,
-              usedPortOwners,
-              false,
-            )
+          ? this.buildCenterlineTracePreview(centerPath, usedPortOwners, false)
           : this.buildBestPrefixTracePreview(
               traceIndex,
               centerPath,
@@ -666,16 +673,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
             )
 
       if (!tracePreview) {
-        const {
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-        } = this.getPreviewIntersectionCounts()
+        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+          this.getPreviewIntersectionCounts()
         return {
           tracePreviews,
           totalLength,
           totalCost: Number.POSITIVE_INFINITY,
-          completeTraceCount: tracePreviews.filter((preview) => preview.complete)
-            .length,
+          completeTraceCount: tracePreviews.filter(
+            (preview) => preview.complete,
+          ).length,
           sameLayerIntersectionCount,
           crossingLayerIntersectionCount,
           reason:
@@ -688,16 +694,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       tracePreviews.push(tracePreview)
       const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
       if (!Number.isFinite(traceLength)) {
-        const {
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-        } = this.getPreviewIntersectionCounts()
+        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+          this.getPreviewIntersectionCounts()
         return {
           tracePreviews,
           totalLength,
           totalCost: Number.POSITIVE_INFINITY,
-          completeTraceCount: tracePreviews.filter((preview) => preview.complete)
-            .length,
+          completeTraceCount: tracePreviews.filter(
+            (preview) => preview.complete,
+          ).length,
           sameLayerIntersectionCount,
           crossingLayerIntersectionCount,
           reason: `Conflicting inferred port ownership for ${this.getTraceConnectionId(traceIndex)}`,
@@ -708,10 +713,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       totalPreviewCost += tracePreview.previewCost ?? 0
     }
 
-    const {
-      sameLayerIntersectionCount,
-      crossingLayerIntersectionCount,
-    } = this.getPreviewIntersectionCounts()
+    const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+      this.getPreviewIntersectionCounts()
     const totalRegionCost = this.getPreviewRegionCost()
     const totalIntersectionCount =
       sameLayerIntersectionCount + crossingLayerIntersectionCount
@@ -756,7 +759,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     for (let pathIndex = 1; pathIndex < centerPath.length; pathIndex++) {
       const nextCandidate = centerPath[pathIndex]!
-      if (!this.ensurePortOwnership(routeId, nextCandidate.portId, localOwners)) {
+      if (
+        !this.ensurePortOwnership(routeId, nextCandidate.portId, localOwners)
+      ) {
         return undefined
       }
 
@@ -792,7 +797,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     completeRoute: boolean,
   ): TracePreview | undefined {
     const routeId = this.busTraceOrder.traces[traceIndex]!.routeId
-    const centerPortIds = centerPath.map((pathCandidate) => pathCandidate.portId)
+    const centerPortIds = centerPath.map(
+      (pathCandidate) => pathCandidate.portId,
+    )
     const targetGuideProgress = this.getPolylineLength(centerPortIds)
     const minTargetGuideProgress = Math.max(
       0,
@@ -802,14 +809,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       targetGuideProgress + this.BUS_TRACE_LENGTH_MARGIN
     const localOwners = new Map(usedPortOwners)
     const startState = this.createTraceStartState(routeId)
-    if (!startState || !this.ensurePortOwnership(routeId, startState.portId, localOwners)) {
+    if (
+      !startState ||
+      !this.ensurePortOwnership(routeId, startState.portId, localOwners)
+    ) {
       return undefined
     }
 
     const segments: TraceSegment[] = []
-    const visitedTraceStates = new Set([
-      this.getTraceStateKey(startState),
-    ])
+    const visitedTraceStates = new Set([this.getTraceStateKey(startState)])
     const visitedTracePortIds = new Set<PortId>([startState.portId])
     let currentState = startState
     let currentGuideProgress = getPortProgressAlongPolyline(
@@ -884,10 +892,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         )
         const backwardPenalty =
           Math.max(0, currentGuideProgress - nextGuideProgress) * 3
-        const stallPenalty = Math.max(
-          0,
-          currentGuideProgress + this.tracePitch * 0.5 - nextGuideProgress,
-        ) * 2
+        const stallPenalty =
+          Math.max(
+            0,
+            currentGuideProgress + this.tracePitch * 0.5 - nextGuideProgress,
+          ) * 2
         const progressPenalty = completeRoute
           ? Math.max(0, targetGuideProgress - nextGuideProgress) * 0.08
           : Math.max(0, minTargetGuideProgress - nextGuideProgress) * 0.24
@@ -1039,7 +1048,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     boundaryPortIdsByStep: Array<PortId[] | undefined>,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
-    const centerPortIds = centerPath.map((pathCandidate) => pathCandidate.portId)
+    const centerPortIds = centerPath.map(
+      (pathCandidate) => pathCandidate.portId,
+    )
     const targetGuideProgress = this.getPolylineLength(centerPortIds)
     const minSharedStepCount = 0
     let bestPreview: TracePreview | undefined
@@ -1075,7 +1086,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         0,
         terminalGuideProgress - targetGuideProgress,
       )
-      const lagPenalty = (maxSharedStepCount - sharedStepCount) * this.tracePitch
+      const lagPenalty =
+        (maxSharedStepCount - sharedStepCount) * this.tracePitch
       const score = shortfallPenalty * 2 + overshootPenalty * 4 + lagPenalty
 
       if (
@@ -1182,7 +1194,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     let bestIntersectionCount = Number.POSITIVE_INFINITY
     let bestTotalLength = Number.POSITIVE_INFINITY
 
-    const search = (orderIndex: number, usedPortOwners: Map<PortId, RouteId>) => {
+    const search = (
+      orderIndex: number,
+      usedPortOwners: Map<PortId, RouteId>,
+    ) => {
       const currentIntersectionCount =
         this.getPreviewIntersectionCounts().sameLayerIntersectionCount +
         this.getPreviewIntersectionCounts().crossingLayerIntersectionCount
@@ -1231,7 +1246,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         .map((tracePreview) => {
           const stateSnapshot = this.snapshotPreviewRoutingState()
           const ownerSnapshot = new Map(usedPortOwners)
-          const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
+          const traceLength = this.commitTracePreview(
+            tracePreview,
+            usedPortOwners,
+          )
           const intersectionCount =
             this.getPreviewIntersectionCounts().sameLayerIntersectionCount +
             this.getPreviewIntersectionCounts().crossingLayerIntersectionCount
@@ -1258,7 +1276,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       for (const { tracePreview } of rankedOptions) {
         const stateSnapshot = this.snapshotPreviewRoutingState()
         const ownerSnapshot = new Map(usedPortOwners)
-        const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
+        const traceLength = this.commitTracePreview(
+          tracePreview,
+          usedPortOwners,
+        )
 
         if (Number.isFinite(traceLength)) {
           tracePreviewsStack.push(tracePreview)
@@ -1441,7 +1462,13 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     let currentRegionId = startRegionId
 
     for (const boundaryStep of boundarySteps) {
-      if (!this.ensurePortOwnership(routeId, boundaryStep.centerPortId, localOwners)) {
+      if (
+        !this.ensurePortOwnership(
+          routeId,
+          boundaryStep.centerPortId,
+          localOwners,
+        )
+      ) {
         return undefined
       }
 
@@ -1527,7 +1554,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     let currentPortId = startPortId
     let currentRegionId = startRegionId
 
-    for (let stepIndex = 0; stepIndex < this.BUS_MAX_REMAINDER_STEPS; stepIndex++) {
+    for (
+      let stepIndex = 0;
+      stepIndex < this.BUS_MAX_REMAINDER_STEPS;
+      stepIndex++
+    ) {
       if (this.isPortIncidentToRegion(endPortId, currentRegionId)) {
         if (!this.ensurePortOwnership(routeId, endPortId, localOwners)) {
           return undefined
@@ -1552,13 +1583,19 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
           }
         | undefined
 
-      for (const boundaryPortId of this.topology.regionIncidentPorts[currentRegionId] ?? []) {
-        if (boundaryPortId === currentPortId || this.topology.portZ[boundaryPortId] !== 0) {
+      for (const boundaryPortId of this.topology.regionIncidentPorts[
+        currentRegionId
+      ] ?? []) {
+        if (
+          boundaryPortId === currentPortId ||
+          this.topology.portZ[boundaryPortId] !== 0
+        ) {
           continue
         }
 
         const nextRegionId =
-          this.topology.incidentPortRegion[boundaryPortId]?.[0] === currentRegionId
+          this.topology.incidentPortRegion[boundaryPortId]?.[0] ===
+          currentRegionId
             ? this.topology.incidentPortRegion[boundaryPortId]?.[1]
             : this.topology.incidentPortRegion[boundaryPortId]?.[0]
 
@@ -1575,14 +1612,20 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
           continue
         }
 
-        const goalDistance = getPortDistance(this.topology, boundaryPortId, endPortId)
+        const goalDistance = getPortDistance(
+          this.topology,
+          boundaryPortId,
+          endPortId,
+        )
         const guideDistance = getDistanceFromPortToPolyline(
           this.topology,
           boundaryPortId,
           guidePortIds,
         )
         const sidePenalty = this.getTraceSidePenalty(traceIndex, boundaryPortId)
-        const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId) ? -5 : 0
+        const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId)
+          ? -5
+          : 0
         const score =
           guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
           goalDistance * this.BUS_REMAINDER_GOAL_WEIGHT +
@@ -1607,7 +1650,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         return undefined
       }
 
-      if (!this.ensurePortOwnership(routeId, bestMove.boundaryPortId, localOwners)) {
+      if (
+        !this.ensurePortOwnership(routeId, bestMove.boundaryPortId, localOwners)
+      ) {
         return undefined
       }
 
@@ -1665,8 +1710,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         }
       | undefined,
   ) {
-    let tangentX = this.topology.portX[toPortId] - this.topology.portX[fromPortId]
-    let tangentY = this.topology.portY[toPortId] - this.topology.portY[fromPortId]
+    let tangentX =
+      this.topology.portX[toPortId] - this.topology.portX[fromPortId]
+    let tangentY =
+      this.topology.portY[toPortId] - this.topology.portY[fromPortId]
     let tangentLength = Math.hypot(tangentX, tangentY)
 
     if (tangentLength <= BUS_CANDIDATE_EPSILON) {
@@ -1743,7 +1790,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     })
   }
 
-  private getPreferredCenterPortOptionsForBoundaryStep(boundaryStep: BoundaryStep) {
+  private getPreferredCenterPortOptionsForBoundaryStep(
+    boundaryStep: BoundaryStep,
+  ) {
     const orderedSharedPortIds =
       this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
 
@@ -1761,8 +1810,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       .sort(
         (left, right) =>
           Math.abs(left.index - midpointIndex) -
-            Math.abs(right.index - midpointIndex) ||
-          left.portId - right.portId,
+            Math.abs(right.index - midpointIndex) || left.portId - right.portId,
       )
       .slice(0, this.CENTER_PORT_OPTIONS_PER_EDGE)
       .map(({ portId }) => portId)
@@ -1790,7 +1838,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     const assignments = new Array<PortId>(this.problem.routeCount)
 
-    for (let traceIndex = 0; traceIndex < this.problem.routeCount; traceIndex++) {
+    for (
+      let traceIndex = 0;
+      traceIndex < this.problem.routeCount;
+      traceIndex++
+    ) {
       const offsetFromCenter = traceIndex - this.centerTraceIndex
       const assignedPortId = orderedPortIds[centerIndex + offsetFromCenter]
 
@@ -1879,7 +1931,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return false
     }
 
-    return (aToC > 0) !== (aToD > 0) && (bToA > 0) !== (bToB > 0)
+    return aToC > 0 !== aToD > 0 && bToA > 0 !== bToB > 0
   }
 
   private getBoundaryAssignmentLength(
@@ -1888,7 +1940,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   ) {
     let totalLength = 0
 
-    for (let traceIndex = 0; traceIndex < previousPortIds.length; traceIndex++) {
+    for (
+      let traceIndex = 0;
+      traceIndex < previousPortIds.length;
+      traceIndex++
+    ) {
       totalLength += getPortDistance(
         this.topology,
         previousPortIds[traceIndex]!,
@@ -1933,7 +1989,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     boundaryStep: BoundaryStep,
     previousPortIds?: readonly PortId[],
   ): PortId[] | undefined {
-    const sharedPortIds = this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
+    const sharedPortIds =
+      this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
 
     if (!sharedPortIds) {
       return undefined
@@ -1949,7 +2006,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         boundaryStep.centerPortId,
       ),
     ].filter(
-      (assignments, assignmentIndex, assignmentsList): assignments is PortId[] =>
+      (
+        assignments,
+        assignmentIndex,
+        assignmentsList,
+      ): assignments is PortId[] =>
         assignments !== undefined &&
         assignmentsList.findIndex(
           (candidate) =>
@@ -2007,7 +2068,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         break
       }
 
-      const previousPortId = centerPath[pathIndex - 1]?.portId ?? nextCandidate.portId
+      const previousPortId =
+        centerPath[pathIndex - 1]?.portId ?? nextCandidate.portId
       const nextPortId =
         centerPath[pathIndex + 1]?.portId ?? nextCandidate.portId
       const boundaryNormal = this.computeBoundaryNormal(
@@ -2053,7 +2115,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return moves
     }
 
-    if (this.isRegionReservedForDifferentBusNet(currentNetId, currentCandidate.nextRegionId)) {
+    if (
+      this.isRegionReservedForDifferentBusNet(
+        currentNetId,
+        currentCandidate.nextRegionId,
+      )
+    ) {
       return moves
     }
 
@@ -2123,7 +2190,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         currentCandidate.portId,
         previousNormal,
       )
-      const boundarySupportPenalty = this.getBoundarySupportPenalty(boundaryStep)
+      const boundarySupportPenalty =
+        this.getBoundarySupportPenalty(boundaryStep)
       const g =
         parentCost +
         segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount +
@@ -2145,7 +2213,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      if (this.centerCandidatePathContainsRegion(currentCandidate, nextRegionId)) {
+      if (
+        this.centerCandidatePathContainsRegion(currentCandidate, nextRegionId)
+      ) {
         continue
       }
 
@@ -2184,8 +2254,16 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       if (
         this.topology.portZ[segment.fromPortId] !== 0 ||
         this.topology.portZ[segment.toPortId] !== 0 ||
-        !this.ensurePortOwnership(tracePreview.routeId, segment.fromPortId, usedPortOwners) ||
-        !this.ensurePortOwnership(tracePreview.routeId, segment.toPortId, usedPortOwners)
+        !this.ensurePortOwnership(
+          tracePreview.routeId,
+          segment.fromPortId,
+          usedPortOwners,
+        ) ||
+        !this.ensurePortOwnership(
+          tracePreview.routeId,
+          segment.toPortId,
+          usedPortOwners,
+        )
       ) {
         return Number.POSITIVE_INFINITY
       }
@@ -2289,7 +2367,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     sharedStepCount: number,
   ) {
     const guidePortIds = centerPath.map((pathCandidate) => pathCandidate.portId)
-    const startIndex = Math.min(sharedStepCount, Math.max(guidePortIds.length - 1, 0))
+    const startIndex = Math.min(
+      sharedStepCount,
+      Math.max(guidePortIds.length - 1, 0),
+    )
     return guidePortIds.slice(startIndex)
   }
 
@@ -2314,7 +2395,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       this.busTraceOrder.normalX,
       this.busTraceOrder.normalY,
     )
-    const centerProjection = this.busTraceOrder.traces[this.centerTraceIndex]!.score
+    const centerProjection =
+      this.busTraceOrder.traces[this.centerTraceIndex]!.score
     const offset = projection - centerProjection
 
     if (
@@ -2328,9 +2410,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   }
 
   private computeCenterHeuristic(portId: PortId, nextRegionId?: RegionId) {
-    const portHeuristic = this.problemSetup.portHCostToEndOfRoute[
-      portId * this.problem.routeCount + this.centerRouteId
-    ]
+    const portHeuristic =
+      this.problemSetup.portHCostToEndOfRoute[
+        portId * this.problem.routeCount + this.centerRouteId
+      ]
 
     if (nextRegionId === undefined) {
       return portHeuristic
@@ -2344,7 +2427,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return Math.max(portHeuristic, regionHeuristic * this.DISTANCE_TO_COST)
   }
 
-  private createTraceStartState(routeId: RouteId): TraceInferenceState | undefined {
+  private createTraceStartState(
+    routeId: RouteId,
+  ): TraceInferenceState | undefined {
     const startPortId = this.problem.routeStartPort[routeId]!
     const goalPortId = this.problem.routeEndPort[routeId]!
     const startNextRegionId = this.getStartingNextRegionId(routeId, startPortId)
@@ -2357,7 +2442,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
     }
 
-    if (startNextRegionId === undefined || this.topology.portZ[startPortId] !== 0) {
+    if (
+      startNextRegionId === undefined ||
+      this.topology.portZ[startPortId] !== 0
+    ) {
       return undefined
     }
 
@@ -2380,7 +2468,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const currentRegionId = traceState.nextRegionId
     const moves: TraceInferenceMove[] = []
 
-    for (const neighborPortId of this.topology.regionIncidentPorts[currentRegionId] ?? []) {
+    for (const neighborPortId of this.topology.regionIncidentPorts[
+      currentRegionId
+    ] ?? []) {
       if (
         neighborPortId === traceState.portId ||
         this.problem.portSectionMask[neighborPortId] === 0 ||
@@ -2409,7 +2499,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
 
       const nextRegionId =
-        this.topology.incidentPortRegion[neighborPortId]?.[0] === currentRegionId
+        this.topology.incidentPortRegion[neighborPortId]?.[0] ===
+        currentRegionId
           ? this.topology.incidentPortRegion[neighborPortId]?.[1]
           : this.topology.incidentPortRegion[neighborPortId]?.[0]
 
@@ -2434,7 +2525,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return moves
   }
 
-  private isPortReservedForDifferentBusNet(currentNetId: NetId, portId: PortId) {
+  private isPortReservedForDifferentBusNet(
+    currentNetId: NetId,
+    portId: PortId,
+  ) {
     const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
     if (!reservedNetIds) {
       return false
@@ -2540,7 +2634,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   }
 
   private getTraceConnectionId(traceIndex: number) {
-    return this.busTraceOrder.traces[traceIndex]?.connectionId ?? `trace-${traceIndex}`
+    return (
+      this.busTraceOrder.traces[traceIndex]?.connectionId ??
+      `trace-${traceIndex}`
+    )
   }
 
   private describeBoundaryStep(boundaryStep: BoundaryStep) {
@@ -2560,13 +2657,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return cached
     }
 
-    const supported = this.assignBoundaryPortsForStep(boundaryStep) !== undefined
+    const supported =
+      this.assignBoundaryPortsForStep(boundaryStep) !== undefined
     this.boundarySupportCache.set(cacheKey, supported)
     return supported
   }
 
   private getBoundarySupportPenalty(boundaryStep: BoundaryStep) {
-    const sharedPortIds = this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
+    const sharedPortIds =
+      this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
 
     if (!sharedPortIds) {
       return this.problem.routeCount * 20

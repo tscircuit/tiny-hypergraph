@@ -152,9 +152,7 @@ const getRegionVisualizationLayer = (
   const metadataAvailableZ = Array.isArray(regionMetadata?.availableZ)
     ? regionMetadata.availableZ.filter(
         (layer: unknown): layer is number =>
-          typeof layer === "number" &&
-          Number.isInteger(layer) &&
-          layer >= 0,
+          typeof layer === "number" && Number.isInteger(layer) && layer >= 0,
       )
     : []
 

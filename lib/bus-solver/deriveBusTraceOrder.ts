@@ -72,23 +72,26 @@ export const deriveBusTraceOrder = (
   const normalX = -directionY
   const normalY = directionX
 
-  const rawTraceScores = Array.from({ length: problem.routeCount }, (_, routeId) => {
-    const startPortId = problem.routeStartPort[routeId]!
-    const endPortId = problem.routeEndPort[routeId]!
-    const startProjection =
-      (topology.portX[startPortId] - startCenterX) * normalX +
-      (topology.portY[startPortId] - startCenterY) * normalY
-    const endProjection =
-      (topology.portX[endPortId] - endCenterX) * normalX +
-      (topology.portY[endPortId] - endCenterY) * normalY
+  const rawTraceScores = Array.from(
+    { length: problem.routeCount },
+    (_, routeId) => {
+      const startPortId = problem.routeStartPort[routeId]!
+      const endPortId = problem.routeEndPort[routeId]!
+      const startProjection =
+        (topology.portX[startPortId] - startCenterX) * normalX +
+        (topology.portY[startPortId] - startCenterY) * normalY
+      const endProjection =
+        (topology.portX[endPortId] - endCenterX) * normalX +
+        (topology.portY[endPortId] - endCenterY) * normalY
 
-    return {
-      routeId,
-      connectionId: getConnectionId(problem, routeId),
-      startProjection,
-      endProjection,
-    }
-  })
+      return {
+        routeId,
+        connectionId: getConnectionId(problem, routeId),
+        startProjection,
+        endProjection,
+      }
+    },
+  )
 
   const endpointCorrelation = rawTraceScores.reduce(
     (sum, trace) => sum + trace.startProjection * trace.endProjection,

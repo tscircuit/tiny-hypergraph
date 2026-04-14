@@ -123,7 +123,11 @@ export const getPortProgressAlongPolyline = (
 
     const t = Math.max(
       0,
-      Math.min(1, ((point.x - start.x) * abX + (point.y - start.y) * abY) / (abLength * abLength)),
+      Math.min(
+        1,
+        ((point.x - start.x) * abX + (point.y - start.y) * abY) /
+          (abLength * abLength),
+      ),
     )
     const projectionX = start.x + abX * t
     const projectionY = start.y + abY * t
