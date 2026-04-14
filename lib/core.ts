@@ -747,6 +747,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return typeof connectionId === "string" ? connectionId : `route-${routeId}`
   }
 
+  getAdditionalRegionLabel(_regionId: RegionId): string | undefined {
+    return undefined
+  }
+
   getNeverSuccessfullyRoutedRoutes(): NeverSuccessfullyRoutedRouteSummary[] {
     const neverSuccessfullyRoutedRoutes: NeverSuccessfullyRoutedRouteSummary[] =
       []

@@ -142,18 +142,27 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   CENTER_PORT_OPTIONS_PER_EDGE = 6
   BUS_TRACE_LENGTH_MARGIN = 1
   BUS_MAX_TRACE_STEPS = 256
+  MANUAL_CENTER_FINISH_MAX_HOPS = 2
+  MANUAL_CENTER_FINISH_PORT_OPTIONS_PER_BOUNDARY = 6
+  MANUAL_CENTER_FINISH_CANDIDATE_LIMIT = 24
 
   readonly busTraceOrder: BusTraceOrder
   readonly centerTraceIndex: number
   readonly centerRouteId: RouteId
   readonly centerRouteNetId: NetId
   readonly centerGoalTransitRegionId: RegionId
+  readonly centerGoalHopDistanceByRegion: Int32Array
   readonly otherTraceIndices: number[]
   readonly commitTraceIndices: number[]
   readonly tracePitch: number
   readonly regionDistanceToGoalByRegion: Float64Array
 
   private readonly sharedZ0PortsByRegionPair = new Map<string, PortId[]>()
+  private readonly usableCenterlineSharedZ0PortsByRegionPair = new Map<
+    string,
+    PortId[]
+  >()
+  private readonly centerlineNeighborRegionIdsByRegion: RegionId[][]
   private readonly regionIndexBySerializedId = new Map<string, RegionId>()
   private readonly portIndexBySerializedId = new Map<string, PortId>()
   private readonly boundarySupportCache = new Map<string, boolean>()
@@ -219,7 +228,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     this.buildSharedZ0PortsByRegionPair()
+    this.buildUsableCenterlineSharedZ0PortsByRegionPair()
+    this.centerlineNeighborRegionIdsByRegion =
+      this.buildCenterlineNeighborRegionIdsByRegion()
     this.regionDistanceToGoalByRegion = this.computeRegionDistanceToGoal()
+    this.centerGoalHopDistanceByRegion = this.computeCenterGoalHopDistance()
     this.updateBusStats()
   }
 
@@ -394,6 +407,83 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
   }
 
+  private buildUsableCenterlineSharedZ0PortsByRegionPair() {
+    this.usableCenterlineSharedZ0PortsByRegionPair.clear()
+
+    for (const [regionPairKey, sharedPortIds] of this
+      .sharedZ0PortsByRegionPair) {
+      const usablePortIds = sharedPortIds.filter((portId) =>
+        this.isUsableCenterlineBoundaryPort(portId),
+      )
+
+      if (usablePortIds.length === 0) {
+        continue
+      }
+
+      this.usableCenterlineSharedZ0PortsByRegionPair.set(
+        regionPairKey,
+        usablePortIds,
+      )
+    }
+  }
+
+  private buildCenterlineNeighborRegionIdsByRegion() {
+    const neighborRegionIdsByRegion = Array.from(
+      { length: this.topology.regionCount },
+      () => [] as RegionId[],
+    )
+
+    for (const regionPairKey of this.usableCenterlineSharedZ0PortsByRegionPair.keys()) {
+      const separatorIndex = regionPairKey.indexOf(":")
+      const regionAId = Number(regionPairKey.slice(0, separatorIndex))
+      const regionBId = Number(regionPairKey.slice(separatorIndex + 1))
+
+      neighborRegionIdsByRegion[regionAId]!.push(regionBId)
+      neighborRegionIdsByRegion[regionBId]!.push(regionAId)
+    }
+
+    for (const neighborRegionIds of neighborRegionIdsByRegion) {
+      neighborRegionIds.sort((left, right) => left - right)
+    }
+
+    return neighborRegionIdsByRegion
+  }
+
+  private computeCenterGoalHopDistance() {
+    const hopDistanceByRegion = new Int32Array(this.topology.regionCount).fill(
+      -1,
+    )
+
+    if (this.centerGoalTransitRegionId < 0) {
+      return hopDistanceByRegion
+    }
+
+    const queuedRegionIds = [this.centerGoalTransitRegionId]
+    hopDistanceByRegion[this.centerGoalTransitRegionId] = 0
+
+    for (
+      let queueIndex = 0;
+      queueIndex < queuedRegionIds.length;
+      queueIndex++
+    ) {
+      const currentRegionId = queuedRegionIds[queueIndex]!
+      const nextHopDistance = hopDistanceByRegion[currentRegionId]! + 1
+
+      for (const neighborRegionId of this.centerlineNeighborRegionIdsByRegion[
+        currentRegionId
+      ] ?? []) {
+        if (hopDistanceByRegion[neighborRegionId] !== -1) {
+          continue
+        }
+
+        hopDistanceByRegion[neighborRegionId] = nextHopDistance
+        queuedRegionIds.push(neighborRegionId)
+      }
+    }
+
+    return hopDistanceByRegion
+  }
+
   private computeRegionDistanceToGoal() {
     const regionDistanceToGoalByRegion = new Float64Array(
       this.topology.regionCount,
@@ -423,12 +513,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      for (const [regionPairKey, sharedPortIds] of this
-        .sharedZ0PortsByRegionPair) {
-        if (sharedPortIds.length < this.problem.routeCount) {
-          continue
-        }
-
+      for (const regionPairKey of this.usableCenterlineSharedZ0PortsByRegionPair.keys()) {
         const separatorIndex = regionPairKey.indexOf(":")
         const regionAId = Number(regionPairKey.slice(0, separatorIndex))
         const regionBId = Number(regionPairKey.slice(separatorIndex + 1))
@@ -2106,6 +2191,252 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return path
   }
 
+  private isUsableCenterlineBoundaryPort(portId: PortId) {
+    return (
+      this.problem.portSectionMask[portId] === 1 &&
+      this.topology.portZ[portId] === 0 &&
+      !this.isPortReservedForDifferentBusNet(this.centerRouteNetId, portId)
+    )
+  }
+
+  private isManualCenterFinishRegion(regionId: RegionId) {
+    const hopDistance = this.centerGoalHopDistanceByRegion[regionId]
+    return hopDistance >= 0 && hopDistance <= this.MANUAL_CENTER_FINISH_MAX_HOPS
+  }
+
+  override getAdditionalRegionLabel(regionId: RegionId) {
+    if (!this.isManualCenterFinishRegion(regionId)) {
+      return undefined
+    }
+
+    return `bus end-manual hop: ${this.centerGoalHopDistanceByRegion[regionId]}`
+  }
+
+  private getCandidateBoundaryNormal(candidate: BusCenterCandidate) {
+    if (
+      candidate.boundaryNormalX === undefined ||
+      candidate.boundaryNormalY === undefined
+    ) {
+      return undefined
+    }
+
+    return {
+      x: candidate.boundaryNormalX,
+      y: candidate.boundaryNormalY,
+    }
+  }
+
+  private getOrderedUsableCenterlinePortsForBoundaryStep(
+    boundaryStep: BoundaryStep,
+  ) {
+    const orderedSharedPortIds =
+      this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
+    if (!orderedSharedPortIds) {
+      return undefined
+    }
+
+    return orderedSharedPortIds.filter((portId) =>
+      this.isUsableCenterlineBoundaryPort(portId),
+    )
+  }
+
+  private getBoundaryCenterMidpointPenalty(boundaryStep: BoundaryStep) {
+    const orderedSharedPortIds =
+      this.getOrderedUsableCenterlinePortsForBoundaryStep(boundaryStep)
+
+    if (!orderedSharedPortIds || orderedSharedPortIds.length === 0) {
+      return Number.POSITIVE_INFINITY
+    }
+
+    const centerIndex = orderedSharedPortIds.indexOf(boundaryStep.centerPortId)
+    if (centerIndex === -1) {
+      return Number.POSITIVE_INFINITY
+    }
+
+    return Math.abs(centerIndex - (orderedSharedPortIds.length - 1) / 2)
+  }
+
+  private getManualCenterFinishPortOptions(
+    currentCandidate: BusCenterCandidate,
+    nextRegionId: RegionId,
+  ) {
+    const currentRegionId = currentCandidate.nextRegionId
+    if (currentRegionId === undefined) {
+      return [] as Array<{
+        boundaryStep: BoundaryStep
+        portId: PortId
+        score: number
+      }>
+    }
+
+    const regionPairKey = getRegionPairKey(currentRegionId, nextRegionId)
+    const sharedPortIds =
+      this.usableCenterlineSharedZ0PortsByRegionPair.get(regionPairKey) ?? []
+    const previousNormal = this.getCandidateBoundaryNormal(currentCandidate)
+    const candidatePortOptions = sharedPortIds
+      .filter((portId) => portId !== currentCandidate.portId)
+      .map((portId) => {
+        const boundaryStep = this.createBoundaryStep(
+          currentRegionId,
+          nextRegionId,
+          portId,
+          currentCandidate.portId,
+          previousNormal,
+        )
+        const midpointPenalty =
+          this.getBoundaryCenterMidpointPenalty(boundaryStep)
+        const segmentLength = getPortDistance(
+          this.topology,
+          currentCandidate.portId,
+          portId,
+        )
+        const goalHeuristic =
+          this.computeCenterHeuristic(portId, nextRegionId) *
+          this.problem.routeCount
+        const score =
+          segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount +
+          midpointPenalty +
+          goalHeuristic
+
+        return {
+          boundaryStep,
+          portId,
+          score,
+        }
+      })
+      .sort(
+        (left, right) => left.score - right.score || left.portId - right.portId,
+      )
+
+    return candidatePortOptions.slice(
+      0,
+      this.MANUAL_CENTER_FINISH_PORT_OPTIONS_PER_BOUNDARY,
+    )
+  }
+
+  private getCenterCandidatePathKey(candidate: BusCenterCandidate) {
+    return this.getCenterCandidatePath(candidate)
+      .map(
+        (pathCandidate) =>
+          `${pathCandidate.portId}:${pathCandidate.nextRegionId}:${pathCandidate.atGoal ? 1 : 0}`,
+      )
+      .join("|")
+  }
+
+  private getManualCenterFinishCandidates(
+    currentCandidate: BusCenterCandidate,
+  ) {
+    const currentRegionId = currentCandidate.nextRegionId
+    if (
+      currentRegionId === undefined ||
+      !this.isManualCenterFinishRegion(currentRegionId)
+    ) {
+      return [] as BusCenterCandidate[]
+    }
+
+    const goalPortId = this.problem.routeEndPort[this.centerRouteId]!
+    const candidateKeys = new Set<string>()
+    const completionCandidates: BusCenterCandidate[] = []
+    const currentHopDistance =
+      this.centerGoalHopDistanceByRegion[currentRegionId]
+    const baseCost = currentCandidate.busCost ?? currentCandidate.g
+
+    const search = (
+      candidate: BusCenterCandidate,
+      regionId: RegionId,
+      hopDistance: number,
+      accumulatedCost: number,
+    ) => {
+      if (this.isPortIncidentToRegion(goalPortId, regionId)) {
+        const segmentLength = getPortDistance(
+          this.topology,
+          candidate.portId,
+          goalPortId,
+        )
+        const goalCandidate: BusCenterCandidate = {
+          portId: goalPortId,
+          nextRegionId: regionId,
+          g:
+            accumulatedCost +
+            segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount,
+          h: 0,
+          f:
+            accumulatedCost +
+            segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount,
+          atGoal: true,
+          prevRegionId: regionId,
+          prevCandidate: candidate,
+        }
+        const candidateKey = this.getCenterCandidatePathKey(goalCandidate)
+        if (!candidateKeys.has(candidateKey)) {
+          candidateKeys.add(candidateKey)
+          completionCandidates.push(goalCandidate)
+        }
+        return
+      }
+
+      if (hopDistance <= 0) {
+        return
+      }
+
+      const nextHopDistance = hopDistance - 1
+      for (const nextRegionId of this.centerlineNeighborRegionIdsByRegion[
+        regionId
+      ] ?? []) {
+        if (
+          this.centerGoalHopDistanceByRegion[nextRegionId] !== nextHopDistance
+        ) {
+          continue
+        }
+
+        if (this.centerCandidatePathContainsRegion(candidate, nextRegionId)) {
+          continue
+        }
+
+        for (const portOption of this.getManualCenterFinishPortOptions(
+          candidate,
+          nextRegionId,
+        )) {
+          if (
+            this.centerCandidatePathContainsHop(
+              candidate,
+              portOption.portId,
+              nextRegionId,
+            )
+          ) {
+            continue
+          }
+
+          const segmentLength = getPortDistance(
+            this.topology,
+            candidate.portId,
+            portOption.portId,
+          )
+          const nextCost = accumulatedCost + portOption.score
+          const nextCandidate: BusCenterCandidate = {
+            portId: portOption.portId,
+            nextRegionId,
+            g: nextCost,
+            h: 0,
+            f: nextCost,
+            prevRegionId: regionId,
+            prevCandidate: candidate,
+            boundaryNormalX: portOption.boundaryStep.normalX,
+            boundaryNormalY: portOption.boundaryStep.normalY,
+          }
+
+          search(nextCandidate, nextRegionId, nextHopDistance, nextCost)
+        }
+      }
+    }
+
+    search(currentCandidate, currentRegionId, currentHopDistance, baseCost)
+
+    return completionCandidates
+      .sort((left, right) => left.g - right.g || left.portId - right.portId)
+      .slice(0, this.MANUAL_CENTER_FINISH_CANDIDATE_LIMIT)
+  }
+
   private getAvailableCenterMoves(currentCandidate: BusCenterCandidate) {
     const moves: BusCenterCandidate[] = []
     const routeId = this.centerRouteId
@@ -2122,6 +2453,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       )
     ) {
       return moves
+    }
+
+    if (this.isManualCenterFinishRegion(currentCandidate.nextRegionId)) {
+      return this.getManualCenterFinishCandidates(currentCandidate)
     }
 
     const parentCost = currentCandidate.busCost ?? currentCandidate.g

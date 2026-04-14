@@ -196,6 +196,7 @@ const getRegionCostLabel = (
   return formatLabel(
     `region: region-${regionId}`,
     `net: ${regionNetLabel}`,
+    solver.getAdditionalRegionLabel(regionId),
     `cost: ${regionCost.toFixed(3)}`,
     `congestion: ${congestionCost.toFixed(3)}`,
     `same layer X: ${regionCache?.existingSameLayerIntersections ?? 0}`,
