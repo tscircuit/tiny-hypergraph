@@ -270,3 +270,24 @@ test("CM5IO bus1 never accepts an intersecting centerline bus solution", async (
     ),
   ).toBe(true)
 })
+
+test("CM5IO bus1 solved visualize only shows final traces", async () => {
+  const solver = await createCm5ioBus1Solver()
+
+  solver.solve()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+
+  const graphics = solver.visualize()
+
+  expect(
+    (graphics.points ?? []).some(
+      (point) =>
+        typeof point.label === "string" && point.label.includes("g: "),
+    ),
+  ).toBe(false)
+  expect(
+    (graphics.lines ?? []).some((line) => typeof line.label !== "string"),
+  ).toBe(false)
+})
