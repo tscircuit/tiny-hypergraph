@@ -15,6 +15,8 @@ const createRegionCache = (
   lesserAngles: new Int32Array(0),
   greaterAngles: new Int32Array(0),
   layerMasks: new Int32Array(0),
+  fromPortIds: new Int32Array(0),
+  toPortIds: new Int32Array(0),
   existingCrossingLayerIntersections: 0,
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,
@@ -72,7 +74,9 @@ const createTestSolver = (
 }
 
 test("completed routing rerips when a region exceeds the current threshold", () => {
-  const solver = createTestSolver()
+  const solver = createTestSolver({
+    RIP_CONGESTION_MODE: "region",
+  })
 
   solver.state.unroutedRoutes = []
   solver.state.portAssignment.set([0, 0, 1, 1])
@@ -137,6 +141,40 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(solver.failed).toBe(false)
   expect(solver.state.ripCount).toBe(0)
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
+})
+
+test("point-mode rerips add an accumulated port penalty around intersections", () => {
+  const solver = createTestSolver({
+    RIP_CONGESTION_MODE: "penalty-points",
+    INTERSECTION_PENALTY_POINT_RADIUS: 2,
+    INTERSECTION_PENALTY_POINT_FALLOFF: 1,
+    INTERSECTION_PENALTY_POINT_MAGNITUDE: 1,
+  })
+
+  solver.topology.portX = new Float64Array([-1, 0, 1, 0])
+  solver.topology.portY = new Float64Array([0, 1, 0, -1])
+  solver.topology.portAngleForRegion1 = new Int32Array([18000, 9000, 0, 27000])
+  solver.topology.portAngleForRegion2 = new Int32Array([18000, 9000, 0, 27000])
+  solver.topology.regionIncidentPorts[0] = [0, 1, 2, 3]
+  solver.topology.regionIncidentPorts[1] = []
+  solver.state.unroutedRoutes = []
+
+  solver.state.currentRouteNetId = 0
+  solver.appendSegmentToRegionCache(0, 0, 2)
+  solver.state.regionSegments[0] = [[0, 0, 2]]
+
+  solver.state.currentRouteNetId = 1
+  solver.appendSegmentToRegionCache(0, 1, 3)
+  solver.state.regionSegments[0].push([1, 1, 3])
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
+  expect(solver.state.intersectionPenaltyPoints).toHaveLength(1)
+  expect(solver.state.portCongestionCost[0]).toBeGreaterThan(0)
+  expect(solver.state.portCongestionCost[1]).toBeGreaterThan(0)
+  expect(solver.state.pendingIntersectionPenaltyPoints).toHaveLength(0)
 })
 
 test("constructor options override snake-case hyperparameters before setup", () => {

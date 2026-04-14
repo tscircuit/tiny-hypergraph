@@ -129,6 +129,16 @@ const getSerializedPortData = (
     data.z = solver.topology.portZ[portId]
   }
 
+  if (typeof data.angleForRegion1 !== "number") {
+    data.angleForRegion1 = solver.topology.portAngleForRegion1[portId]
+  }
+
+  if (typeof data.angleForRegion2 !== "number") {
+    data.angleForRegion2 =
+      solver.topology.portAngleForRegion2?.[portId] ??
+      solver.topology.portAngleForRegion1[portId]
+  }
+
   return data
 }
 

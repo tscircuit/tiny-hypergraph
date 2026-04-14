@@ -9,6 +9,7 @@
     "format:check": "biome format .",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
+    "benchmark:sweep:intersection-penalties": "bun run scripts/benchmarking/sweep-intersection-penalties.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
