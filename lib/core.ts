@@ -109,6 +109,17 @@ export interface RegionCostSummary {
   totalRegionCost: number
 }
 
+export interface NeverSuccessfullyRoutedRouteSummary {
+  routeId: RouteId
+  connectionId: string
+  attempts: number
+  startPortId: PortId
+  endPortId: PortId
+  startRegionId?: string
+  endRegionId?: string
+  pointIds: string[]
+}
+
 export interface Candidate {
   prevRegionId?: RegionId
   portId: PortId
@@ -156,6 +167,7 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   MAX_ITERATIONS?: number
+  VERBOSE?: boolean
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -165,6 +177,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   MAX_ITERATIONS: number
+  VERBOSE: boolean
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -194,6 +207,9 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
   }
+  if (options.VERBOSE !== undefined) {
+    solver.VERBOSE = options.VERBOSE
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -205,6 +221,7 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
+  VERBOSE: solver.VERBOSE,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -220,6 +237,9 @@ interface SegmentGeometryScratch {
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
+  protected routeAttemptCountByRouteId: Uint32Array
+  protected routeSuccessCountByRouteId: Uint32Array
+  private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
     greaterAngle: 0,
@@ -236,6 +256,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
+  VERBOSE = false
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -266,6 +287,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
     }
+    this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
   }
 
   get problemSetup(): TinyHyperGraphProblemSetup {
@@ -329,6 +352,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
+      this.routeAttemptCountByRouteId[state.currentRouteId!] += 1
 
       this.resetCandidateBestCosts()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
@@ -511,7 +535,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
-    const regionAvailableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
@@ -525,15 +550,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const port1IncidentRegions = topology.incidentPortRegion[port1Id]
     const port2IncidentRegions = topology.incidentPortRegion[port2Id]
     const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
+      port1IncidentRegions[0] === regionId ||
+      port1IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
+        : (topology.portAngleForRegion2?.[port1Id] ??
+          topology.portAngleForRegion1[port1Id])
     const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
+      port2IncidentRegions[0] === regionId ||
+      port2IncidentRegions[1] !== regionId
         ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+        : (topology.portAngleForRegion2?.[port2Id] ??
+          topology.portAngleForRegion1[port2Id])
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
@@ -676,6 +703,156 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.goalPortId = -1
   }
 
+  protected getMaxRegionCost() {
+    const { topology, state } = this
+    let maxRegionCost = 0
+
+    for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+      const regionCost =
+        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      maxRegionCost = Math.max(maxRegionCost, regionCost)
+    }
+
+    return maxRegionCost
+  }
+
+  protected getRouteMetadata(routeId: RouteId):
+    | {
+        connectionId?: unknown
+        startRegionId?: unknown
+        endRegionId?: unknown
+        simpleRouteConnection?: {
+          pointsToConnect?: Array<{
+            pointId?: unknown
+          }>
+        }
+      }
+    | undefined {
+    return this.problem.routeMetadata?.[routeId] as
+      | {
+          connectionId?: unknown
+          startRegionId?: unknown
+          endRegionId?: unknown
+          simpleRouteConnection?: {
+            pointsToConnect?: Array<{
+              pointId?: unknown
+            }>
+          }
+        }
+      | undefined
+  }
+
+  protected getRouteConnectionId(routeId: RouteId) {
+    const connectionId = this.getRouteMetadata(routeId)?.connectionId
+    return typeof connectionId === "string" ? connectionId : `route-${routeId}`
+  }
+
+  getNeverSuccessfullyRoutedRoutes(): NeverSuccessfullyRoutedRouteSummary[] {
+    const neverSuccessfullyRoutedRoutes: NeverSuccessfullyRoutedRouteSummary[] =
+      []
+
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      const attempts = this.routeAttemptCountByRouteId[routeId]!
+      if (attempts === 0 || this.routeSuccessCountByRouteId[routeId]! > 0) {
+        continue
+      }
+
+      const routeMetadata = this.getRouteMetadata(routeId)
+      const pointIds =
+        routeMetadata?.simpleRouteConnection?.pointsToConnect
+          ?.map(({ pointId }) => (typeof pointId === "string" ? pointId : null))
+          .filter((pointId): pointId is string => pointId !== null) ?? []
+
+      neverSuccessfullyRoutedRoutes.push({
+        routeId,
+        connectionId: this.getRouteConnectionId(routeId),
+        attempts,
+        startPortId: this.problem.routeStartPort[routeId]!,
+        endPortId: this.problem.routeEndPort[routeId]!,
+        startRegionId:
+          typeof routeMetadata?.startRegionId === "string"
+            ? routeMetadata.startRegionId
+            : undefined,
+        endRegionId:
+          typeof routeMetadata?.endRegionId === "string"
+            ? routeMetadata.endRegionId
+            : undefined,
+        pointIds,
+      })
+    }
+
+    return neverSuccessfullyRoutedRoutes
+  }
+
+  protected logNeverSuccessfullyRoutedRoutes() {
+    if (!this.VERBOSE || this.hasLoggedNeverSuccessfullyRoutedRoutes) {
+      return
+    }
+
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
+    this.hasLoggedNeverSuccessfullyRoutedRoutes = true
+
+    if (neverSuccessfullyRoutedRoutes.length === 0) {
+      return
+    }
+
+    console.log(
+      [
+        "[TinyHyperGraphSolver:never-routed-summary]",
+        `count=${neverSuccessfullyRoutedRoutes.length}`,
+      ].join(" "),
+    )
+
+    for (const neverSuccessfullyRoutedRoute of neverSuccessfullyRoutedRoutes) {
+      const pointPath =
+        neverSuccessfullyRoutedRoute.pointIds.length >= 2
+          ? `${neverSuccessfullyRoutedRoute.pointIds[0]}->${neverSuccessfullyRoutedRoute.pointIds[1]}`
+          : "unknown"
+
+      console.log(
+        [
+          "[TinyHyperGraphSolver:never-routed]",
+          `routeId=${neverSuccessfullyRoutedRoute.routeId}`,
+          `connectionId=${neverSuccessfullyRoutedRoute.connectionId}`,
+          `attempts=${neverSuccessfullyRoutedRoute.attempts}`,
+          `pointPath=${pointPath}`,
+          `startRegionId=${neverSuccessfullyRoutedRoute.startRegionId ?? "unknown"}`,
+          `endRegionId=${neverSuccessfullyRoutedRoute.endRegionId ?? "unknown"}`,
+        ].join(" "),
+      )
+    }
+  }
+
+  protected logRipEvent(
+    reason: "hot_regions" | "out_of_candidates",
+    maxRegionCostBeforeRip: number,
+    extraFields: Record<string, string | number> = {},
+  ) {
+    if (!this.VERBOSE) {
+      return
+    }
+
+    console.log(
+      [
+        "[TinyHyperGraphSolver:rip]",
+        `ripCount=${this.state.ripCount}`,
+        `maxRegionCostBeforeRip=${maxRegionCostBeforeRip.toFixed(3)}`,
+        `reason=${reason}`,
+        ...Object.entries(extraFields).map(
+          ([key, value]) =>
+            `${key}=${
+              typeof value === "number"
+                ? Number.isInteger(value)
+                  ? String(value)
+                  : value.toFixed(3)
+                : value
+            }`,
+        ),
+      ].join(" "),
+    )
+  }
+
   onAllRoutesRouted() {
     const { topology, state } = this
     const ripThresholdProgress =
@@ -727,12 +904,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
+      maxRegionCostBeforeRip: maxRegionCost,
       reripRegionCount: regionIdsOverCostThreshold.length,
     }
+    this.logRipEvent("hot_regions", maxRegionCost, {
+      hotRegionCount: regionIdsOverCostThreshold.length,
+      currentRipThreshold,
+    })
   }
 
   onOutOfCandidates() {
     const { topology, state } = this
+    const currentRouteId = state.currentRouteId
+    const maxRegionCostBeforeRip = this.getMaxRegionCost()
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
@@ -746,8 +930,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
+      maxRegionCost: maxRegionCostBeforeRip,
+      maxRegionCostBeforeRip,
       reripReason: "out_of_candidates",
     }
+    this.logRipEvent("out_of_candidates", maxRegionCostBeforeRip, {
+      ...(currentRouteId === undefined
+        ? {}
+        : {
+            routeId: currentRouteId,
+            connectionId: this.getRouteConnectionId(currentRouteId),
+          }),
+    })
   }
 
   onPathFound(finalCandidate: Candidate) {
@@ -755,6 +949,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentRouteId = state.currentRouteId
 
     if (currentRouteId === undefined) return
+    this.routeSuccessCountByRouteId[currentRouteId] += 1
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
 
@@ -823,6 +1018,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newRegionCost +
       state.regionCongestionCost[nextRegionId]
     )
+  }
+
+  override tryFinalAcceptance() {
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
+
+    this.stats = {
+      ...this.stats,
+      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
+    }
+    this.logNeverSuccessfullyRoutedRoutes()
   }
 
   computeH(neighborPortId: PortId): number {

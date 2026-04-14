@@ -58,7 +58,9 @@ test("section solver getOutput preserves the optimized max region cost on hg07 s
   expect(sectionSolver.failed).toBe(false)
   expect(sectionSolver.stats.optimized).toBe(true)
 
-  const optimizedMaxRegionCost = getMaxRegionCost(sectionSolver.getSolvedSolver())
+  const optimizedMaxRegionCost = getMaxRegionCost(
+    sectionSolver.getSolvedSolver(),
+  )
   const replay = loadSerializedHyperGraph(sectionSolver.getOutput())
   const replayedSolver = new TinyHyperGraphSectionSolver(
     replay.topology,

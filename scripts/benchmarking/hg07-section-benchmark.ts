@@ -32,9 +32,7 @@ type SectionMaskCandidate = {
   label: string
   family: CandidateFamily
   regionIds: number[]
-  portSelectionRule:
-    | "touches-selected-region"
-    | "all-incident-regions-selected"
+  portSelectionRule: "touches-selected-region" | "all-incident-regions-selected"
 }
 
 type SectionPassResult = {
@@ -154,24 +152,25 @@ const allCandidateFamilies: CandidateFamily[] = [
   "twohop-touch",
 ]
 
-export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig = {
-  sampleCount: 40,
-  maxPasses: 2,
-  maxHotRegions: 12,
-  candidateFamilies: allCandidateFamilies,
-  improvementEpsilon: 1e-9,
-  sectionSolver: {
-    distanceToCost: 0.05,
-    ripThresholdStart: 0.05,
-    ripThresholdEnd: 0.8,
-    ripThresholdRampAttempts: 50,
-    maxRips: Number.POSITIVE_INFINITY,
-    maxRipsWithoutMaxRegionCostImprovement: Number.POSITIVE_INFINITY,
-    extraRipsAfterBeatingBaselineMaxRegionCost: Number.POSITIVE_INFINITY,
-    ripCongestionRegionCostFactor: 0.1,
-    maxIterations: 1e6,
-  },
-}
+export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
+  {
+    sampleCount: 40,
+    maxPasses: 2,
+    maxHotRegions: 12,
+    candidateFamilies: allCandidateFamilies,
+    improvementEpsilon: 1e-9,
+    sectionSolver: {
+      distanceToCost: 0.05,
+      ripThresholdStart: 0.05,
+      ripThresholdEnd: 0.8,
+      ripThresholdRampAttempts: 50,
+      maxRips: Number.POSITIVE_INFINITY,
+      maxRipsWithoutMaxRegionCostImprovement: Number.POSITIVE_INFINITY,
+      extraRipsAfterBeatingBaselineMaxRegionCost: Number.POSITIVE_INFINITY,
+      ripCongestionRegionCostFactor: 0.1,
+      maxIterations: 1e6,
+    },
+  }
 
 const defaultCandidateFamilies: CandidateFamily[] = [
   "self-touch",
@@ -225,7 +224,9 @@ const createPortSectionMaskForRegionIds = (
     const incidentRegionIds = topology.incidentPortRegion[portId] ?? []
 
     if (portSelectionRule === "touches-selected-region") {
-      return incidentRegionIds.some((regionId) => selectedRegionIds.has(regionId))
+      return incidentRegionIds.some((regionId) =>
+        selectedRegionIds.has(regionId),
+      )
         ? 1
         : 0
     }
@@ -441,7 +442,9 @@ const runBestSectionOptimizationPass = (
     replay.problem,
     replay.solution,
   )
-  const baselineMaxRegionCost = getMaxRegionCost(baselineSectionSolver.baselineSolver)
+  const baselineMaxRegionCost = getMaxRegionCost(
+    baselineSectionSolver.baselineSolver,
+  )
 
   let bestFinalMaxRegionCost = baselineMaxRegionCost
   let bestSolver: TinyHyperGraphSectionSolver | undefined
@@ -490,7 +493,9 @@ const runBestSectionOptimizationPass = (
       profiling.totalCandidateInitMs += initElapsedMs
       profiling.totalCandidateSolveMs += solveElapsedMs
 
-      const finalMaxRegionCost = getMaxRegionCost(sectionSolver.getSolvedSolver())
+      const finalMaxRegionCost = getMaxRegionCost(
+        sectionSolver.getSolvedSolver(),
+      )
 
       if (
         finalMaxRegionCost <
@@ -521,8 +526,7 @@ const runBestSectionOptimizationPass = (
   }
 }
 
-const round = (value: number, digits = 3) =>
-  Number(value.toFixed(digits))
+const round = (value: number, digits = 3) => Number(value.toFixed(digits))
 
 export const runSectionSolverBenchmark = (
   inputConfig: Partial<SectionSolverBenchmarkConfig> = {},
@@ -540,7 +544,10 @@ export const runSectionSolverBenchmark = (
       defaultSectionSolverBenchmarkConfig.candidateFamilies,
   }
 
-  const sampleMetas = datasetModule.manifest.samples.slice(0, config.sampleCount)
+  const sampleMetas = datasetModule.manifest.samples.slice(
+    0,
+    config.sampleCount,
+  )
   const benchmarkRows: BenchmarkRow[] = []
   let improvedSampleCount = 0
   let unchangedSampleCount = 0
@@ -613,7 +620,8 @@ export const runSectionSolverBenchmark = (
         row: benchmarkRows[benchmarkRows.length - 1]!,
         completedSamples: benchmarkRows.length,
         totalSamples: sampleMetas.length,
-        progressPct: (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
+        progressPct:
+          (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
         successPct:
           (improvedSampleCount /
             Math.max(benchmarkRows.length - failedSampleCount, 1)) *
@@ -640,7 +648,8 @@ export const runSectionSolverBenchmark = (
         row: benchmarkRows[benchmarkRows.length - 1]!,
         completedSamples: benchmarkRows.length,
         totalSamples: sampleMetas.length,
-        progressPct: (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
+        progressPct:
+          (benchmarkRows.length / Math.max(sampleMetas.length, 1)) * 100,
         successPct:
           (improvedSampleCount /
             Math.max(benchmarkRows.length - failedSampleCount, 1)) *
@@ -661,7 +670,8 @@ export const runSectionSolverBenchmark = (
 
   const topImprovedRows = benchmarkRows
     .filter(
-      (row) => Number.isFinite(row.delta) && row.delta > config.improvementEpsilon,
+      (row) =>
+        Number.isFinite(row.delta) && row.delta > config.improvementEpsilon,
     )
     .sort((left, right) => right.delta - left.delta)
     .slice(0, 10)
@@ -687,7 +697,9 @@ export const runSectionSolverBenchmark = (
       totalSolveMs: round(timing.totalSolveMs, 2),
       totalMs: round(timing.totalMs, 2),
       averageInitMs:
-        timing.attempts > 0 ? round(timing.totalInitMs / timing.attempts, 2) : 0,
+        timing.attempts > 0
+          ? round(timing.totalInitMs / timing.attempts, 2)
+          : 0,
       averageSolveMs:
         timing.attempts > 0
           ? round(timing.totalSolveMs / timing.attempts, 2)

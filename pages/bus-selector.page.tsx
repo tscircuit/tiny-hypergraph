@@ -253,7 +253,9 @@ const resolveConnectionPoints = (
   connection: SerializedHyperGraphPortPointPathingSolverParams["connections"][number],
 ) => {
   const cm5ioConnection = connection as Cm5ioConnection
-  const rawPoints = Array.isArray(cm5ioConnection.simpleRouteConnection?.pointsToConnect)
+  const rawPoints = Array.isArray(
+    cm5ioConnection.simpleRouteConnection?.pointsToConnect,
+  )
     ? cm5ioConnection.simpleRouteConnection.pointsToConnect
     : []
 
@@ -503,12 +505,7 @@ const getVisibleWorldBounds = (
 })
 
 const intersectsBounds = (a: RectBounds, b: RectBounds) =>
-  !(
-    a.maxX < b.minX ||
-    a.minX > b.maxX ||
-    a.maxY < b.minY ||
-    a.minY > b.maxY
-  )
+  !(a.maxX < b.minX || a.minX > b.maxX || a.maxY < b.minY || a.minY > b.maxY)
 
 const BusCanvas = ({
   editorData,
@@ -549,10 +546,7 @@ const BusCanvas = ({
       const nextWidth = Math.round(container.clientWidth)
       const nextHeight = Math.round(container.clientHeight)
       setCanvasSize((current) => {
-        if (
-          current.width === nextWidth &&
-          current.height === nextHeight
-        ) {
+        if (current.width === nextWidth && current.height === nextHeight) {
           return current
         }
         return {
@@ -793,7 +787,10 @@ const BusCanvas = ({
         .map((pointId) => editorData.pointById.get(pointId)),
     ].filter((point, index, list): point is PointNode => {
       if (!point) return false
-      return list.findIndex((candidate) => candidate?.pointId === point.pointId) === index
+      return (
+        list.findIndex((candidate) => candidate?.pointId === point.pointId) ===
+        index
+      )
     })
 
     context.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace"
@@ -985,8 +982,10 @@ const BusCanvas = ({
     const nextScale = clampScale(view.scale * zoomFactor)
 
     setView({
-      centerX: worldPoint.x - (relativePoint.x - canvasSize.width / 2) / nextScale,
-      centerY: worldPoint.y + (relativePoint.y - canvasSize.height / 2) / nextScale,
+      centerX:
+        worldPoint.x - (relativePoint.x - canvasSize.width / 2) / nextScale,
+      centerY:
+        worldPoint.y + (relativePoint.y - canvasSize.height / 2) / nextScale,
       scale: nextScale,
     })
   }
@@ -1014,7 +1013,9 @@ const BusCanvas = ({
 
       <div className="pointer-events-none absolute left-4 top-4 rounded-2xl border border-stone-300/80 bg-white/90 px-4 py-3 text-xs text-stone-700 shadow-sm backdrop-blur">
         <div className="font-semibold text-stone-900">CM5IO Bus Selector</div>
-        <div>Drag to pan. Scroll to zoom. Click a point to toggle its component.</div>
+        <div>
+          Drag to pan. Scroll to zoom. Click a point to toggle its component.
+        </div>
       </div>
 
       <div className="absolute bottom-4 right-4 flex gap-2">
@@ -1074,9 +1075,9 @@ const BusCanvas = ({
 export default function BusSelectorPage() {
   const [editorData, setEditorData] = useState<EditorData>()
   const [errorMessage, setErrorMessage] = useState<string>()
-  const [selectedConnectionIds, setSelectedConnectionIds] = useState<Set<string>>(
-    () => new Set(),
-  )
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<
+    Set<string>
+  >(() => new Set())
   const [hoveredPointId, setHoveredPointId] = useState<string>()
   const [busLabel, setBusLabel] = useState("bus-name")
   const [copyStatus, setCopyStatus] = useState<string>()
@@ -1245,9 +1246,10 @@ export default function BusSelectorPage() {
             Selection Rules
           </div>
           <div className="mt-2 text-sm leading-6 text-stone-700">
-            Each click toggles the entire point-connected component into the bus.
-            On the current CM5IO fixture, each component is one source trace, so
-            selecting either endpoint adds both endpoints and that trace.
+            Each click toggles the entire point-connected component into the
+            bus. On the current CM5IO fixture, each component is one source
+            trace, so selecting either endpoint adds both endpoints and that
+            trace.
           </div>
         </section>
 
@@ -1257,7 +1259,8 @@ export default function BusSelectorPage() {
               Bus Output
             </div>
             <div className="text-xs text-stone-500">
-              {selectedConnections.length} connections • {selectedPoints.length} points
+              {selectedConnections.length} connections • {selectedPoints.length}{" "}
+              points
             </div>
           </div>
 
@@ -1382,7 +1385,6 @@ export default function BusSelectorPage() {
             </div>
           )}
         </section>
-
       </aside>
     </div>
   )
