@@ -142,6 +142,7 @@ test("completed routing is accepted once all region costs are under the threshol
 test("constructor options override snake-case hyperparameters before setup", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
+    NON_CENTER_COST_PER_MM: 0.125,
     RIP_THRESHOLD_START: 0.12,
     RIP_THRESHOLD_END: 0.34,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 7,
@@ -150,6 +151,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
+  expect(solver.NON_CENTER_COST_PER_MM).toBe(0.125)
   expect(solver.RIP_THRESHOLD_START).toBe(0.12)
   expect(solver.RIP_THRESHOLD_END).toBe(0.34)
   expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)

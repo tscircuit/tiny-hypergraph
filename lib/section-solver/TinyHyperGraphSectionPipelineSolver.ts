@@ -8,7 +8,7 @@ import type {
   TinyHyperGraphSolverOptions,
   TinyHyperGraphTopology,
 } from "../core"
-import { TinyHyperGraphSolver } from "../core"
+import { DEFAULT_NON_CENTER_COST_PER_MM, TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -59,11 +59,13 @@ type AutomaticSectionSearchResult = {
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
+  NON_CENTER_COST_PER_MM: DEFAULT_NON_CENTER_COST_PER_MM,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
+  NON_CENTER_COST_PER_MM: DEFAULT_NON_CENTER_COST_PER_MM,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 16,
   RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
   MAX_ITERATIONS: 1e6,
