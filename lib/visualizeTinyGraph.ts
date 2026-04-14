@@ -584,6 +584,8 @@ const pushCandidates = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
 ) => {
+  if (solver.solved) return
+
   const routeId = solver.state.currentRouteId
   const candidates = solver.state.candidateQueue
     .toArray()
