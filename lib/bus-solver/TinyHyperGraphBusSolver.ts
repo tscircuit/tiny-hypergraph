@@ -30,12 +30,16 @@ export interface TinyHyperGraphBusSolverOptions
 interface BusCenterCandidate extends Candidate {
   atGoal?: boolean
   busCost?: number
+  boundaryNormalX?: number
+  boundaryNormalY?: number
 }
 
 interface BoundaryStep {
   fromRegionId: RegionId
   toRegionId: RegionId
   centerPortId: PortId
+  normalX: number
+  normalY: number
 }
 
 interface TraceSegment {
@@ -148,7 +152,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private readonly sharedZ0PortsByRegionPair = new Map<string, PortId[]>()
   private readonly regionIndexBySerializedId = new Map<string, RegionId>()
   private readonly portIndexBySerializedId = new Map<string, PortId>()
-  private readonly busCapableCenterPortsByRegionPair = new Map<string, PortId[]>()
   private readonly boundarySupportCache = new Map<string, boolean>()
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
@@ -211,7 +214,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     this.buildSharedZ0PortsByRegionPair()
-    this.buildBusCapableBoundaryCache()
     this.regionDistanceToGoalByRegion = this.computeRegionDistanceToGoal()
     this.updateBusStats()
   }
@@ -384,45 +386,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
   }
 
-  private buildBusCapableBoundaryCache() {
-    this.busCapableCenterPortsByRegionPair.clear()
-
-    for (const [regionPairKey, sharedPortIds] of this.sharedZ0PortsByRegionPair) {
-      const centerProjection = this.busTraceOrder.traces[
-        this.centerTraceIndex
-      ]!.score
-      const usablePortIds = [...sharedPortIds]
-
-      usablePortIds.sort((leftPortId, rightPortId) => {
-        const leftDeviation = Math.abs(
-          getPortProjection(
-            this.topology,
-            leftPortId,
-            this.busTraceOrder.normalX,
-            this.busTraceOrder.normalY,
-          ) - centerProjection,
-        )
-        const rightDeviation = Math.abs(
-          getPortProjection(
-            this.topology,
-            rightPortId,
-            this.busTraceOrder.normalX,
-            this.busTraceOrder.normalY,
-          ) - centerProjection,
-        )
-
-        return leftDeviation - rightDeviation || leftPortId - rightPortId
-      })
-
-      if (usablePortIds.length > 0) {
-        this.busCapableCenterPortsByRegionPair.set(
-          regionPairKey,
-          usablePortIds.slice(0, this.CENTER_PORT_OPTIONS_PER_EDGE),
-        )
-      }
-    }
-  }
-
   private computeRegionDistanceToGoal() {
     const regionDistanceToGoalByRegion = new Float64Array(
       this.topology.regionCount,
@@ -452,7 +415,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      for (const [regionPairKey] of this.busCapableCenterPortsByRegionPair) {
+      for (const [regionPairKey, sharedPortIds] of this.sharedZ0PortsByRegionPair) {
+        if (sharedPortIds.length < this.problem.routeCount) {
+          continue
+        }
+
         const separatorIndex = regionPairKey.indexOf(":")
         const regionAId = Number(regionPairKey.slice(0, separatorIndex))
         const regionBId = Number(regionPairKey.slice(separatorIndex + 1))
@@ -630,9 +597,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     const centerPath = this.getCenterCandidatePath(candidate)
     const boundarySteps = this.getBoundarySteps(centerPath)
-    const boundaryPortIdsByStep: Array<PortId[] | undefined> = boundarySteps.map(
-      (boundaryStep) => this.assignBoundaryPortsForStep(boundaryStep),
-    )
+    const boundaryPortIdsByStep = this.assignBoundaryPortsForPath(boundarySteps)
 
     if (candidate.atGoal === true) {
       const completeBusPreview = this.buildBestCompleteBusPreview(
@@ -1659,25 +1624,166 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return undefined
   }
 
-  private assignBoundaryPortsForStep(boundaryStep: BoundaryStep): PortId[] | undefined {
+  private createBoundaryStep(
+    fromRegionId: RegionId,
+    toRegionId: RegionId,
+    centerPortId: PortId,
+    referencePortId: PortId,
+    previousNormal?:
+      | {
+          x: number
+          y: number
+        }
+      | undefined,
+  ): BoundaryStep {
+    const { x, y } = this.computeBoundaryNormal(
+      referencePortId,
+      centerPortId,
+      fromRegionId,
+      toRegionId,
+      previousNormal,
+    )
+
+    return {
+      fromRegionId,
+      toRegionId,
+      centerPortId,
+      normalX: x,
+      normalY: y,
+    }
+  }
+
+  private computeBoundaryNormal(
+    fromPortId: PortId,
+    toPortId: PortId,
+    fromRegionId: RegionId,
+    toRegionId: RegionId,
+    previousNormal?:
+      | {
+          x: number
+          y: number
+        }
+      | undefined,
+  ) {
+    let tangentX = this.topology.portX[toPortId] - this.topology.portX[fromPortId]
+    let tangentY = this.topology.portY[toPortId] - this.topology.portY[fromPortId]
+    let tangentLength = Math.hypot(tangentX, tangentY)
+
+    if (tangentLength <= BUS_CANDIDATE_EPSILON) {
+      tangentX =
+        this.topology.regionCenterX[toRegionId] -
+        this.topology.regionCenterX[fromRegionId]
+      tangentY =
+        this.topology.regionCenterY[toRegionId] -
+        this.topology.regionCenterY[fromRegionId]
+      tangentLength = Math.hypot(tangentX, tangentY)
+    }
+
+    if (tangentLength <= BUS_CANDIDATE_EPSILON) {
+      const fallbackNormal = previousNormal ?? {
+        x: this.busTraceOrder.normalX,
+        y: this.busTraceOrder.normalY,
+      }
+      return {
+        x: fallbackNormal.x,
+        y: fallbackNormal.y,
+      }
+    }
+
+    tangentX /= tangentLength
+    tangentY /= tangentLength
+
+    let normalX = -tangentY
+    let normalY = tangentX
+    const referenceNormal = previousNormal ?? {
+      x: this.busTraceOrder.normalX,
+      y: this.busTraceOrder.normalY,
+    }
+
+    if (
+      normalX * referenceNormal.x + normalY * referenceNormal.y <
+      -BUS_CANDIDATE_EPSILON
+    ) {
+      normalX *= -1
+      normalY *= -1
+    }
+
+    return {
+      x: normalX,
+      y: normalY,
+    }
+  }
+
+  private getOrderedSharedPortsForBoundaryStep(boundaryStep: BoundaryStep) {
     const regionPairKey = getRegionPairKey(
       boundaryStep.fromRegionId,
       boundaryStep.toRegionId,
     )
     const sharedPortIds = this.sharedZ0PortsByRegionPair.get(regionPairKey)
 
-    if (!sharedPortIds || !sharedPortIds.includes(boundaryStep.centerPortId)) {
+    if (!sharedPortIds) {
       return undefined
     }
 
-    const centerIndex = sharedPortIds.indexOf(boundaryStep.centerPortId)
+    return [...sharedPortIds].sort((leftPortId, rightPortId) => {
+      const leftProjection = getPortProjection(
+        this.topology,
+        leftPortId,
+        boundaryStep.normalX,
+        boundaryStep.normalY,
+      )
+      const rightProjection = getPortProjection(
+        this.topology,
+        rightPortId,
+        boundaryStep.normalX,
+        boundaryStep.normalY,
+      )
+
+      return leftProjection - rightProjection || leftPortId - rightPortId
+    })
+  }
+
+  private getPreferredCenterPortOptionsForBoundaryStep(boundaryStep: BoundaryStep) {
+    const orderedSharedPortIds =
+      this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
+
+    if (!orderedSharedPortIds || orderedSharedPortIds.length === 0) {
+      return []
+    }
+
+    const midpointIndex = (orderedSharedPortIds.length - 1) / 2
+
+    return orderedSharedPortIds
+      .map((portId, index) => ({
+        portId,
+        index,
+      }))
+      .sort(
+        (left, right) =>
+          Math.abs(left.index - midpointIndex) -
+            Math.abs(right.index - midpointIndex) ||
+          left.portId - right.portId,
+      )
+      .slice(0, this.CENTER_PORT_OPTIONS_PER_EDGE)
+      .map(({ portId }) => portId)
+  }
+
+  private buildBoundaryPortAssignmentsFromOrderedPorts(
+    orderedPortIds: readonly PortId[],
+    centerPortId: PortId,
+  ) {
+    if (!orderedPortIds.includes(centerPortId)) {
+      return undefined
+    }
+
+    const centerIndex = orderedPortIds.indexOf(centerPortId)
     const tracesBeforeCenter = this.centerTraceIndex
     const tracesAfterCenter =
       this.problem.routeCount - this.centerTraceIndex - 1
 
     if (
       centerIndex < tracesBeforeCenter ||
-      sharedPortIds.length - centerIndex - 1 < tracesAfterCenter
+      orderedPortIds.length - centerIndex - 1 < tracesAfterCenter
     ) {
       return undefined
     }
@@ -1686,7 +1792,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     for (let traceIndex = 0; traceIndex < this.problem.routeCount; traceIndex++) {
       const offsetFromCenter = traceIndex - this.centerTraceIndex
-      const assignedPortId = sharedPortIds[centerIndex + offsetFromCenter]
+      const assignedPortId = orderedPortIds[centerIndex + offsetFromCenter]
 
       if (assignedPortId === undefined) {
         return undefined
@@ -1698,9 +1804,197 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return assignments
   }
 
+  private countLocalBoundaryAssignmentIntersections(
+    previousPortIds: readonly PortId[],
+    nextPortIds: readonly PortId[],
+  ) {
+    let intersectionCount = 0
+
+    for (let leftIndex = 0; leftIndex < previousPortIds.length; leftIndex++) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < previousPortIds.length;
+        rightIndex++
+      ) {
+        if (
+          this.doPortSegmentsIntersect(
+            previousPortIds[leftIndex]!,
+            nextPortIds[leftIndex]!,
+            previousPortIds[rightIndex]!,
+            nextPortIds[rightIndex]!,
+          )
+        ) {
+          intersectionCount += 1
+        }
+      }
+    }
+
+    return intersectionCount
+  }
+
+  private doPortSegmentsIntersect(
+    aFromPortId: PortId,
+    aToPortId: PortId,
+    bFromPortId: PortId,
+    bToPortId: PortId,
+  ) {
+    if (
+      aFromPortId === bFromPortId ||
+      aFromPortId === bToPortId ||
+      aToPortId === bFromPortId ||
+      aToPortId === bToPortId
+    ) {
+      return false
+    }
+
+    const ax = this.topology.portX[aFromPortId]
+    const ay = this.topology.portY[aFromPortId]
+    const bx = this.topology.portX[aToPortId]
+    const by = this.topology.portY[aToPortId]
+    const cx = this.topology.portX[bFromPortId]
+    const cy = this.topology.portY[bFromPortId]
+    const dx = this.topology.portX[bToPortId]
+    const dy = this.topology.portY[bToPortId]
+
+    const orientation = (
+      px: number,
+      py: number,
+      qx: number,
+      qy: number,
+      rx: number,
+      ry: number,
+    ) => (qx - px) * (ry - py) - (qy - py) * (rx - px)
+
+    const aToC = orientation(ax, ay, bx, by, cx, cy)
+    const aToD = orientation(ax, ay, bx, by, dx, dy)
+    const bToA = orientation(cx, cy, dx, dy, ax, ay)
+    const bToB = orientation(cx, cy, dx, dy, bx, by)
+
+    if (
+      Math.abs(aToC) <= BUS_CANDIDATE_EPSILON ||
+      Math.abs(aToD) <= BUS_CANDIDATE_EPSILON ||
+      Math.abs(bToA) <= BUS_CANDIDATE_EPSILON ||
+      Math.abs(bToB) <= BUS_CANDIDATE_EPSILON
+    ) {
+      return false
+    }
+
+    return (aToC > 0) !== (aToD > 0) && (bToA > 0) !== (bToB > 0)
+  }
+
+  private getBoundaryAssignmentLength(
+    previousPortIds: readonly PortId[],
+    nextPortIds: readonly PortId[],
+  ) {
+    let totalLength = 0
+
+    for (let traceIndex = 0; traceIndex < previousPortIds.length; traceIndex++) {
+      totalLength += getPortDistance(
+        this.topology,
+        previousPortIds[traceIndex]!,
+        nextPortIds[traceIndex]!,
+      )
+    }
+
+    return totalLength
+  }
+
+  private assignBoundaryPortsForPath(boundarySteps: readonly BoundaryStep[]) {
+    const boundaryPortIdsByStep: Array<PortId[] | undefined> = []
+    let previousPortIds = this.busTraceOrder.traces.map(
+      (trace) => this.problem.routeStartPort[trace.routeId]!,
+    )
+
+    for (const boundaryStep of boundarySteps) {
+      const assignments = this.assignBoundaryPortsForStep(
+        boundaryStep,
+        previousPortIds,
+      )
+      boundaryPortIdsByStep.push(assignments)
+
+      if (!assignments) {
+        for (
+          let remainingIndex = boundaryPortIdsByStep.length;
+          remainingIndex < boundarySteps.length;
+          remainingIndex++
+        ) {
+          boundaryPortIdsByStep.push(undefined)
+        }
+        break
+      }
+
+      previousPortIds = assignments
+    }
+
+    return boundaryPortIdsByStep
+  }
+
+  private assignBoundaryPortsForStep(
+    boundaryStep: BoundaryStep,
+    previousPortIds?: readonly PortId[],
+  ): PortId[] | undefined {
+    const sharedPortIds = this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
+
+    if (!sharedPortIds) {
+      return undefined
+    }
+
+    const candidateAssignments = [
+      this.buildBoundaryPortAssignmentsFromOrderedPorts(
+        sharedPortIds,
+        boundaryStep.centerPortId,
+      ),
+      this.buildBoundaryPortAssignmentsFromOrderedPorts(
+        [...sharedPortIds].reverse(),
+        boundaryStep.centerPortId,
+      ),
+    ].filter(
+      (assignments, assignmentIndex, assignmentsList): assignments is PortId[] =>
+        assignments !== undefined &&
+        assignmentsList.findIndex(
+          (candidate) =>
+            candidate?.every(
+              (portId, traceIndex) => portId === assignments[traceIndex],
+            ) ?? false,
+        ) === assignmentIndex,
+    )
+
+    if (candidateAssignments.length === 0) {
+      return undefined
+    }
+
+    if (!previousPortIds) {
+      return candidateAssignments[0]
+    }
+
+    return candidateAssignments
+      .map((assignments) => ({
+        assignments,
+        intersectionCount: this.countLocalBoundaryAssignmentIntersections(
+          previousPortIds,
+          assignments,
+        ),
+        totalLength: this.getBoundaryAssignmentLength(
+          previousPortIds,
+          assignments,
+        ),
+      }))
+      .sort(
+        (left, right) =>
+          left.intersectionCount - right.intersectionCount ||
+          left.totalLength - right.totalLength,
+      )[0]?.assignments
+  }
+
   private getBoundarySteps(centerPath: BusCenterCandidate[]) {
     const boundarySteps: BoundaryStep[] = []
     let currentRegionId = centerPath[0]?.nextRegionId
+    let previousNormal:
+      | {
+          x: number
+          y: number
+        }
+      | undefined
 
     if (currentRegionId === undefined) {
       return boundarySteps
@@ -1713,11 +2007,25 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         break
       }
 
+      const previousPortId = centerPath[pathIndex - 1]?.portId ?? nextCandidate.portId
+      const nextPortId =
+        centerPath[pathIndex + 1]?.portId ?? nextCandidate.portId
+      const boundaryNormal = this.computeBoundaryNormal(
+        previousPortId,
+        nextPortId,
+        currentRegionId,
+        nextCandidate.nextRegionId,
+        previousNormal,
+      )
+
       boundarySteps.push({
         fromRegionId: currentRegionId,
         toRegionId: nextCandidate.nextRegionId,
         centerPortId: nextCandidate.portId,
+        normalX: boundaryNormal.x,
+        normalY: boundaryNormal.y,
       })
+      previousNormal = boundaryNormal
       currentRegionId = nextCandidate.nextRegionId
     }
 
@@ -1800,22 +2108,29 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      const boundarySupportPenalty = this.getBoundarySupportPenalty(
+      const previousNormal =
+        currentCandidate.boundaryNormalX !== undefined &&
+        currentCandidate.boundaryNormalY !== undefined
+          ? {
+              x: currentCandidate.boundaryNormalX,
+              y: currentCandidate.boundaryNormalY,
+            }
+          : undefined
+      const boundaryStep = this.createBoundaryStep(
         currentCandidate.nextRegionId,
         nextRegionId,
         neighborPortId,
+        currentCandidate.portId,
+        previousNormal,
       )
+      const boundarySupportPenalty = this.getBoundarySupportPenalty(boundaryStep)
       const g =
         parentCost +
         segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount +
         boundarySupportPenalty
 
-      const regionPairKey = getRegionPairKey(
-        currentCandidate.nextRegionId,
-        nextRegionId,
-      )
       const centerPortOptions =
-        this.busCapableCenterPortsByRegionPair.get(regionPairKey)
+        this.getPreferredCenterPortOptionsForBoundaryStep(boundaryStep)
       if (!centerPortOptions || !centerPortOptions.includes(neighborPortId)) {
         continue
       }
@@ -1847,6 +2162,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         f: g + scaledH,
         prevRegionId: currentCandidate.nextRegionId,
         prevCandidate: currentCandidate,
+        boundaryNormalX: boundaryStep.normalX,
+        boundaryNormalY: boundaryStep.normalY,
       })
     }
 
@@ -2235,6 +2552,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       boundaryStep.fromRegionId,
       boundaryStep.toRegionId,
       boundaryStep.centerPortId,
+      Math.round(boundaryStep.normalX * 1_000_000),
+      Math.round(boundaryStep.normalY * 1_000_000),
     ].join(":")
     const cached = this.boundarySupportCache.get(cacheKey)
     if (cached !== undefined) {
@@ -2246,19 +2565,14 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return supported
   }
 
-  private getBoundarySupportPenalty(
-    fromRegionId: RegionId,
-    toRegionId: RegionId,
-    centerPortId: PortId,
-  ) {
-    const regionPairKey = getRegionPairKey(fromRegionId, toRegionId)
-    const sharedPortIds = this.sharedZ0PortsByRegionPair.get(regionPairKey)
+  private getBoundarySupportPenalty(boundaryStep: BoundaryStep) {
+    const sharedPortIds = this.getOrderedSharedPortsForBoundaryStep(boundaryStep)
 
     if (!sharedPortIds) {
       return this.problem.routeCount * 20
     }
 
-    const centerIndex = sharedPortIds.indexOf(centerPortId)
+    const centerIndex = sharedPortIds.indexOf(boundaryStep.centerPortId)
     if (centerIndex === -1) {
       return this.problem.routeCount * 20
     }

@@ -70,6 +70,106 @@ test("CM5IO bus1 evaluates one centerline candidate per step and visualizes all 
   ).toBe(true)
 })
 
+test("CM5IO bus1 keeps boundary port ordering stable through centerline direction changes", async () => {
+  const solver = await createCm5ioBus1Solver()
+  const internal = solver as any
+
+  const pathDescriptors = [
+    { portId: 6768, nextRegionId: 72 },
+    { portId: 2228, nextRegionId: 19 },
+    { portId: 2282, nextRegionId: 20 },
+    { portId: 2346, nextRegionId: 24 },
+    { portId: 2800, nextRegionId: 25 },
+    { portId: 2862, nextRegionId: 26 },
+    { portId: 2978, nextRegionId: 36 },
+    { portId: 3875, nextRegionId: 35 },
+  ]
+
+  let previousCandidate: any
+  const centerPath = pathDescriptors.map((descriptor, index) => {
+    const candidate = {
+      portId: descriptor.portId,
+      nextRegionId: descriptor.nextRegionId,
+      g: index,
+      h: 0,
+      f: index,
+      prevCandidate: previousCandidate,
+      prevRegionId: previousCandidate?.nextRegionId,
+    }
+    previousCandidate = candidate
+    return candidate
+  })
+
+  const boundarySteps = internal.getBoundarySteps(centerPath)
+  const boundaryPortIdsByStep = internal.assignBoundaryPortsForPath(boundarySteps)
+  const firstBoundaryPorts = boundaryPortIdsByStep[0]
+  const turningBoundaryStep = boundarySteps.at(-1)
+  const turningBoundaryPorts = boundaryPortIdsByStep.at(-1)
+
+  expect(turningBoundaryStep).toBeDefined()
+  expect(turningBoundaryStep.fromRegionId).toBe(36)
+  expect(turningBoundaryStep.toRegionId).toBe(35)
+  expect(turningBoundaryStep.normalX).toBeGreaterThan(0)
+  expect(firstBoundaryPorts).toBeDefined()
+  expect(turningBoundaryPorts).toBeDefined()
+  expect(
+    firstBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
+  ).toEqual(
+    [...firstBoundaryPorts.map((portId: number) => solver.topology.portX[portId])].sort(
+      (left, right) => right - left,
+    ),
+  )
+  expect(
+    turningBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
+  ).toEqual(
+    [
+      ...turningBoundaryPorts.map(
+        (portId: number) => solver.topology.portX[portId],
+      ),
+    ].sort((left, right) => left - right),
+  )
+})
+
+test("CM5IO bus1 preserves start-side order on the first boundary fanout", async () => {
+  const solver = await createCm5ioBus1Solver()
+  const internal = solver as any
+
+  const centerPath: any[] = [
+    {
+      portId: 6768,
+      nextRegionId: 72,
+      g: 0,
+      h: 0,
+      f: 0,
+    },
+    {
+      portId: 3087,
+      nextRegionId: 27,
+      g: 1,
+      h: 0,
+      f: 1,
+    },
+  ]
+
+  centerPath[1].prevCandidate = centerPath[0]
+  centerPath[1].prevRegionId = centerPath[0].nextRegionId
+
+  const boundarySteps = internal.getBoundarySteps(centerPath)
+  const firstBoundaryPorts = internal.assignBoundaryPortsForPath(boundarySteps)[0]
+
+  expect(boundarySteps).toHaveLength(1)
+  expect(firstBoundaryPorts).toEqual([
+    3095, 3093, 3091, 3089, 3087, 3085, 3083, 3081, 3079,
+  ])
+  expect(
+    firstBoundaryPorts.map((portId: number) => solver.topology.portY[portId]),
+  ).toEqual(
+    [...firstBoundaryPorts.map((portId: number) => solver.topology.portY[portId])].sort(
+      (left, right) => right - left,
+    ),
+  )
+})
+
 test("CM5IO bus1 never accepts an intersecting centerline bus solution", async () => {
   const solver = await createCm5ioBus1Solver()
 
