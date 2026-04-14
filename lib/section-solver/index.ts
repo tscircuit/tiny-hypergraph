@@ -1,6 +1,7 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import {
+  DEFAULT_NON_CENTER_COST_PER_MM,
   applyTinyHyperGraphSolverOptions,
   createEmptyRegionIntersectionCache,
   getTinyHyperGraphSolverOptions,
@@ -857,6 +858,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   activeRouteIds: RouteId[] = []
 
   DISTANCE_TO_COST = 0.05
+  NON_CENTER_COST_PER_MM = DEFAULT_NON_CENTER_COST_PER_MM
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8

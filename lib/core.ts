@@ -151,6 +151,7 @@ export interface TinyHyperGraphWorkingState {
 
 export interface TinyHyperGraphSolverOptions {
   DISTANCE_TO_COST?: number
+  NON_CENTER_COST_PER_MM?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
@@ -160,6 +161,7 @@ export interface TinyHyperGraphSolverOptions {
 
 export interface TinyHyperGraphSolverOptionTarget {
   DISTANCE_TO_COST: number
+  NON_CENTER_COST_PER_MM: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
@@ -177,6 +179,9 @@ export const applyTinyHyperGraphSolverOptions = (
 
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
+  }
+  if (options.NON_CENTER_COST_PER_MM !== undefined) {
+    solver.NON_CENTER_COST_PER_MM = options.NON_CENTER_COST_PER_MM
   }
   if (options.RIP_THRESHOLD_START !== undefined) {
     solver.RIP_THRESHOLD_START = options.RIP_THRESHOLD_START
@@ -200,6 +205,7 @@ export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
+  NON_CENTER_COST_PER_MM: solver.NON_CENTER_COST_PER_MM,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
@@ -217,6 +223,8 @@ interface SegmentGeometryScratch {
   entryExitLayerChanges: number
 }
 
+export const DEFAULT_NON_CENTER_COST_PER_MM = 0.31
+
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
@@ -228,6 +236,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  NON_CENTER_COST_PER_MM = DEFAULT_NON_CENTER_COST_PER_MM
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -515,6 +524,70 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
+  getPortAngleForRegion(regionId: RegionId, portId: PortId): number {
+    const incidentRegions = this.topology.incidentPortRegion[portId] ?? []
+
+    if (incidentRegions[0] === regionId || incidentRegions[1] !== regionId) {
+      return this.topology.portAngleForRegion1[portId]
+    }
+
+    return (
+      this.topology.portAngleForRegion2?.[portId] ??
+      this.topology.portAngleForRegion1[portId]
+    )
+  }
+
+  computePortNonCenterDistance(regionId: RegionId, portId: PortId): number {
+    const angle = this.getPortAngleForRegion(regionId, portId)
+
+    if (angle <= 9000) {
+      return (Math.abs(angle - 4500) * this.topology.regionHeight[regionId]) / 9000
+    }
+
+    if (angle <= 18000) {
+      return (Math.abs(angle - 13500) * this.topology.regionWidth[regionId]) / 9000
+    }
+
+    if (angle <= 27000) {
+      return (Math.abs(angle - 22500) * this.topology.regionHeight[regionId]) / 9000
+    }
+
+    return (Math.abs(angle - 31500) * this.topology.regionWidth[regionId]) / 9000
+  }
+
+  computePortNonCenterPenalty(regionId: RegionId, portId: PortId): number {
+    if (this.NON_CENTER_COST_PER_MM <= 0) {
+      return 0
+    }
+
+    return (
+      this.computePortNonCenterDistance(regionId, portId) *
+      this.NON_CENTER_COST_PER_MM
+    )
+  }
+
+  computeBestPortNonCenterPenalty(portId: PortId): number {
+    if (this.NON_CENTER_COST_PER_MM <= 0) {
+      return 0
+    }
+
+    const incidentRegions = this.topology.incidentPortRegion[portId] ?? []
+    let bestPenalty = Number.POSITIVE_INFINITY
+
+    for (const regionId of incidentRegions) {
+      if (regionId === undefined || regionId < 0) {
+        continue
+      }
+
+      bestPenalty = Math.min(
+        bestPenalty,
+        this.computePortNonCenterPenalty(regionId, portId),
+      )
+    }
+
+    return Number.isFinite(bestPenalty) ? bestPenalty : 0
+  }
+
   populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
@@ -522,18 +595,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): SegmentGeometryScratch {
     const { topology } = this
     const scratch = this.segmentGeometryScratch
-    const port1IncidentRegions = topology.incidentPortRegion[port1Id]
-    const port2IncidentRegions = topology.incidentPortRegion[port2Id]
-    const angle1 =
-      port1IncidentRegions[0] === regionId || port1IncidentRegions[1] !== regionId
-        ? topology.portAngleForRegion1[port1Id]
-        : topology.portAngleForRegion2?.[port1Id] ??
-          topology.portAngleForRegion1[port1Id]
-    const angle2 =
-      port2IncidentRegions[0] === regionId || port2IncidentRegions[1] !== regionId
-        ? topology.portAngleForRegion1[port2Id]
-        : topology.portAngleForRegion2?.[port2Id] ??
-          topology.portAngleForRegion1[port2Id]
+    const angle1 = this.getPortAngleForRegion(regionId, port1Id)
+    const angle2 = this.getPortAngleForRegion(regionId, port2Id)
     const z1 = topology.portZ[port1Id]
     const z2 = topology.portZ[port2Id]
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
@@ -817,10 +880,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingSegmentCount + 1,
         topology.regionAvailableZMask?.[nextRegionId] ?? 0,
       ) - regionCache.existingRegionCost
+    const nonCenterPenalty = this.computeBestPortNonCenterPenalty(neighborPortId)
 
     return (
       currentCandidate.g +
       newRegionCost +
+      nonCenterPenalty +
       state.regionCongestionCost[nextRegionId]
     )
   }

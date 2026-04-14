@@ -134,6 +134,7 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     solution,
     {
       DISTANCE_TO_COST: 0.2,
+      NON_CENTER_COST_PER_MM: 0.07,
       RIP_THRESHOLD_START: 0.11,
       RIP_THRESHOLD_END: 0.22,
       RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
@@ -148,7 +149,9 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
   sectionSolver.setup()
 
   expect(sectionSolver.DISTANCE_TO_COST).toBe(0.2)
+  expect(sectionSolver.NON_CENTER_COST_PER_MM).toBe(0.07)
   expect(sectionSolver.sectionSolver?.DISTANCE_TO_COST).toBe(0.2)
+  expect(sectionSolver.sectionSolver?.NON_CENTER_COST_PER_MM).toBe(0.07)
   expect(sectionSolver.RIP_THRESHOLD_START).toBe(0.05)
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.05)
   expect(sectionSolver.RIP_THRESHOLD_END).toBe(

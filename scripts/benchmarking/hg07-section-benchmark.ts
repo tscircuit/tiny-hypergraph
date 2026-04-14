@@ -2,6 +2,7 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
+  DEFAULT_NON_CENTER_COST_PER_MM,
   TinyHyperGraphSectionSolver,
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
@@ -83,6 +84,7 @@ export type SectionSolverBenchmarkConfig = {
   improvementEpsilon: number
   sectionSolver: {
     distanceToCost: number
+    nonCenterCostPerMm: number
     ripThresholdStart: number
     ripThresholdEnd: number
     ripThresholdRampAttempts: number
@@ -162,6 +164,7 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig = 
   improvementEpsilon: 1e-9,
   sectionSolver: {
     distanceToCost: 0.05,
+    nonCenterCostPerMm: DEFAULT_NON_CENTER_COST_PER_MM,
     ripThresholdStart: 0.05,
     ripThresholdEnd: 0.8,
     ripThresholdRampAttempts: 50,
@@ -406,6 +409,8 @@ const applySectionSolverConfig = (
   config: SectionSolverBenchmarkConfig,
 ) => {
   sectionSolver.DISTANCE_TO_COST = config.sectionSolver.distanceToCost
+  sectionSolver.NON_CENTER_COST_PER_MM =
+    config.sectionSolver.nonCenterCostPerMm
   sectionSolver.RIP_THRESHOLD_START = config.sectionSolver.ripThresholdStart
   sectionSolver.RIP_THRESHOLD_END = config.sectionSolver.ripThresholdEnd
   sectionSolver.RIP_THRESHOLD_RAMP_ATTEMPTS =
@@ -427,7 +432,9 @@ const runBestSectionOptimizationPass = (
 ): SectionPassResult => {
   const solveGraphStartTime = performance.now()
   const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
-  const solveGraphSolver = new TinyHyperGraphSolver(topology, problem)
+  const solveGraphSolver = new TinyHyperGraphSolver(topology, problem, {
+    NON_CENTER_COST_PER_MM: config.sectionSolver.nonCenterCostPerMm,
+  })
   solveGraphSolver.solve()
   profiling.totalSolveGraphMs += performance.now() - solveGraphStartTime
 
