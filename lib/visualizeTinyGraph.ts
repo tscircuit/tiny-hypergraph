@@ -9,6 +9,10 @@ const PORT_LAYER_CIRCLE_OFFSET = 0.01
 const PORT_LAYER_POINT_OFFSET = 0.002
 const REGION_RECT_GAP = 0.05
 const HOT_REGION_FILL = { r: 255, g: 64, b: 64, a: 0.72 }
+const NEVER_ROUTED_ENDPOINT_STROKE = "rgba(220, 38, 38, 0.98)"
+const NEVER_ROUTED_ENDPOINT_FILL = "rgba(220, 38, 38, 0.12)"
+const NEVER_ROUTED_ENDPOINT_RADIUS = 1
+const NEVER_ROUTED_ENDPOINT_DASH = "10 6"
 
 type RgbaColor = {
   r: number
@@ -152,9 +156,7 @@ const getRegionVisualizationLayer = (
   const metadataAvailableZ = Array.isArray(regionMetadata?.availableZ)
     ? regionMetadata.availableZ.filter(
         (layer: unknown): layer is number =>
-          typeof layer === "number" &&
-          Number.isInteger(layer) &&
-          layer >= 0,
+          typeof layer === "number" && Number.isInteger(layer) && layer >= 0,
       )
     : []
 
@@ -695,6 +697,84 @@ const pushSectionMaskOverlay = (
   }
 }
 
+const pushNeverSuccessfullyRoutedEndpoints = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  if (!solver.failed) {
+    return
+  }
+
+  for (const neverSuccessfullyRoutedRoute of solver.getNeverSuccessfullyRoutedRoutes()) {
+    const { routeId, connectionId, attempts, startPortId, endPortId } =
+      neverSuccessfullyRoutedRoute
+    const routeNetLabel = getRouteNetLabel(solver, routeId)
+    const startPoint = getPortCircleCenter(solver, startPortId)
+    const endPoint = getPortCircleCenter(solver, endPortId)
+    const routeLabel = formatLabel(
+      `never routed: ${connectionId}`,
+      `attempts: ${attempts}`,
+      routeNetLabel,
+      neverSuccessfullyRoutedRoute.startRegionId
+        ? `startRegionId: ${neverSuccessfullyRoutedRoute.startRegionId}`
+        : undefined,
+      neverSuccessfullyRoutedRoute.endRegionId
+        ? `endRegionId: ${neverSuccessfullyRoutedRoute.endRegionId}`
+        : undefined,
+    )
+
+    graphics.lines.push({
+      points: [
+        { x: 0, y: 0 },
+        { x: startPoint.x, y: startPoint.y },
+      ],
+      strokeColor: NEVER_ROUTED_ENDPOINT_STROKE,
+      strokeDash: NEVER_ROUTED_ENDPOINT_DASH,
+      layer: getPortVisualizationLayer(solver, startPortId),
+      label: formatLabel(routeLabel, "origin guide", "endpoint: start"),
+    })
+
+    graphics.circles.push({
+      center: startPoint,
+      radius: NEVER_ROUTED_ENDPOINT_RADIUS,
+      fill: NEVER_ROUTED_ENDPOINT_FILL,
+      stroke: NEVER_ROUTED_ENDPOINT_STROKE,
+      layer: getPortVisualizationLayer(solver, startPortId),
+      label: formatLabel(
+        routeLabel,
+        "endpoint: start",
+        getPortIdentifierLabel(solver, startPortId),
+        getPortZLabel(solver, startPortId),
+      ),
+    })
+
+    graphics.lines.push({
+      points: [
+        { x: 0, y: 0 },
+        { x: endPoint.x, y: endPoint.y },
+      ],
+      strokeColor: NEVER_ROUTED_ENDPOINT_STROKE,
+      strokeDash: NEVER_ROUTED_ENDPOINT_DASH,
+      layer: getPortVisualizationLayer(solver, endPortId),
+      label: formatLabel(routeLabel, "origin guide", "endpoint: end"),
+    })
+
+    graphics.circles.push({
+      center: endPoint,
+      radius: NEVER_ROUTED_ENDPOINT_RADIUS,
+      fill: NEVER_ROUTED_ENDPOINT_FILL,
+      stroke: NEVER_ROUTED_ENDPOINT_STROKE,
+      layer: getPortVisualizationLayer(solver, endPortId),
+      label: formatLabel(
+        routeLabel,
+        "endpoint: end",
+        getPortIdentifierLabel(solver, endPortId),
+        getPortZLabel(solver, endPortId),
+      ),
+    })
+  }
+}
+
 export const visualizeTinyHyperGraph = (
   solver: TinyHyperGraphSolver,
   options: TinyHyperGraphVisualizationOptions = {},
@@ -789,6 +869,8 @@ export const visualizeTinyHyperGraph = (
   if (sectionPortMask) {
     pushSectionMaskOverlay(solver, graphics, sectionPortMask)
   }
+
+  pushNeverSuccessfullyRoutedEndpoints(solver, graphics)
 
   const pendingCount =
     solver.state.unroutedRoutes.length +

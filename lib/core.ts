@@ -109,6 +109,17 @@ export interface RegionCostSummary {
   totalRegionCost: number
 }
 
+export interface NeverSuccessfullyRoutedRouteSummary {
+  routeId: RouteId
+  connectionId: string
+  attempts: number
+  startPortId: PortId
+  endPortId: PortId
+  startRegionId?: string
+  endRegionId?: string
+  pointIds: string[]
+}
+
 export interface Candidate {
   prevRegionId?: RegionId
   portId: PortId
@@ -736,19 +747,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return typeof connectionId === "string" ? connectionId : `route-${routeId}`
   }
 
-  protected getNeverSuccessfullyRoutedRouteIds(): RouteId[] {
-    const neverSuccessfullyRoutedRouteIds: RouteId[] = []
+  getNeverSuccessfullyRoutedRoutes(): NeverSuccessfullyRoutedRouteSummary[] {
+    const neverSuccessfullyRoutedRoutes: NeverSuccessfullyRoutedRouteSummary[] =
+      []
 
     for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
-      if (
-        this.routeAttemptCountByRouteId[routeId]! > 0 &&
-        this.routeSuccessCountByRouteId[routeId]! === 0
-      ) {
-        neverSuccessfullyRoutedRouteIds.push(routeId)
+      const attempts = this.routeAttemptCountByRouteId[routeId]!
+      if (attempts === 0 || this.routeSuccessCountByRouteId[routeId]! > 0) {
+        continue
       }
+
+      const routeMetadata = this.getRouteMetadata(routeId)
+      const pointIds =
+        routeMetadata?.simpleRouteConnection?.pointsToConnect
+          ?.map(({ pointId }) => (typeof pointId === "string" ? pointId : null))
+          .filter((pointId): pointId is string => pointId !== null) ?? []
+
+      neverSuccessfullyRoutedRoutes.push({
+        routeId,
+        connectionId: this.getRouteConnectionId(routeId),
+        attempts,
+        startPortId: this.problem.routeStartPort[routeId]!,
+        endPortId: this.problem.routeEndPort[routeId]!,
+        startRegionId:
+          typeof routeMetadata?.startRegionId === "string"
+            ? routeMetadata.startRegionId
+            : undefined,
+        endRegionId:
+          typeof routeMetadata?.endRegionId === "string"
+            ? routeMetadata.endRegionId
+            : undefined,
+        pointIds,
+      })
     }
 
-    return neverSuccessfullyRoutedRouteIds
+    return neverSuccessfullyRoutedRoutes
   }
 
   protected logNeverSuccessfullyRoutedRoutes() {
@@ -756,47 +789,36 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    const neverSuccessfullyRoutedRouteIds =
-      this.getNeverSuccessfullyRoutedRouteIds()
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
     this.hasLoggedNeverSuccessfullyRoutedRoutes = true
 
-    if (neverSuccessfullyRoutedRouteIds.length === 0) {
+    if (neverSuccessfullyRoutedRoutes.length === 0) {
       return
     }
 
     console.log(
       [
         "[TinyHyperGraphSolver:never-routed-summary]",
-        `count=${neverSuccessfullyRoutedRouteIds.length}`,
+        `count=${neverSuccessfullyRoutedRoutes.length}`,
       ].join(" "),
     )
 
-    for (const routeId of neverSuccessfullyRoutedRouteIds) {
-      const routeMetadata = this.getRouteMetadata(routeId)
-      const pointIds =
-        routeMetadata?.simpleRouteConnection?.pointsToConnect
-          ?.map(({ pointId }) => (typeof pointId === "string" ? pointId : null))
-          .filter((pointId): pointId is string => pointId !== null) ?? []
+    for (const neverSuccessfullyRoutedRoute of neverSuccessfullyRoutedRoutes) {
       const pointPath =
-        pointIds.length >= 2 ? `${pointIds[0]}->${pointIds[1]}` : "unknown"
-      const startRegionId =
-        typeof routeMetadata?.startRegionId === "string"
-          ? routeMetadata.startRegionId
-          : "unknown"
-      const endRegionId =
-        typeof routeMetadata?.endRegionId === "string"
-          ? routeMetadata.endRegionId
+        neverSuccessfullyRoutedRoute.pointIds.length >= 2
+          ? `${neverSuccessfullyRoutedRoute.pointIds[0]}->${neverSuccessfullyRoutedRoute.pointIds[1]}`
           : "unknown"
 
       console.log(
         [
           "[TinyHyperGraphSolver:never-routed]",
-          `routeId=${routeId}`,
-          `connectionId=${this.getRouteConnectionId(routeId)}`,
-          `attempts=${this.routeAttemptCountByRouteId[routeId]!}`,
+          `routeId=${neverSuccessfullyRoutedRoute.routeId}`,
+          `connectionId=${neverSuccessfullyRoutedRoute.connectionId}`,
+          `attempts=${neverSuccessfullyRoutedRoute.attempts}`,
           `pointPath=${pointPath}`,
-          `startRegionId=${startRegionId}`,
-          `endRegionId=${endRegionId}`,
+          `startRegionId=${neverSuccessfullyRoutedRoute.startRegionId ?? "unknown"}`,
+          `endRegionId=${neverSuccessfullyRoutedRoute.endRegionId ?? "unknown"}`,
         ].join(" "),
       )
     }
@@ -999,12 +1021,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   override tryFinalAcceptance() {
-    const neverSuccessfullyRoutedRouteIds =
-      this.getNeverSuccessfullyRoutedRouteIds()
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
 
     this.stats = {
       ...this.stats,
-      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRouteIds.length,
+      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
     this.logNeverSuccessfullyRoutedRoutes()
   }
