@@ -834,6 +834,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override tryFinalAcceptance() {
     if (!this.bestSnapshot) {
+      super.tryFinalAcceptance()
       return
     }
 
@@ -861,6 +862,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   activeRouteIds: RouteId[] = []
 
   DISTANCE_TO_COST = 0.05
+  VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
