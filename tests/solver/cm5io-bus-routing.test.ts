@@ -130,9 +130,9 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
     return candidate
   })
 
-  const boundarySteps = internal.getBoundarySteps(centerPath)
+  const boundarySteps = internal.boundaryPlanner.getBoundarySteps(centerPath)
   const boundaryPortIdsByStep =
-    internal.assignBoundaryPortsForPath(boundarySteps)
+    internal.boundaryPlanner.assignBoundaryPortsForPath(boundarySteps)
   const firstBoundaryPorts = boundaryPortIdsByStep[0]
   const turningBoundaryStep = boundarySteps.at(-1)
   const turningBoundaryPorts = boundaryPortIdsByStep.at(-1)
@@ -187,9 +187,9 @@ test("CM5IO bus1 preserves start-side order on the first boundary fanout", async
   centerPath[1].prevCandidate = centerPath[0]
   centerPath[1].prevRegionId = centerPath[0].nextRegionId
 
-  const boundarySteps = internal.getBoundarySteps(centerPath)
+  const boundarySteps = internal.boundaryPlanner.getBoundarySteps(centerPath)
   const firstBoundaryPorts =
-    internal.assignBoundaryPortsForPath(boundarySteps)[0]
+    internal.boundaryPlanner.assignBoundaryPortsForPath(boundarySteps)[0]
 
   expect(boundarySteps).toHaveLength(1)
   expect(firstBoundaryPorts).toEqual([

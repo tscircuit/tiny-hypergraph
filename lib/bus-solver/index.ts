@@ -1,5 +1,3 @@
-export {
-  TinyHyperGraphBusSolver,
-  type TinyHyperGraphBusSolverOptions,
-} from "./TinyHyperGraphBusSolver"
+export { TinyHyperGraphBusSolver } from "./TinyHyperGraphBusSolver"
+export type { TinyHyperGraphBusSolverOptions } from "./busSolverTypes"
 export { deriveBusTraceOrder, type BusTraceOrder } from "./deriveBusTraceOrder"
