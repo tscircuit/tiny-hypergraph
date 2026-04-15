@@ -8,6 +8,8 @@ const createBusSolver = (serializedHyperGraph: SerializedHyperGraph) => {
   const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
   return new TinyHyperGraphBusSolver(topology, problem, {
     MAX_ITERATIONS: 100_000,
+    CENTER_GREEDY_HEURISTIC_MULTIPLIER: 1_000,
+    VISUALIZE_UNASSIGNED_PORTS: true,
   })
 }
 

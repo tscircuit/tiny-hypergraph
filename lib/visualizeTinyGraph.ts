@@ -107,6 +107,16 @@ const isBusVisualizationSolver = (
 ): solver is TinyHyperGraphSolver & { centerRouteId: RouteId } =>
   typeof (solver as { centerRouteId?: RouteId }).centerRouteId === "number"
 
+const shouldShowBusUnassignedPorts = (
+  solver: TinyHyperGraphSolver,
+): solver is TinyHyperGraphSolver & {
+  centerRouteId: RouteId
+  showUnassignedPortsInVisualization: boolean
+} =>
+  isBusVisualizationSolver(solver) &&
+  (solver as { showUnassignedPortsInVisualization?: boolean })
+    .showUnassignedPortsInVisualization === true
+
 const getRouteOpacity = (
   solver: TinyHyperGraphSolver,
   routeId: RouteId,
@@ -526,6 +536,52 @@ const pushRoutePortZPoints = (
   }
 }
 
+const isRouteEndpointPort = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+) => {
+  for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
+    if (
+      solver.problem.routeStartPort[routeId] === portId ||
+      solver.problem.routeEndPort[routeId] === portId
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const pushUnassignedPortCircles = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  for (let portId = 0; portId < solver.topology.portCount; portId++) {
+    if (solver.state.portAssignment[portId] >= 0 || isRouteEndpointPort(solver, portId)) {
+      continue
+    }
+
+    graphics.circles.push({
+      center: getPortCircleCenter(solver, portId),
+      radius: 0.04,
+      fill:
+        solver.topology.portZ[portId] > 0
+          ? "rgba(52, 152, 219, 0.2)"
+          : "rgba(128, 128, 128, 0.2)",
+      stroke:
+        solver.topology.portZ[portId] > 0
+          ? "rgba(52, 152, 219, 0.6)"
+          : "rgba(128, 128, 128, 0.6)",
+      layer: getPortVisualizationLayer(solver, portId),
+      label: formatLabel(
+        getPortLabel(solver, portId),
+        getPortZLabel(solver, portId),
+        "state: unassigned",
+      ),
+    })
+  }
+}
+
 const pushInitialRouteHints = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
@@ -906,6 +962,9 @@ export const visualizeTinyHyperGraph = (
   } else {
     pushSolvedRegionSegments(solver, graphics)
     pushRoutePortZPoints(solver, graphics)
+    if (shouldShowBusUnassignedPorts(solver)) {
+      pushUnassignedPortCircles(solver, graphics)
+    }
     if (!isBusVisualizationSolver(solver)) {
       pushActiveRoute(solver, graphics)
       pushCandidates(solver, graphics)

@@ -74,6 +74,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   readonly commitTraceIndices: number[]
   readonly tracePitch: number
   readonly regionDistanceToGoalByRegion: Float64Array
+  readonly showUnassignedPortsInVisualization: boolean
 
   private readonly boundaryPlanner: BusBoundaryPlanner
   private readonly traceInferencePlanner: BusTraceInferencePlanner
@@ -83,6 +84,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private readonly queuedCandidateBestCostByStateKey = new Map<string, number>()
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
+  private lastNeighborCount = 0
+  private lastQueuedNeighborCount = 0
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -134,6 +137,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     if (options?.BUS_REMAINDER_SIDE_WEIGHT !== undefined) {
       this.BUS_REMAINDER_SIDE_WEIGHT = options.BUS_REMAINDER_SIDE_WEIGHT
     }
+    if (options?.CENTER_GREEDY_HEURISTIC_MULTIPLIER !== undefined) {
+      this.CENTER_GREEDY_HEURISTIC_MULTIPLIER =
+        options.CENTER_GREEDY_HEURISTIC_MULTIPLIER
+    }
+    this.showUnassignedPortsInVisualization =
+      options?.VISUALIZE_UNASSIGNED_PORTS ?? false
 
     this.traceInferencePlanner = new BusTraceInferencePlanner({
       topology: this.topology,
@@ -146,6 +155,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       BUS_REMAINDER_GUIDE_WEIGHT: this.BUS_REMAINDER_GUIDE_WEIGHT,
       BUS_REMAINDER_GOAL_WEIGHT: this.BUS_REMAINDER_GOAL_WEIGHT,
       BUS_REMAINDER_SIDE_WEIGHT: this.BUS_REMAINDER_SIDE_WEIGHT,
+      BUS_MIN_TRACE_PROGRESS_RATIO: this.BUS_MIN_TRACE_PROGRESS_RATIO,
+      BUS_MIN_TRACE_PROGRESS_THRESHOLD: this.BUS_MIN_TRACE_PROGRESS_THRESHOLD,
       TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT:
         this.TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT,
       TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH: this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH,
@@ -163,6 +174,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       getTraceSidePenalty: (...args) => this.getTraceSidePenalty(...args),
       getTraceLanePenalty: (...args) => this.getTraceLanePenalty(...args),
       getRouteHeuristic: (...args) => this.getRouteHeuristic(...args),
+      getCenterGoalHopDistance: (regionId) =>
+        this.centerGoalHopDistanceByRegion[regionId] ?? -1,
     })
 
     this.boundaryPlanner = new BusBoundaryPlanner({
@@ -199,6 +212,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
     this.lastExpandedCandidate = undefined
     this.lastPreview = undefined
+    this.lastNeighborCount = 0
+    this.lastQueuedNeighborCount = 0
     this.candidateBestCostByStateKey.clear()
     this.queuedCandidateBestCostByStateKey.clear()
     clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
@@ -276,6 +291,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     this.lastExpandedCandidate = currentCandidate
+    this.lastNeighborCount = 0
+    this.lastQueuedNeighborCount = 0
     const preview = this.evaluateCandidate(currentCandidate)
     this.lastPreview = preview
 
@@ -328,10 +345,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       !currentCandidate.atGoal
     ) {
       const currentPreviewState = snapshotPreviewRoutingStateValue(this.state)
+      const nextCandidates = this.getAvailableCenterMoves(currentCandidate)
+      this.lastNeighborCount = nextCandidates.length
+      this.lastQueuedNeighborCount = 0
 
-      for (const nextCandidate of this.getAvailableCenterMoves(
-        currentCandidate,
-      )) {
+      for (const nextCandidate of nextCandidates) {
         const nextPreview = this.evaluateCandidate(nextCandidate)
         if (!nextPreview || !this.isQueueablePreview(nextPreview)) {
           continue
@@ -369,9 +387,13 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
           this.setCandidateBestCost(nextCandidateHopId, nextCandidate.g)
         }
         this.state.candidateQueue.queue(nextCandidate)
+        this.lastQueuedNeighborCount += 1
       }
 
       restorePreviewRoutingStateValue(this.state, currentPreviewState)
+    } else {
+      this.lastNeighborCount = 0
+      this.lastQueuedNeighborCount = 0
     }
 
     if (this.state.candidateQueue.length === 0) {
@@ -706,6 +728,32 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       getPreviewIntersectionCountsValue(this.state)
     const totalRegionCost = getPreviewRegionCostValue(this.state)
 
+    if (!complete) {
+      for (const tracePreview of tracePreviews) {
+        if (tracePreview.traceIndex === this.centerTraceIndex) {
+          continue
+        }
+
+        if (
+          !this.traceInferencePlanner.hasRemainingTraceCandidate(
+            tracePreview,
+            usedPortOwners,
+          )
+        ) {
+          return {
+            tracePreviews,
+            totalLength,
+            totalCost: Number.POSITIVE_INFINITY,
+            completeTraceCount: tracePreviews.filter((preview) => preview.complete)
+              .length,
+            sameLayerIntersectionCount,
+            crossingLayerIntersectionCount,
+            reason: `No remaining candidates for ${this.getTraceConnectionId(tracePreview.traceIndex)}`,
+          }
+        }
+      }
+    }
+
     return {
       tracePreviews,
       totalLength,
@@ -754,8 +802,19 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     const centerSegmentCount = centerTracePreview.segments.length
+    const centerTraceLength = this.getTracePreviewLength(centerTracePreview)
     if (centerSegmentCount < this.BUS_MIN_TRACE_PROGRESS_THRESHOLD) {
-      return true
+      return preview.tracePreviews.every((tracePreview) => {
+        if (tracePreview.traceIndex === this.centerTraceIndex) {
+          return true
+        }
+
+        return (
+          tracePreview.segments.length <= centerSegmentCount &&
+          this.getTracePreviewLength(tracePreview) <=
+            centerTraceLength + BUS_CANDIDATE_EPSILON
+        )
+      })
     }
 
     const minimumTraceSegmentCount = Math.max(
@@ -768,12 +827,71 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
+      if (
+        tracePreview.segments.length > centerSegmentCount ||
+        this.getTracePreviewLength(tracePreview) >
+          centerTraceLength + BUS_CANDIDATE_EPSILON
+      ) {
+        return false
+      }
+
       if (tracePreview.segments.length < minimumTraceSegmentCount) {
         return false
       }
     }
 
     return true
+  }
+
+  private buildPreviewUsedPortOwners(tracePreviews: readonly TracePreview[]) {
+    const usedPortOwners = new Map<PortId, RouteId>()
+
+    for (const tracePreview of tracePreviews) {
+      for (const segment of tracePreview.segments) {
+        if (
+          !ensurePortOwnership(
+            tracePreview.routeId,
+            segment.fromPortId,
+            usedPortOwners,
+          ) ||
+          !ensurePortOwnership(
+            tracePreview.routeId,
+            segment.toPortId,
+            usedPortOwners,
+          )
+        ) {
+          return undefined
+        }
+      }
+    }
+
+    return usedPortOwners
+  }
+
+  private hasRemainingTraceCandidates(preview: BusPreview) {
+    const usedPortOwners = this.buildPreviewUsedPortOwners(preview.tracePreviews)
+    if (!usedPortOwners) {
+      return false
+    }
+
+    return preview.tracePreviews.every((tracePreview) => {
+      if (tracePreview.traceIndex === this.centerTraceIndex) {
+        return true
+      }
+
+      return this.traceInferencePlanner.hasRemainingTraceCandidate(
+        tracePreview,
+        usedPortOwners,
+      )
+    })
+  }
+
+  private getTracePreviewLength(tracePreview: TracePreview) {
+    return tracePreview.segments.reduce(
+      (sum, segment) =>
+        sum + getPortDistance(this.topology, segment.fromPortId, segment.toPortId),
+      0,
+    )
   }
 
   private isTracePreviewUsable(
@@ -1066,6 +1184,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const moves: BusCenterCandidate[] = []
     const routeId = this.centerRouteId
     const currentNetId = this.centerRouteNetId
+    const manualFinishCandidates = this.isManualCenterFinishRegion(
+      currentCandidate.nextRegionId,
+    )
+      ? this.getManualCenterFinishCandidates(currentCandidate)
+      : []
 
     if (currentCandidate.atGoal) {
       return moves
@@ -1076,13 +1199,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         currentNetId,
         currentCandidate.nextRegionId,
       )
-    ) {
-      return moves
-    }
-
-    if (this.isManualCenterFinishRegion(currentCandidate.nextRegionId)) {
-      return this.getManualCenterFinishCandidates(currentCandidate)
-    }
+      ) {
+        return moves
+      }
 
     const parentCost = currentCandidate.busCost ?? currentCandidate.g
     const goalPortId = this.problem.routeEndPort[routeId]!
@@ -1190,7 +1309,23 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       })
     }
 
-    return moves
+    if (manualFinishCandidates.length === 0) {
+      return moves
+    }
+
+    const dedupedMoves = new Map<string, BusCenterCandidate>()
+    for (const candidate of [...moves, ...manualFinishCandidates]) {
+      const candidateKey = getCenterCandidatePathKey(candidate)
+      const existingCandidate = dedupedMoves.get(candidateKey)
+      if (
+        !existingCandidate ||
+        candidate.f < existingCandidate.f - BUS_CANDIDATE_EPSILON
+      ) {
+        dedupedMoves.set(candidateKey, candidate)
+      }
+    }
+
+    return [...dedupedMoves.values()]
   }
 
   private commitTracePreview(
@@ -1362,6 +1497,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       currentBusCost: this.lastExpandedCandidate?.busCost,
       previewReason: failureReason ?? this.lastPreview?.reason,
       previewRouteCount: this.lastPreview?.tracePreviews.length ?? 0,
+      lastNeighborCount: this.lastNeighborCount,
+      lastQueuedNeighborCount: this.lastQueuedNeighborCount,
     }
   }
 }

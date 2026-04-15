@@ -72,6 +72,20 @@ const getSerializedPortId = (
     topology.portMetadata?.[portId] as { serializedPortId?: string } | undefined
   )?.serializedPortId
 
+const getTracePreviewLength = (
+  topology: ReturnType<typeof loadSerializedHyperGraph>["topology"],
+  tracePreview: { segments: Array<{ fromPortId: number; toPortId: number }> },
+) =>
+  tracePreview.segments.reduce(
+    (sum, segment) =>
+      sum +
+      Math.hypot(
+        topology.portX[segment.fromPortId] - topology.portX[segment.toPortId],
+        topology.portY[segment.fromPortId] - topology.portY[segment.toPortId],
+      ),
+    0,
+  )
+
 test("repro: region-19 turns right into an L-shaped top-bottom split", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     busRightTurnLShapeFixture,
@@ -135,7 +149,7 @@ test("repro: region-19 turns right into an L-shaped top-bottom split", () => {
   )
 })
 
-test("repro: iteration 3 keeps right-side traces advancing toward bridge-upper", () => {
+test("repro: iteration 3 keeps all traces behind the centerline", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     busRightTurnLShapeFixture,
   )
@@ -147,24 +161,24 @@ test("repro: iteration 3 keeps right-side traces advancing toward bridge-upper",
   busSolver.step()
   busSolver.step()
 
+  const centerTracePreview = getTracePreviewByConnectionId(busSolver, "route-2")
   const route4Preview = getTracePreviewByConnectionId(busSolver, "route-4")
   const route5Preview = getTracePreviewByConnectionId(busSolver, "route-5")
 
+  expect(centerTracePreview).toBeDefined()
   expect(route4Preview).toBeDefined()
   expect(route5Preview).toBeDefined()
-  expect(getSerializedRegionId(topology, route4Preview.terminalRegionId)).toBe(
-    "bridge-upper",
+  expect(route4Preview.segments.length).toBeLessThanOrEqual(
+    centerTracePreview.segments.length,
   )
-  expect(getSerializedRegionId(topology, route5Preview.terminalRegionId)).toBe(
-    "bridge-upper",
+  expect(route5Preview.segments.length).toBeLessThanOrEqual(
+    centerTracePreview.segments.length,
   )
-  expect(route4Preview.segments).toHaveLength(2)
-  expect(route5Preview.segments).toHaveLength(2)
-  expect(getSerializedPortId(topology, route4Preview.segments[1]!.toPortId)).toStartWith(
-    "a-br-",
+  expect(getTracePreviewLength(topology, route4Preview)).toBeLessThanOrEqual(
+    getTracePreviewLength(topology, centerTracePreview) + 1e-9,
   )
-  expect(getSerializedPortId(topology, route5Preview.segments[1]!.toPortId)).toStartWith(
-    "a-br-",
+  expect(getTracePreviewLength(topology, route5Preview)).toBeLessThanOrEqual(
+    getTracePreviewLength(topology, centerTracePreview) + 1e-9,
   )
 })
 
@@ -194,11 +208,16 @@ test("repro: iteration 4 only keeps queueable non-intersecting derived bus candi
     expect(preview.sameLayerIntersectionCount).toBe(0)
     expect(preview.crossingLayerIntersectionCount).toBe(0)
     expect(centerTracePreview).toBeDefined()
+    expect(internal.hasRemainingTraceCandidates(preview)).toBe(true)
 
     if ((centerTracePreview?.segments.length ?? 0) >= 2) {
       const minimumTraceSegmentCount = Math.max(
         1,
         Math.floor((centerTracePreview?.segments.length ?? 0) * 0.7),
+      )
+      const centerTraceLength = getTracePreviewLength(
+        topology,
+        centerTracePreview,
       )
 
       for (const tracePreview of preview.tracePreviews) {
@@ -206,15 +225,21 @@ test("repro: iteration 4 only keeps queueable non-intersecting derived bus candi
           continue
         }
 
+        expect(tracePreview.segments.length).toBeLessThanOrEqual(
+          centerTracePreview?.segments.length ?? 0,
+        )
         expect(tracePreview.segments.length).toBeGreaterThanOrEqual(
           minimumTraceSegmentCount,
+        )
+        expect(getTracePreviewLength(topology, tracePreview)).toBeLessThanOrEqual(
+          centerTraceLength + 1e-9,
         )
       }
     }
   }
 })
 
-test("repro: iteration 4 picks the closest remaining valid exit ports for route-1", () => {
+test("repro: iteration 4 keeps route-1 behind the centerline while still making progress", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     busRightTurnLShapeFixture,
   )
@@ -228,15 +253,102 @@ test("repro: iteration 4 picks the closest remaining valid exit ports for route-
   busSolver.step()
 
   const route1Preview = getTracePreviewByConnectionId(busSolver, "route-1")
+  const centerTracePreview = getTracePreviewByConnectionId(busSolver, "route-2")
 
   expect(route1Preview).toBeDefined()
-  expect(route1Preview.segments).toHaveLength(2)
-  expect(getSerializedPortId(topology, route1Preview.segments[0]!.toPortId)).toBe(
-    "a-tl-0",
+  expect(centerTracePreview).toBeDefined()
+  expect(route1Preview.segments.length).toBeGreaterThan(0)
+  expect(route1Preview.segments.length).toBeLessThanOrEqual(
+    centerTracePreview.segments.length,
   )
-  expect(getSerializedPortId(topology, route1Preview.segments[1]!.toPortId)).toBe(
-    "a-bl-1",
+  expect(getTracePreviewLength(topology, route1Preview)).toBeLessThanOrEqual(
+    getTracePreviewLength(topology, centerTracePreview) + 1e-9,
   )
+})
+
+test("repro: iteration 10 keeps all derived traces behind the centerline", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+  })
+
+  for (let iteration = 0; iteration < 10; iteration++) {
+    busSolver.step()
+  }
+
+  const centerTracePreview = getTracePreviewByConnectionId(busSolver, "route-2")
+
+  expect(centerTracePreview).toBeDefined()
+
+  const centerTraceLength = getTracePreviewLength(topology, centerTracePreview)
+
+  expect((busSolver as any).hasRemainingTraceCandidates((busSolver as any).lastPreview)).toBe(
+    true,
+  )
+
+  for (const tracePreview of (busSolver as any).lastPreview?.tracePreviews ?? []) {
+    if (tracePreview.traceIndex === busSolver.centerTraceIndex) {
+      continue
+    }
+
+    expect(tracePreview.segments.length).toBeLessThanOrEqual(
+      centerTracePreview.segments.length,
+    )
+    expect(getTracePreviewLength(topology, tracePreview)).toBeLessThanOrEqual(
+      centerTraceLength + 1e-9,
+    )
+  }
+})
+
+test("repro: iteration 12 exposes generated but rejected centerline neighbors", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+    CENTER_GREEDY_HEURISTIC_MULTIPLIER: 1_000,
+  })
+
+  for (let iteration = 0; iteration < 12; iteration++) {
+    busSolver.step()
+  }
+
+  expect(busSolver.iterations).toBe(12)
+  expect(busSolver.stats.lastNeighborCount).toBeGreaterThan(0)
+  expect(busSolver.stats.lastQueuedNeighborCount).toBe(0)
+  expect(busSolver.stats.openCandidateCount).toBeGreaterThan(0)
+})
+
+test("repro: debug mode can queue all generated neighbors", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+    CENTER_GREEDY_HEURISTIC_MULTIPLIER: 1_000,
+    QUEUE_ALL_CANDIDATES: true,
+  })
+
+  let sawQueuedExpansion = false
+
+  for (let iteration = 0; iteration < 20; iteration++) {
+    busSolver.step()
+
+    if ((busSolver.stats.lastNeighborCount ?? 0) > 0) {
+      expect(busSolver.stats.lastQueuedNeighborCount).toBe(
+        busSolver.stats.lastNeighborCount,
+      )
+      expect(busSolver.stats.openCandidateCount).toBeGreaterThanOrEqual(
+        busSolver.stats.lastQueuedNeighborCount,
+      )
+      sawQueuedExpansion = true
+      break
+    }
+  }
+
+  expect(sawQueuedExpansion).toBe(true)
 })
 
 test("repro: visualize only shows the current bus at iteration 4", () => {
