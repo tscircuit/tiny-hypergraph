@@ -38,8 +38,6 @@ interface BusTraceInferencePlannerOptions {
   BUS_REMAINDER_GUIDE_WEIGHT: number
   BUS_REMAINDER_GOAL_WEIGHT: number
   BUS_REMAINDER_SIDE_WEIGHT: number
-  BUS_MIN_TRACE_PROGRESS_RATIO: number
-  BUS_MIN_TRACE_PROGRESS_THRESHOLD: number
   TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT: number
   TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH: number
   TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT: number
@@ -61,7 +59,6 @@ interface BusTraceInferencePlannerOptions {
   getTraceSidePenalty: (traceIndex: number, portId: PortId) => number
   getTraceLanePenalty: (traceIndex: number, portId: PortId) => number
   getRouteHeuristic: (routeId: RouteId, portId: PortId) => number
-  getCenterGoalHopDistance: (regionId: RegionId) => number
 }
 
 interface ExactPrefixTracePreview {
@@ -240,27 +237,8 @@ export class BusTraceInferencePlanner {
       this.options.topology,
       centerPath.map((pathCandidate) => pathCandidate.portId),
     )
-    const minimumSegmentCount =
-      this.getMinimumRequiredSegmentCount(centerSegmentCount)
 
     if (exactPrefix.sharedStepCount >= maxSharedStepCount) {
-      const preview = {
-        ...exactPrefix.preview,
-        previewCost: this.getTracePreviewGuideDeviation(
-          exactPrefix.preview,
-          guidePortIds,
-        ),
-      }
-      return this.isPreviewBehindCenterline(
-        preview,
-        centerSegmentCount,
-        centerTraceLength,
-      )
-        ? preview
-        : undefined
-    }
-
-    if (exactPrefix.preview.segments.length >= minimumSegmentCount) {
       const preview = {
         ...exactPrefix.preview,
         previewCost: this.getTracePreviewGuideDeviation(
@@ -286,7 +264,6 @@ export class BusTraceInferencePlanner {
         maxSharedStepCount - exactPrefix.sharedStepCount,
       ),
       maxSegmentCount: centerSegmentCount,
-      targetSegmentCount: minimumSegmentCount,
       maxTraceLength: centerTraceLength,
     })
     if (!extension || !extension.madeProgress) {
@@ -443,7 +420,6 @@ export class BusTraceInferencePlanner {
     maxSteps,
     goalPortId,
     maxSegmentCount,
-    targetSegmentCount,
     maxTraceLength,
   }: {
     traceIndex: number
@@ -453,7 +429,6 @@ export class BusTraceInferencePlanner {
     maxSteps: number
     goalPortId?: PortId
     maxSegmentCount?: number
-    targetSegmentCount?: number
     maxTraceLength?: number
   }): GreedyTraceExtensionResult | undefined {
     const routeId = prefixPreview.routeId
@@ -473,13 +448,6 @@ export class BusTraceInferencePlanner {
     const segments: TraceSegment[] = []
 
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
-      if (
-        targetSegmentCount !== undefined &&
-        prefixPreview.segments.length + segments.length >= targetSegmentCount
-      ) {
-        break
-      }
-
       if (
         maxSegmentCount !== undefined &&
         prefixPreview.segments.length + segments.length >= maxSegmentCount
@@ -648,10 +616,8 @@ export class BusTraceInferencePlanner {
     maxTraceLength?: number
   }) {
     const entryRegionId = this.getOppositeRegionId(currentPortId, currentRegionId)
-    const currentGoalHopDistance =
-      this.options.getCenterGoalHopDistance(currentRegionId)
-
-    const candidates = (this.options.topology.regionIncidentPorts[currentRegionId] ?? [])
+    
+    return (this.options.topology.regionIncidentPorts[currentRegionId] ?? [])
       .map((boundaryPortId) => {
         if (
           boundaryPortId === currentPortId ||
@@ -724,7 +690,6 @@ export class BusTraceInferencePlanner {
             boundaryPortId,
             guidePortIds,
           ),
-          goalHopDistance: this.options.getCenterGoalHopDistance(nextRegionId),
         }
       })
       .filter(
@@ -734,23 +699,9 @@ export class BusTraceInferencePlanner {
           portId: PortId
           nextRegionId: RegionId
           guideDistance: number
-          goalHopDistance: number
         } => candidate !== undefined,
       )
-
-    const nonRegressiveCandidates =
-      currentGoalHopDistance >= 0
-        ? candidates.filter(
-            (candidate) =>
-              candidate.goalHopDistance >= 0 &&
-              candidate.goalHopDistance <= currentGoalHopDistance,
-          )
-        : []
-
-    return (nonRegressiveCandidates.length > 0
-      ? nonRegressiveCandidates
-      : candidates
-    ).sort(
+      .sort(
       (left, right) =>
         left.guideDistance - right.guideDistance || left.portId - right.portId,
     )[0]
@@ -861,17 +812,6 @@ export class BusTraceInferencePlanner {
         remainingBoundaryStepCount * 2 + 2,
         this.options.BUS_MAX_REMAINDER_STEPS * 4,
       ),
-    )
-  }
-
-  private getMinimumRequiredSegmentCount(centerSegmentCount: number) {
-    if (centerSegmentCount < this.options.BUS_MIN_TRACE_PROGRESS_THRESHOLD) {
-      return 0
-    }
-
-    return Math.max(
-      1,
-      Math.floor(centerSegmentCount * this.options.BUS_MIN_TRACE_PROGRESS_RATIO),
     )
   }
 }

@@ -74,6 +74,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   readonly commitTraceIndices: number[]
   readonly tracePitch: number
   readonly regionDistanceToGoalByRegion: Float64Array
+  readonly queueAllCandidates: boolean
   readonly showUnassignedPortsInVisualization: boolean
 
   private readonly boundaryPlanner: BusBoundaryPlanner
@@ -141,6 +142,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       this.CENTER_GREEDY_HEURISTIC_MULTIPLIER =
         options.CENTER_GREEDY_HEURISTIC_MULTIPLIER
     }
+    this.queueAllCandidates = options?.QUEUE_ALL_CANDIDATES ?? false
     this.showUnassignedPortsInVisualization =
       options?.VISUALIZE_UNASSIGNED_PORTS ?? false
 
@@ -155,8 +157,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       BUS_REMAINDER_GUIDE_WEIGHT: this.BUS_REMAINDER_GUIDE_WEIGHT,
       BUS_REMAINDER_GOAL_WEIGHT: this.BUS_REMAINDER_GOAL_WEIGHT,
       BUS_REMAINDER_SIDE_WEIGHT: this.BUS_REMAINDER_SIDE_WEIGHT,
-      BUS_MIN_TRACE_PROGRESS_RATIO: this.BUS_MIN_TRACE_PROGRESS_RATIO,
-      BUS_MIN_TRACE_PROGRESS_THRESHOLD: this.BUS_MIN_TRACE_PROGRESS_THRESHOLD,
       TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT:
         this.TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT,
       TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH: this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH,
@@ -174,8 +174,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       getTraceSidePenalty: (...args) => this.getTraceSidePenalty(...args),
       getTraceLanePenalty: (...args) => this.getTraceLanePenalty(...args),
       getRouteHeuristic: (...args) => this.getRouteHeuristic(...args),
-      getCenterGoalHopDistance: (regionId) =>
-        this.centerGoalHopDistanceByRegion[regionId] ?? -1,
     })
 
     this.boundaryPlanner = new BusBoundaryPlanner({
@@ -351,11 +349,22 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
       for (const nextCandidate of nextCandidates) {
         const nextPreview = this.evaluateCandidate(nextCandidate)
-        if (!nextPreview || !this.isQueueablePreview(nextPreview)) {
+        if (
+          !nextPreview ||
+          (!this.queueAllCandidates && !this.isQueueablePreview(nextPreview))
+        ) {
           continue
         }
 
-        nextCandidate.busCost = nextPreview.totalCost
+        nextCandidate.busCost = Number.isFinite(nextPreview.totalCost)
+          ? nextPreview.totalCost
+          : nextCandidate.f
+
+        if (this.queueAllCandidates) {
+          this.state.candidateQueue.queue(nextCandidate)
+          this.lastQueuedNeighborCount += 1
+          continue
+        }
 
         if (this.shouldUseBusStatePruning()) {
           const nextQueuedCandidateStateKey = this.getBusCandidateStateKey(
@@ -1184,11 +1193,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const moves: BusCenterCandidate[] = []
     const routeId = this.centerRouteId
     const currentNetId = this.centerRouteNetId
-    const manualFinishCandidates = this.isManualCenterFinishRegion(
-      currentCandidate.nextRegionId,
-    )
-      ? this.getManualCenterFinishCandidates(currentCandidate)
-      : []
 
     if (currentCandidate.atGoal) {
       return moves
@@ -1199,9 +1203,13 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         currentNetId,
         currentCandidate.nextRegionId,
       )
-      ) {
-        return moves
-      }
+    ) {
+      return moves
+    }
+
+    if (this.isManualCenterFinishRegion(currentCandidate.nextRegionId)) {
+      return this.getManualCenterFinishCandidates(currentCandidate)
+    }
 
     const parentCost = currentCandidate.busCost ?? currentCandidate.g
     const goalPortId = this.problem.routeEndPort[routeId]!
@@ -1309,23 +1317,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       })
     }
 
-    if (manualFinishCandidates.length === 0) {
-      return moves
-    }
-
-    const dedupedMoves = new Map<string, BusCenterCandidate>()
-    for (const candidate of [...moves, ...manualFinishCandidates]) {
-      const candidateKey = getCenterCandidatePathKey(candidate)
-      const existingCandidate = dedupedMoves.get(candidateKey)
-      if (
-        !existingCandidate ||
-        candidate.f < existingCandidate.f - BUS_CANDIDATE_EPSILON
-      ) {
-        dedupedMoves.set(candidateKey, candidate)
-      }
-    }
-
-    return [...dedupedMoves.values()]
+    return moves
   }
 
   private commitTracePreview(

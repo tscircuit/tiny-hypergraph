@@ -9,6 +9,7 @@ const createBusSolver = (serializedHyperGraph: SerializedHyperGraph) => {
   return new TinyHyperGraphBusSolver(topology, problem, {
     MAX_ITERATIONS: 100_000,
     CENTER_GREEDY_HEURISTIC_MULTIPLIER: 1_000,
+    QUEUE_ALL_CANDIDATES: true,
     VISUALIZE_UNASSIGNED_PORTS: true,
   })
 }
