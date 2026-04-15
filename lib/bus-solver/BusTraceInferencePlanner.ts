@@ -66,7 +66,10 @@ interface BusTraceInferencePlannerOptions {
   TRACE_ALONGSIDE_LANE_WEIGHT: number
   TRACE_ALONGSIDE_REGRESSION_WEIGHT: number
   buildPrefixTracePreview: BuildPrefixTracePreviewFn
-  getStartingNextRegionId: (routeId: RouteId, startPortId: PortId) => RegionId | undefined
+  getStartingNextRegionId: (
+    routeId: RouteId,
+    startPortId: PortId,
+  ) => RegionId | undefined
   isRegionReservedForDifferentBusNet: (
     currentNetId: number,
     regionId: RegionId,
@@ -176,12 +179,14 @@ export class BusTraceInferencePlanner {
       startRegionId: searchPrefixPreview.terminalRegionId,
       guidePortIds,
       usedPortOwners,
-      targetGuideProgress: getPolylineLength(this.options.topology, guidePortIds),
+      targetGuideProgress: getPolylineLength(
+        this.options.topology,
+        guidePortIds,
+      ),
       maxSteps: this.getPartialTraceSearchMaxSteps(maxSharedStepCount),
       maxOptions: 1,
-      initialVisitedPortIds: this.getTracePreviewVisitedPortIds(
-        searchPrefixPreview,
-      ),
+      initialVisitedPortIds:
+        this.getTracePreviewVisitedPortIds(searchPrefixPreview),
       initialVisitedStateKeys:
         this.getTracePreviewSearchStartStateKeys(searchPrefixPreview),
     })
@@ -305,9 +310,8 @@ export class BusTraceInferencePlanner {
             remainingBoundaryStepCount,
           ),
           maxOptions: this.options.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT,
-          initialVisitedPortIds: this.getTracePreviewVisitedPortIds(
-            prefixPreview,
-          ),
+          initialVisitedPortIds:
+            this.getTracePreviewVisitedPortIds(prefixPreview),
           initialVisitedStateKeys:
             this.getTracePreviewSearchStartStateKeys(prefixPreview),
         })
@@ -365,7 +369,9 @@ export class BusTraceInferencePlanner {
       return undefined
     }
 
-    if (isPortIncidentToRegion(this.options.topology, endPortId, startRegionId)) {
+    if (
+      isPortIncidentToRegion(this.options.topology, endPortId, startRegionId)
+    ) {
       if (
         ensurePortOwnership(routeId, endPortId, new Map(usedPortOwners)) &&
         startPortId !== endPortId
@@ -403,7 +409,13 @@ export class BusTraceInferencePlanner {
       stepIndex < this.options.BUS_MAX_REMAINDER_STEPS;
       stepIndex++
     ) {
-      if (isPortIncidentToRegion(this.options.topology, endPortId, currentRegionId)) {
+      if (
+        isPortIncidentToRegion(
+          this.options.topology,
+          endPortId,
+          currentRegionId,
+        )
+      ) {
         if (!ensurePortOwnership(routeId, endPortId, localOwners)) {
           return undefined
         }
@@ -603,7 +615,11 @@ export class BusTraceInferencePlanner {
     const tryCompleteFromNode = (node: AlongsideTraceSearchNode) => {
       if (
         goalPortId === undefined ||
-        !isPortIncidentToRegion(this.options.topology, goalPortId, node.regionId)
+        !isPortIncidentToRegion(
+          this.options.topology,
+          goalPortId,
+          node.regionId,
+        )
       ) {
         return
       }
@@ -668,7 +684,11 @@ export class BusTraceInferencePlanner {
     tryCompleteFromNode(initialNode)
     tryPartialFromNode(initialNode)
 
-    for (let stepIndex = 0; stepIndex < maxSteps && beam.length > 0; stepIndex++) {
+    for (
+      let stepIndex = 0;
+      stepIndex < maxSteps && beam.length > 0;
+      stepIndex++
+    ) {
       const nextBeamCandidates: AlongsideTraceSearchNode[] = []
 
       for (const node of beam) {
@@ -723,7 +743,11 @@ export class BusTraceInferencePlanner {
             this.options.TRACE_ALONGSIDE_REGRESSION_WEIGHT
           const nextTravelCost =
             node.travelCost +
-            getPortDistance(this.options.topology, node.portId, boundaryPortId) *
+            getPortDistance(
+              this.options.topology,
+              node.portId,
+              boundaryPortId,
+            ) *
               this.options.DISTANCE_TO_COST +
             regressionPenalty
           const nextVisitedPortIds = new Set(node.visitedPortIds)
@@ -781,14 +805,16 @@ export class BusTraceInferencePlanner {
           })
       }
 
-      const bestCandidateByStateKey = new Map<string, AlongsideTraceSearchNode>()
+      const bestCandidateByStateKey = new Map<
+        string,
+        AlongsideTraceSearchNode
+      >()
       for (const candidate of nextBeamCandidates) {
         const candidateStateKey = this.getTraceSearchStateKey(
           candidate.portId,
           candidate.regionId,
         )
-        const existingCandidate =
-          bestCandidateByStateKey.get(candidateStateKey)
+        const existingCandidate = bestCandidateByStateKey.get(candidateStateKey)
 
         if (
           !existingCandidate ||
@@ -876,7 +902,8 @@ export class BusTraceInferencePlanner {
 
   private getTracePreviewSearchStartStateKeys(tracePreview: TracePreview) {
     const visitedStateKeys: string[] = []
-    let currentPortId = this.options.problem.routeStartPort[tracePreview.routeId]!
+    let currentPortId =
+      this.options.problem.routeStartPort[tracePreview.routeId]!
     let currentRegionId = this.options.getStartingNextRegionId(
       tracePreview.routeId,
       currentPortId,
@@ -892,7 +919,10 @@ export class BusTraceInferencePlanner {
 
     for (const segment of tracePreview.segments) {
       currentPortId = segment.toPortId
-      const nextRegionId = this.getOppositeRegionId(currentPortId, segment.regionId)
+      const nextRegionId = this.getOppositeRegionId(
+        currentPortId,
+        segment.regionId,
+      )
 
       if (nextRegionId === undefined) {
         break
@@ -939,7 +969,8 @@ export class BusTraceInferencePlanner {
   }
 
   private getOppositeRegionId(portId: PortId, regionId: RegionId) {
-    const incidentRegionIds = this.options.topology.incidentPortRegion[portId] ?? []
+    const incidentRegionIds =
+      this.options.topology.incidentPortRegion[portId] ?? []
     return incidentRegionIds[0] === regionId
       ? incidentRegionIds[1]
       : incidentRegionIds[0]

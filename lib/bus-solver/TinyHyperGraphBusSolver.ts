@@ -36,10 +36,7 @@ import {
   type TracePreview,
   type TraceSegment,
 } from "./busSolverTypes"
-import {
-  getPortDistance,
-  getPortProjection,
-} from "./geometry"
+import { getPortDistance, getPortProjection } from "./geometry"
 import {
   clearPreviewRoutingState as clearPreviewRoutingStateValue,
   getPreviewIntersectionCounts as getPreviewIntersectionCountsValue,
@@ -155,15 +152,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       BUS_REMAINDER_SIDE_WEIGHT: this.BUS_REMAINDER_SIDE_WEIGHT,
       TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT:
         this.TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT,
-      TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH:
-        this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH,
+      TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH: this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH,
       TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT:
         this.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT,
       TRACE_ALONGSIDE_LANE_WEIGHT: this.TRACE_ALONGSIDE_LANE_WEIGHT,
-      TRACE_ALONGSIDE_REGRESSION_WEIGHT:
-        this.TRACE_ALONGSIDE_REGRESSION_WEIGHT,
-      buildPrefixTracePreview: (...args) => this.buildPrefixTracePreview(...args),
-      getStartingNextRegionId: (...args) => this.getStartingNextRegionId(...args),
+      TRACE_ALONGSIDE_REGRESSION_WEIGHT: this.TRACE_ALONGSIDE_REGRESSION_WEIGHT,
+      buildPrefixTracePreview: (...args) =>
+        this.buildPrefixTracePreview(...args),
+      getStartingNextRegionId: (...args) =>
+        this.getStartingNextRegionId(...args),
       isRegionReservedForDifferentBusNet: (...args) =>
         this.isRegionReservedForDifferentBusNet(...args),
       getTraceSidePenalty: (...args) => this.getTraceSidePenalty(...args),
@@ -283,7 +280,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       preview.sameLayerIntersectionCount > 0 ||
       preview.crossingLayerIntersectionCount > 0
     const totalIntersectionCount =
-      preview.sameLayerIntersectionCount + preview.crossingLayerIntersectionCount
+      preview.sameLayerIntersectionCount +
+      preview.crossingLayerIntersectionCount
     const hasInferenceFailure =
       preview.reason !== undefined && !hasIntersections
     const allowIntersectingPartialExpansion =
@@ -295,7 +293,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       preview.completeTraceCount === this.problem.routeCount &&
       totalIntersectionCount > 0
     ) {
-      this.maybeStoreBestCompleteFallbackPreview(preview, totalIntersectionCount)
+      this.maybeStoreBestCompleteFallbackPreview(
+        preview,
+        totalIntersectionCount,
+      )
     }
 
     if (
@@ -1365,8 +1366,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   }
 
   private computeCenterHeuristic(portId: PortId, nextRegionId?: RegionId) {
-    const portHeuristic =
-      this.getRouteHeuristic(this.centerRouteId, portId)
+    const portHeuristic = this.getRouteHeuristic(this.centerRouteId, portId)
 
     if (nextRegionId === undefined) {
       return portHeuristic
