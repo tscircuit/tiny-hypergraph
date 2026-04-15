@@ -5,6 +5,12 @@ import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
+import {
+  createStaticallyUnroutableRouteSummary,
+  getStaticReachabilityError,
+  getStaticallyUnroutableRoutes,
+} from "./static-reachability"
+import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import type {
   DynamicAnglePair,
   HopId,
@@ -16,6 +22,8 @@ import type {
 } from "./types"
 import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
+
+export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -119,11 +127,6 @@ export interface NeverSuccessfullyRoutedRouteSummary {
   endRegionId?: string
   pointIds: string[]
 }
-
-export type StaticallyUnroutableRouteSummary = Omit<
-  NeverSuccessfullyRoutedRouteSummary,
-  "attempts"
->
 
 export interface Candidate {
   prevRegionId?: RegionId
@@ -362,10 +365,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
     void this.problemSetup
 
     if (this.STATIC_REACHABILITY_PRECHECK) {
-      const staticallyUnroutableRoutes = this.getStaticallyUnroutableRoutes()
+      const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
+        topology: this.topology,
+        problem: this.problem,
+        problemSetup: this.problemSetup,
+        portAssignment: this.state.portAssignment,
+        routeIds: this.state.unroutedRoutes,
+        maxPrecheckHops: Math.max(
+          0,
+          this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+        ),
+        getStartingNextRegionId: (routeId, startingPortId) =>
+          this.getStartingNextRegionId(routeId, startingPortId),
+        getRouteSummary: (routeId) => this.getRouteSummary(routeId),
+      })
       if (staticallyUnroutableRoutes.length > 0) {
         this.failed = true
-        this.error = this.getStaticReachabilityError(staticallyUnroutableRoutes)
+        this.error = getStaticReachabilityError(staticallyUnroutableRoutes)
         this.stats = {
           ...this.stats,
           staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
@@ -780,200 +796,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return typeof connectionId === "string" ? connectionId : `route-${routeId}`
   }
 
-  protected getRoutePointIds(routeId: RouteId) {
-    const routeMetadata = this.getRouteMetadata(routeId)
-    return (
-      routeMetadata?.simpleRouteConnection?.pointsToConnect
-        ?.map(({ pointId }) => (typeof pointId === "string" ? pointId : null))
-        .filter((pointId): pointId is string => pointId !== null) ?? []
-    )
-  }
-
   protected getRouteSummary(
     routeId: RouteId,
   ): StaticallyUnroutableRouteSummary {
-    const routeMetadata = this.getRouteMetadata(routeId)
-
-    return {
+    return createStaticallyUnroutableRouteSummary({
+      problem: this.problem,
       routeId,
-      connectionId: this.getRouteConnectionId(routeId),
-      startPortId: this.problem.routeStartPort[routeId]!,
-      endPortId: this.problem.routeEndPort[routeId]!,
-      startRegionId:
-        typeof routeMetadata?.startRegionId === "string"
-          ? routeMetadata.startRegionId
-          : undefined,
-      endRegionId:
-        typeof routeMetadata?.endRegionId === "string"
-          ? routeMetadata.endRegionId
-          : undefined,
-      pointIds: this.getRoutePointIds(routeId),
-    }
+      getRouteMetadata: (currentRouteId) =>
+        this.getRouteMetadata(currentRouteId),
+      getRouteConnectionId: (currentRouteId) =>
+        this.getRouteConnectionId(currentRouteId),
+    })
   }
 
   getAdditionalRegionLabel(_regionId: RegionId): string | undefined {
     return undefined
-  }
-
-  protected isPortEndpointReservedForStaticReachability(
-    routeNetId: NetId,
-    portId: PortId,
-  ) {
-    const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
-    if (reservedNetIds) {
-      for (const reservedNetId of reservedNetIds) {
-        if (reservedNetId !== routeNetId) {
-          return true
-        }
-      }
-    }
-
-    return false
-  }
-
-  protected isRegionBlockedForStaticReachability(
-    routeNetId: NetId,
-    regionId: RegionId,
-  ) {
-    const reservedNetId = this.problem.regionNetId[regionId]
-    return reservedNetId !== -1 && reservedNetId !== routeNetId
-  }
-
-  protected hasStaticReachabilityPath(routeId: RouteId): boolean {
-    const { problem, topology } = this
-    const routeNetId = problem.routeNet[routeId]!
-    const startPortId = problem.routeStartPort[routeId]!
-    const goalPortId = problem.routeEndPort[routeId]!
-    const maxPrecheckHops = Math.max(
-      0,
-      this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
-    )
-
-    if (startPortId === goalPortId) {
-      return true
-    }
-
-    const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
-    if (startRegionId === undefined) {
-      return false
-    }
-
-    const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
-      {
-        portId: startPortId,
-        nextRegionId: startRegionId,
-      },
-    ]
-    const seenHops = new Set<number>([
-      startPortId * topology.regionCount + startRegionId,
-    ])
-
-    for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
-      const currentCandidate = queue[queueIndex]!
-
-      if (
-        this.isRegionBlockedForStaticReachability(
-          routeNetId,
-          currentCandidate.nextRegionId,
-        )
-      ) {
-        continue
-      }
-
-      for (const neighborPortId of topology.regionIncidentPorts[
-        currentCandidate.nextRegionId
-      ] ?? []) {
-        const assignedNetId = this.state.portAssignment[neighborPortId]
-
-        if (
-          this.isPortEndpointReservedForStaticReachability(
-            routeNetId,
-            neighborPortId,
-          )
-        ) {
-          continue
-        }
-        if (neighborPortId === goalPortId) {
-          if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
-            continue
-          }
-          return true
-        }
-        if (neighborPortId === currentCandidate.portId) {
-          continue
-        }
-        if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
-          continue
-        }
-        if (problem.portSectionMask[neighborPortId] === 0) {
-          continue
-        }
-
-        const incidentRegions =
-          topology.incidentPortRegion[neighborPortId] ?? []
-        const nextRegionId =
-          incidentRegions[0] === currentCandidate.nextRegionId
-            ? incidentRegions[1]
-            : incidentRegions[0]
-
-        if (
-          nextRegionId === undefined ||
-          this.isRegionBlockedForStaticReachability(routeNetId, nextRegionId)
-        ) {
-          continue
-        }
-
-        const hopId = neighborPortId * topology.regionCount + nextRegionId
-        if (seenHops.has(hopId)) {
-          continue
-        }
-        if (seenHops.size >= maxPrecheckHops) {
-          return true
-        }
-
-        seenHops.add(hopId)
-        queue.push({
-          portId: neighborPortId,
-          nextRegionId,
-        })
-      }
-    }
-
-    return false
-  }
-
-  getStaticallyUnroutableRoutes(): StaticallyUnroutableRouteSummary[] {
-    const routeIds = [...new Set(this.state.unroutedRoutes)]
-
-    return routeIds
-      .filter((routeId) => !this.hasStaticReachabilityPath(routeId))
-      .map((routeId) => this.getRouteSummary(routeId))
-  }
-
-  protected getStaticReachabilityError(
-    staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[],
-  ) {
-    const routeLabels = staticallyUnroutableRoutes
-      .slice(0, 5)
-      .map((routeSummary) => {
-        const pointPath =
-          routeSummary.pointIds.length >= 2
-            ? `${routeSummary.pointIds[0]}->${routeSummary.pointIds[1]}`
-            : `${routeSummary.startPortId}->${routeSummary.endPortId}`
-
-        return `${routeSummary.connectionId} (${pointPath})`
-      })
-      .join(", ")
-
-    const remainingRouteCount = staticallyUnroutableRoutes.length - 5
-
-    return [
-      "Static reachability precheck failed:",
-      `${staticallyUnroutableRoutes.length} route(s) have no legal path under the current reservation and start-region rules`,
-      remainingRouteCount > 0
-        ? `${routeLabels}, +${remainingRouteCount} more`
-        : routeLabels,
-    ].join(" ")
   }
 
   getNeverSuccessfullyRoutedRoutes(): NeverSuccessfullyRoutedRouteSummary[] {
