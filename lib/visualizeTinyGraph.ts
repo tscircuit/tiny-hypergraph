@@ -4,6 +4,7 @@ import type { PortId, RegionId, RouteId } from "./types"
 
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
+const TRANSITION_CROSSING_COLOR = "rgba(22, 160, 133, 0.95)"
 const TRANSITION_CROSSING_DASH = "2 4 2"
 const PORT_LAYER_CIRCLE_OFFSET = 0.01
 const PORT_LAYER_POINT_OFFSET = 0.002
@@ -13,6 +14,7 @@ const NEVER_ROUTED_ENDPOINT_STROKE = "rgba(220, 38, 38, 0.98)"
 const NEVER_ROUTED_ENDPOINT_FILL = "rgba(220, 38, 38, 0.12)"
 const NEVER_ROUTED_ENDPOINT_RADIUS = 1
 const NEVER_ROUTED_ENDPOINT_DASH = "10 6"
+const NON_CENTER_BUS_TRACE_OPACITY = 0.5
 
 type RgbaColor = {
   r: number
@@ -99,6 +101,39 @@ const getRouteColor = (
   const hue = Math.abs(hash) % 360
   return `hsla(${hue}, 70%, 50%, ${alpha})`
 }
+
+const isBusVisualizationSolver = (
+  solver: TinyHyperGraphSolver,
+): solver is TinyHyperGraphSolver & { centerRouteId: RouteId } =>
+  typeof (solver as { centerRouteId?: RouteId }).centerRouteId === "number"
+
+const getRouteOpacity = (
+  solver: TinyHyperGraphSolver,
+  routeId: RouteId,
+): number => {
+  if (!isBusVisualizationSolver(solver)) {
+    return 1
+  }
+
+  return routeId === solver.centerRouteId ? 1 : NON_CENTER_BUS_TRACE_OPACITY
+}
+
+const scaleColorAlpha = (color: string, opacity: number): string => {
+  const alphaMatch = color.match(/^(rgba|hsla)\((.*),\s*([0-9]*\.?[0-9]+)\)$/)
+  if (!alphaMatch) {
+    return color
+  }
+
+  const [, colorFn, body, alphaText] = alphaMatch
+  const scaledAlpha = clamp01(Number(alphaText) * opacity)
+  return `${colorFn}(${body}, ${Number(scaledAlpha.toFixed(3))})`
+}
+
+const getRenderedRouteColor = (
+  solver: TinyHyperGraphSolver,
+  routeId: RouteId,
+  alpha = 0.8,
+) => getRouteColor(solver, routeId, alpha * getRouteOpacity(solver, routeId))
 
 const getRouteNetLabel = (
   solver: TinyHyperGraphSolver,
@@ -404,20 +439,26 @@ const getSegmentStyle = (
 
   if (z1 > 0 && z2 > 0) {
     return {
-      strokeColor: BOTTOM_LAYER_TRACE_COLOR,
+      strokeColor: scaleColorAlpha(
+        BOTTOM_LAYER_TRACE_COLOR,
+        getRouteOpacity(solver, routeId),
+      ),
       strokeDash: BOTTOM_LAYER_TRACE_DASH,
     }
   }
 
   if (z1 !== z2) {
     return {
-      strokeColor: "rgba(22, 160, 133, 0.95)",
+      strokeColor: scaleColorAlpha(
+        TRANSITION_CROSSING_COLOR,
+        getRouteOpacity(solver, routeId),
+      ),
       strokeDash: TRANSITION_CROSSING_DASH,
     }
   }
 
   return {
-    strokeColor: getRouteColor(solver, routeId),
+    strokeColor: getRenderedRouteColor(solver, routeId),
   }
 }
 
@@ -471,7 +512,7 @@ const pushRoutePortZPoints = (
         graphics.points.push({
           x: portPoint.x,
           y: portPoint.y,
-          color: getRouteColor(solver, routeId, 1),
+          color: getRenderedRouteColor(solver, routeId, 1),
           layer: getPortVisualizationLayer(solver, portId),
           label: formatLabel(
             `route: ${getRouteLabel(solver, routeId)}`,
@@ -501,7 +542,7 @@ const pushInitialRouteHints = (
 
     graphics.lines.push({
       points: [startPoint, endPoint],
-      strokeColor: getRouteColor(solver, routeId),
+      strokeColor: getRenderedRouteColor(solver, routeId),
       strokeDash: "3 3",
       label: getRouteLabel(solver, routeId),
     })
@@ -509,7 +550,7 @@ const pushInitialRouteHints = (
     graphics.points.push({
       x: midPoint.x,
       y: midPoint.y,
-      color: getRouteColor(solver, routeId, 1),
+      color: getRenderedRouteColor(solver, routeId, 1),
       label: getRouteLabel(solver, routeId),
     })
   }
@@ -524,7 +565,7 @@ const pushRouteEndpoints = (
     const endPortId = solver.problem.routeEndPort[routeId]
     const startPoint = getPortRenderPoint(solver, startPortId)
     const endPoint = getPortRenderPoint(solver, endPortId)
-    const routeColor = getRouteColor(solver, routeId)
+    const routeColor = getRenderedRouteColor(solver, routeId)
     const routeLabel = getRouteLabel(solver, routeId)
     const routeNetLabel = getRouteNetLabel(solver, routeId)
 
@@ -569,7 +610,7 @@ const pushActiveRoute = (
   const endPortId = solver.problem.routeEndPort[routeId]
   const startPoint = getPortRenderPoint(solver, startPortId)
   const endPoint = getPortRenderPoint(solver, endPortId)
-  const routeColor = getRouteColor(solver, routeId)
+  const routeColor = getRenderedRouteColor(solver, routeId)
   const routeLabel = getRouteLabel(solver, routeId)
 
   graphics.lines.push({
@@ -632,7 +673,7 @@ const pushCandidates = (
       points: activePath,
       strokeColor:
         routeId !== undefined
-          ? getRouteColor(solver, routeId)
+          ? getRenderedRouteColor(solver, routeId)
           : "rgba(0, 160, 120, 0.9)",
     })
   }
@@ -865,8 +906,10 @@ export const visualizeTinyHyperGraph = (
   } else {
     pushSolvedRegionSegments(solver, graphics)
     pushRoutePortZPoints(solver, graphics)
-    pushActiveRoute(solver, graphics)
-    pushCandidates(solver, graphics)
+    if (!isBusVisualizationSolver(solver)) {
+      pushActiveRoute(solver, graphics)
+      pushCandidates(solver, graphics)
+    }
   }
 
   if (sectionPortMask) {

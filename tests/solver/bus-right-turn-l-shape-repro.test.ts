@@ -40,6 +40,38 @@ const getRegionIndexBySerializedId = (
   return regionIndexBySerializedId
 }
 
+const getTracePreviewByConnectionId = (
+  busSolver: TinyHyperGraphBusSolver,
+  connectionId: string,
+) => {
+  const internal = busSolver as any
+  return internal.lastPreview?.tracePreviews.find(
+    (tracePreview: { traceIndex: number }) =>
+      busSolver.busTraceOrder.traces[tracePreview.traceIndex]?.connectionId ===
+      connectionId,
+  )
+}
+
+const getSerializedRegionId = (
+  topology: ReturnType<typeof loadSerializedHyperGraph>["topology"],
+  regionId: number | undefined,
+) =>
+  regionId === undefined
+    ? undefined
+    : (
+        topology.regionMetadata?.[regionId] as
+          | { serializedRegionId?: string }
+          | undefined
+      )?.serializedRegionId
+
+const getSerializedPortId = (
+  topology: ReturnType<typeof loadSerializedHyperGraph>["topology"],
+  portId: number,
+) =>
+  (
+    topology.portMetadata?.[portId] as { serializedPortId?: string } | undefined
+  )?.serializedPortId
+
 test("repro: region-19 turns right into an L-shaped top-bottom split", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     busRightTurnLShapeFixture,
@@ -103,7 +135,136 @@ test("repro: region-19 turns right into an L-shaped top-bottom split", () => {
   )
 })
 
-test("repro: bus solver currently fails the region-19 right turn and L-shaped split", () => {
+test("repro: iteration 3 keeps right-side traces advancing toward bridge-upper", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+  })
+
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+
+  const route4Preview = getTracePreviewByConnectionId(busSolver, "route-4")
+  const route5Preview = getTracePreviewByConnectionId(busSolver, "route-5")
+
+  expect(route4Preview).toBeDefined()
+  expect(route5Preview).toBeDefined()
+  expect(getSerializedRegionId(topology, route4Preview.terminalRegionId)).toBe(
+    "bridge-upper",
+  )
+  expect(getSerializedRegionId(topology, route5Preview.terminalRegionId)).toBe(
+    "bridge-upper",
+  )
+  expect(route4Preview.segments).toHaveLength(2)
+  expect(route5Preview.segments).toHaveLength(2)
+  expect(getSerializedPortId(topology, route4Preview.segments[1]!.toPortId)).toStartWith(
+    "a-br-",
+  )
+  expect(getSerializedPortId(topology, route5Preview.segments[1]!.toPortId)).toStartWith(
+    "a-br-",
+  )
+})
+
+test("repro: iteration 4 only keeps queueable non-intersecting derived bus candidates that keep pace with the centerline", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+  })
+  const internal = busSolver as any
+
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+
+  for (const candidate of busSolver.state.candidateQueue.toArray()) {
+    const preview = internal.evaluateCandidate(candidate)
+    const centerTracePreview = preview.tracePreviews.find(
+      (tracePreview: { traceIndex: number }) =>
+        tracePreview.traceIndex === busSolver.centerTraceIndex,
+    )
+
+    expect(preview).toBeDefined()
+    expect(preview.reason).toBeUndefined()
+    expect(preview.sameLayerIntersectionCount).toBe(0)
+    expect(preview.crossingLayerIntersectionCount).toBe(0)
+    expect(centerTracePreview).toBeDefined()
+
+    if ((centerTracePreview?.segments.length ?? 0) >= 2) {
+      const minimumTraceSegmentCount = Math.max(
+        1,
+        Math.floor((centerTracePreview?.segments.length ?? 0) * 0.7),
+      )
+
+      for (const tracePreview of preview.tracePreviews) {
+        if (tracePreview.traceIndex === busSolver.centerTraceIndex) {
+          continue
+        }
+
+        expect(tracePreview.segments.length).toBeGreaterThanOrEqual(
+          minimumTraceSegmentCount,
+        )
+      }
+    }
+  }
+})
+
+test("repro: iteration 4 picks the closest remaining valid exit ports for route-1", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+  })
+
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+
+  const route1Preview = getTracePreviewByConnectionId(busSolver, "route-1")
+
+  expect(route1Preview).toBeDefined()
+  expect(route1Preview.segments).toHaveLength(2)
+  expect(getSerializedPortId(topology, route1Preview.segments[0]!.toPortId)).toBe(
+    "a-tl-0",
+  )
+  expect(getSerializedPortId(topology, route1Preview.segments[1]!.toPortId)).toBe(
+    "a-bl-1",
+  )
+})
+
+test("repro: visualize only shows the current bus at iteration 4", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    busRightTurnLShapeFixture,
+  )
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 100_000,
+  })
+
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+  busSolver.step()
+
+  const graphics = busSolver.visualize()
+
+  expect(
+    (graphics.points ?? []).some(
+      (point) => typeof point.label === "string" && point.label.includes("g: "),
+    ),
+  ).toBe(false)
+  expect(
+    (graphics.lines ?? []).some((line) => line.strokeDash === "10 5"),
+  ).toBe(false)
+})
+
+test("repro: bus solver handles the region-19 right turn and L-shaped split", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     busRightTurnLShapeFixture,
   )
@@ -153,9 +314,50 @@ test("repro: bus solver currently fails the region-19 right turn and L-shaped sp
 
   expect(plainSolver.solved).toBe(true)
   expect(plainSolver.failed).toBe(false)
-  expect(busSolver.solved).toBe(false)
-  expect(busSolver.failed).toBe(true)
-  expect(busSolver.error).toBe(
-    "Failed to infer a complete bus preview from the centerline",
+  expect(busSolver.solved).toBe(true)
+  expect(busSolver.failed).toBe(false)
+
+  const solvedRoutes = busSolver.getOutput().solvedRoutes ?? []
+  const sameLayerIntersectionCount =
+    busSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingSameLayerIntersections,
+      0,
+    )
+  const crossingLayerIntersectionCount =
+    busSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingCrossingLayerIntersections,
+      0,
+    )
+  const plainSameLayerIntersectionCount =
+    plainSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingSameLayerIntersections,
+      0,
+    )
+  const plainCrossingLayerIntersectionCount =
+    plainSolver.state.regionIntersectionCaches.reduce(
+      (total, regionCache) =>
+        total + regionCache.existingCrossingLayerIntersections,
+      0,
+    )
+
+  expect(solvedRoutes).toHaveLength(BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT)
+  expect(countRoutesUsingRegion(solvedRoutes, "bridge-final")).toBe(
+    BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-top")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-bottom")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "right-main")).toBe(
+    BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
+  )
+  expect(sameLayerIntersectionCount).toBeLessThanOrEqual(
+    plainSameLayerIntersectionCount,
+  )
+  expect(crossingLayerIntersectionCount).toBeLessThanOrEqual(
+    plainCrossingLayerIntersectionCount,
   )
 })

@@ -17,13 +17,12 @@ import {
 import {
   centerCandidatePathContainsHop,
   centerCandidatePathContainsRegion,
-  ensurePortOwnership,
-  getCandidateBoundaryNormal,
-  getCenterCandidatePath,
-  getCenterCandidatePathKey,
-  getTracePreviewLength,
-  isPortIncidentToRegion,
-} from "./busPathHelpers"
+    ensurePortOwnership,
+    getCandidateBoundaryNormal,
+    getCenterCandidatePath,
+    getCenterCandidatePathKey,
+    isPortIncidentToRegion,
+  } from "./busPathHelpers"
 import {
   BUS_CANDIDATE_EPSILON,
   compareBusCandidatesByF,
@@ -31,7 +30,6 @@ import {
   type BoundaryStep,
   type BusCenterCandidate,
   type BusPreview,
-  type PreviewRoutingStateSnapshot,
   type TinyHyperGraphBusSolverOptions,
   type TracePreview,
   type TraceSegment,
@@ -51,7 +49,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   BUS_REMAINDER_GUIDE_WEIGHT = 1
   BUS_REMAINDER_GOAL_WEIGHT = 0.35
   BUS_REMAINDER_SIDE_WEIGHT = 0.2
-  COMPLETE_TRACE_OPTION_BRANCH_LIMIT = 4
+  BUS_MIN_TRACE_PROGRESS_RATIO = 0.7
+  BUS_MIN_TRACE_PROGRESS_THRESHOLD = 2
+  CENTER_GREEDY_HEURISTIC_MULTIPLIER = 10
   CENTER_PORT_OPTIONS_PER_EDGE = 6
   BUS_TRACE_LENGTH_MARGIN = 1
   BUS_MAX_TRACE_STEPS = 256
@@ -59,12 +59,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   MANUAL_CENTER_FINISH_PORT_OPTIONS_PER_BOUNDARY = 6
   MANUAL_CENTER_FINISH_CANDIDATE_LIMIT = 24
   TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT = 6
-  TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH = 24
+  TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH = 32
   TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT = 8
   TRACE_ALONGSIDE_LANE_WEIGHT = 1
   TRACE_ALONGSIDE_REGRESSION_WEIGHT = 2
-  BUS_INTERSECTION_PREVIEW_PENALTY = 20
-  PARTIAL_INTERSECTION_EXPANSION_THRESHOLD = 2
 
   readonly busTraceOrder: BusTraceOrder
   readonly centerTraceIndex: number
@@ -81,12 +79,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private readonly traceInferencePlanner: BusTraceInferencePlanner
   private readonly centerlineNeighborRegionIdsByRegion: RegionId[][]
   private readonly regionIndexBySerializedId = new Map<string, RegionId>()
+  private readonly candidateBestCostByStateKey = new Map<string, number>()
+  private readonly queuedCandidateBestCostByStateKey = new Map<string, number>()
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
-  private bestCompleteFallbackPreview?: BusPreview
-  private bestCompleteFallbackSnapshot?: PreviewRoutingStateSnapshot
-  private bestCompleteFallbackIntersectionCount = Number.POSITIVE_INFINITY
-  private bestCompleteFallbackCost = Number.POSITIVE_INFINITY
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -163,6 +159,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         this.getStartingNextRegionId(...args),
       isRegionReservedForDifferentBusNet: (...args) =>
         this.isRegionReservedForDifferentBusNet(...args),
+      isTracePreviewUsable: (...args) => this.isTracePreviewUsable(...args),
       getTraceSidePenalty: (...args) => this.getTraceSidePenalty(...args),
       getTraceLanePenalty: (...args) => this.getTraceLanePenalty(...args),
       getRouteHeuristic: (...args) => this.getRouteHeuristic(...args),
@@ -202,10 +199,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
     this.lastExpandedCandidate = undefined
     this.lastPreview = undefined
-    this.bestCompleteFallbackPreview = undefined
-    this.bestCompleteFallbackSnapshot = undefined
-    this.bestCompleteFallbackIntersectionCount = Number.POSITIVE_INFINITY
-    this.bestCompleteFallbackCost = Number.POSITIVE_INFINITY
+    this.candidateBestCostByStateKey.clear()
+    this.queuedCandidateBestCostByStateKey.clear()
     clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
     this.resetCandidateBestCosts()
     this.state.candidateQueue = new MinHeap([], compareBusCandidatesByF)
@@ -224,16 +219,32 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     const startHeuristic =
-      this.computeCenterHeuristic(startPortId, startNextRegionId) *
-      this.problem.routeCount
-    this.setCandidateBestCost(this.getHopId(startPortId, startNextRegionId), 0)
-    this.state.candidateQueue.queue({
+      this.scaleCenterHeuristic(
+        this.computeCenterHeuristic(startPortId, startNextRegionId),
+      )
+    const startCandidate: BusCenterCandidate = {
       portId: startPortId,
       nextRegionId: startNextRegionId,
       g: 0,
       h: startHeuristic,
       f: startHeuristic,
-    })
+    }
+    if (this.shouldUseBusStatePruning()) {
+      this.queuedCandidateBestCostByStateKey.set(
+        this.getBusCandidateStateKey(startCandidate, {
+          tracePreviews: [],
+          totalLength: 0,
+          totalCost: 0,
+          completeTraceCount: 0,
+          sameLayerIntersectionCount: 0,
+          crossingLayerIntersectionCount: 0,
+        }),
+        0,
+      )
+    } else {
+      this.setCandidateBestCost(this.getHopId(startPortId, startNextRegionId), 0)
+    }
+    this.state.candidateQueue.queue(startCandidate)
     this.updateBusStats()
   }
 
@@ -246,10 +257,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       | BusCenterCandidate
       | undefined
     if (!currentCandidate) {
-      if (this.tryAcceptBestCompleteFallbackPreview()) {
-        return
-      }
-
       this.failed = true
       this.error =
         "Centerline candidates are exhausted without a non-intersecting bus solution"
@@ -257,13 +264,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       return
     }
 
-    const currentCandidateHopId = this.getHopId(
-      currentCandidate.portId,
-      currentCandidate.nextRegionId,
-    )
-    if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
-      this.updateBusStats()
-      return
+    if (!this.shouldUseBusStatePruning()) {
+      const currentCandidateHopId = this.getHopId(
+        currentCandidate.portId,
+        currentCandidate.nextRegionId,
+      )
+      if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+        this.updateBusStats()
+        return
+      }
     }
 
     this.lastExpandedCandidate = currentCandidate
@@ -276,28 +285,31 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     currentCandidate.busCost = preview.totalCost
+    if (this.shouldUseBusStatePruning()) {
+      const currentCandidateStateKey = this.getBusCandidateStateKey(
+        currentCandidate,
+        preview,
+      )
+      const currentBestCost = this.candidateBestCostByStateKey.get(
+        currentCandidateStateKey,
+      )
+      if (
+        currentBestCost !== undefined &&
+        currentCandidate.busCost >= currentBestCost - BUS_CANDIDATE_EPSILON
+      ) {
+        this.updateBusStats()
+        return
+      }
+      this.candidateBestCostByStateKey.set(
+        currentCandidateStateKey,
+        currentCandidate.busCost,
+      )
+    }
     const hasIntersections =
       preview.sameLayerIntersectionCount > 0 ||
       preview.crossingLayerIntersectionCount > 0
-    const totalIntersectionCount =
-      preview.sameLayerIntersectionCount +
-      preview.crossingLayerIntersectionCount
     const hasInferenceFailure =
       preview.reason !== undefined && !hasIntersections
-    const allowIntersectingPartialExpansion =
-      !currentCandidate.atGoal &&
-      totalIntersectionCount <= this.PARTIAL_INTERSECTION_EXPANSION_THRESHOLD
-
-    if (
-      currentCandidate.atGoal &&
-      preview.completeTraceCount === this.problem.routeCount &&
-      totalIntersectionCount > 0
-    ) {
-      this.maybeStoreBestCompleteFallbackPreview(
-        preview,
-        totalIntersectionCount,
-      )
-    }
 
     if (
       currentCandidate.atGoal &&
@@ -311,31 +323,58 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     if (
-      (!hasIntersections || allowIntersectingPartialExpansion) &&
+      !hasIntersections &&
       !hasInferenceFailure &&
       !currentCandidate.atGoal
     ) {
+      const currentPreviewState = snapshotPreviewRoutingStateValue(this.state)
+
       for (const nextCandidate of this.getAvailableCenterMoves(
         currentCandidate,
       )) {
-        const nextCandidateHopId = this.getHopId(
-          nextCandidate.portId,
-          nextCandidate.nextRegionId,
-        )
-        if (nextCandidate.g >= this.getCandidateBestCost(nextCandidateHopId)) {
+        const nextPreview = this.evaluateCandidate(nextCandidate)
+        if (!nextPreview || !this.isQueueablePreview(nextPreview)) {
           continue
         }
 
-        this.setCandidateBestCost(nextCandidateHopId, nextCandidate.g)
+        nextCandidate.busCost = nextPreview.totalCost
+
+        if (this.shouldUseBusStatePruning()) {
+          const nextQueuedCandidateStateKey = this.getBusCandidateStateKey(
+            nextCandidate,
+            nextPreview,
+          )
+          if (
+            nextCandidate.busCost >=
+            (this.queuedCandidateBestCostByStateKey.get(
+              nextQueuedCandidateStateKey,
+            ) ?? Number.POSITIVE_INFINITY)
+          ) {
+            continue
+          }
+
+          this.queuedCandidateBestCostByStateKey.set(
+            nextQueuedCandidateStateKey,
+            nextCandidate.busCost,
+          )
+        } else {
+          const nextCandidateHopId = this.getHopId(
+            nextCandidate.portId,
+            nextCandidate.nextRegionId,
+          )
+          if (nextCandidate.g >= this.getCandidateBestCost(nextCandidateHopId)) {
+            continue
+          }
+
+          this.setCandidateBestCost(nextCandidateHopId, nextCandidate.g)
+        }
         this.state.candidateQueue.queue(nextCandidate)
       }
+
+      restorePreviewRoutingStateValue(this.state, currentPreviewState)
     }
 
     if (this.state.candidateQueue.length === 0) {
-      if (this.tryAcceptBestCompleteFallbackPreview()) {
-        return
-      }
-
       this.failed = true
       this.error =
         preview.reason ??
@@ -397,129 +436,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     const boundaryPortIdsByStep =
       this.boundaryPlanner.assignBoundaryPortsForPath(boundarySteps)
 
-    if (candidate.atGoal === true) {
-      const completeBusPreview = this.buildBestCompleteBusPreview(
-        centerPath,
-        boundarySteps,
-        boundaryPortIdsByStep,
-      )
-      if (!completeBusPreview) {
-        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-          getPreviewIntersectionCountsValue(this.state)
-        return {
-          tracePreviews: [],
-          totalLength: 0,
-          totalCost: Number.POSITIVE_INFINITY,
-          completeTraceCount: 0,
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-          reason: "Failed to infer a complete bus preview from the centerline",
-        }
-      }
-
-      const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-        getPreviewIntersectionCountsValue(this.state)
-      const totalRegionCost = getPreviewRegionCostValue(this.state)
-      const totalIntersectionCount =
-        sameLayerIntersectionCount + crossingLayerIntersectionCount
-      return {
-        tracePreviews: completeBusPreview.tracePreviews,
-        totalLength: completeBusPreview.totalLength,
-        totalCost:
-          completeBusPreview.totalLength * this.DISTANCE_TO_COST +
-          totalRegionCost +
-          totalIntersectionCount * this.BUS_INTERSECTION_PREVIEW_PENALTY,
-        completeTraceCount: completeBusPreview.tracePreviews.length,
-        sameLayerIntersectionCount,
-        crossingLayerIntersectionCount,
-        reason:
-          totalIntersectionCount > 0
-            ? `Discarded centerline candidate due to ${totalIntersectionCount} bus intersections`
-            : undefined,
-      }
-    }
-
-    const tracePreviews: TracePreview[] = []
-    const usedPortOwners = new Map<PortId, RouteId>()
-    let totalLength = 0
-    let totalPreviewCost = 0
-
-    for (const traceIndex of this.commitTraceIndices) {
-      const tracePreview =
-        traceIndex === this.centerTraceIndex
-          ? this.buildCenterlineTracePreview(centerPath, usedPortOwners, false)
-          : this.buildBestPrefixTracePreview(
-              traceIndex,
-              centerPath,
-              boundarySteps.length,
-              boundarySteps,
-              boundaryPortIdsByStep,
-              usedPortOwners,
-            )
-
-      if (!tracePreview) {
-        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-          getPreviewIntersectionCountsValue(this.state)
-        return {
-          tracePreviews,
-          totalLength,
-          totalCost: Number.POSITIVE_INFINITY,
-          completeTraceCount: tracePreviews.filter(
-            (preview) => preview.complete,
-          ).length,
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-          reason:
-            traceIndex === this.centerTraceIndex
-              ? `Failed to infer centerline preview for ${this.getTraceConnectionId(traceIndex)}`
-              : `Failed to infer ${candidate.atGoal ? "remainder" : "prefix"} for ${this.getTraceConnectionId(traceIndex)}`,
-        }
-      }
-
-      tracePreviews.push(tracePreview)
-      const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
-      if (!Number.isFinite(traceLength)) {
-        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-          getPreviewIntersectionCountsValue(this.state)
-        return {
-          tracePreviews,
-          totalLength,
-          totalCost: Number.POSITIVE_INFINITY,
-          completeTraceCount: tracePreviews.filter(
-            (preview) => preview.complete,
-          ).length,
-          sameLayerIntersectionCount,
-          crossingLayerIntersectionCount,
-          reason: `Conflicting inferred port ownership for ${this.getTraceConnectionId(traceIndex)}`,
-        }
-      }
-
-      totalLength += traceLength
-      totalPreviewCost += tracePreview.previewCost ?? 0
-    }
-
-    const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-      getPreviewIntersectionCountsValue(this.state)
-    const totalRegionCost = getPreviewRegionCostValue(this.state)
-    const totalIntersectionCount =
-      sameLayerIntersectionCount + crossingLayerIntersectionCount
-    return {
-      tracePreviews,
-      totalLength,
-      totalCost:
-        totalLength * this.DISTANCE_TO_COST +
-        totalRegionCost +
-        totalPreviewCost +
-        totalIntersectionCount * this.BUS_INTERSECTION_PREVIEW_PENALTY,
-      completeTraceCount: tracePreviews.filter((preview) => preview.complete)
-        .length,
-      sameLayerIntersectionCount,
-      crossingLayerIntersectionCount,
-      reason:
-        totalIntersectionCount > 0
-          ? `Discarded centerline candidate due to ${totalIntersectionCount} bus intersections`
-          : undefined,
-    }
+    return this.buildDerivedBusPreview(
+      centerPath,
+      boundarySteps,
+      boundaryPortIdsByStep,
+      candidate.atGoal === true,
+    )
   }
 
   private buildCenterlineTracePreview(
@@ -661,23 +583,14 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
   }
 
-  private buildCompleteTracePreviewOptions(
+  private buildCompleteTracePreview(
     traceIndex: number,
     centerPath: BusCenterCandidate[],
     boundarySteps: BoundaryStep[],
     boundaryPortIdsByStep: Array<PortId[] | undefined>,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
-    if (traceIndex === this.centerTraceIndex) {
-      const centerPreview = this.buildCenterlineCompleteTracePreview(
-        centerPath,
-        boundarySteps,
-        usedPortOwners,
-      )
-      return centerPreview ? [centerPreview] : []
-    }
-
-    return this.traceInferencePlanner.buildCompleteTracePreviewOptions(
+    return this.traceInferencePlanner.buildCompleteTracePreview(
       traceIndex,
       centerPath,
       boundarySteps,
@@ -686,146 +599,204 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
   }
 
-  private buildBestCompleteBusPreview(
+  private buildDerivedBusPreview(
     centerPath: BusCenterCandidate[],
     boundarySteps: BoundaryStep[],
     boundaryPortIdsByStep: Array<PortId[] | undefined>,
+    complete: boolean,
   ) {
-    const tracePreviewsStack: TracePreview[] = []
-    let bestTracePreviews: TracePreview[] | undefined
-    let bestIntersectionCount = Number.POSITIVE_INFINITY
-    let bestTotalLength = Number.POSITIVE_INFINITY
-
-    const search = (
-      orderIndex: number,
-      usedPortOwners: Map<PortId, RouteId>,
-    ) => {
-      const {
-        sameLayerIntersectionCount: currentSameLayerIntersectionCount,
-        crossingLayerIntersectionCount: currentCrossingLayerIntersectionCount,
-      } = getPreviewIntersectionCountsValue(this.state)
-      const currentIntersectionCount =
-        currentSameLayerIntersectionCount +
-        currentCrossingLayerIntersectionCount
-
-      if (
-        currentIntersectionCount > bestIntersectionCount ||
-        (currentIntersectionCount === bestIntersectionCount &&
-          tracePreviewsStack.reduce(
-            (sum, preview) =>
-              sum + getTracePreviewLength(this.topology, preview),
-            0,
-          ) >= bestTotalLength)
-      ) {
-        return
-      }
-
-      if (orderIndex >= this.commitTraceIndices.length) {
-        const totalLength = tracePreviewsStack.reduce(
-          (sum, preview) => sum + getTracePreviewLength(this.topology, preview),
-          0,
-        )
-
-        if (
-          !bestTracePreviews ||
-          currentIntersectionCount < bestIntersectionCount ||
-          (currentIntersectionCount === bestIntersectionCount &&
-            totalLength < bestTotalLength - BUS_CANDIDATE_EPSILON)
-        ) {
-          bestIntersectionCount = currentIntersectionCount
-          bestTotalLength = totalLength
-          bestTracePreviews = tracePreviewsStack.map((preview) => ({
-            ...preview,
-            segments: preview.segments.map((segment) => ({ ...segment })),
-          }))
-        }
-        return
-      }
-
-      const traceIndex = this.commitTraceIndices[orderIndex]!
-      const rankedOptions = this.buildCompleteTracePreviewOptions(
-        traceIndex,
-        centerPath,
-        boundarySteps,
-        boundaryPortIdsByStep,
-        usedPortOwners,
-      )
-        .map((tracePreview) => {
-          const stateSnapshot = snapshotPreviewRoutingStateValue(this.state)
-          const ownerSnapshot = new Map(usedPortOwners)
-          const traceLength = this.commitTracePreview(
-            tracePreview,
-            usedPortOwners,
-          )
-          const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-            getPreviewIntersectionCountsValue(this.state)
-          const intersectionCount =
-            sameLayerIntersectionCount + crossingLayerIntersectionCount
-          restorePreviewRoutingStateValue(this.state, stateSnapshot)
-          usedPortOwners.clear()
-          for (const [portId, routeId] of ownerSnapshot) {
-            usedPortOwners.set(portId, routeId)
-          }
-
-          return {
-            tracePreview,
-            traceLength,
-            intersectionCount,
-          }
-        })
-        .filter(({ traceLength }) => Number.isFinite(traceLength))
-        .sort(
-          (left, right) =>
-            left.intersectionCount - right.intersectionCount ||
-            left.traceLength - right.traceLength,
-        )
-        .slice(0, this.COMPLETE_TRACE_OPTION_BRANCH_LIMIT)
-
-      for (const { tracePreview } of rankedOptions) {
-        const stateSnapshot = snapshotPreviewRoutingStateValue(this.state)
-        const ownerSnapshot = new Map(usedPortOwners)
-        const traceLength = this.commitTracePreview(
-          tracePreview,
-          usedPortOwners,
-        )
-
-        if (Number.isFinite(traceLength)) {
-          tracePreviewsStack.push(tracePreview)
-          search(orderIndex + 1, usedPortOwners)
-          tracePreviewsStack.pop()
-        }
-
-        restorePreviewRoutingStateValue(this.state, stateSnapshot)
-        usedPortOwners.clear()
-        for (const [portId, routeId] of ownerSnapshot) {
-          usedPortOwners.set(portId, routeId)
-        }
-
-        if (bestIntersectionCount === 0) {
-          return
-        }
-      }
-    }
-
-    clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
-    search(0, new Map())
-
-    if (!bestTracePreviews) {
-      return undefined
-    }
-
-    clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
+    const tracePreviews: TracePreview[] = []
     const usedPortOwners = new Map<PortId, RouteId>()
     let totalLength = 0
+    let totalPreviewCost = 0
 
-    for (const tracePreview of bestTracePreviews) {
-      totalLength += this.commitTracePreview(tracePreview, usedPortOwners)
+    for (const traceIndex of this.commitTraceIndices) {
+      const tracePreview =
+        traceIndex === this.centerTraceIndex
+          ? complete
+            ? this.buildCenterlineCompleteTracePreview(
+                centerPath,
+                boundarySteps,
+                usedPortOwners,
+              )
+            : this.buildCenterlineTracePreview(centerPath, usedPortOwners, false)
+          : complete
+            ? this.buildCompleteTracePreview(
+                traceIndex,
+                centerPath,
+                boundarySteps,
+                boundaryPortIdsByStep,
+                usedPortOwners,
+              )
+            : this.buildBestPrefixTracePreview(
+                traceIndex,
+                centerPath,
+                boundarySteps.length,
+                boundarySteps,
+                boundaryPortIdsByStep,
+                usedPortOwners,
+              )
+
+      if (!tracePreview) {
+        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+          getPreviewIntersectionCountsValue(this.state)
+        return {
+          tracePreviews,
+          totalLength,
+          totalCost: Number.POSITIVE_INFINITY,
+          completeTraceCount: tracePreviews.filter(
+            (preview) => preview.complete,
+          ).length,
+          sameLayerIntersectionCount,
+          crossingLayerIntersectionCount,
+          reason:
+            traceIndex === this.centerTraceIndex
+              ? `Failed to infer centerline preview for ${this.getTraceConnectionId(traceIndex)}`
+              : `Failed to infer ${complete ? "remainder" : "prefix"} for ${this.getTraceConnectionId(traceIndex)}`,
+        }
+      }
+
+      const {
+        sameLayerIntersectionCount: previousSameLayerIntersectionCount,
+        crossingLayerIntersectionCount: previousCrossingLayerIntersectionCount,
+      } = getPreviewIntersectionCountsValue(this.state)
+
+      tracePreviews.push(tracePreview)
+      const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
+      if (!Number.isFinite(traceLength)) {
+        const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+          getPreviewIntersectionCountsValue(this.state)
+        return {
+          tracePreviews,
+          totalLength,
+          totalCost: Number.POSITIVE_INFINITY,
+          completeTraceCount: tracePreviews.filter(
+            (preview) => preview.complete,
+          ).length,
+          sameLayerIntersectionCount,
+          crossingLayerIntersectionCount,
+          reason: `Conflicting inferred port ownership for ${this.getTraceConnectionId(traceIndex)}`,
+        }
+      }
+
+      const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+        getPreviewIntersectionCountsValue(this.state)
+      if (
+        sameLayerIntersectionCount > previousSameLayerIntersectionCount ||
+        crossingLayerIntersectionCount > previousCrossingLayerIntersectionCount
+      ) {
+        return {
+          tracePreviews,
+          totalLength,
+          totalCost: Number.POSITIVE_INFINITY,
+          completeTraceCount: tracePreviews.filter(
+            (preview) => preview.complete,
+          ).length,
+          sameLayerIntersectionCount,
+          crossingLayerIntersectionCount,
+          reason: `Intersecting inferred path for ${this.getTraceConnectionId(traceIndex)}`,
+        }
+      }
+
+      totalLength += traceLength
+      totalPreviewCost += tracePreview.previewCost ?? 0
     }
+
+    const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+      getPreviewIntersectionCountsValue(this.state)
+    const totalRegionCost = getPreviewRegionCostValue(this.state)
 
     return {
-      tracePreviews: bestTracePreviews,
+      tracePreviews,
       totalLength,
+      totalCost:
+        totalLength * this.DISTANCE_TO_COST +
+        totalRegionCost +
+        totalPreviewCost,
+      completeTraceCount: tracePreviews.filter((preview) => preview.complete)
+        .length,
+      sameLayerIntersectionCount,
+      crossingLayerIntersectionCount,
     }
+  }
+
+  private getBusCandidateStateKey(
+    candidate: BusCenterCandidate,
+    preview: BusPreview,
+  ) {
+    return [
+      `${candidate.portId}:${candidate.nextRegionId}:${candidate.prevRegionId ?? -1}:${candidate.atGoal ? 1 : 0}`,
+      ...preview.tracePreviews.map(
+        (tracePreview) =>
+          `${tracePreview.traceIndex}:${tracePreview.terminalRegionId ?? -1}:${tracePreview.complete ? 1 : 0}`,
+      ),
+    ].join("|")
+  }
+
+  private shouldUseBusStatePruning() {
+    return this.problem.routeCount <= 6
+  }
+
+  private isQueueablePreview(preview: BusPreview) {
+    if (
+      preview.reason !== undefined ||
+      preview.sameLayerIntersectionCount > 0 ||
+      preview.crossingLayerIntersectionCount > 0
+    ) {
+      return false
+    }
+
+    const centerTracePreview = preview.tracePreviews.find(
+      (tracePreview) => tracePreview.traceIndex === this.centerTraceIndex,
+    )
+    if (!centerTracePreview) {
+      return false
+    }
+
+    const centerSegmentCount = centerTracePreview.segments.length
+    if (centerSegmentCount < this.BUS_MIN_TRACE_PROGRESS_THRESHOLD) {
+      return true
+    }
+
+    const minimumTraceSegmentCount = Math.max(
+      1,
+      Math.floor(centerSegmentCount * this.BUS_MIN_TRACE_PROGRESS_RATIO),
+    )
+
+    for (const tracePreview of preview.tracePreviews) {
+      if (tracePreview.traceIndex === this.centerTraceIndex) {
+        continue
+      }
+
+      if (tracePreview.segments.length < minimumTraceSegmentCount) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  private isTracePreviewUsable(
+    tracePreview: TracePreview,
+    usedPortOwners: ReadonlyMap<PortId, RouteId>,
+  ) {
+    const stateSnapshot = snapshotPreviewRoutingStateValue(this.state)
+    const localOwners = new Map(usedPortOwners)
+    const {
+      sameLayerIntersectionCount: previousSameLayerIntersectionCount,
+      crossingLayerIntersectionCount: previousCrossingLayerIntersectionCount,
+    } = getPreviewIntersectionCountsValue(this.state)
+    const traceLength = this.commitTracePreview(tracePreview, localOwners)
+    const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
+      getPreviewIntersectionCountsValue(this.state)
+
+    restorePreviewRoutingStateValue(this.state, stateSnapshot)
+
+    return (
+      Number.isFinite(traceLength) &&
+      sameLayerIntersectionCount === previousSameLayerIntersectionCount &&
+      crossingLayerIntersectionCount === previousCrossingLayerIntersectionCount
+    )
   }
 
   private buildCenterlineCompleteTracePreview(
@@ -895,54 +866,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
   }
 
-  private maybeStoreBestCompleteFallbackPreview(
-    preview: BusPreview,
-    totalIntersectionCount: number,
-  ) {
-    if (
-      totalIntersectionCount > this.bestCompleteFallbackIntersectionCount ||
-      (totalIntersectionCount === this.bestCompleteFallbackIntersectionCount &&
-        preview.totalCost >= this.bestCompleteFallbackCost)
-    ) {
-      return
-    }
-
-    this.bestCompleteFallbackPreview = {
-      ...preview,
-      reason: undefined,
-      tracePreviews: preview.tracePreviews.map((tracePreview) => ({
-        ...tracePreview,
-        segments: tracePreview.segments.map((segment) => ({ ...segment })),
-      })),
-    }
-    this.bestCompleteFallbackSnapshot = snapshotPreviewRoutingStateValue(
-      this.state,
-    )
-    this.bestCompleteFallbackIntersectionCount = totalIntersectionCount
-    this.bestCompleteFallbackCost = preview.totalCost
-  }
-
-  private tryAcceptBestCompleteFallbackPreview() {
-    if (
-      !this.bestCompleteFallbackPreview ||
-      !this.bestCompleteFallbackSnapshot
-    ) {
-      return false
-    }
-
-    restorePreviewRoutingStateValue(
-      this.state,
-      this.bestCompleteFallbackSnapshot,
-    )
-    this.lastPreview = this.bestCompleteFallbackPreview
-    this.solved = true
-    this.failed = false
-    this.error = null
-    this.state.unroutedRoutes = []
-    this.updateBusStats()
-    return true
-  }
-
   private isUsableCenterlineBoundaryPort(portId: PortId) {
     return (
       this.problem.portSectionMask[portId] === 1 &&
@@ -1001,8 +924,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
           portId,
         )
         const goalHeuristic =
-          this.computeCenterHeuristic(portId, nextRegionId) *
-          this.problem.routeCount
+          this.scaleCenterHeuristic(
+            this.computeCenterHeuristic(portId, nextRegionId),
+          )
         const score =
           segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount +
           midpointPenalty +
@@ -1252,7 +1176,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       if (!Number.isFinite(h)) {
         continue
       }
-      const scaledH = h * this.problem.routeCount
+      const scaledH = this.scaleCenterHeuristic(h)
       moves.push({
         portId: neighborPortId,
         nextRegionId,
@@ -1378,6 +1302,14 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     return Math.max(portHeuristic, regionHeuristic * this.DISTANCE_TO_COST)
+  }
+
+  private scaleCenterHeuristic(heuristic: number) {
+    return (
+      heuristic *
+      this.problem.routeCount *
+      this.CENTER_GREEDY_HEURISTIC_MULTIPLIER
+    )
   }
 
   private isPortReservedForDifferentBusNet(
