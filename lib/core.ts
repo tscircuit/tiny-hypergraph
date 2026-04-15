@@ -5,6 +5,12 @@ import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
+import {
+  createStaticallyUnroutableRouteSummary,
+  getStaticReachabilityError,
+  getStaticallyUnroutableRoutes,
+} from "./static-reachability"
+import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import type {
   DynamicAnglePair,
   HopId,
@@ -16,6 +22,8 @@ import type {
 } from "./types"
 import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
+
+export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -168,6 +176,8 @@ export interface TinyHyperGraphSolverOptions {
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
+  STATIC_REACHABILITY_PRECHECK?: boolean
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -178,6 +188,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_CONGESTION_REGION_COST_FACTOR: number
   MAX_ITERATIONS: number
   VERBOSE: boolean
+  STATIC_REACHABILITY_PRECHECK: boolean
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -210,6 +222,13 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.VERBOSE !== undefined) {
     solver.VERBOSE = options.VERBOSE
   }
+  if (options.STATIC_REACHABILITY_PRECHECK !== undefined) {
+    solver.STATIC_REACHABILITY_PRECHECK = options.STATIC_REACHABILITY_PRECHECK
+  }
+  if (options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS !== undefined) {
+    solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
+      options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -222,6 +241,9 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
+  STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
+    solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -257,6 +279,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
+  STATIC_REACHABILITY_PRECHECK = true
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -339,6 +363,31 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override _setup() {
     void this.problemSetup
+
+    if (this.STATIC_REACHABILITY_PRECHECK) {
+      const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
+        topology: this.topology,
+        problem: this.problem,
+        problemSetup: this.problemSetup,
+        portAssignment: this.state.portAssignment,
+        routeIds: this.state.unroutedRoutes,
+        maxPrecheckHops: Math.max(
+          0,
+          this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+        ),
+        getStartingNextRegionId: (routeId, startingPortId) =>
+          this.getStartingNextRegionId(routeId, startingPortId),
+        getRouteSummary: (routeId) => this.getRouteSummary(routeId),
+      })
+      if (staticallyUnroutableRoutes.length > 0) {
+        this.failed = true
+        this.error = getStaticReachabilityError(staticallyUnroutableRoutes)
+        this.stats = {
+          ...this.stats,
+          staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
+        }
+      }
+    }
   }
 
   override _step() {
@@ -747,6 +796,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return typeof connectionId === "string" ? connectionId : `route-${routeId}`
   }
 
+  protected getRouteSummary(
+    routeId: RouteId,
+  ): StaticallyUnroutableRouteSummary {
+    return createStaticallyUnroutableRouteSummary({
+      problem: this.problem,
+      routeId,
+      getRouteMetadata: (currentRouteId) =>
+        this.getRouteMetadata(currentRouteId),
+      getRouteConnectionId: (currentRouteId) =>
+        this.getRouteConnectionId(currentRouteId),
+    })
+  }
+
   getAdditionalRegionLabel(_regionId: RegionId): string | undefined {
     return undefined
   }
@@ -761,27 +823,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
-      const routeMetadata = this.getRouteMetadata(routeId)
-      const pointIds =
-        routeMetadata?.simpleRouteConnection?.pointsToConnect
-          ?.map(({ pointId }) => (typeof pointId === "string" ? pointId : null))
-          .filter((pointId): pointId is string => pointId !== null) ?? []
-
       neverSuccessfullyRoutedRoutes.push({
-        routeId,
-        connectionId: this.getRouteConnectionId(routeId),
+        ...this.getRouteSummary(routeId),
         attempts,
-        startPortId: this.problem.routeStartPort[routeId]!,
-        endPortId: this.problem.routeEndPort[routeId]!,
-        startRegionId:
-          typeof routeMetadata?.startRegionId === "string"
-            ? routeMetadata.startRegionId
-            : undefined,
-        endRegionId:
-          typeof routeMetadata?.endRegionId === "string"
-            ? routeMetadata.endRegionId
-            : undefined,
-        pointIds,
       })
     }
 
