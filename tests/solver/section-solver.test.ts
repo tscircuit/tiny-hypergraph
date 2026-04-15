@@ -162,6 +162,8 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     0.33,
   )
   expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
+  expect(sectionSolver.STATIC_REACHABILITY_PRECHECK).toBe(false)
+  expect(sectionSolver.sectionSolver?.STATIC_REACHABILITY_PRECHECK).toBe(false)
   expect(sectionSolver.MAX_RIPS).toBe(20)
   expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(20)
   expect(

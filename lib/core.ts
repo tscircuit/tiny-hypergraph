@@ -174,6 +174,7 @@ export interface TinyHyperGraphSolverOptions {
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -185,6 +186,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -220,6 +222,10 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.STATIC_REACHABILITY_PRECHECK !== undefined) {
     solver.STATIC_REACHABILITY_PRECHECK = options.STATIC_REACHABILITY_PRECHECK
   }
+  if (options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS !== undefined) {
+    solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
+      options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -233,6 +239,8 @@ export const getTinyHyperGraphSolverOptions = (
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
+    solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -269,6 +277,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
+  STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -835,6 +844,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const routeNetId = problem.routeNet[routeId]!
     const startPortId = problem.routeStartPort[routeId]!
     const goalPortId = problem.routeEndPort[routeId]!
+    const maxPrecheckHops = Math.max(
+      0,
+      this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+    )
 
     if (startPortId === goalPortId) {
       return true
@@ -913,6 +926,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const hopId = neighborPortId * topology.regionCount + nextRegionId
         if (seenHops.has(hopId)) {
           continue
+        }
+        if (seenHops.size >= maxPrecheckHops) {
+          return true
         }
 
         seenHops.add(hopId)
