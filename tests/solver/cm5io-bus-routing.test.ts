@@ -7,6 +7,15 @@ import {
   type ConnectionPatchSelection,
 } from "lib/index"
 
+const getColorAlpha = (color: string): number => {
+  const match = color.match(/^(?:rgba|hsla)\((.*),\s*([0-9]*\.?[0-9]+)\)$/)
+  if (!match) {
+    throw new Error(`Unsupported color format: ${color}`)
+  }
+
+  return Number(match[2])
+}
+
 const createCm5ioBus1Solver = async () => {
   const fullInput = await Bun.file(
     new URL("../fixtures/CM5IO_HyperGraph.json", import.meta.url),
@@ -68,6 +77,78 @@ test("CM5IO bus1 evaluates one centerline candidate per step and visualizes all 
       ),
     ),
   ).toBe(true)
+})
+
+test("CM5IO bus1 visualize dims non-center bus traces and route points", async () => {
+  const solver = await createCm5ioBus1Solver()
+
+  solver.step()
+  solver.step()
+
+  const graphics = solver.visualize()
+  const centerConnectionId =
+    solver.busTraceOrder.traces[solver.centerTraceIndex]!.connectionId
+  const otherConnectionIds = solver.busTraceOrder.traces
+    .filter((_, traceIndex) => traceIndex !== solver.centerTraceIndex)
+    .map((trace) => trace.connectionId)
+
+  const getRouteSegmentAlpha = (connectionId: string) => {
+    const line = (graphics.lines ?? []).find(
+      (candidate) =>
+        typeof candidate.label === "string" &&
+        candidate.label.includes(`route: ${connectionId}`) &&
+        candidate.label.includes("region: region-") &&
+        typeof candidate.strokeColor === "string",
+    )
+
+    expect(line).toBeDefined()
+    return getColorAlpha(line!.strokeColor!)
+  }
+
+  const getRoutePortPointAlpha = (connectionId: string) => {
+    const point = (graphics.points ?? []).find(
+      (candidate) =>
+        typeof candidate.label === "string" &&
+        candidate.label.includes(`route: ${connectionId}`) &&
+        candidate.label.includes("port: ") &&
+        !candidate.label.includes("endpoint:") &&
+        typeof candidate.color === "string",
+    )
+
+    expect(point).toBeDefined()
+    return getColorAlpha(point!.color!)
+  }
+
+  const centerSegmentAlpha = getRouteSegmentAlpha(centerConnectionId)
+  const centerPointAlpha = getRoutePortPointAlpha(centerConnectionId)
+
+  expect(centerSegmentAlpha).toBeCloseTo(0.8, 6)
+  expect(centerPointAlpha).toBeCloseTo(1, 6)
+
+  for (const connectionId of otherConnectionIds) {
+    expect(getRouteSegmentAlpha(connectionId)).toBeCloseTo(0.4, 6)
+    expect(getRoutePortPointAlpha(connectionId)).toBeCloseTo(0.5, 6)
+  }
+})
+
+test("CM5IO bus1 visualize only shows the current bus, not queued search overlays", async () => {
+  const solver = await createCm5ioBus1Solver()
+
+  solver.step()
+  solver.step()
+
+  expect(solver.state.candidateQueue.length).toBeGreaterThan(0)
+
+  const graphics = solver.visualize()
+
+  expect(
+    (graphics.points ?? []).some(
+      (point) => typeof point.label === "string" && point.label.includes("g: "),
+    ),
+  ).toBe(false)
+  expect(
+    (graphics.lines ?? []).some((line) => line.strokeDash === "10 5"),
+  ).toBe(false)
 })
 
 test("CM5IO bus1 marks the centerline end-manual regions in visualize labels", async () => {

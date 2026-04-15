@@ -10,6 +10,9 @@ export interface TinyHyperGraphBusSolverOptions
   BUS_REMAINDER_GUIDE_WEIGHT?: number
   BUS_REMAINDER_GOAL_WEIGHT?: number
   BUS_REMAINDER_SIDE_WEIGHT?: number
+  CENTER_GREEDY_HEURISTIC_MULTIPLIER?: number
+  QUEUE_ALL_CANDIDATES?: boolean
+  VISUALIZE_UNASSIGNED_PORTS?: boolean
 }
 
 export interface BusCenterCandidate extends Candidate {
