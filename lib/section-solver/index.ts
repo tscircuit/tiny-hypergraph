@@ -874,6 +874,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
   override MAX_ITERATIONS = 1e6
+  STATIC_REACHABILITY_PRECHECK = true
 
   constructor(
     public topology: TinyHyperGraphTopology,
