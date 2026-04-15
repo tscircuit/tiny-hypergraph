@@ -1,5 +1,6 @@
 import type { GraphicsObject } from "graphics-debug"
 import { MinHeap } from "../MinHeap"
+import { countNewIntersectionsWithValues } from "../countNewIntersections"
 import {
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
@@ -36,12 +37,19 @@ import {
 } from "./busSolverTypes"
 import { getPortDistance, getPortProjection } from "./geometry"
 import {
-  clearPreviewRoutingState as clearPreviewRoutingStateValue,
-  getPreviewIntersectionCounts as getPreviewIntersectionCountsValue,
-  getPreviewRegionCost as getPreviewRegionCostValue,
   restorePreviewRoutingState as restorePreviewRoutingStateValue,
   snapshotPreviewRoutingState as snapshotPreviewRoutingStateValue,
 } from "./previewRoutingState"
+
+const EMPTY_PREVIEW_INT32_ARRAY = new Int32Array(0)
+
+interface PreviewMetricsSnapshot {
+  touchedRegionIds: RegionId[]
+  touchedPortIds: PortId[]
+  sameLayerIntersectionCount: number
+  crossingLayerIntersectionCount: number
+  totalRegionCost: number
+}
 
 export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   BUS_END_MARGIN_STEPS = 3
@@ -80,9 +88,16 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private readonly boundaryPlanner: BusBoundaryPlanner
   private readonly traceInferencePlanner: BusTraceInferencePlanner
   private readonly centerlineNeighborRegionIdsByRegion: RegionId[][]
+  private readonly previewTouchedRegionMask: Uint8Array
+  private readonly previewTouchedPortMask: Uint8Array
   private readonly regionIndexBySerializedId = new Map<string, RegionId>()
   private readonly candidateBestCostByStateKey = new Map<string, number>()
   private readonly queuedCandidateBestCostByStateKey = new Map<string, number>()
+  private previewTouchedRegionIds: RegionId[] = []
+  private previewTouchedPortIds: PortId[] = []
+  private previewSameLayerIntersectionCount = 0
+  private previewCrossingLayerIntersectionCount = 0
+  private previewTotalRegionCost = 0
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
   private lastNeighborCount = 0
@@ -122,6 +137,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
     }
     this.centerGoalTransitRegionId = this.resolveCenterGoalTransitRegionId()
+    this.previewTouchedRegionMask = new Uint8Array(this.topology.regionCount)
+    this.previewTouchedPortMask = new Uint8Array(this.topology.portCount)
 
     if (options?.BUS_END_MARGIN_STEPS !== undefined) {
       this.BUS_END_MARGIN_STEPS = options.BUS_END_MARGIN_STEPS
@@ -171,6 +188,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       isRegionReservedForDifferentBusNet: (...args) =>
         this.isRegionReservedForDifferentBusNet(...args),
       isTracePreviewUsable: (...args) => this.isTracePreviewUsable(...args),
+      isTraceSegmentUsable: (...args) => this.isTraceSegmentUsable(...args),
       getTraceSidePenalty: (...args) => this.getTraceSidePenalty(...args),
       getTraceLanePenalty: (...args) => this.getTraceLanePenalty(...args),
       getRouteHeuristic: (...args) => this.getRouteHeuristic(...args),
@@ -214,7 +232,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     this.lastQueuedNeighborCount = 0
     this.candidateBestCostByStateKey.clear()
     this.queuedCandidateBestCostByStateKey.clear()
-    clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
+    this.clearPreviewWorkingState()
     this.resetCandidateBestCosts()
     this.state.candidateQueue = new MinHeap([], compareBusCandidatesByF)
 
@@ -343,6 +361,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       !currentCandidate.atGoal
     ) {
       const currentPreviewState = snapshotPreviewRoutingStateValue(this.state)
+      const currentPreviewMetrics = this.snapshotPreviewMetrics()
       const nextCandidates = this.getAvailableCenterMoves(currentCandidate)
       this.lastNeighborCount = nextCandidates.length
       this.lastQueuedNeighborCount = 0
@@ -400,6 +419,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
 
       restorePreviewRoutingStateValue(this.state, currentPreviewState)
+      this.restorePreviewMetrics(currentPreviewMetrics)
     } else {
       this.lastNeighborCount = 0
       this.lastQueuedNeighborCount = 0
@@ -457,7 +477,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private evaluateCandidate(
     candidate: BusCenterCandidate,
   ): BusPreview | undefined {
-    clearPreviewRoutingStateValue(this.state, this.topology.regionCount)
+    this.clearPreviewWorkingState()
     this.state.currentRouteId = this.centerRouteId
     this.state.currentRouteNetId = this.centerRouteNetId
     this.state.goalPortId = this.problem.routeEndPort[this.centerRouteId]!
@@ -670,7 +690,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
       if (!tracePreview) {
         const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-          getPreviewIntersectionCountsValue(this.state)
+          this.getPreviewIntersectionCounts()
         return {
           tracePreviews,
           totalLength,
@@ -690,13 +710,13 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       const {
         sameLayerIntersectionCount: previousSameLayerIntersectionCount,
         crossingLayerIntersectionCount: previousCrossingLayerIntersectionCount,
-      } = getPreviewIntersectionCountsValue(this.state)
+      } = this.getPreviewIntersectionCounts()
 
       tracePreviews.push(tracePreview)
       const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
       if (!Number.isFinite(traceLength)) {
         const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-          getPreviewIntersectionCountsValue(this.state)
+          this.getPreviewIntersectionCounts()
         return {
           tracePreviews,
           totalLength,
@@ -711,7 +731,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       }
 
       const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-        getPreviewIntersectionCountsValue(this.state)
+        this.getPreviewIntersectionCounts()
       if (
         sameLayerIntersectionCount > previousSameLayerIntersectionCount ||
         crossingLayerIntersectionCount > previousCrossingLayerIntersectionCount
@@ -734,8 +754,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-      getPreviewIntersectionCountsValue(this.state)
-    const totalRegionCost = getPreviewRegionCostValue(this.state)
+      this.getPreviewIntersectionCounts()
+    const totalRegionCost = this.previewTotalRegionCost
 
     if (!complete) {
       for (const tracePreview of tracePreviews) {
@@ -903,27 +923,155 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     )
   }
 
+  private snapshotPreviewMetrics(): PreviewMetricsSnapshot {
+    return {
+      touchedRegionIds: [...this.previewTouchedRegionIds],
+      touchedPortIds: [...this.previewTouchedPortIds],
+      sameLayerIntersectionCount: this.previewSameLayerIntersectionCount,
+      crossingLayerIntersectionCount: this.previewCrossingLayerIntersectionCount,
+      totalRegionCost: this.previewTotalRegionCost,
+    }
+  }
+
+  private restorePreviewMetrics(snapshot: PreviewMetricsSnapshot) {
+    for (const regionId of this.previewTouchedRegionIds) {
+      this.previewTouchedRegionMask[regionId] = 0
+    }
+    for (const portId of this.previewTouchedPortIds) {
+      this.previewTouchedPortMask[portId] = 0
+    }
+
+    this.previewTouchedRegionIds = snapshot.touchedRegionIds
+    this.previewTouchedPortIds = snapshot.touchedPortIds
+    this.previewSameLayerIntersectionCount = snapshot.sameLayerIntersectionCount
+    this.previewCrossingLayerIntersectionCount =
+      snapshot.crossingLayerIntersectionCount
+    this.previewTotalRegionCost = snapshot.totalRegionCost
+
+    for (const regionId of this.previewTouchedRegionIds) {
+      this.previewTouchedRegionMask[regionId] = 1
+    }
+    for (const portId of this.previewTouchedPortIds) {
+      this.previewTouchedPortMask[portId] = 1
+    }
+  }
+
+  private clearPreviewWorkingState() {
+    for (const portId of this.previewTouchedPortIds) {
+      this.state.portAssignment[portId] = -1
+      this.previewTouchedPortMask[portId] = 0
+    }
+
+    for (const regionId of this.previewTouchedRegionIds) {
+      this.state.regionSegments[regionId]!.length = 0
+      const regionCache = this.state.regionIntersectionCaches[regionId]!
+      regionCache.netIds = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.lesserAngles = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.greaterAngles = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.layerMasks = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.existingCrossingLayerIntersections = 0
+      regionCache.existingSameLayerIntersections = 0
+      regionCache.existingEntryExitLayerChanges = 0
+      regionCache.existingRegionCost = 0
+      regionCache.existingSegmentCount = 0
+      this.previewTouchedRegionMask[regionId] = 0
+    }
+
+    this.previewTouchedPortIds.length = 0
+    this.previewTouchedRegionIds.length = 0
+    this.previewSameLayerIntersectionCount = 0
+    this.previewCrossingLayerIntersectionCount = 0
+    this.previewTotalRegionCost = 0
+  }
+
+  private recordPreviewPortTouch(portId: PortId) {
+    if (this.previewTouchedPortMask[portId] !== 0) {
+      return
+    }
+
+    this.previewTouchedPortMask[portId] = 1
+    this.previewTouchedPortIds.push(portId)
+  }
+
+  private recordPreviewRegionTouch(regionId: RegionId) {
+    if (this.previewTouchedRegionMask[regionId] !== 0) {
+      return
+    }
+
+    this.previewTouchedRegionMask[regionId] = 1
+    this.previewTouchedRegionIds.push(regionId)
+  }
+
+  private getPreviewIntersectionCounts() {
+    return {
+      sameLayerIntersectionCount: this.previewSameLayerIntersectionCount,
+      crossingLayerIntersectionCount: this.previewCrossingLayerIntersectionCount,
+    }
+  }
+
+  private isTraceSegmentUsable(
+    routeId: RouteId,
+    segment: TraceSegment,
+    usedPortOwners: ReadonlyMap<PortId, RouteId>,
+  ) {
+    if (
+      this.topology.portZ[segment.fromPortId] !== 0 ||
+      this.topology.portZ[segment.toPortId] !== 0
+    ) {
+      return false
+    }
+
+    const fromOwner = usedPortOwners.get(segment.fromPortId)
+    if (fromOwner !== undefined && fromOwner !== routeId) {
+      return false
+    }
+
+    const toOwner = usedPortOwners.get(segment.toPortId)
+    if (toOwner !== undefined && toOwner !== routeId) {
+      return false
+    }
+
+    const segmentGeometry = this.populateSegmentGeometryScratch(
+      segment.regionId,
+      segment.fromPortId,
+      segment.toPortId,
+    )
+    const regionCache = this.state.regionIntersectionCaches[segment.regionId]!
+    if (regionCache.netIds.length === 0) {
+      return true
+    }
+    const [sameLayerIntersectionCount, crossingLayerIntersectionCount] =
+      countNewIntersectionsWithValues(
+        regionCache,
+        this.problem.routeNet[routeId]!,
+        segmentGeometry.lesserAngle,
+        segmentGeometry.greaterAngle,
+        segmentGeometry.layerMask,
+        segmentGeometry.entryExitLayerChanges,
+      )
+
+    return (
+      sameLayerIntersectionCount === 0 && crossingLayerIntersectionCount === 0
+    )
+  }
+
   private isTracePreviewUsable(
     tracePreview: TracePreview,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
-    const stateSnapshot = snapshotPreviewRoutingStateValue(this.state)
     const localOwners = new Map(usedPortOwners)
-    const {
-      sameLayerIntersectionCount: previousSameLayerIntersectionCount,
-      crossingLayerIntersectionCount: previousCrossingLayerIntersectionCount,
-    } = getPreviewIntersectionCountsValue(this.state)
-    const traceLength = this.commitTracePreview(tracePreview, localOwners)
-    const { sameLayerIntersectionCount, crossingLayerIntersectionCount } =
-      getPreviewIntersectionCountsValue(this.state)
 
-    restorePreviewRoutingStateValue(this.state, stateSnapshot)
+    for (const segment of tracePreview.segments) {
+      if (
+        !ensurePortOwnership(tracePreview.routeId, segment.fromPortId, localOwners) ||
+        !ensurePortOwnership(tracePreview.routeId, segment.toPortId, localOwners) ||
+        !this.isTraceSegmentUsable(tracePreview.routeId, segment, localOwners)
+      ) {
+        return false
+      }
+    }
 
-    return (
-      Number.isFinite(traceLength) &&
-      sameLayerIntersectionCount === previousSameLayerIntersectionCount &&
-      crossingLayerIntersectionCount === previousCrossingLayerIntersectionCount
-    )
+    return true
   }
 
   private buildCenterlineCompleteTracePreview(
@@ -1348,6 +1496,17 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         return Number.POSITIVE_INFINITY
       }
 
+      this.recordPreviewRegionTouch(segment.regionId)
+      this.recordPreviewPortTouch(segment.fromPortId)
+      this.recordPreviewPortTouch(segment.toPortId)
+
+      const regionCache = this.state.regionIntersectionCaches[segment.regionId]!
+      const previousSameLayerIntersectionCount =
+        regionCache.existingSameLayerIntersections
+      const previousCrossingLayerIntersectionCount =
+        regionCache.existingCrossingLayerIntersections
+      const previousRegionCost = regionCache.existingRegionCost
+
       this.state.regionSegments[segment.regionId]!.push([
         tracePreview.routeId,
         segment.fromPortId,
@@ -1360,6 +1519,15 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         segment.fromPortId,
         segment.toPortId,
       )
+      const nextRegionCache = this.state.regionIntersectionCaches[segment.regionId]!
+      this.previewSameLayerIntersectionCount +=
+        nextRegionCache.existingSameLayerIntersections -
+        previousSameLayerIntersectionCount
+      this.previewCrossingLayerIntersectionCount +=
+        nextRegionCache.existingCrossingLayerIntersections -
+        previousCrossingLayerIntersectionCount
+      this.previewTotalRegionCost +=
+        nextRegionCache.existingRegionCost - previousRegionCost
       totalLength += getPortDistance(
         this.topology,
         segment.fromPortId,

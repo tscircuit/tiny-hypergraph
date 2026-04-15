@@ -8,7 +8,7 @@ import {
   isPortIncidentToRegion,
 } from "./busPathHelpers"
 import type { BusTraceOrder } from "./deriveBusTraceOrder"
-import { getDistanceFromPortToPolyline } from "./geometry"
+import { getDistanceFromPortToPolyline, getPortDistance } from "./geometry"
 import {
   BUS_CANDIDATE_EPSILON,
   type BoundaryStep,
@@ -56,6 +56,11 @@ interface BusTraceInferencePlannerOptions {
     tracePreview: TracePreview,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) => boolean
+  isTraceSegmentUsable: (
+    routeId: RouteId,
+    segment: TraceSegment,
+    usedPortOwners: ReadonlyMap<PortId, RouteId>,
+  ) => boolean
   getTraceSidePenalty: (traceIndex: number, portId: PortId) => number
   getTraceLanePenalty: (traceIndex: number, portId: PortId) => number
   getRouteHeuristic: (routeId: RouteId, portId: PortId) => number
@@ -72,6 +77,13 @@ interface GreedyTraceExtensionResult {
   terminalRegionId: RegionId
   previewCost: number
   madeProgress: boolean
+}
+
+interface ClosestValidPortMove {
+  portId: PortId
+  nextRegionId: RegionId
+  guideDistance: number
+  segmentLength: number
 }
 
 export class BusTraceInferencePlanner {
@@ -99,7 +111,6 @@ export class BusTraceInferencePlanner {
     const visitedStateKeys = this.getTracePreviewStateKeys(tracePreview)
 
     const completedTrace = this.tryCompleteTraceFromCurrentRegion({
-      traceIndex: tracePreview.traceIndex,
       routeId,
       currentPortId,
       currentRegionId,
@@ -115,17 +126,18 @@ export class BusTraceInferencePlanner {
 
     return (
       this.getClosestValidPortMove({
-        traceIndex: tracePreview.traceIndex,
         routeId,
         routeNetId,
         currentPortId,
         currentRegionId,
-        prefixPreview: tracePreview,
-        extensionSegments: [],
         guidePortIds,
         usedPortOwners,
         visitedPortIds,
         visitedStateKeys,
+        currentTraceLength: getTracePreviewLength(
+          this.options.topology,
+          tracePreview,
+        ),
       }) !== undefined
     )
   }
@@ -445,6 +457,10 @@ export class BusTraceInferencePlanner {
       prefixPreview,
       guidePortIds,
     )
+    let currentTraceLength = getTracePreviewLength(
+      this.options.topology,
+      prefixPreview,
+    )
     const segments: TraceSegment[] = []
 
     for (let stepIndex = 0; stepIndex < maxSteps; stepIndex++) {
@@ -457,7 +473,6 @@ export class BusTraceInferencePlanner {
 
       if (goalPortId !== undefined) {
         const completedTrace = this.tryCompleteTraceFromCurrentRegion({
-          traceIndex,
           routeId,
           currentPortId,
           currentRegionId,
@@ -473,17 +488,15 @@ export class BusTraceInferencePlanner {
       }
 
       const nextMove = this.getClosestValidPortMove({
-        traceIndex,
         routeId,
         routeNetId,
         currentPortId,
         currentRegionId,
-        prefixPreview,
-        extensionSegments: segments,
         guidePortIds,
         usedPortOwners,
         visitedPortIds,
         visitedStateKeys,
+        currentTraceLength,
         maxTraceLength,
       })
       if (!nextMove) {
@@ -498,6 +511,7 @@ export class BusTraceInferencePlanner {
       currentPortId = nextMove.portId
       currentRegionId = nextMove.nextRegionId
       cumulativeGuideDeviation += nextMove.guideDistance
+      currentTraceLength += nextMove.segmentLength
       visitedPortIds.add(nextMove.portId)
       visitedStateKeys.add(
         this.getTraceSearchStateKey(nextMove.portId, nextMove.nextRegionId),
@@ -516,7 +530,6 @@ export class BusTraceInferencePlanner {
   }
 
   private tryCompleteTraceFromCurrentRegion({
-    traceIndex,
     routeId,
     currentPortId,
     currentRegionId,
@@ -526,7 +539,6 @@ export class BusTraceInferencePlanner {
     extensionSegments,
     usedPortOwners,
   }: {
-    traceIndex: number
     routeId: RouteId
     currentPortId: PortId
     currentRegionId: RegionId
@@ -548,6 +560,21 @@ export class BusTraceInferencePlanner {
       return undefined
     }
 
+    if (
+      currentPortId !== goalPortId &&
+      !this.options.isTraceSegmentUsable(
+        routeId,
+        {
+          regionId: currentRegionId,
+          fromPortId: currentPortId,
+          toPortId: goalPortId,
+        },
+        usedPortOwners,
+      )
+    ) {
+      return undefined
+    }
+
     const completionSegments =
       currentPortId === goalPortId
         ? extensionSegments
@@ -559,17 +586,6 @@ export class BusTraceInferencePlanner {
               toPortId: goalPortId,
             },
           ]
-    const completionPreview: TracePreview = {
-      traceIndex,
-      routeId,
-      segments: completionSegments,
-      complete: true,
-      terminalPortId: goalPortId,
-    }
-
-    if (!this.options.isTracePreviewUsable(completionPreview, usedPortOwners)) {
-      return undefined
-    }
 
     return {
       segments: completionSegments,
@@ -589,122 +605,109 @@ export class BusTraceInferencePlanner {
   }
 
   private getClosestValidPortMove({
-    traceIndex,
     routeId,
     routeNetId,
     currentPortId,
     currentRegionId,
-    prefixPreview,
-    extensionSegments,
     guidePortIds,
     usedPortOwners,
     visitedPortIds,
     visitedStateKeys,
+    currentTraceLength,
     maxTraceLength,
   }: {
-    traceIndex: number
     routeId: RouteId
     routeNetId: number
     currentPortId: PortId
     currentRegionId: RegionId
-    prefixPreview: TracePreview
-    extensionSegments: TraceSegment[]
     guidePortIds: readonly PortId[]
     usedPortOwners: ReadonlyMap<PortId, RouteId>
     visitedPortIds: ReadonlySet<PortId>
-    visitedStateKeys: ReadonlySet<string>
+    visitedStateKeys: ReadonlySet<number>
+    currentTraceLength: number
     maxTraceLength?: number
   }) {
     const entryRegionId = this.getOppositeRegionId(currentPortId, currentRegionId)
-    
-    return (this.options.topology.regionIncidentPorts[currentRegionId] ?? [])
-      .map((boundaryPortId) => {
-        if (
-          boundaryPortId === currentPortId ||
-          this.options.topology.portZ[boundaryPortId] !== 0 ||
-          visitedPortIds.has(boundaryPortId)
-        ) {
-          return undefined
-        }
+    let bestCandidate: ClosestValidPortMove | undefined
 
-        const nextRegionId = this.getOppositeRegionId(boundaryPortId, currentRegionId)
-        if (
-          nextRegionId === undefined ||
-          nextRegionId === entryRegionId ||
-          this.options.isRegionReservedForDifferentBusNet(routeNetId, nextRegionId)
-        ) {
-          return undefined
-        }
+    for (const boundaryPortId of this.options.topology.regionIncidentPorts[
+      currentRegionId
+    ] ?? []) {
+      if (
+        boundaryPortId === currentPortId ||
+        this.options.topology.portZ[boundaryPortId] !== 0 ||
+        visitedPortIds.has(boundaryPortId)
+      ) {
+        continue
+      }
 
-        const owner = usedPortOwners.get(boundaryPortId)
-        if (owner !== undefined && owner !== routeId) {
-          return undefined
-        }
+      const nextRegionId = this.getOppositeRegionId(boundaryPortId, currentRegionId)
+      if (
+        nextRegionId === undefined ||
+        nextRegionId === entryRegionId ||
+        this.options.isRegionReservedForDifferentBusNet(routeNetId, nextRegionId)
+      ) {
+        continue
+      }
 
-        const nextStateKey = this.getTraceSearchStateKey(
-          boundaryPortId,
-          nextRegionId,
-        )
-        if (visitedStateKeys.has(nextStateKey)) {
-          return undefined
-        }
+      const owner = usedPortOwners.get(boundaryPortId)
+      if (owner !== undefined && owner !== routeId) {
+        continue
+      }
 
-        const candidatePreview: TracePreview = {
-          traceIndex,
-          routeId,
-          segments: [
-            ...prefixPreview.segments,
-            ...extensionSegments,
-            {
-              regionId: currentRegionId,
-              fromPortId: currentPortId,
-              toPortId: boundaryPortId,
-            },
-          ],
-          complete: false,
-          terminalPortId: boundaryPortId,
-          terminalRegionId: nextRegionId,
-        }
-
-        if (!this.options.isTracePreviewUsable(candidatePreview, usedPortOwners)) {
-          return undefined
-        }
-
-        const candidateTraceLength = getTracePreviewLength(
-          this.options.topology,
-          candidatePreview,
-        )
-
-        if (
-          maxTraceLength !== undefined &&
-          candidateTraceLength > maxTraceLength + BUS_CANDIDATE_EPSILON
-        ) {
-          return undefined
-        }
-
-        return {
-          portId: boundaryPortId,
-          nextRegionId,
-          guideDistance: getDistanceFromPortToPolyline(
-            this.options.topology,
-            boundaryPortId,
-            guidePortIds,
-          ),
-        }
-      })
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          portId: PortId
-          nextRegionId: RegionId
-          guideDistance: number
-        } => candidate !== undefined,
+      const nextStateKey = this.getTraceSearchStateKey(
+        boundaryPortId,
+        nextRegionId,
       )
-      .sort(
-      (left, right) =>
-        left.guideDistance - right.guideDistance || left.portId - right.portId,
-    )[0]
+      if (visitedStateKeys.has(nextStateKey)) {
+        continue
+      }
+
+      const segmentLength = getPortDistance(
+        this.options.topology,
+        currentPortId,
+        boundaryPortId,
+      )
+      if (
+        maxTraceLength !== undefined &&
+        currentTraceLength + segmentLength > maxTraceLength + BUS_CANDIDATE_EPSILON
+      ) {
+        continue
+      }
+
+      if (
+        this.options.isTraceSegmentUsable(
+          routeId,
+          {
+            regionId: currentRegionId,
+            fromPortId: currentPortId,
+            toPortId: boundaryPortId,
+          },
+          usedPortOwners,
+        )
+      ) {
+        const guideDistance = getDistanceFromPortToPolyline(
+          this.options.topology,
+          boundaryPortId,
+          guidePortIds,
+        )
+        if (
+          !bestCandidate ||
+          guideDistance < bestCandidate.guideDistance ||
+          (guideDistance === bestCandidate.guideDistance &&
+            boundaryPortId < bestCandidate.portId)
+        ) {
+          bestCandidate = {
+            portId: boundaryPortId,
+            nextRegionId,
+            guideDistance,
+            segmentLength,
+          }
+        }
+      }
+    }
+
+    return bestCandidate
   }
 
   private getTracePreviewGuideDeviation(
@@ -749,7 +752,7 @@ export class BusTraceInferencePlanner {
   }
 
   private getTracePreviewStateKeys(tracePreview: TracePreview) {
-    const visitedStateKeys = new Set<string>()
+    const visitedStateKeys = new Set<number>()
     let currentPortId = this.options.problem.routeStartPort[tracePreview.routeId]!
     let currentRegionId = this.options.getStartingNextRegionId(
       tracePreview.routeId,
@@ -784,7 +787,7 @@ export class BusTraceInferencePlanner {
   }
 
   private getTraceSearchStateKey(portId: PortId, regionId: RegionId) {
-    return `${portId}:${regionId}`
+    return portId * this.options.topology.regionCount + regionId
   }
 
   private getOppositeRegionId(portId: PortId, regionId: RegionId) {
