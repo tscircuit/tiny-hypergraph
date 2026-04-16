@@ -52,7 +52,9 @@ const createConnection = (
   mutuallyConnectedNetworkId: `net-${routeIndex}`,
 })
 
-const startPortIds = START_END_XS.map((_, routeIndex) => `start-port-${routeIndex}`)
+const startPortIds = START_END_XS.map(
+  (_, routeIndex) => `start-port-${routeIndex}`,
+)
 const bridgeChainPortIds = START_END_XS.map(
   (_, routeIndex) => `bridge-chain-port-${routeIndex}`,
 )
@@ -64,7 +66,9 @@ const bottomExitPortIds = START_END_XS.map(
 )
 const endPortIds = START_END_XS.map((_, routeIndex) => `end-port-${routeIndex}`)
 
-const splitATopLeftPortIds = SPLIT_LEFT_XS.map((_, portIndex) => `a-tl-${portIndex}`)
+const splitATopLeftPortIds = SPLIT_LEFT_XS.map(
+  (_, portIndex) => `a-tl-${portIndex}`,
+)
 const splitABottomLeftPortIds = SPLIT_LEFT_XS.map(
   (_, portIndex) => `a-bl-${portIndex}`,
 )
@@ -74,7 +78,9 @@ const splitATopRightPortIds = SPLIT_RIGHT_XS.map(
 const splitABottomRightPortIds = SPLIT_RIGHT_XS.map(
   (_, portIndex) => `a-br-${portIndex}`,
 )
-const splitBTopLeftPortIds = SPLIT_LEFT_XS.map((_, portIndex) => `b-tl-${portIndex}`)
+const splitBTopLeftPortIds = SPLIT_LEFT_XS.map(
+  (_, portIndex) => `b-tl-${portIndex}`,
+)
 const splitBBottomLeftPortIds = SPLIT_LEFT_XS.map(
   (_, portIndex) => `b-bl-${portIndex}`,
 )
@@ -84,7 +90,9 @@ const splitBTopRightPortIds = SPLIT_RIGHT_XS.map(
 const splitBBottomRightPortIds = SPLIT_RIGHT_XS.map(
   (_, portIndex) => `b-br-${portIndex}`,
 )
-const splitCTopLeftPortIds = SPLIT_LEFT_XS.map((_, portIndex) => `c-tl-${portIndex}`)
+const splitCTopLeftPortIds = SPLIT_LEFT_XS.map(
+  (_, portIndex) => `c-tl-${portIndex}`,
+)
 const splitCBottomLeftPortIds = SPLIT_LEFT_XS.map(
   (_, portIndex) => `c-bl-${portIndex}`,
 )

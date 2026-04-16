@@ -1,9 +1,7 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { TinyHyperGraphBusSolver, TinyHyperGraphSolver } from "lib/index"
-import {
-  busDoubleSplitLongSpanFixture,
-} from "../../tests/fixtures/bus-double-split-long-span.fixture"
+import { busDoubleSplitLongSpanFixture } from "../../tests/fixtures/bus-double-split-long-span.fixture"
 import { Debugger } from "../components/Debugger"
 
 const createBusSolver = (serializedHyperGraph: SerializedHyperGraph) => {

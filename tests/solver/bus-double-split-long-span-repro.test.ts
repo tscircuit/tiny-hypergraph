@@ -17,7 +17,9 @@ const countSharedPorts = (regionAId: string, regionBId: string) =>
   ).length
 
 const countRoutesUsingRegion = (
-  solvedRoutes: NonNullable<ReturnType<TinyHyperGraphSolver["getOutput"]>["solvedRoutes"]>,
+  solvedRoutes: NonNullable<
+    ReturnType<TinyHyperGraphSolver["getOutput"]>["solvedRoutes"]
+  >,
   regionId: string,
 ) =>
   solvedRoutes.filter((route) =>
@@ -87,21 +89,33 @@ test("repro: six-trace triple split requires both split halves at all stages", (
   const solvedRoutes = plainSolver.getOutput().solvedRoutes ?? []
 
   expect(solvedRoutes).toHaveLength(BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(
+    0,
+  )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-upper")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-lower")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(
+    0,
+  )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-final")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-right")).toBeGreaterThan(
+    0,
+  )
 })
 
 test("repro: bus solver spans all three split stages across the long bridge", () => {
@@ -181,21 +195,33 @@ test("repro: bus solver spans all three split stages across the long bridge", ()
     )
 
   expect(solvedRoutes).toHaveLength(BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(
+    0,
+  )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-upper")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-lower")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(
+    0,
+  )
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-final")).toBe(
     BUS_DOUBLE_SPLIT_LONG_SPAN_ROUTE_COUNT,
   )
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-c-right")).toBeGreaterThan(
+    0,
+  )
   expect(sameLayerIntersectionCount).toBeLessThanOrEqual(
     plainSameLayerIntersectionCount,
   )
