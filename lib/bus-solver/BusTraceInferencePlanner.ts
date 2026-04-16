@@ -151,6 +151,7 @@ export class BusTraceInferencePlanner {
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
     let bestPreview: TracePreview | undefined
+    let bestPreviewHasRemainingCandidate = false
 
     for (const exactPrefix of this.getExactPrefixSeedCandidates(
       traceIndex,
@@ -170,19 +171,29 @@ export class BusTraceInferencePlanner {
         continue
       }
 
+      const previewHasRemainingCandidate = this.hasRemainingTraceCandidate(
+        preview,
+        usedPortOwners,
+      )
+
       if (
         !bestPreview ||
-        (preview.previewCost ?? Number.POSITIVE_INFINITY) <
-          (bestPreview.previewCost ?? Number.POSITIVE_INFINITY) -
-            BUS_CANDIDATE_EPSILON ||
-        (Math.abs(
-          (preview.previewCost ?? Number.POSITIVE_INFINITY) -
-            (bestPreview.previewCost ?? Number.POSITIVE_INFINITY),
-        ) <= BUS_CANDIDATE_EPSILON &&
+        (previewHasRemainingCandidate &&
+          !bestPreviewHasRemainingCandidate) ||
+        (previewHasRemainingCandidate === bestPreviewHasRemainingCandidate &&
+          (preview.previewCost ?? Number.POSITIVE_INFINITY) <
+            (bestPreview.previewCost ?? Number.POSITIVE_INFINITY) -
+              BUS_CANDIDATE_EPSILON) ||
+        (previewHasRemainingCandidate === bestPreviewHasRemainingCandidate &&
+          Math.abs(
+            (preview.previewCost ?? Number.POSITIVE_INFINITY) -
+              (bestPreview.previewCost ?? Number.POSITIVE_INFINITY),
+          ) <= BUS_CANDIDATE_EPSILON &&
           getTracePreviewLength(this.options.topology, preview) <
             getTracePreviewLength(this.options.topology, bestPreview))
       ) {
         bestPreview = preview
+        bestPreviewHasRemainingCandidate = previewHasRemainingCandidate
       }
     }
 
@@ -389,6 +400,34 @@ export class BusTraceInferencePlanner {
     boundaryPortIdsByStep: Array<PortId[] | undefined>,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
+    if (this.options.problem.routeCount > 6) {
+      const candidates: ExactPrefixTracePreview[] = []
+
+      for (
+        let sharedStepCount = maxSharedStepCount;
+        sharedStepCount >= 0;
+        sharedStepCount--
+      ) {
+        const preview = this.options.buildPrefixTracePreview(
+          traceIndex,
+          sharedStepCount,
+          boundarySteps,
+          boundaryPortIdsByStep,
+          usedPortOwners,
+        )
+        if (!preview || !this.options.isTracePreviewUsable(preview, usedPortOwners)) {
+          continue
+        }
+
+        candidates.push({
+          preview,
+          sharedStepCount,
+        })
+      }
+
+      return candidates
+    }
+
     const candidates: ExactPrefixTracePreview[] = []
     const longestPrefix = this.buildLongestExactPrefixTracePreview(
       traceIndex,

@@ -204,6 +204,35 @@ const computePortAngle = (
   const bounds = getRegionBounds(region)
   const x = Number(port.d?.x ?? 0)
   const y = Number(port.d?.y ?? 0)
+  const withinXBounds = bounds.minX <= x && x <= bounds.maxX
+  const withinYBounds = bounds.minY <= y && y <= bounds.maxY
+
+  // Prefer the side whose outward half-plane actually contains the port.
+  // This keeps ports above/below a region from being misclassified onto a
+  // nearby vertical edge when they sit close to a corner.
+  if (withinYBounds && x >= bounds.maxX) {
+    const safeHeight = Math.max(bounds.maxY - bounds.minY, 1e-9)
+    const t = (y - bounds.minY) / safeHeight
+    return Math.round(t * 9000)
+  }
+
+  if (withinXBounds && y >= bounds.maxY) {
+    const safeWidth = Math.max(bounds.maxX - bounds.minX, 1e-9)
+    const t = (bounds.maxX - x) / safeWidth
+    return 9000 + Math.round(t * 9000)
+  }
+
+  if (withinYBounds && x <= bounds.minX) {
+    const safeHeight = Math.max(bounds.maxY - bounds.minY, 1e-9)
+    const t = (bounds.maxY - y) / safeHeight
+    return 18000 + Math.round(t * 9000)
+  }
+
+  if (withinXBounds && y <= bounds.minY) {
+    const safeWidth = Math.max(bounds.maxX - bounds.minX, 1e-9)
+    const t = (x - bounds.minX) / safeWidth
+    return 27000 + Math.round(t * 9000)
+  }
 
   const distLeft = Math.abs(x - bounds.minX)
   const distRight = Math.abs(x - bounds.maxX)
