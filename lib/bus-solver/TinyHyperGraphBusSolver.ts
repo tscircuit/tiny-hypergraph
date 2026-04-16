@@ -165,6 +165,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       this.CENTER_GREEDY_HEURISTIC_MULTIPLIER =
         options.CENTER_GREEDY_HEURISTIC_MULTIPLIER
     }
+    if (options?.CENTER_PORT_OPTIONS_PER_EDGE !== undefined) {
+      this.CENTER_PORT_OPTIONS_PER_EDGE = options.CENTER_PORT_OPTIONS_PER_EDGE
+    }
     this.queueAllCandidates = options?.QUEUE_ALL_CANDIDATES ?? false
     this.showUnassignedPortsInVisualization =
       options?.VISUALIZE_UNASSIGNED_PORTS ?? false
@@ -1799,6 +1802,28 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       .slice(0, this.MANUAL_CENTER_FINISH_CANDIDATE_LIMIT)
   }
 
+  private getManualCenterFinishHeuristic(
+    currentCandidate: BusCenterCandidate,
+    portId: PortId,
+    nextRegionId: RegionId,
+    boundaryNormalX: number,
+    boundaryNormalY: number,
+  ) {
+    const seedCandidate: BusCenterCandidate = {
+      portId,
+      nextRegionId,
+      g: 0,
+      h: 0,
+      f: 0,
+      prevRegionId: currentCandidate.nextRegionId,
+      prevCandidate: currentCandidate,
+      boundaryNormalX,
+      boundaryNormalY,
+    }
+
+    return this.getManualCenterFinishCandidates(seedCandidate)[0]?.g
+  }
+
   private getAvailableCenterMoves(currentCandidate: BusCenterCandidate) {
     const moves: BusCenterCandidate[] = []
     const routeId = this.centerRouteId
@@ -1909,11 +1934,27 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         continue
       }
 
-      const h = this.computeCenterHeuristic(neighborPortId, nextRegionId)
-      if (!Number.isFinite(h)) {
+      let scaledH: number | undefined
+      if (this.isManualCenterFinishRegion(nextRegionId)) {
+        scaledH = this.getManualCenterFinishHeuristic(
+          currentCandidate,
+          neighborPortId,
+          nextRegionId,
+          boundaryStep.normalX,
+          boundaryStep.normalY,
+        )
+      } else {
+        const h = this.computeCenterHeuristic(neighborPortId, nextRegionId)
+        if (!Number.isFinite(h)) {
+          continue
+        }
+        scaledH = this.scaleCenterHeuristic(h)
+      }
+
+      if (!Number.isFinite(scaledH)) {
         continue
       }
-      const scaledH = this.scaleCenterHeuristic(h)
+
       moves.push({
         portId: neighborPortId,
         nextRegionId,

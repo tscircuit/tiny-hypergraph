@@ -22,6 +22,8 @@ const cm5ioBusSelectionFixtureUrl = new URL(
   import.meta.url,
 ).href
 
+const CM5IO_CENTER_PORT_OPTIONS_PER_EDGE = 16
+
 const createBusSubsetSerializedHyperGraph = (
   fullInput: SerializedHyperGraphPortPointPathingSolverInput,
   busSelection: ConnectionPatchSelection,
@@ -125,6 +127,7 @@ export default function Cm5ioBus1RoutingPage() {
             const { topology, problem } = loadSerializedHyperGraph(graph)
             return new TinyHyperGraphBusSolver(topology, problem, {
               MAX_ITERATIONS: 250_000,
+              CENTER_PORT_OPTIONS_PER_EDGE: CM5IO_CENTER_PORT_OPTIONS_PER_EDGE,
             })
           }}
         />

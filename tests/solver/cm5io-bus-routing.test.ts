@@ -1,11 +1,14 @@
 import { expect, test } from "bun:test"
 import { convertPortPointPathingSolverInputToSerializedHyperGraph } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
+import { getCenterCandidatePath } from "lib/bus-solver/busPathHelpers"
 import {
   filterPortPointPathingSolverInputByConnectionPatches,
   TinyHyperGraphBusSolver,
   type ConnectionPatchSelection,
 } from "lib/index"
+
+const CM5IO_CENTER_PORT_OPTIONS_PER_EDGE = 16
 
 const getColorAlpha = (color: string): number => {
   const match = color.match(/^(?:rgba|hsla)\((.*),\s*([0-9]*\.?[0-9]+)\)$/)
@@ -34,6 +37,7 @@ const createCm5ioBus1Solver = async () => {
 
   return new TinyHyperGraphBusSolver(topology, problem, {
     MAX_ITERATIONS: 250_000,
+    CENTER_PORT_OPTIONS_PER_EDGE: CM5IO_CENTER_PORT_OPTIONS_PER_EDGE,
   })
 }
 
@@ -242,6 +246,26 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
       ),
     ].sort((left, right) => left - right),
   )
+})
+
+test("CM5IO bus1 uses manual-finish lookahead to choose ce365_pp12_z0::0", async () => {
+  const solver = await createCm5ioBus1Solver()
+
+  while (!solver.solved && !solver.failed) {
+    solver.step()
+  }
+
+  expect(solver.solved).toBe(true)
+
+  const internal = solver as any
+  const centerPath = getCenterCandidatePath(internal.lastExpandedCandidate)
+  const serializedPortIds = centerPath.map(
+    (candidate) => solver.topology.portMetadata?.[candidate.portId]?.serializedPortId,
+  )
+
+  expect(serializedPortIds).toContain("ce365_pp12_z0::0")
+  expect(serializedPortIds).not.toContain("ce365_pp13_z0::0")
+  expect(serializedPortIds).not.toContain("ce365_pp14_z0::0")
 })
 
 test("CM5IO bus1 preserves start-side order on the first boundary fanout", async () => {
