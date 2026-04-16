@@ -248,7 +248,7 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
   )
 })
 
-test("CM5IO bus1 uses late remainder search to choose ce365_pp14_z0::0", async () => {
+test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0", async () => {
   const solver = await createCm5ioBus1Solver()
 
   while (!solver.solved && !solver.failed) {
@@ -264,7 +264,7 @@ test("CM5IO bus1 uses late remainder search to choose ce365_pp14_z0::0", async (
     (candidate) => solver.topology.portMetadata?.[candidate.portId]?.serializedPortId,
   )
 
-  expect(serializedPortIds).toContain("ce365_pp14_z0::0")
+  expect(serializedPortIds).toContain("ce365_pp13_z0::0")
   expect(lastPreview).toBeDefined()
   expect(lastPreview.sameLayerIntersectionCount).toBe(0)
   expect(lastPreview.crossingLayerIntersectionCount).toBe(0)
@@ -298,31 +298,31 @@ test("CM5IO bus1 uses late remainder search to choose ce365_pp14_z0::0", async (
 
   expect(region11FanoutSegments).toMatchObject({
     source_trace_106: {
-      from: "ce365_pp16_z0::0",
+      from: "ce365_pp15_z0::0",
       to: "ce481_pp0_z0::0",
     },
     source_trace_107: {
-      from: "ce365_pp15_z0::0",
+      from: "ce365_pp14_z0::0",
       to: "ce483_pp0_z0::0",
     },
     source_trace_108: {
-      from: "ce365_pp14_z0::0",
+      from: "ce365_pp13_z0::0",
       to: "ce488_pp0_z0::0",
     },
     source_trace_109: {
-      from: "ce365_pp13_z0::0",
+      from: "ce365_pp12_z0::0",
       to: "ce490_pp0_z0::0",
     },
     source_trace_110: {
-      from: "ce365_pp12_z0::0",
+      from: "ce365_pp11_z0::0",
       to: "ce494_pp0_z0::0",
     },
     source_trace_111: {
-      from: "ce365_pp11_z0::0",
+      from: "ce365_pp10_z0::0",
       to: "ce496_pp0_z0::0",
     },
     source_trace_114: {
-      from: "ce365_pp10_z0::0",
+      from: "ce365_pp9_z0::0",
       to: "ce507_pp0_z0::0",
     },
   })

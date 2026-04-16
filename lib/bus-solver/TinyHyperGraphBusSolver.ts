@@ -952,218 +952,154 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         (regionId): regionId is RegionId => regionId !== undefined,
       ) ?? []
     const currentNetId = this.problem.routeNet[routeId]!
-    const initialOwners = new Map(usedPortOwners)
-    if (!ensurePortOwnership(routeId, startPortId, initialOwners)) {
+    const localOwners = new Map(usedPortOwners)
+    if (!ensurePortOwnership(routeId, startPortId, localOwners)) {
       return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
     }
 
-    type RemainderSearchState = {
-      currentPortId: PortId
-      currentRegionId: RegionId
-      segments: TraceSegment[]
-      previewCost: number
-      owners: Map<PortId, RouteId>
-      visitedStates: Set<string>
-    }
+    const visitedStates = new Set([`${startPortId}:${startRegionId}`])
+    const segments: TraceSegment[] = []
+    let currentPortId = startPortId
+    let currentRegionId = startRegionId
+    let previewCost = 0
 
-    const completeOptions: Array<{
-      segments: TraceSegment[]
-      previewCost: number
-    }> = []
-    const seenOptionKeys = new Set<string>()
-    let states: RemainderSearchState[] = [
-      {
-        currentPortId: startPortId,
-        currentRegionId: startRegionId,
-        segments: [],
-        previewCost: 0,
-        owners: initialOwners,
-        visitedStates: new Set([`${startPortId}:${startRegionId}`]),
-      },
-    ]
+    for (
+      let stepIndex = 0;
+      stepIndex < this.BUS_MAX_REMAINDER_STEPS;
+      stepIndex++
+    ) {
+      if (isPortIncidentToRegion(this.topology, endPortId, currentRegionId)) {
+        if (!ensurePortOwnership(routeId, endPortId, localOwners)) {
+          return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
+        }
 
-    for (let stepIndex = 0; stepIndex < this.BUS_MAX_REMAINDER_STEPS; stepIndex++) {
-      const nextStates: RemainderSearchState[] = []
-
-      for (const state of states) {
-        if (isPortIncidentToRegion(this.topology, endPortId, state.currentRegionId)) {
-          const completionOwners = new Map(state.owners)
-          if (!ensurePortOwnership(routeId, endPortId, completionOwners)) {
-            continue
+        if (currentPortId !== endPortId) {
+          const completionSegment: TraceSegment = {
+            regionId: currentRegionId,
+            fromPortId: currentPortId,
+            toPortId: endPortId,
           }
-
           if (
-            state.currentPortId !== endPortId &&
             !this.isTraceSegmentUsable(
               routeId,
-              {
-                regionId: state.currentRegionId,
-                fromPortId: state.currentPortId,
-                toPortId: endPortId,
-              },
-              completionOwners,
+              completionSegment,
+              localOwners,
             )
           ) {
-            continue
+            return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
           }
 
-          const segments =
-            state.currentPortId === endPortId
-              ? state.segments
-              : [
-                  ...state.segments,
-                  {
-                    regionId: state.currentRegionId,
-                    fromPortId: state.currentPortId,
-                    toPortId: endPortId,
-                  },
-                ]
-          const previewCost =
-            state.previewCost +
-            getDistanceFromPortToPolyline(
-              this.topology,
-              endPortId,
-              guidePortIds,
-            )
-          const optionKey = segments
-            .map(
-              (segment) =>
-                `${segment.regionId}:${segment.fromPortId}:${segment.toPortId}`,
-            )
-            .join("|")
-          if (!seenOptionKeys.has(optionKey)) {
-            seenOptionKeys.add(optionKey)
-            completeOptions.push({
-              segments,
-              previewCost,
-            })
+          segments.push(completionSegment)
+          previewCost += getDistanceFromPortToPolyline(
+            this.topology,
+            endPortId,
+            guidePortIds,
+          )
+        }
+
+        return [{ segments, previewCost }]
+      }
+
+      let bestMove:
+        | {
+            boundaryPortId: PortId
+            nextRegionId: RegionId
+            score: number
           }
+        | undefined
+
+      for (const boundaryPortId of this.topology.regionIncidentPorts[
+        currentRegionId
+      ] ?? []) {
+        if (
+          boundaryPortId === currentPortId ||
+          this.topology.portZ[boundaryPortId] !== 0
+        ) {
           continue
         }
 
-        const rankedMoves = (this.topology.regionIncidentPorts[
-          state.currentRegionId
-        ] ?? [])
-          .flatMap((boundaryPortId) => {
-            if (
-              boundaryPortId === state.currentPortId ||
-              this.topology.portZ[boundaryPortId] !== 0
-            ) {
-              return []
-            }
+        const nextRegionId =
+          this.topology.incidentPortRegion[boundaryPortId]?.[0] ===
+          currentRegionId
+            ? this.topology.incidentPortRegion[boundaryPortId]?.[1]
+            : this.topology.incidentPortRegion[boundaryPortId]?.[0]
 
-            const nextRegionId =
-              this.topology.incidentPortRegion[boundaryPortId]?.[0] ===
-              state.currentRegionId
-                ? this.topology.incidentPortRegion[boundaryPortId]?.[1]
-                : this.topology.incidentPortRegion[boundaryPortId]?.[0]
+        if (
+          nextRegionId === undefined ||
+          this.isRegionReservedForDifferentBusNet(currentNetId, nextRegionId) ||
+          visitedStates.has(`${boundaryPortId}:${nextRegionId}`)
+        ) {
+          continue
+        }
 
-            if (
-              nextRegionId === undefined ||
-              this.isRegionReservedForDifferentBusNet(
-                currentNetId,
-                nextRegionId,
-              ) ||
-              state.visitedStates.has(`${boundaryPortId}:${nextRegionId}`)
-            ) {
-              return []
-            }
+        const owner = localOwners.get(boundaryPortId)
+        if (owner !== undefined && owner !== routeId) {
+          continue
+        }
 
-            const owner = state.owners.get(boundaryPortId)
-            if (owner !== undefined && owner !== routeId) {
-              return []
-            }
+        const segment: TraceSegment = {
+          regionId: currentRegionId,
+          fromPortId: currentPortId,
+          toPortId: boundaryPortId,
+        }
+        if (!this.isTraceSegmentUsable(routeId, segment, localOwners)) {
+          continue
+        }
 
-            const segment: TraceSegment = {
-              regionId: state.currentRegionId,
-              fromPortId: state.currentPortId,
-              toPortId: boundaryPortId,
-            }
-            if (!this.isTraceSegmentUsable(routeId, segment, state.owners)) {
-              return []
-            }
+        const goalDistance = getPortDistance(
+          this.topology,
+          boundaryPortId,
+          endPortId,
+        )
+        const guideDistance = getDistanceFromPortToPolyline(
+          this.topology,
+          boundaryPortId,
+          guidePortIds,
+        )
+        const sidePenalty = this.getTraceSidePenalty(traceIndex, boundaryPortId)
+        const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId)
+          ? -5
+          : 0
+        const score =
+          guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
+          goalDistance * this.BUS_REMAINDER_GOAL_WEIGHT +
+          sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
+          goalRegionBonus
 
-            const goalDistance = getPortDistance(
-              this.topology,
-              boundaryPortId,
-              endPortId,
-            )
-            const guideDistance = getDistanceFromPortToPolyline(
-              this.topology,
-              boundaryPortId,
-              guidePortIds,
-            )
-            const sidePenalty = this.getTraceSidePenalty(
-              traceIndex,
-              boundaryPortId,
-            )
-            const goalRegionBonus = goalTransitRegionIds.includes(nextRegionId)
-              ? -5
-              : 0
-            const score =
-              guideDistance * this.BUS_REMAINDER_GUIDE_WEIGHT +
-              goalDistance * this.BUS_REMAINDER_GOAL_WEIGHT +
-              sidePenalty * this.BUS_REMAINDER_SIDE_WEIGHT +
-              goalRegionBonus
-
-            return [
-              {
-                boundaryPortId,
-                nextRegionId,
-                segment,
-                score,
-              },
-            ]
-          })
-          .sort(
-            (left, right) =>
-              left.score - right.score ||
-              left.boundaryPortId - right.boundaryPortId,
-          )
-          .slice(0, this.TRACE_ALONGSIDE_SEARCH_BRANCH_LIMIT)
-
-        for (const move of rankedMoves) {
-          const nextOwners = new Map(state.owners)
-          if (!ensurePortOwnership(routeId, move.boundaryPortId, nextOwners)) {
-            continue
+        if (
+          !bestMove ||
+          score < bestMove.score - BUS_CANDIDATE_EPSILON ||
+          (Math.abs(score - bestMove.score) <= BUS_CANDIDATE_EPSILON &&
+            boundaryPortId < bestMove.boundaryPortId)
+        ) {
+          bestMove = {
+            boundaryPortId,
+            nextRegionId,
+            score,
           }
-
-          nextStates.push({
-            currentPortId: move.boundaryPortId,
-            currentRegionId: move.nextRegionId,
-            segments: [...state.segments, move.segment],
-            previewCost: state.previewCost + move.score,
-            owners: nextOwners,
-            visitedStates: new Set([
-              ...state.visitedStates,
-              `${move.boundaryPortId}:${move.nextRegionId}`,
-            ]),
-          })
         }
       }
 
-      if (nextStates.length === 0) {
-        break
+      if (!bestMove) {
+        return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
       }
 
-      states = nextStates
-        .sort(
-          (left, right) =>
-            left.previewCost - right.previewCost ||
-            this.getTraceSegmentSequenceLength(left.segments) -
-              this.getTraceSegmentSequenceLength(right.segments),
-        )
-        .slice(0, this.TRACE_ALONGSIDE_SEARCH_BEAM_WIDTH)
+      if (!ensurePortOwnership(routeId, bestMove.boundaryPortId, localOwners)) {
+        return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
+      }
+
+      segments.push({
+        regionId: currentRegionId,
+        fromPortId: currentPortId,
+        toPortId: bestMove.boundaryPortId,
+      })
+      currentPortId = bestMove.boundaryPortId
+      currentRegionId = bestMove.nextRegionId
+      previewCost += bestMove.score
+      visitedStates.add(`${currentPortId}:${currentRegionId}`)
     }
 
-    return completeOptions
-      .sort(
-        (left, right) =>
-          left.previewCost - right.previewCost ||
-          this.getTraceSegmentSequenceLength(left.segments) -
-            this.getTraceSegmentSequenceLength(right.segments),
-      )
-      .slice(0, this.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT)
+    return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
   }
 
   private buildDerivedBusPreview(
@@ -1470,15 +1406,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
   private getTracePreviewLength(tracePreview: TracePreview) {
     return tracePreview.segments.reduce(
-      (sum, segment) =>
-        sum +
-        getPortDistance(this.topology, segment.fromPortId, segment.toPortId),
-      0,
-    )
-  }
-
-  private getTraceSegmentSequenceLength(segments: readonly TraceSegment[]) {
-    return segments.reduce(
       (sum, segment) =>
         sum +
         getPortDistance(this.topology, segment.fromPortId, segment.toPortId),
