@@ -144,3 +144,22 @@ test("repro: bus solver spans both middle regions on the split-middle fixture", 
     plainCrossingLayerIntersectionCount,
   )
 })
+
+test("repro: region-span page options also converge via repeated step calls", () => {
+  const { topology, problem } = loadSerializedHyperGraph(busRegionSpanFixture)
+  const busSolver = new TinyHyperGraphBusSolver(topology, problem, {
+    MAX_ITERATIONS: 50_000,
+    CENTER_GREEDY_HEURISTIC_MULTIPLIER: 1_000,
+    VISUALIZE_UNASSIGNED_PORTS: true,
+  })
+
+  while (!busSolver.solved && !busSolver.failed) {
+    busSolver.step()
+  }
+
+  expect(busSolver.solved).toBe(true)
+  expect(busSolver.failed).toBe(false)
+  expect(busSolver.getOutput().solvedRoutes).toHaveLength(
+    BUS_REGION_SPAN_ROUTE_COUNT,
+  )
+})
