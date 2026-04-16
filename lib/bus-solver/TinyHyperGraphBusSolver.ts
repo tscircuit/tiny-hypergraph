@@ -845,7 +845,10 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         const stateSnapshot = snapshotPreviewRoutingStateValue(this.state)
         const metricsSnapshot = this.snapshotPreviewMetrics()
         const ownerSnapshot = new Map(usedPortOwners)
-        const traceLength = this.commitTracePreview(tracePreview, usedPortOwners)
+        const traceLength = this.commitTracePreview(
+          tracePreview,
+          usedPortOwners,
+        )
 
         if (Number.isFinite(traceLength)) {
           tracePreviewsStack.push(tracePreview)
@@ -893,8 +896,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         totalLength * this.DISTANCE_TO_COST +
         this.previewTotalRegionCost +
         totalPreviewCost,
-      completeTraceCount: bestTracePreviews.filter((preview) => preview.complete)
-        .length,
+      completeTraceCount: bestTracePreviews.filter(
+        (preview) => preview.complete,
+      ).length,
       sameLayerIntersectionCount,
       crossingLayerIntersectionCount,
     }
@@ -948,7 +952,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     let currentPortId = startPortId
     let currentRegionId = startRegionId
 
-    for (let stepIndex = 0; stepIndex < this.BUS_MAX_REMAINDER_STEPS; stepIndex++) {
+    for (
+      let stepIndex = 0;
+      stepIndex < this.BUS_MAX_REMAINDER_STEPS;
+      stepIndex++
+    ) {
       if (isPortIncidentToRegion(this.topology, endPortId, currentRegionId)) {
         if (!ensurePortOwnership(routeId, endPortId, localOwners)) {
           return undefined
@@ -1247,7 +1255,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
 
     return (
-      this.problem.routeCount <= 6 || currentCandidate.prevCandidate === undefined
+      this.problem.routeCount <= 6 ||
+      currentCandidate.prevCandidate === undefined
     )
   }
 

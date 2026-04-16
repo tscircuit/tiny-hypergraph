@@ -17,7 +17,9 @@ const countSharedPorts = (regionAId: string, regionBId: string) =>
   ).length
 
 const countRoutesUsingRegion = (
-  solvedRoutes: NonNullable<ReturnType<TinyHyperGraphSolver["getOutput"]>["solvedRoutes"]>,
+  solvedRoutes: NonNullable<
+    ReturnType<TinyHyperGraphSolver["getOutput"]>["solvedRoutes"]
+  >,
   regionId: string,
 ) =>
   solvedRoutes.filter((route) =>
@@ -68,9 +70,8 @@ const getSerializedPortId = (
   topology: ReturnType<typeof loadSerializedHyperGraph>["topology"],
   portId: number,
 ) =>
-  (
-    topology.portMetadata?.[portId] as { serializedPortId?: string } | undefined
-  )?.serializedPortId
+  (topology.portMetadata?.[portId] as { serializedPortId?: string } | undefined)
+    ?.serializedPortId
 
 const getTracePreviewLength = (
   topology: ReturnType<typeof loadSerializedHyperGraph>["topology"],
@@ -138,12 +139,22 @@ test("repro: region-19 turns right into an L-shaped top-bottom split", () => {
   expect(countRoutesUsingRegion(solvedRoutes, "bridge-final")).toBe(
     BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
   )
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(0)
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-a-right")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-left")).toBeGreaterThan(
+    0,
+  )
+  expect(countRoutesUsingRegion(solvedRoutes, "split-b-right")).toBeGreaterThan(
+    0,
+  )
   expect(countRoutesUsingRegion(solvedRoutes, "split-c-top")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-bottom")).toBeGreaterThan(0)
+  expect(
+    countRoutesUsingRegion(solvedRoutes, "split-c-bottom"),
+  ).toBeGreaterThan(0)
   expect(countRoutesUsingRegion(solvedRoutes, "right-main")).toBe(
     BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
   )
@@ -231,9 +242,9 @@ test("repro: iteration 4 only keeps queueable non-intersecting derived bus candi
         expect(tracePreview.segments.length).toBeGreaterThanOrEqual(
           minimumTraceSegmentCount,
         )
-        expect(getTracePreviewLength(topology, tracePreview)).toBeLessThanOrEqual(
-          centerTraceLength + 1e-9,
-        )
+        expect(
+          getTracePreviewLength(topology, tracePreview),
+        ).toBeLessThanOrEqual(centerTraceLength + 1e-9)
       }
     }
   }
@@ -284,11 +295,14 @@ test("repro: iteration 10 keeps all derived traces behind the centerline", () =>
 
   const centerTraceLength = getTracePreviewLength(topology, centerTracePreview)
 
-  expect((busSolver as any).hasRemainingTraceCandidates((busSolver as any).lastPreview)).toBe(
-    true,
-  )
+  expect(
+    (busSolver as any).hasRemainingTraceCandidates(
+      (busSolver as any).lastPreview,
+    ),
+  ).toBe(true)
 
-  for (const tracePreview of (busSolver as any).lastPreview?.tracePreviews ?? []) {
+  for (const tracePreview of (busSolver as any).lastPreview?.tracePreviews ??
+    []) {
     if (tracePreview.traceIndex === busSolver.centerTraceIndex) {
       continue
     }
@@ -393,7 +407,8 @@ test("repro: bus solver handles the region-19 right turn and L-shaped split", ()
   const splitBLeftRegionIndex = regionIndexBySerializedId.get("split-b-left")
   const splitBRightRegionIndex = regionIndexBySerializedId.get("split-b-right")
   const splitCTopRegionIndex = regionIndexBySerializedId.get("split-c-top")
-  const splitCBottomRegionIndex = regionIndexBySerializedId.get("split-c-bottom")
+  const splitCBottomRegionIndex =
+    regionIndexBySerializedId.get("split-c-bottom")
 
   expect(splitALeftRegionIndex).toBeDefined()
   expect(splitARightRegionIndex).toBeDefined()
@@ -460,9 +475,9 @@ test("repro: bus solver handles the region-19 right turn and L-shaped split", ()
     BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
   )
   expect(countRoutesUsingRegion(solvedRoutes, "split-c-top")).toBeGreaterThan(0)
-  expect(countRoutesUsingRegion(solvedRoutes, "split-c-bottom")).toBeGreaterThan(
-    0,
-  )
+  expect(
+    countRoutesUsingRegion(solvedRoutes, "split-c-bottom"),
+  ).toBeGreaterThan(0)
   expect(countRoutesUsingRegion(solvedRoutes, "right-main")).toBe(
     BUS_RIGHT_TURN_L_SHAPE_ROUTE_COUNT,
   )

@@ -67,7 +67,9 @@ const rightExitPortIds = END_XS.map(
 )
 const endPortIds = END_XS.map((_, routeIndex) => `end-port-${routeIndex}`)
 
-const splitATopLeftPortIds = SPLIT_LEFT_XS.map((_, portIndex) => `a-tl-${portIndex}`)
+const splitATopLeftPortIds = SPLIT_LEFT_XS.map(
+  (_, portIndex) => `a-tl-${portIndex}`,
+)
 const splitABottomLeftPortIds = SPLIT_LEFT_XS.map(
   (_, portIndex) => `a-bl-${portIndex}`,
 )
@@ -77,7 +79,9 @@ const splitATopRightPortIds = SPLIT_RIGHT_XS.map(
 const splitABottomRightPortIds = SPLIT_RIGHT_XS.map(
   (_, portIndex) => `a-br-${portIndex}`,
 )
-const splitBTopLeftPortIds = SPLIT_LEFT_XS.map((_, portIndex) => `b-tl-${portIndex}`)
+const splitBTopLeftPortIds = SPLIT_LEFT_XS.map(
+  (_, portIndex) => `b-tl-${portIndex}`,
+)
 const splitBBottomLeftPortIds = SPLIT_LEFT_XS.map(
   (_, portIndex) => `b-bl-${portIndex}`,
 )
@@ -87,7 +91,9 @@ const splitBTopRightPortIds = SPLIT_RIGHT_XS.map(
 const splitBBottomRightPortIds = SPLIT_RIGHT_XS.map(
   (_, portIndex) => `b-br-${portIndex}`,
 )
-const splitCTopLeftPortIds = SPLIT_TOP_YS.map((_, portIndex) => `c-tl-${portIndex}`)
+const splitCTopLeftPortIds = SPLIT_TOP_YS.map(
+  (_, portIndex) => `c-tl-${portIndex}`,
+)
 const splitCTopRightPortIds = SPLIT_TOP_YS.map(
   (_, portIndex) => `c-tr-${portIndex}`,
 )

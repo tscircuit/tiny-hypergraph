@@ -178,8 +178,7 @@ export class BusTraceInferencePlanner {
 
       if (
         !bestPreview ||
-        (previewHasRemainingCandidate &&
-          !bestPreviewHasRemainingCandidate) ||
+        (previewHasRemainingCandidate && !bestPreviewHasRemainingCandidate) ||
         (previewHasRemainingCandidate === bestPreviewHasRemainingCandidate &&
           (preview.previewCost ?? Number.POSITIVE_INFINITY) <
             (bestPreview.previewCost ?? Number.POSITIVE_INFINITY) -
@@ -254,7 +253,10 @@ export class BusTraceInferencePlanner {
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
     const routeId = this.options.busTraceOrder.traces[traceIndex]!.routeId
-    const guidePortIds = getGuidePortIds(centerPath, exactPrefix.sharedStepCount)
+    const guidePortIds = getGuidePortIds(
+      centerPath,
+      exactPrefix.sharedStepCount,
+    )
     const centerSegmentCount = Math.max(centerPath.length - 1, 0)
     const centerTraceLength = getPolylineLength(
       this.options.topology,
@@ -332,7 +334,10 @@ export class BusTraceInferencePlanner {
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
   ) {
     const routeId = this.options.busTraceOrder.traces[traceIndex]!.routeId
-    const guidePortIds = getGuidePortIds(centerPath, exactPrefix.sharedStepCount)
+    const guidePortIds = getGuidePortIds(
+      centerPath,
+      exactPrefix.sharedStepCount,
+    )
     const extension = this.searchTraceAlongside({
       traceIndex,
       prefixPreview: exactPrefix.preview,
@@ -415,7 +420,10 @@ export class BusTraceInferencePlanner {
           boundaryPortIdsByStep,
           usedPortOwners,
         )
-        if (!preview || !this.options.isTracePreviewUsable(preview, usedPortOwners)) {
+        if (
+          !preview ||
+          !this.options.isTracePreviewUsable(preview, usedPortOwners)
+        ) {
           continue
         }
 
@@ -589,7 +597,11 @@ export class BusTraceInferencePlanner {
   }): GreedyTraceExtensionResult | undefined {
     if (
       goalPortId === undefined ||
-      !isPortIncidentToRegion(this.options.topology, goalPortId, currentRegionId)
+      !isPortIncidentToRegion(
+        this.options.topology,
+        goalPortId,
+        currentRegionId,
+      )
     ) {
       return undefined
     }
@@ -666,7 +678,10 @@ export class BusTraceInferencePlanner {
     currentTraceLength: number
     maxTraceLength?: number
   }) {
-    const entryRegionId = this.getOppositeRegionId(currentPortId, currentRegionId)
+    const entryRegionId = this.getOppositeRegionId(
+      currentPortId,
+      currentRegionId,
+    )
     let bestCandidate: ClosestValidPortMove | undefined
 
     for (const boundaryPortId of this.options.topology.regionIncidentPorts[
@@ -680,11 +695,17 @@ export class BusTraceInferencePlanner {
         continue
       }
 
-      const nextRegionId = this.getOppositeRegionId(boundaryPortId, currentRegionId)
+      const nextRegionId = this.getOppositeRegionId(
+        boundaryPortId,
+        currentRegionId,
+      )
       if (
         nextRegionId === undefined ||
         nextRegionId === entryRegionId ||
-        this.options.isRegionReservedForDifferentBusNet(routeNetId, nextRegionId)
+        this.options.isRegionReservedForDifferentBusNet(
+          routeNetId,
+          nextRegionId,
+        )
       ) {
         continue
       }
@@ -709,7 +730,8 @@ export class BusTraceInferencePlanner {
       )
       if (
         maxTraceLength !== undefined &&
-        currentTraceLength + segmentLength > maxTraceLength + BUS_CANDIDATE_EPSILON
+        currentTraceLength + segmentLength >
+          maxTraceLength + BUS_CANDIDATE_EPSILON
       ) {
         continue
       }
@@ -792,7 +814,8 @@ export class BusTraceInferencePlanner {
 
   private getTracePreviewStateKeys(tracePreview: TracePreview) {
     const visitedStateKeys = new Set<number>()
-    let currentPortId = this.options.problem.routeStartPort[tracePreview.routeId]!
+    let currentPortId =
+      this.options.problem.routeStartPort[tracePreview.routeId]!
     let currentRegionId = this.options.getStartingNextRegionId(
       tracePreview.routeId,
       currentPortId,

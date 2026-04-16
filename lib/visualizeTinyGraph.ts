@@ -536,10 +536,7 @@ const pushRoutePortZPoints = (
   }
 }
 
-const isRouteEndpointPort = (
-  solver: TinyHyperGraphSolver,
-  portId: PortId,
-) => {
+const isRouteEndpointPort = (solver: TinyHyperGraphSolver, portId: PortId) => {
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
     if (
       solver.problem.routeStartPort[routeId] === portId ||
@@ -557,7 +554,10 @@ const pushUnassignedPortCircles = (
   graphics: Required<GraphicsObject>,
 ) => {
   for (let portId = 0; portId < solver.topology.portCount; portId++) {
-    if (solver.state.portAssignment[portId] >= 0 || isRouteEndpointPort(solver, portId)) {
+    if (
+      solver.state.portAssignment[portId] >= 0 ||
+      isRouteEndpointPort(solver, portId)
+    ) {
       continue
     }
 
