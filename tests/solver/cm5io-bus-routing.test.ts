@@ -261,7 +261,8 @@ test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0",
   const centerPath = getCenterCandidatePath(internal.lastExpandedCandidate)
   const lastPreview = internal.lastPreview
   const serializedPortIds = centerPath.map(
-    (candidate) => solver.topology.portMetadata?.[candidate.portId]?.serializedPortId,
+    (candidate) =>
+      solver.topology.portMetadata?.[candidate.portId]?.serializedPortId,
   )
 
   expect(serializedPortIds).toContain("ce365_pp13_z0::0")
@@ -278,19 +279,17 @@ test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0",
         .filter(
           (segment: any) =>
             segment.regionId === 11 &&
-            solver.topology.portMetadata?.[segment.fromPortId]?.serializedPortId?.startsWith(
-              "ce365_",
-            ),
+            solver.topology.portMetadata?.[
+              segment.fromPortId
+            ]?.serializedPortId?.startsWith("ce365_"),
         )
         .map((segment: any) => [
           connectionId,
           {
-            from:
-              solver.topology.portMetadata?.[segment.fromPortId]
-                ?.serializedPortId,
-            to:
-              solver.topology.portMetadata?.[segment.toPortId]
-                ?.serializedPortId,
+            from: solver.topology.portMetadata?.[segment.fromPortId]
+              ?.serializedPortId,
+            to: solver.topology.portMetadata?.[segment.toPortId]
+              ?.serializedPortId,
           },
         ])
     }),

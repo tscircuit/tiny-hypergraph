@@ -980,13 +980,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
             toPortId: endPortId,
           }
           if (
-            !this.isTraceSegmentUsable(
-              routeId,
-              completionSegment,
-              localOwners,
-            )
+            !this.isTraceSegmentUsable(routeId, completionSegment, localOwners)
           ) {
-            return [] as Array<{ segments: TraceSegment[]; previewCost: number }>
+            return [] as Array<{
+              segments: TraceSegment[]
+              previewCost: number
+            }>
           }
 
           segments.push(completionSegment)
