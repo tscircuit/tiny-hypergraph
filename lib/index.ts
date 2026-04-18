@@ -8,6 +8,9 @@ export {
 } from "./section-solver"
 export {
   TinyHyperGraphSectionPipelineSolver,
+  ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSectionMaskContext,
   type TinyHyperGraphSectionPipelineInput,

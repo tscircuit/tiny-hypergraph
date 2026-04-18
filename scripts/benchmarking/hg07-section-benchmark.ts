@@ -2,11 +2,18 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   TinyHyperGraphSectionSolver,
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphTopology,
 } from "../../lib/index"
+import {
+  createSectionMaskCandidatesForHotRegions,
+  type TinyHyperGraphSectionMaskCandidate,
+} from "../../lib/section-solver/sectionCandidateFamilies"
 
 type DatasetModule = Record<string, unknown> & {
   manifest: {
@@ -20,20 +27,9 @@ type DatasetModule = Record<string, unknown> & {
   }
 }
 
-export type CandidateFamily =
-  | "self-all"
-  | "self-touch"
-  | "onehop-all"
-  | "onehop-touch"
-  | "twohop-all"
-  | "twohop-touch"
+export type CandidateFamily = TinyHyperGraphSectionCandidateFamily
 
-type SectionMaskCandidate = {
-  label: string
-  family: CandidateFamily
-  regionIds: number[]
-  portSelectionRule: "touches-selected-region" | "all-incident-regions-selected"
-}
+type SectionMaskCandidate = TinyHyperGraphSectionMaskCandidate
 
 type SectionPassResult = {
   baselineMaxRegionCost: number
@@ -143,13 +139,23 @@ type SectionSolverBenchmarkOptions = {
 
 const datasetModule = datasetHg07 as DatasetModule
 
+const legacyCandidateFamilies: CandidateFamily[] = [
+  "self-all",
+  ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+]
+
+const defaultCandidateFamilies: CandidateFamily[] = [
+  ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+]
+
+const deepCandidateFamilies: CandidateFamily[] = [
+  ...defaultCandidateFamilies,
+  ...OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+]
+
 const allCandidateFamilies: CandidateFamily[] = [
   "self-all",
-  "self-touch",
-  "onehop-all",
-  "onehop-touch",
-  "twohop-all",
-  "twohop-touch",
+  ...deepCandidateFamilies,
 ]
 
 export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
@@ -157,7 +163,7 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
     sampleCount: 40,
     maxPasses: 2,
     maxHotRegions: 12,
-    candidateFamilies: allCandidateFamilies,
+    candidateFamilies: legacyCandidateFamilies,
     improvementEpsilon: 1e-9,
     sectionSolver: {
       distanceToCost: 0.05,
@@ -172,14 +178,6 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
     },
   }
 
-const defaultCandidateFamilies: CandidateFamily[] = [
-  "self-touch",
-  "onehop-all",
-  "onehop-touch",
-  "twohop-all",
-  "twohop-touch",
-]
-
 export const defaultSectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
   {
     ...legacySectionSolverBenchmarkConfig,
@@ -193,23 +191,6 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
     (maxCost, regionCache) => Math.max(maxCost, regionCache.existingRegionCost),
     0,
   )
-
-const getAdjacentRegionIds = (
-  topology: TinyHyperGraphTopology,
-  seedRegionIds: number[],
-) => {
-  const adjacentRegionIds = new Set(seedRegionIds)
-
-  for (const seedRegionId of seedRegionIds) {
-    for (const portId of topology.regionIncidentPorts[seedRegionId] ?? []) {
-      for (const regionId of topology.incidentPortRegion[portId] ?? []) {
-        adjacentRegionIds.add(regionId)
-      }
-    }
-  }
-
-  return [...adjacentRegionIds]
-}
 
 const createPortSectionMaskForRegionIds = (
   topology: TinyHyperGraphTopology,
@@ -266,57 +247,11 @@ const getSectionMaskCandidates = (
     .slice(0, config.maxHotRegions)
     .map(({ regionId }) => regionId)
 
-  const candidates: SectionMaskCandidate[] = []
-
-  for (const hotRegionId of hotRegionIds) {
-    const oneHopRegionIds = getAdjacentRegionIds(topology, [hotRegionId])
-    const twoHopRegionIds = getAdjacentRegionIds(topology, oneHopRegionIds)
-
-    const candidateByFamily: Record<CandidateFamily, SectionMaskCandidate> = {
-      "self-all": {
-        label: `hot-${hotRegionId}-self-all`,
-        family: "self-all",
-        regionIds: [hotRegionId],
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "self-touch": {
-        label: `hot-${hotRegionId}-self-touch`,
-        family: "self-touch",
-        regionIds: [hotRegionId],
-        portSelectionRule: "touches-selected-region",
-      },
-      "onehop-all": {
-        label: `hot-${hotRegionId}-onehop-all`,
-        family: "onehop-all",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "onehop-touch": {
-        label: `hot-${hotRegionId}-onehop-touch`,
-        family: "onehop-touch",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-      "twohop-all": {
-        label: `hot-${hotRegionId}-twohop-all`,
-        family: "twohop-all",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "twohop-touch": {
-        label: `hot-${hotRegionId}-twohop-touch`,
-        family: "twohop-touch",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-    }
-
-    for (const family of config.candidateFamilies) {
-      candidates.push(candidateByFamily[family])
-    }
-  }
-
-  return candidates
+  return createSectionMaskCandidatesForHotRegions(
+    topology,
+    hotRegionIds,
+    config.candidateFamilies,
+  )
 }
 
 type MutableFamilyTiming = {
@@ -338,68 +273,34 @@ type MutableProfilingState = {
   familyTimings: Record<CandidateFamily, MutableFamilyTiming>
 }
 
+const createEmptyMutableFamilyTiming = (): MutableFamilyTiming => ({
+  attempts: 0,
+  wins: 0,
+  totalInitMs: 0,
+  totalSolveMs: 0,
+  totalMs: 0,
+  totalActiveRouteCount: 0,
+  totalRipsUsed: 0,
+})
+
+const createFamilyTimingRecord = (): Record<
+  CandidateFamily,
+  MutableFamilyTiming
+> =>
+  Object.fromEntries(
+    allCandidateFamilies.map((family) => [
+      family,
+      createEmptyMutableFamilyTiming(),
+    ]),
+  ) as Record<CandidateFamily, MutableFamilyTiming>
+
 const createProfilingState = (): MutableProfilingState => ({
   totalSolveGraphMs: 0,
   totalReplayLoadMs: 0,
   totalCandidateInitMs: 0,
   totalCandidateSolveMs: 0,
   totalCandidateCount: 0,
-  familyTimings: {
-    "self-all": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-    "self-touch": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-    "onehop-all": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-    "onehop-touch": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-    "twohop-all": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-    "twohop-touch": {
-      attempts: 0,
-      wins: 0,
-      totalInitMs: 0,
-      totalSolveMs: 0,
-      totalMs: 0,
-      totalActiveRouteCount: 0,
-      totalRipsUsed: 0,
-    },
-  },
+  familyTimings: createFamilyTimingRecord(),
 })
 
 const applySectionSolverConfig = (

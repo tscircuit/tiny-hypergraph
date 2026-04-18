@@ -8,8 +8,12 @@ import { mkdir, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
+  ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
+  type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSolver,
 } from "../../lib/index"
 
@@ -56,6 +60,8 @@ Run the hg07 section-pipeline benchmark and write per-sample artifacts under ./r
 Options:
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
+  --families LIST Override candidate families. Use a preset (default, default+deep, all)
+                  or a comma-separated list such as self-touch,onehop-all,twohop-touch.
   --help          Show this help text.
 
 Examples:
@@ -63,6 +69,7 @@ Examples:
   ./benchmark.sh --limit 20
   ./benchmark.sh --sample 2
   ./benchmark.sh --sample sample002
+  ./benchmark.sh --limit 40 --families default+deep
 
 Outputs:
   - Incremental progress lines always include duration=... for hillclimbing workflows.
@@ -97,9 +104,58 @@ const formatSampleName = (value: string): string => {
   return usageError(`Invalid --sample value: ${value}`)
 }
 
+const CANDIDATE_FAMILY_PRESETS: Record<
+  string,
+  TinyHyperGraphSectionCandidateFamily[]
+> = {
+  default: [...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES],
+  "default+deep": [
+    ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+    ...OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  ],
+  all: [...ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES],
+}
+
+const ALL_SUPPORTED_CANDIDATE_FAMILIES = new Set(
+  ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+)
+
+const parseCandidateFamilies = (
+  rawValue: string,
+): TinyHyperGraphSectionCandidateFamily[] => {
+  const preset = CANDIDATE_FAMILY_PRESETS[rawValue]
+
+  if (preset) {
+    return [...preset]
+  }
+
+  const candidateFamilies = rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+  if (candidateFamilies.length === 0) {
+    usageError("Missing value for --families")
+  }
+
+  const invalidFamilies = candidateFamilies.filter(
+    (family) =>
+      !ALL_SUPPORTED_CANDIDATE_FAMILIES.has(
+        family as TinyHyperGraphSectionCandidateFamily,
+      ),
+  )
+
+  if (invalidFamilies.length > 0) {
+    usageError(`Invalid --families value: ${invalidFamilies.join(", ")}`)
+  }
+
+  return candidateFamilies as TinyHyperGraphSectionCandidateFamily[]
+}
+
 const parseArgs = () => {
   let limit: number | null = null
   let sampleName: string | null = null
+  let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -133,6 +189,17 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--families") {
+      const rawValue = process.argv[index + 1]
+      if (!rawValue) {
+        usageError("Missing value for --families")
+      }
+
+      candidateFamilies = parseCandidateFamilies(rawValue)
+      index += 1
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -142,7 +209,7 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName }
+  return { limit, sampleName, candidateFamilies }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -270,7 +337,7 @@ const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
 const main = async () => {
-  const { limit, sampleName } = parseArgs()
+  const { limit, sampleName, candidateFamilies } = parseArgs()
   const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
@@ -280,7 +347,7 @@ const main = async () => {
   const results: BenchmarkSampleResult[] = []
 
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName}`,
+    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} families=${candidateFamilies?.join(",") ?? "default"}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -292,6 +359,9 @@ const main = async () => {
     try {
       const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
         serializedHyperGraph,
+        sectionSearchConfig: candidateFamilies
+          ? { candidateFamilies }
+          : undefined,
       })
       pipelineSolver.solve()
 
@@ -377,6 +447,9 @@ const main = async () => {
       try {
         const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
           serializedHyperGraph,
+          sectionSearchConfig: candidateFamilies
+            ? { candidateFamilies }
+            : undefined,
         })
         const png = await getSnapshotPng(pipelineSolver)
         await writeFile(snapshotPath, png)
