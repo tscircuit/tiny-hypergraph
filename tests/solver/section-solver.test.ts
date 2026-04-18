@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
@@ -252,5 +254,27 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
+  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})
+
+test("section pipeline only uses threehop and fourhop families when explicitly enabled", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    sectionSolverOptions: {
+      MAX_HOT_REGIONS: 1,
+    },
+    sectionSearchConfig: {
+      candidateFamilies: [
+        ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+        ...OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+      ],
+    },
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(9)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })

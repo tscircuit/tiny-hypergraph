@@ -1,3 +1,7 @@
+import {
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+} from "../../lib/index"
 import type {
   CandidateFamily,
   SectionSolverBenchmarkConfig,
@@ -17,11 +21,8 @@ type BenchmarkVariant = {
 
 const allFamilies: CandidateFamily[] = [
   "self-all",
-  "self-touch",
-  "onehop-all",
-  "onehop-touch",
-  "twohop-all",
-  "twohop-touch",
+  ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  ...OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
 ]
 
 const variants: BenchmarkVariant[] = [

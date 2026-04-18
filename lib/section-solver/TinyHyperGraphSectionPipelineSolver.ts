@@ -12,34 +12,19 @@ import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import {
+  createSectionMaskCandidatesForHotRegions,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  type TinyHyperGraphSectionCandidateFamily,
+  type TinyHyperGraphSectionMaskCandidate,
+} from "./sectionCandidateFamilies"
 
-/**
- * Candidate section families used by the automatic section-mask search.
- *
- * Examples:
- * - `self-touch`: ports are included when they touch the single hottest region.
- * - `onehop-all`: ports are included only when all of their incident regions are
- *   inside the hottest region plus its immediate neighbors.
- * - `twohop-touch`: ports are included when they touch any region in the
- *   two-hop neighborhood around the hottest region.
- */
-export type TinyHyperGraphSectionCandidateFamily =
-  | "self-touch"
-  | "onehop-all"
-  | "onehop-touch"
-  | "twohop-all"
-  | "twohop-touch"
-
-type SectionMaskCandidate = {
-  /** Human-readable identifier used in logs, stats, and benchmark output. */
-  label: string
-  /** Candidate generation family that produced this section mask. */
-  family: TinyHyperGraphSectionCandidateFamily
-  /** Regions included in the candidate section before conversion to a port mask. */
-  regionIds: RegionId[]
-  /** Rule for deciding whether a port belongs in the section mask. */
-  portSelectionRule: "touches-selected-region" | "all-incident-regions-selected"
-}
+export {
+  ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  type TinyHyperGraphSectionCandidateFamily,
+} from "./sectionCandidateFamilies"
 
 type AutomaticSectionSearchResult = {
   portSectionMask: Int8Array
@@ -71,13 +56,6 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
 }
 
-const DEFAULT_CANDIDATE_FAMILIES: TinyHyperGraphSectionCandidateFamily[] = [
-  "self-touch",
-  "onehop-all",
-  "onehop-touch",
-  "twohop-all",
-  "twohop-touch",
-]
 const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
@@ -100,23 +78,6 @@ const getSerializedOutputMaxRegionCost = (
   )
 
   return getMaxRegionCost(replayedSolver.baselineSolver)
-}
-
-const getAdjacentRegionIds = (
-  topology: TinyHyperGraphTopology,
-  seedRegionIds: RegionId[],
-) => {
-  const adjacentRegionIds = new Set(seedRegionIds)
-
-  for (const seedRegionId of seedRegionIds) {
-    for (const portId of topology.regionIncidentPorts[seedRegionId] ?? []) {
-      for (const regionId of topology.incidentPortRegion[portId] ?? []) {
-        adjacentRegionIds.add(regionId)
-      }
-    }
-  }
-
-  return [...adjacentRegionIds]
 }
 
 const createPortSectionMaskForRegionIds = (
@@ -164,7 +125,7 @@ const getSectionMaskCandidates = (
   topology: TinyHyperGraphTopology,
   maxHotRegions: number,
   candidateFamilies: TinyHyperGraphSectionCandidateFamily[],
-): SectionMaskCandidate[] => {
+): TinyHyperGraphSectionMaskCandidate[] => {
   const hotRegionIds = solvedSolver.state.regionIntersectionCaches
     .map((regionIntersectionCache, regionId) => ({
       regionId,
@@ -175,54 +136,11 @@ const getSectionMaskCandidates = (
     .slice(0, maxHotRegions)
     .map(({ regionId }) => regionId)
 
-  const candidates: SectionMaskCandidate[] = []
-
-  for (const hotRegionId of hotRegionIds) {
-    const oneHopRegionIds = getAdjacentRegionIds(topology, [hotRegionId])
-    const twoHopRegionIds = getAdjacentRegionIds(topology, oneHopRegionIds)
-
-    const candidateByFamily: Record<
-      TinyHyperGraphSectionCandidateFamily,
-      SectionMaskCandidate
-    > = {
-      "self-touch": {
-        label: `hot-${hotRegionId}-self-touch`,
-        family: "self-touch",
-        regionIds: [hotRegionId],
-        portSelectionRule: "touches-selected-region",
-      },
-      "onehop-all": {
-        label: `hot-${hotRegionId}-onehop-all`,
-        family: "onehop-all",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "onehop-touch": {
-        label: `hot-${hotRegionId}-onehop-touch`,
-        family: "onehop-touch",
-        regionIds: oneHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-      "twohop-all": {
-        label: `hot-${hotRegionId}-twohop-all`,
-        family: "twohop-all",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "all-incident-regions-selected",
-      },
-      "twohop-touch": {
-        label: `hot-${hotRegionId}-twohop-touch`,
-        family: "twohop-touch",
-        regionIds: twoHopRegionIds,
-        portSelectionRule: "touches-selected-region",
-      },
-    }
-
-    for (const family of candidateFamilies) {
-      candidates.push(candidateByFamily[family])
-    }
-  }
-
-  return candidates
+  return createSectionMaskCandidatesForHotRegions(
+    topology,
+    hotRegionIds,
+    candidateFamilies,
+  )
 }
 
 const findBestAutomaticSectionMask = (
@@ -267,7 +185,9 @@ const findBestAutomaticSectionMask = (
     solvedSolver,
     topology,
     maxHotRegions,
-    searchConfig?.candidateFamilies ?? DEFAULT_CANDIDATE_FAMILIES,
+    searchConfig?.candidateFamilies ?? [
+      ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+    ],
   )) {
     const candidateProblem = createProblemWithPortSectionMask(
       problem,
