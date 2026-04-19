@@ -770,6 +770,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.stats = {
       ...this.stats,
       activeRouteCount: this.activeRouteIds.length,
+      currentRipCost: this.getCurrentRipCost(),
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
@@ -793,6 +794,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       return
     }
 
+    const currentRipCost = this.getCurrentRipCost()
+
     for (
       let mutableRegionIndex = 0;
       mutableRegionIndex < this.mutableRegionIds.length;
@@ -800,14 +803,14 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     ) {
       const regionId = this.mutableRegionIds[mutableRegionIndex]!
       state.regionCongestionCost[regionId] +=
-        mutableRegionCosts[mutableRegionIndex]! *
-        this.RIP_CONGESTION_REGION_COST_FACTOR
+        mutableRegionCosts[mutableRegionIndex]! * currentRipCost
     }
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
     this.stats = {
       ...this.stats,
+      currentRipCost,
       ripCount: state.ripCount,
       reripRegionCount: regionIdsOverCostThreshold.length,
     }
@@ -815,18 +818,19 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override onOutOfCandidates() {
     const { state } = this
+    const currentRipCost = this.getCurrentRipCost()
 
     for (const regionId of this.mutableRegionIds) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
-      state.regionCongestionCost[regionId] +=
-        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+      state.regionCongestionCost[regionId] += regionCost * currentRipCost
     }
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
     this.stats = {
       ...this.stats,
+      currentRipCost,
       ripCount: state.ripCount,
       reripReason: "out_of_candidates",
     }
@@ -867,6 +871,9 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
+  RIP_COST_START = 0.1
+  RIP_COST_END = 0.1
+  RIPS_UNTIL_RIP_COST_MAX = 0
   MAX_RIPS = Number.POSITIVE_INFINITY
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = 10
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = 10
@@ -953,6 +960,12 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       sectionBaselineMaxRegionCost: this.sectionBaselineSummary.maxRegionCost,
       sectionBaselineTotalRegionCost:
         this.sectionBaselineSummary.totalRegionCost,
+      effectiveRipCostStart: this.RIP_COST_START,
+      effectiveRipCostEnd: this.RIP_COST_END,
+      effectiveRipsUntilRipCostMax:
+        this.RIPS_UNTIL_RIP_COST_MAX > 0
+          ? this.RIPS_UNTIL_RIP_COST_MAX
+          : this.RIP_THRESHOLD_RAMP_ATTEMPTS,
       effectiveRipThresholdStart: this.RIP_THRESHOLD_START,
       effectiveRipThresholdEnd: this.RIP_THRESHOLD_END,
       effectiveMaxRips: this.MAX_RIPS,

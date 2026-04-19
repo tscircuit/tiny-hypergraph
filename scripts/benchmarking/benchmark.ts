@@ -14,6 +14,7 @@ import {
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionCandidateFamily,
+  type TinyHyperGraphSectionSolverOptions,
   type TinyHyperGraphSolver,
 } from "../../lib/index"
 
@@ -62,6 +63,13 @@ Options:
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
   --families LIST Override candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
+  --rip-cost-start N
+                  Set the section solver rerip cost factor used on the first rip.
+  --rip-cost-end N
+                  Set the rerip cost factor reached after enough rips.
+  --rips-until-rip-cost-max N
+                  Set how many rips it takes to reach --rip-cost-end. Use 0 to
+                  reuse the solver's threshold-ramp horizon.
   --help          Show this help text.
 
 Examples:
@@ -70,6 +78,7 @@ Examples:
   ./benchmark.sh --sample 2
   ./benchmark.sh --sample sample002
   ./benchmark.sh --limit 40 --families default+deep
+  ./benchmark.sh --limit 40 --rip-cost-start 0.05 --rip-cost-end 0.3 --rips-until-rip-cost-max 8
 
 Outputs:
   - Incremental progress lines always include duration=... for hillclimbing workflows.
@@ -156,6 +165,7 @@ const parseArgs = () => {
   let limit: number | null = null
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
+  const sectionSolverOptions: Partial<TinyHyperGraphSectionSolverOptions> = {}
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -200,6 +210,47 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--rip-cost-start") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(`Invalid --rip-cost-start value: ${rawValue ?? "<missing>"}`)
+      }
+
+      sectionSolverOptions.RIP_COST_START = parsedValue
+      index += 1
+      continue
+    }
+
+    if (arg === "--rip-cost-end") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(`Invalid --rip-cost-end value: ${rawValue ?? "<missing>"}`)
+      }
+
+      sectionSolverOptions.RIP_COST_END = parsedValue
+      index += 1
+      continue
+    }
+
+    if (arg === "--rips-until-rip-cost-max") {
+      const rawValue = process.argv[index + 1]
+      const parsedValue = Number(rawValue)
+
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+        usageError(
+          `Invalid --rips-until-rip-cost-max value: ${rawValue ?? "<missing>"}`,
+        )
+      }
+
+      sectionSolverOptions.RIPS_UNTIL_RIP_COST_MAX = Math.floor(parsedValue)
+      index += 1
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -209,7 +260,15 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies }
+  return {
+    limit,
+    sampleName,
+    candidateFamilies,
+    sectionSolverOptions:
+      Object.keys(sectionSolverOptions).length > 0
+        ? sectionSolverOptions
+        : undefined,
+  }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -336,8 +395,24 @@ const getSnapshotPng = async (
 const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
+const formatSectionSolverOptions = (
+  sectionSolverOptions?: Partial<TinyHyperGraphSectionSolverOptions>,
+) => {
+  if (!sectionSolverOptions) {
+    return "default"
+  }
+
+  const ripCostStart = sectionSolverOptions.RIP_COST_START ?? "default"
+  const ripCostEnd = sectionSolverOptions.RIP_COST_END ?? "default"
+  const ripsUntilRipCostMax =
+    sectionSolverOptions.RIPS_UNTIL_RIP_COST_MAX ?? "default"
+
+  return `ripCostStart=${ripCostStart},ripCostEnd=${ripCostEnd},ripsUntilRipCostMax=${ripsUntilRipCostMax}`
+}
+
 const main = async () => {
-  const { limit, sampleName, candidateFamilies } = parseArgs()
+  const { limit, sampleName, candidateFamilies, sectionSolverOptions } =
+    parseArgs()
   const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
@@ -347,7 +422,7 @@ const main = async () => {
   const results: BenchmarkSampleResult[] = []
 
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} families=${candidateFamilies?.join(",") ?? "default"} sectionSolver=${formatSectionSolverOptions(sectionSolverOptions)}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -359,6 +434,8 @@ const main = async () => {
     try {
       const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
         serializedHyperGraph,
+        solveGraphOptions: sectionSolverOptions,
+        sectionSolverOptions,
         sectionSearchConfig: candidateFamilies
           ? { candidateFamilies }
           : undefined,
@@ -447,6 +524,8 @@ const main = async () => {
       try {
         const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
           serializedHyperGraph,
+          solveGraphOptions: sectionSolverOptions,
+          sectionSolverOptions,
           sectionSearchConfig: candidateFamilies
             ? { candidateFamilies }
             : undefined,

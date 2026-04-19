@@ -139,7 +139,9 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
       RIP_THRESHOLD_START: 0.11,
       RIP_THRESHOLD_END: 0.22,
       RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
-      RIP_CONGESTION_REGION_COST_FACTOR: 0.33,
+      RIP_COST_START: 0.14,
+      RIP_COST_END: 0.44,
+      RIPS_UNTIL_RIP_COST_MAX: 6,
       MAX_ITERATIONS: 4567,
       MAX_RIPS: 80,
       MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 3,
@@ -160,9 +162,12 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     sectionSolver.sectionBaselineSummary.maxRegionCost,
   )
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(9)
-  expect(sectionSolver.sectionSolver?.RIP_CONGESTION_REGION_COST_FACTOR).toBe(
-    0.33,
-  )
+  expect(sectionSolver.RIP_COST_START).toBe(0.14)
+  expect(sectionSolver.sectionSolver?.RIP_COST_START).toBe(0.14)
+  expect(sectionSolver.RIP_COST_END).toBe(0.44)
+  expect(sectionSolver.sectionSolver?.RIP_COST_END).toBe(0.44)
+  expect(sectionSolver.RIPS_UNTIL_RIP_COST_MAX).toBe(6)
+  expect(sectionSolver.sectionSolver?.RIPS_UNTIL_RIP_COST_MAX).toBe(6)
   expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
   expect(sectionSolver.STATIC_REACHABILITY_PRECHECK).toBe(false)
   expect(sectionSolver.sectionSolver?.STATIC_REACHABILITY_PRECHECK).toBe(false)

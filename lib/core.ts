@@ -173,6 +173,10 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
+  RIP_COST_START?: number
+  RIP_COST_END?: number
+  RIPS_UNTIL_RIP_COST_MAX?: number
+  /** @deprecated Use RIP_COST_START / RIP_COST_END instead. */
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
@@ -185,11 +189,59 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
+  RIP_COST_START: number
+  RIP_COST_END: number
+  RIPS_UNTIL_RIP_COST_MAX: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
+}
+
+const DEFAULT_RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+const DEFAULT_RIP_COST_START = DEFAULT_RIP_CONGESTION_REGION_COST_FACTOR
+const DEFAULT_RIP_COST_END = DEFAULT_RIP_CONGESTION_REGION_COST_FACTOR
+const DEFAULT_RIPS_UNTIL_RIP_COST_MAX = 0
+
+const getRampedValue = (
+  start: number,
+  end: number,
+  currentCount: number,
+  countAtMax: number,
+) => {
+  if (start === end) {
+    return start
+  }
+
+  const progress = countAtMax <= 0 ? 1 : Math.min(1, currentCount / countAtMax)
+
+  return start + (end - start) * progress
+}
+
+const getConfiguredRipCostRange = (
+  solver: Pick<
+    TinyHyperGraphSolverOptionTarget,
+    "RIP_COST_START" | "RIP_COST_END" | "RIP_CONGESTION_REGION_COST_FACTOR"
+  >,
+) => {
+  const usingLegacyConstantRipCost =
+    solver.RIP_COST_START === DEFAULT_RIP_COST_START &&
+    solver.RIP_COST_END === DEFAULT_RIP_COST_END &&
+    solver.RIP_CONGESTION_REGION_COST_FACTOR !==
+      DEFAULT_RIP_CONGESTION_REGION_COST_FACTOR
+
+  if (usingLegacyConstantRipCost) {
+    return {
+      start: solver.RIP_CONGESTION_REGION_COST_FACTOR,
+      end: solver.RIP_CONGESTION_REGION_COST_FACTOR,
+    }
+  }
+
+  return {
+    start: solver.RIP_COST_START,
+    end: solver.RIP_COST_END,
+  }
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -215,6 +267,21 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.RIP_CONGESTION_REGION_COST_FACTOR !== undefined) {
     solver.RIP_CONGESTION_REGION_COST_FACTOR =
       options.RIP_CONGESTION_REGION_COST_FACTOR
+    if (options.RIP_COST_START === undefined) {
+      solver.RIP_COST_START = options.RIP_CONGESTION_REGION_COST_FACTOR
+    }
+    if (options.RIP_COST_END === undefined) {
+      solver.RIP_COST_END = options.RIP_CONGESTION_REGION_COST_FACTOR
+    }
+  }
+  if (options.RIP_COST_START !== undefined) {
+    solver.RIP_COST_START = options.RIP_COST_START
+  }
+  if (options.RIP_COST_END !== undefined) {
+    solver.RIP_COST_END = options.RIP_COST_END
+  }
+  if (options.RIPS_UNTIL_RIP_COST_MAX !== undefined) {
+    solver.RIPS_UNTIL_RIP_COST_MAX = options.RIPS_UNTIL_RIP_COST_MAX
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -234,11 +301,23 @@ export const applyTinyHyperGraphSolverOptions = (
 export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
+  ...(() => {
+    const { start, end } = getConfiguredRipCostRange(solver)
+    return {
+      RIP_COST_START: start,
+      RIP_COST_END: end,
+      ...(start === end
+        ? {
+            RIP_CONGESTION_REGION_COST_FACTOR: start,
+          }
+        : {}),
+    }
+  })(),
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
-  RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
+  RIPS_UNTIL_RIP_COST_MAX: solver.RIPS_UNTIL_RIP_COST_MAX,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -275,7 +354,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
 
-  RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+  RIP_COST_START = DEFAULT_RIP_COST_START
+  RIP_COST_END = DEFAULT_RIP_COST_END
+  RIPS_UNTIL_RIP_COST_MAX = DEFAULT_RIPS_UNTIL_RIP_COST_MAX
+
+  RIP_CONGESTION_REGION_COST_FACTOR = DEFAULT_RIP_CONGESTION_REGION_COST_FACTOR
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -901,6 +984,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  protected getCurrentRipCost() {
+    const { start, end } = getConfiguredRipCostRange(this)
+    const ripCostRampAttempts =
+      this.RIPS_UNTIL_RIP_COST_MAX > 0
+        ? this.RIPS_UNTIL_RIP_COST_MAX
+        : this.RIP_THRESHOLD_RAMP_ATTEMPTS
+
+    return getRampedValue(start, end, this.state.ripCount, ripCostRampAttempts)
+  }
+
   onAllRoutesRouted() {
     const { topology, state } = this
     const ripThresholdProgress =
@@ -910,6 +1003,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentRipThreshold =
       this.RIP_THRESHOLD_START +
       (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
+    const currentRipCost = this.getCurrentRipCost()
 
     const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
@@ -928,6 +1022,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     this.stats = {
       ...this.stats,
+      currentRipCost,
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
@@ -944,18 +1039,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       state.regionCongestionCost[regionId] +=
-        regionCosts[regionId] * this.RIP_CONGESTION_REGION_COST_FACTOR
+        regionCosts[regionId] * currentRipCost
     }
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
     this.stats = {
       ...this.stats,
+      currentRipCost,
       ripCount: state.ripCount,
       maxRegionCostBeforeRip: maxRegionCost,
       reripRegionCount: regionIdsOverCostThreshold.length,
     }
     this.logRipEvent("hot_regions", maxRegionCost, {
+      currentRipCost,
       hotRegionCount: regionIdsOverCostThreshold.length,
       currentRipThreshold,
     })
@@ -965,24 +1062,26 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
+    const currentRipCost = this.getCurrentRipCost()
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
-      state.regionCongestionCost[regionId] +=
-        regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
+      state.regionCongestionCost[regionId] += regionCost * currentRipCost
     }
 
     state.ripCount += 1
     this.resetRoutingStateForRerip()
     this.stats = {
       ...this.stats,
+      currentRipCost,
       ripCount: state.ripCount,
       maxRegionCost: maxRegionCostBeforeRip,
       maxRegionCostBeforeRip,
       reripReason: "out_of_candidates",
     }
     this.logRipEvent("out_of_candidates", maxRegionCostBeforeRip, {
+      currentRipCost,
       ...(currentRouteId === undefined
         ? {}
         : {

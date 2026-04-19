@@ -80,6 +80,9 @@ export type SectionSolverBenchmarkConfig = {
     ripThresholdStart: number
     ripThresholdEnd: number
     ripThresholdRampAttempts: number
+    ripCostStart: number
+    ripCostEnd: number
+    ripsUntilRipCostMax: number
     maxRips: number
     maxRipsWithoutMaxRegionCostImprovement: number
     extraRipsAfterBeatingBaselineMaxRegionCost: number
@@ -170,6 +173,9 @@ export const legacySectionSolverBenchmarkConfig: SectionSolverBenchmarkConfig =
       ripThresholdStart: 0.05,
       ripThresholdEnd: 0.8,
       ripThresholdRampAttempts: 50,
+      ripCostStart: 0.1,
+      ripCostEnd: 0.16,
+      ripsUntilRipCostMax: 4,
       maxRips: Number.POSITIVE_INFINITY,
       maxRipsWithoutMaxRegionCostImprovement: Number.POSITIVE_INFINITY,
       extraRipsAfterBeatingBaselineMaxRegionCost: Number.POSITIVE_INFINITY,
@@ -312,13 +318,17 @@ const applySectionSolverConfig = (
   sectionSolver.RIP_THRESHOLD_END = config.sectionSolver.ripThresholdEnd
   sectionSolver.RIP_THRESHOLD_RAMP_ATTEMPTS =
     config.sectionSolver.ripThresholdRampAttempts
+  sectionSolver.RIP_CONGESTION_REGION_COST_FACTOR =
+    config.sectionSolver.ripCongestionRegionCostFactor
+  sectionSolver.RIP_COST_START = config.sectionSolver.ripCostStart
+  sectionSolver.RIP_COST_END = config.sectionSolver.ripCostEnd
+  sectionSolver.RIPS_UNTIL_RIP_COST_MAX =
+    config.sectionSolver.ripsUntilRipCostMax
   sectionSolver.MAX_RIPS = config.sectionSolver.maxRips
   sectionSolver.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT =
     config.sectionSolver.maxRipsWithoutMaxRegionCostImprovement
   sectionSolver.EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST =
     config.sectionSolver.extraRipsAfterBeatingBaselineMaxRegionCost
-  sectionSolver.RIP_CONGESTION_REGION_COST_FACTOR =
-    config.sectionSolver.ripCongestionRegionCostFactor
   sectionSolver.MAX_ITERATIONS = config.sectionSolver.maxIterations
 }
 
