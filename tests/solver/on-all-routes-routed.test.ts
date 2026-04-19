@@ -124,6 +124,28 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.state.goalPortId).toBe(-1)
 })
 
+test("completed routing ramps rerip congestion cost between rip cost start and end", () => {
+  const solver = createTestSolver({
+    RIP_COST_START: 0.1,
+    RIP_COST_END: 0.5,
+    RIPS_UNTIL_RIP_COST_MAX: 4,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.ripCount = 2
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(false)
+  expect(solver.state.ripCount).toBe(3)
+  expect(solver.stats.currentRipCost).toBeCloseTo(0.3)
+  expect(solver.state.regionCongestionCost[0]).toBeCloseTo(0.15)
+  expect(solver.state.regionCongestionCost[1]).toBeCloseTo(0.03)
+})
+
 test("completed routing is accepted once all region costs are under the threshold", () => {
   const solver = createTestSolver()
 
@@ -139,7 +161,7 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
 })
 
-test("constructor options override snake-case hyperparameters before setup", () => {
+test("legacy rip congestion factor still maps to a constant rerip cost", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
     RIP_THRESHOLD_START: 0.12,
@@ -154,6 +176,20 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_THRESHOLD_END).toBe(0.34)
   expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
+  expect(solver.RIP_COST_START).toBe(0.45)
+  expect(solver.RIP_COST_END).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
+})
+
+test("constructor options accept explicit rip cost ramp hyperparameters", () => {
+  const solver = createTestSolver({
+    RIP_COST_START: 0.05,
+    RIP_COST_END: 0.35,
+    RIPS_UNTIL_RIP_COST_MAX: 9,
+  })
+
+  expect(solver.RIP_COST_START).toBe(0.05)
+  expect(solver.RIP_COST_END).toBe(0.35)
+  expect(solver.RIPS_UNTIL_RIP_COST_MAX).toBe(9)
 })
