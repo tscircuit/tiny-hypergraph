@@ -104,6 +104,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private previewSameLayerIntersectionCount = 0
   private previewCrossingLayerIntersectionCount = 0
   private previewTotalRegionCost = 0
+  private preferExplicitStartRegions = false
+  private hasResolvedExplicitStartRegionPreference = false
   private lastExpandedCandidate?: BusCenterCandidate
   private lastPreview?: BusPreview
   private lastNeighborCount = 0
@@ -168,6 +170,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     if (options?.CENTER_PORT_OPTIONS_PER_EDGE !== undefined) {
       this.CENTER_PORT_OPTIONS_PER_EDGE = options.CENTER_PORT_OPTIONS_PER_EDGE
     }
+    if (options?.BUS_TRACE_LENGTH_MARGIN !== undefined) {
+      this.BUS_TRACE_LENGTH_MARGIN = options.BUS_TRACE_LENGTH_MARGIN
+    }
     this.queueAllCandidates = options?.QUEUE_ALL_CANDIDATES ?? false
     this.showUnassignedPortsInVisualization =
       options?.VISUALIZE_UNASSIGNED_PORTS ?? false
@@ -190,6 +195,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         this.TRACE_ALONGSIDE_SEARCH_OPTION_LIMIT,
       TRACE_ALONGSIDE_LANE_WEIGHT: this.TRACE_ALONGSIDE_LANE_WEIGHT,
       TRACE_ALONGSIDE_REGRESSION_WEIGHT: this.TRACE_ALONGSIDE_REGRESSION_WEIGHT,
+      BUS_TRACE_LENGTH_MARGIN: this.BUS_TRACE_LENGTH_MARGIN,
       buildPrefixTracePreview: (...args) =>
         this.buildPrefixTracePreview(...args),
       getStartingNextRegionId: (...args) =>
@@ -244,6 +250,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     this.clearPreviewWorkingState()
     this.resetCandidateBestCosts()
     this.state.candidateQueue = new MinHeap([], compareBusCandidatesByF)
+    this.resolveExplicitStartRegionPreference()
 
     const startPortId = this.problem.routeStartPort[this.centerRouteId]!
     const startNextRegionId = this.getStartingNextRegionId(
@@ -288,6 +295,21 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
     this.state.candidateQueue.queue(startCandidate)
     this.updateBusStats()
+  }
+
+  override getStartingNextRegionId(routeId: RouteId, startingPortId: PortId) {
+    if (this.preferExplicitStartRegions) {
+      const explicitStartRegionId = this.getSerializedRegionIdFromRouteMetadata(
+        routeId,
+        "start",
+      )
+
+      if (explicitStartRegionId !== undefined) {
+        return explicitStartRegionId
+      }
+    }
+
+    return super.getStartingNextRegionId(routeId, startingPortId)
   }
 
   override _step() {
@@ -1327,7 +1349,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         return (
           tracePreview.segments.length <= centerSegmentCount &&
           this.getTracePreviewLength(tracePreview) <=
-            centerTraceLength + BUS_CANDIDATE_EPSILON
+            centerTraceLength +
+              this.BUS_TRACE_LENGTH_MARGIN +
+              BUS_CANDIDATE_EPSILON
         )
       })
     }
@@ -1345,7 +1369,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       if (
         tracePreview.segments.length > centerSegmentCount ||
         this.getTracePreviewLength(tracePreview) >
-          centerTraceLength + BUS_CANDIDATE_EPSILON
+          centerTraceLength +
+            this.BUS_TRACE_LENGTH_MARGIN +
+            BUS_CANDIDATE_EPSILON
       ) {
         return false
       }
@@ -1443,6 +1469,133 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     }
     for (const portId of this.previewTouchedPortIds) {
       this.previewTouchedPortMask[portId] = 1
+    }
+  }
+
+  private countQueueableFirstHopCandidates(
+    startRegionId: RegionId,
+    preferExplicitStartRegions: boolean,
+  ) {
+    void this.problemSetup
+    const startPortId = this.problem.routeStartPort[this.centerRouteId]!
+    const previousPreferExplicitStartRegions = this.preferExplicitStartRegions
+    const previousCurrentRouteId = this.state.currentRouteId
+    const previousCurrentRouteNetId = this.state.currentRouteNetId
+    const previousGoalPortId = this.state.goalPortId
+    const previewStateSnapshot = snapshotPreviewRoutingStateValue(this.state)
+    const previewMetricsSnapshot = this.snapshotPreviewMetrics()
+
+    this.preferExplicitStartRegions = preferExplicitStartRegions
+
+    try {
+      this.state.currentRouteId = this.centerRouteId
+      this.state.currentRouteNetId = this.centerRouteNetId
+      this.state.goalPortId = this.problem.routeEndPort[this.centerRouteId]!
+
+      const startHeuristic = this.scaleCenterHeuristic(
+        this.computeCenterHeuristic(startPortId, startRegionId),
+      )
+      const startCandidate: BusCenterCandidate = {
+        portId: startPortId,
+        nextRegionId: startRegionId,
+        g: 0,
+        h: startHeuristic,
+        f: startHeuristic,
+      }
+      const startPreview = this.evaluateCandidate(startCandidate)
+
+      if (!startPreview) {
+        return 0
+      }
+
+      const hasIntersections =
+        startPreview.sameLayerIntersectionCount > 0 ||
+        startPreview.crossingLayerIntersectionCount > 0
+      const hasInferenceFailure =
+        startPreview.reason !== undefined && !hasIntersections
+
+      if (hasIntersections || hasInferenceFailure) {
+        return 0
+      }
+
+      const nextPreviewStateSnapshot = snapshotPreviewRoutingStateValue(
+        this.state,
+      )
+      const nextPreviewMetricsSnapshot = this.snapshotPreviewMetrics()
+
+      let queueableCandidateCount = 0
+
+      for (const nextCandidate of this.getAvailableCenterMoves(startCandidate)) {
+        restorePreviewRoutingStateValue(this.state, nextPreviewStateSnapshot)
+        this.restorePreviewMetrics(nextPreviewMetricsSnapshot)
+
+        const nextPreview = this.evaluateCandidate(nextCandidate)
+
+        if (
+          !nextPreview ||
+          (this.problem.routeCount > 6 &&
+            !this.hasRemainingTraceCandidates(nextPreview)) ||
+          !this.isQueueablePreview(nextPreview)
+        ) {
+          continue
+        }
+
+        queueableCandidateCount += 1
+      }
+
+      restorePreviewRoutingStateValue(this.state, nextPreviewStateSnapshot)
+      this.restorePreviewMetrics(nextPreviewMetricsSnapshot)
+
+      return queueableCandidateCount
+    } finally {
+      this.preferExplicitStartRegions = previousPreferExplicitStartRegions
+      restorePreviewRoutingStateValue(this.state, previewStateSnapshot)
+      this.restorePreviewMetrics(previewMetricsSnapshot)
+      this.state.currentRouteId = previousCurrentRouteId
+      this.state.currentRouteNetId = previousCurrentRouteNetId
+      this.state.goalPortId = previousGoalPortId
+    }
+  }
+
+  private resolveExplicitStartRegionPreference() {
+    if (this.hasResolvedExplicitStartRegionPreference) {
+      return
+    }
+
+    this.hasResolvedExplicitStartRegionPreference = true
+
+    const startPortId = this.problem.routeStartPort[this.centerRouteId]!
+    const defaultStartRegionId = super.getStartingNextRegionId(
+      this.centerRouteId,
+      startPortId,
+    )
+    const explicitStartRegionId = this.getSerializedRegionIdFromRouteMetadata(
+      this.centerRouteId,
+      "start",
+    )
+
+    if (
+      defaultStartRegionId === undefined ||
+      explicitStartRegionId === undefined ||
+      explicitStartRegionId === defaultStartRegionId
+    ) {
+      return
+    }
+
+    const defaultQueueableCandidateCount = this.countQueueableFirstHopCandidates(
+      defaultStartRegionId,
+      false,
+    )
+
+    if (defaultQueueableCandidateCount > 0) {
+      return
+    }
+
+    const explicitQueueableCandidateCount =
+      this.countQueueableFirstHopCandidates(explicitStartRegionId, true)
+
+    if (explicitQueueableCandidateCount > 0) {
+      this.preferExplicitStartRegions = true
     }
   }
 
@@ -1938,8 +2091,14 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
         currentCandidate.portId,
         previousNormal,
       )
+      const isStartSidePrivateEgress =
+        currentCandidate.prevCandidate === undefined &&
+        currentCandidate.nextRegionId ===
+          this.getSerializedRegionIdFromRouteMetadata(routeId, "start")
       const boundarySupportPenalty =
-        this.boundaryPlanner.getBoundarySupportPenalty(boundaryStep)
+        isStartSidePrivateEgress
+          ? 0
+          : this.boundaryPlanner.getBoundarySupportPenalty(boundaryStep)
       const g =
         parentCost +
         segmentLength * this.DISTANCE_TO_COST * this.problem.routeCount +
