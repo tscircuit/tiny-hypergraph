@@ -679,6 +679,10 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     return super.getStartingNextRegionId(routeId, startingPortId)
   }
 
+  protected override canRewriteSolvedRoute(routeId: RouteId): boolean {
+    return this.activeRouteIds.includes(routeId)
+  }
+
   override resetRoutingStateForRerip() {
     if (!this.fixedSnapshot) {
       super.resetRoutingStateForRerip()
