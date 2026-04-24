@@ -270,6 +270,32 @@ test("poly solver handles same-net shared bottleneck fixture", () => {
   expect(solver.failed).toBe(false)
 })
 
+test("poly visualize renders the full active candidate path", () => {
+  const { topology, problem } = loadSerializedHyperGraphAsPoly(
+    datasetHg07.sample002 as SerializedHyperGraph,
+  )
+  const solver = new PolyHyperGraphSolver(topology, problem)
+
+  for (let stepIndex = 0; stepIndex < 20; stepIndex++) {
+    solver.step()
+    if (
+      solver.state.candidateQueue
+        .toArray()
+        .some((candidate) => candidate.prevCandidate !== undefined)
+    ) {
+      break
+    }
+  }
+
+  const graphics = solver.visualize()
+  const activeCandidatePath = (graphics.lines ?? []).find((line) =>
+    line.label?.includes("active candidate path"),
+  )
+
+  expect(activeCandidatePath?.points.length).toBeGreaterThan(1)
+  expect(activeCandidatePath?.strokeDash).toBe("4 3")
+})
+
 test("poly solver routes obstacle-generated convex regions and renders polygon SVG", () => {
   const {
     serializedHyperGraph,

@@ -814,6 +814,39 @@ const pushCandidateFrontier = (
       ),
     })
   }
+
+  const currentCandidate = candidates[0]
+  if (!currentCandidate) return
+
+  const activePath: PolyPoint[] = []
+  let cursor: Candidate | undefined = currentCandidate
+
+  while (cursor) {
+    activePath.unshift(getPortPoint(solver, cursor.portId))
+    cursor = cursor.prevCandidate
+  }
+
+  if (activePath.length <= 1) return
+
+  const routeId = solver.state.currentRouteId
+  graphics.lines.push({
+    points: activePath,
+    strokeColor:
+      routeId !== undefined
+        ? getRouteColor(solver, routeId, 0.95)
+        : "rgba(0, 160, 120, 0.95)",
+    strokeDash: "4 3",
+    label: formatLabel(
+      routeId !== undefined
+        ? `route: ${getRouteLabel(solver, routeId)}`
+        : undefined,
+      "active candidate path",
+      `candidate port: ${getSerializedPortId(
+        solver.topology,
+        currentCandidate.portId,
+      )}`,
+    ),
+  })
 }
 
 export const visualizePolyHyperGraph = (
