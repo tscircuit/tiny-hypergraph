@@ -18,6 +18,24 @@ export const computeRegionCost = (
 ) => {
   const area = regionWidth * regionHeight
 
+  return computeRegionCostForArea(
+    area,
+    numSameLayerIntersections,
+    numCrossLayerIntersections,
+    numEntryExitChanges,
+    traceCount,
+    regionAvailableZMask,
+  )
+}
+
+export const computeRegionCostForArea = (
+  area: number,
+  numSameLayerIntersections: number,
+  numCrossLayerIntersections: number,
+  numEntryExitChanges: number,
+  traceCount: number,
+  regionAvailableZMask = 0,
+) => {
   const estViasRequired =
     numSameLayerIntersections * 2 +
     numCrossLayerIntersections * 1 +

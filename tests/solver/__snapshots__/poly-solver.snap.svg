@@ -1,0 +1,138 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="1,-5.25 3,-5.25" data-type="line" data-label="route: left-to-right
+region: diamond-middle" points="318.18608852755193,478.5907859078591 433.813911472448,478.5907859078591" fill="none" stroke="hsla(350, 70%, 45%, 0.85)" stroke-width="1px"/></g><g><polyline data-points="2,-4.05 2,-6.45" data-type="line" data-label="route: top-to-bottom
+region: diamond-middle" points="376,409.2140921409214 376,547.9674796747968" fill="none" stroke="hsla(260, 70%, 45%, 0.85)" stroke-width="1px"/></g><g><polygon data-type="polygon" data-label="region: start-left
+net: 0
+area: 0.700
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="0,-0.7 1,0 0,0.7" points="260.37217705510386,215.53748870822042 318.18608852755193,175.06775067750678 260.37217705510386,134.59801264679314" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: end-right
+net: 0
+area: 0.700
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="4,-0.7 4,0.7 3,0" points="491.62782294489614,215.53748870822042 491.62782294489614,134.59801264679314 433.813911472448,175.06775067750678" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: start-top
+net: 1
+area: 0.585
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="1.35,2.1 2,1.2 2.65,2.1" points="338.42095754290875,53.65853658536584 376,105.6910569105691 413.5790424570912,53.65853658536584" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: end-bottom
+net: 1
+area: 0.585
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="1.35,-2.1 2.65,-2.1 2,-1.2" points="338.42095754290875,296.47696476964774 413.5790424570912,296.47696476964774 376,244.44444444444446" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: diamond-middle
+net: free
+area: 2.400
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="2,-1.2 3,0 2,1.2 1,0" points="376,244.44444444444446 433.813911472448,175.06775067750678 376,105.6910569105691 318.18608852755193,175.06775067750678" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: start-left
+net: 0
+area: 0.700
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="0,-5.95 1,-5.25 0,-4.55" points="260.37217705510386,519.0605239385727 318.18608852755193,478.5907859078591 260.37217705510386,438.12104787714543" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: end-right
+net: 0
+area: 0.700
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="4,-5.95 4,-4.55 3,-5.25" points="491.62782294489614,519.0605239385727 491.62782294489614,438.12104787714543 433.813911472448,478.5907859078591" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: start-top
+net: 1
+area: 0.585
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="1.35,-3.15 2,-4.05 2.65,-3.15" points="338.42095754290875,357.18157181571814 376,409.2140921409214 413.5790424570912,357.18157181571814" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: end-bottom
+net: 1
+area: 0.585
+cost: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-points="1.35,-7.35 2.65,-7.35 2,-6.45" points="338.42095754290875,600 413.5790424570912,600 376,547.9674796747968" fill="rgba(245, 248, 245, 0.18)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><g><polygon data-type="polygon" data-label="region: diamond-middle
+net: free
+area: 2.400
+cost: 0.236
+same layer X: 1
+trans X: 0
+entry exit X: 0" data-points="2,-6.45 3,-5.25 2,-4.05 1,-5.25" points="376,547.9674796747968 433.813911472448,478.5907859078591 376,409.2140921409214 318.18608852755193,478.5907859078591" fill="rgba(245, 195, 212, 0.3313347595722874)" stroke="rgba(80, 80, 120, 0.55)" stroke-width="0.017296875"/></g><circle data-type="circle" data-label="" data-x="1" data-y="0" cx="318.18608852755193" cy="175.06775067750678" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="3" data-y="0" cx="433.813911472448" cy="175.06775067750678" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="2" data-y="1.2" cx="376" cy="105.6910569105691" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="2" data-y="-1.2" cx="376" cy="244.44444444444446" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="1" data-y="-5.25" cx="318.18608852755193" cy="478.5907859078591" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="3" data-y="-5.25" cx="433.813911472448" cy="478.5907859078591" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="2" data-y="-4.05" cx="376" cy="409.2140921409214" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><circle data-type="circle" data-label="" data-x="2" data-y="-6.45" cx="376" cy="547.9674796747968" r="2.8906955736224034" fill="rgba(80, 80, 80, 0.45)" stroke="black" stroke-width="0.017296875"/><text data-type="text" data-label="before solve" data-x="-0.23625" data-y="2.1" x="246.713640469738" y="53.65853658536584" fill="black" font-size="13.658536585365853" font-family="sans-serif" text-anchor="end" dominant-baseline="text-before-edge">before solve</text><text data-type="text" data-label="after solve" data-x="-0.23625" data-y="-3.15" x="246.713640469738" y="357.18157181571814" fill="black" font-size="13.658536585365853" font-family="sans-serif" text-anchor="end" dominant-baseline="text-before-edge">after solve</text><g><circle data-type="point" data-label="route: left-to-right
+endpoint: start
+port: left
+connects: 0 &lt;-&gt; 4
+z: 0" data-x="1" data-y="0" cx="318.18608852755193" cy="175.06775067750678" r="3" fill="hsla(350, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: left-to-right
+endpoint: end
+port: right
+connects: 4 &lt;-&gt; 1
+z: 0" data-x="3" data-y="0" cx="433.813911472448" cy="175.06775067750678" r="3" fill="hsla(350, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: top-to-bottom
+endpoint: start
+port: top
+connects: 2 &lt;-&gt; 4
+z: 0" data-x="2" data-y="1.2" cx="376" cy="105.6910569105691" r="3" fill="hsla(260, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: top-to-bottom
+endpoint: end
+port: bottom
+connects: 4 &lt;-&gt; 3
+z: 0" data-x="2" data-y="-1.2" cx="376" cy="244.44444444444446" r="3" fill="hsla(260, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: left-to-right
+endpoint: start
+port: left
+connects: 0 &lt;-&gt; 4
+z: 0" data-x="1" data-y="-5.25" cx="318.18608852755193" cy="478.5907859078591" r="3" fill="hsla(350, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: left-to-right
+endpoint: end
+port: right
+connects: 4 &lt;-&gt; 1
+z: 0" data-x="3" data-y="-5.25" cx="433.813911472448" cy="478.5907859078591" r="3" fill="hsla(350, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: top-to-bottom
+endpoint: start
+port: top
+connects: 2 &lt;-&gt; 4
+z: 0" data-x="2" data-y="-4.05" cx="376" cy="409.2140921409214" r="3" fill="hsla(260, 70%, 45%, 0.85)"/></g><g><circle data-type="point" data-label="route: top-to-bottom
+endpoint: end
+port: bottom
+connects: 4 &lt;-&gt; 3
+z: 0" data-x="2" data-y="-6.45" cx="376" cy="547.9674796747968" r="3" fill="hsla(260, 70%, 45%, 0.85)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '640');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '640');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":57.81391147244806,"c":0,"e":260.37217705510386,"b":0,"d":-57.81391147244806,"f":175.06775067750678};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>

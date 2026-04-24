@@ -11,10 +11,12 @@ import {
   ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  PolyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSolver,
+  loadSerializedHyperGraphAsPoly,
 } from "../../lib/index"
 
 type DatasetModule = Record<string, unknown> & {
@@ -51,6 +53,8 @@ type BenchmarkSampleResult = {
   snapshotPath: string | null
 }
 
+type SolverVariant = "core" | "poly"
+
 const IMPROVEMENT_EPSILON = 1e-9
 
 const HELP_TEXT = `Usage: ./benchmark.sh [options]
@@ -60,6 +64,7 @@ Run the hg07 section-pipeline benchmark and write per-sample artifacts under ./r
 Options:
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
+  --solver NAME   Solver variant: core or poly. Defaults to core.
   --families LIST Override candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
   --help          Show this help text.
@@ -67,6 +72,7 @@ Options:
 Examples:
   ./benchmark.sh
   ./benchmark.sh --limit 20
+  ./benchmark.sh --limit 20 --solver poly
   ./benchmark.sh --sample 2
   ./benchmark.sh --sample sample002
   ./benchmark.sh --limit 40 --families default+deep
@@ -156,6 +162,7 @@ const parseArgs = () => {
   let limit: number | null = null
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
+  let solverVariant: SolverVariant = "core"
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -200,6 +207,17 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--solver") {
+      const rawValue = process.argv[index + 1]
+      if (rawValue !== "core" && rawValue !== "poly") {
+        usageError(`Invalid --solver value: ${rawValue ?? "<missing>"}`)
+      }
+
+      solverVariant = rawValue as SolverVariant
+      index += 1
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -209,7 +227,7 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies }
+  return { limit, sampleName, candidateFamilies, solverVariant }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -247,9 +265,12 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
+  solverVariant: SolverVariant,
 ) => {
   const { topology, problem, solution } =
-    loadSerializedHyperGraph(serializedHyperGraph)
+    solverVariant === "poly"
+      ? loadSerializedHyperGraphAsPoly(serializedHyperGraph)
+      : loadSerializedHyperGraph(serializedHyperGraph)
   const replaySolver = new TinyHyperGraphSectionSolver(
     topology,
     problem,
@@ -317,7 +338,9 @@ const toAbsoluteResultPath = (cwd: string, targetPath: string) =>
   path.resolve(cwd, targetPath)
 
 const getSnapshotPng = async (
-  pipelineSolver: TinyHyperGraphSectionPipelineSolver,
+  pipelineSolver:
+    | TinyHyperGraphSectionPipelineSolver
+    | PolyHyperGraphSectionPipelineSolver,
 ): Promise<Uint8Array> => {
   const graphics = stackGraphicsHorizontally(
     [
@@ -337,7 +360,7 @@ const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
 const main = async () => {
-  const { limit, sampleName, candidateFamilies } = parseArgs()
+  const { limit, sampleName, candidateFamilies, solverVariant } = parseArgs()
   const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
@@ -346,8 +369,13 @@ const main = async () => {
   const sampleMetas = getSelectedSamples(datasetModule, limit, sampleName)
   const results: BenchmarkSampleResult[] = []
 
+  const PipelineSolver =
+    solverVariant === "poly"
+      ? PolyHyperGraphSectionPipelineSolver
+      : TinyHyperGraphSectionPipelineSolver
+
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -357,7 +385,7 @@ const main = async () => {
     ] as SerializedHyperGraph
 
     try {
-      const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+      const pipelineSolver = new PipelineSolver({
         serializedHyperGraph,
         sectionSearchConfig: candidateFamilies
           ? { candidateFamilies }
@@ -380,10 +408,13 @@ const main = async () => {
         throw new Error("pipeline did not produce both stage outputs")
       }
 
-      const baselineMaxRegionCost =
-        getSerializedOutputMaxRegionCost(solveGraphOutput)
+      const baselineMaxRegionCost = getSerializedOutputMaxRegionCost(
+        solveGraphOutput,
+        solverVariant,
+      )
       const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
         optimizeSectionOutput,
+        solverVariant,
       )
       const delta = baselineMaxRegionCost - finalMaxRegionCost
       const durationMs = performance.now() - sampleStart
@@ -445,7 +476,7 @@ const main = async () => {
       let snapshotErrorMessage: string | null = null
 
       try {
-        const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+        const pipelineSolver = new PipelineSolver({
           serializedHyperGraph,
           sectionSearchConfig: candidateFamilies
             ? { candidateFamilies }
