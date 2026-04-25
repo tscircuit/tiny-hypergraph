@@ -4,6 +4,9 @@ import type {
   TinyHyperGraphSolution,
   TinyHyperGraphTopology,
 } from "../index"
+import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
+
+const PORT_LAYER_COORDINATE_OFFSET = 0.005
 
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
@@ -83,11 +86,14 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
 
 const addSerializedRegionIdToMetadata = (
   region: SerializedHyperGraph["regions"][number],
+  layer: string,
 ) => {
   const metadata =
     region.d && typeof region.d === "object" && !Array.isArray(region.d)
       ? { ...region.d }
       : { value: region.d }
+
+  metadata.layer = layer
 
   Object.defineProperty(metadata, "serializedRegionId", {
     value: region.regionId,
@@ -101,11 +107,14 @@ const addSerializedRegionIdToMetadata = (
 
 const addSerializedPortIdToMetadata = (
   port: SerializedHyperGraph["ports"][number],
+  layer: string,
 ) => {
   const metadata =
     port.d && typeof port.d === "object" && !Array.isArray(port.d)
       ? { ...port.d }
       : { value: port.d }
+
+  metadata.layer = layer
 
   Object.defineProperty(metadata, "serializedPortId", {
     value: port.portId,
@@ -195,6 +204,25 @@ const getRegionAvailableZMask = (
   return mask
 }
 
+const getSerializedPortZ = (
+  port: SerializedHyperGraph["ports"][number],
+): number => {
+  const z = Number(port.d?.z ?? 0)
+  return Number.isFinite(z) ? z : 0
+}
+
+const getSerializedPortLayerOffset = (
+  port: SerializedHyperGraph["ports"][number],
+): number => getSerializedPortZ(port) * PORT_LAYER_COORDINATE_OFFSET
+
+const getSerializedPortX = (
+  port: SerializedHyperGraph["ports"][number],
+): number => Number(port.d?.x ?? 0) + getSerializedPortLayerOffset(port)
+
+const getSerializedPortY = (
+  port: SerializedHyperGraph["ports"][number],
+): number => Number(port.d?.y ?? 0) + getSerializedPortLayerOffset(port)
+
 const computePortAngle = (
   port: SerializedHyperGraph["ports"][number],
   region: SerializedHyperGraph["regions"][number] | undefined,
@@ -202,8 +230,8 @@ const computePortAngle = (
   if (!region) return 0
 
   const bounds = getRegionBounds(region)
-  const x = Number(port.d?.x ?? 0)
-  const y = Number(port.d?.y ?? 0)
+  const x = getSerializedPortX(port)
+  const y = getSerializedPortY(port)
   const withinXBounds = bounds.minX <= x && x <= bounds.maxX
   const withinYBounds = bounds.minY <= y && y <= bounds.maxY
 
@@ -350,6 +378,7 @@ export const loadSerializedHyperGraph = (
   const regionCenterY = new Float64Array(regionCount)
   const regionAvailableZMask = new Int32Array(regionCount)
   const regionNetId = new Int32Array(regionCount).fill(-1)
+  const hasSerializedRegionNetId = new Int8Array(regionCount)
 
   filteredHyperGraph.regions.forEach((region, regionIndex) => {
     const geometry = getRegionGeometry(region)
@@ -358,6 +387,12 @@ export const loadSerializedHyperGraph = (
     regionCenterX[regionIndex] = geometry.centerX
     regionCenterY[regionIndex] = geometry.centerY
     regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
+
+    const serializedRegionNetId = getSerializedRegionNetId(region)
+    if (serializedRegionNetId !== undefined) {
+      regionNetId[regionIndex] = serializedRegionNetId
+      hasSerializedRegionNetId[regionIndex] = 1
+    }
   })
 
   const portAngleForRegion1 = new Int32Array(portCount)
@@ -377,9 +412,9 @@ export const loadSerializedHyperGraph = (
     }
 
     incidentPortRegion[portIndex] = [region1Index, region2Index]
-    portX[portIndex] = Number(port.d?.x ?? 0)
-    portY[portIndex] = Number(port.d?.y ?? 0)
-    portZ[portIndex] = Number(port.d?.z ?? 0)
+    portX[portIndex] = getSerializedPortX(port)
+    portY[portIndex] = getSerializedPortY(port)
+    portZ[portIndex] = getSerializedPortZ(port)
     portAngleForRegion1[portIndex] = computePortAngle(
       port,
       filteredHyperGraph.regions[region1Index],
@@ -389,6 +424,25 @@ export const loadSerializedHyperGraph = (
       filteredHyperGraph.regions[region2Index],
     )
   })
+
+  const getRegionLayer = (regionIndex: number): string =>
+    getZLayerLabel(getAvailableZFromMask(regionAvailableZMask[regionIndex])) ??
+    getZLayerLabel(
+      (regionIncidentPorts[regionIndex] ?? []).map(
+        (portIndex) => portZ[portIndex],
+      ),
+    ) ??
+    "z0"
+
+  const regionMetadata = filteredHyperGraph.regions.map((region, regionIndex) =>
+    addSerializedRegionIdToMetadata(region, getRegionLayer(regionIndex)),
+  )
+  const portMetadata = filteredHyperGraph.ports.map((port, portIndex) =>
+    addSerializedPortIdToMetadata(
+      port,
+      getZLayerLabel([portZ[portIndex]]) ?? "z0",
+    ),
+  )
 
   const connections = filteredHyperGraph.connections ?? []
   const netIdToIndex = new Map<string, number>()
@@ -425,6 +479,10 @@ export const loadSerializedHyperGraph = (
   })
 
   regionNetCandidates.forEach((candidateNetIndexes, regionIndex) => {
+    if (hasSerializedRegionNetId[regionIndex] === 1) {
+      return
+    }
+
     if (candidateNetIndexes.size === 1) {
       regionNetId[regionIndex] = [...candidateNetIndexes][0]!
     }
@@ -501,17 +559,13 @@ export const loadSerializedHyperGraph = (
     regionCenterX,
     regionCenterY,
     regionAvailableZMask,
-    regionMetadata: filteredHyperGraph.regions.map((region) =>
-      addSerializedRegionIdToMetadata(region),
-    ),
+    regionMetadata,
     portAngleForRegion1,
     portAngleForRegion2,
     portX,
     portY,
     portZ,
-    portMetadata: filteredHyperGraph.ports.map((port) =>
-      addSerializedPortIdToMetadata(port),
-    ),
+    portMetadata,
   }
 
   const problem: TinyHyperGraphProblem = {

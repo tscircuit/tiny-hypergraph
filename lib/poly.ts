@@ -4,6 +4,7 @@ import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import { computeRegionCostForArea } from "./computeRegionCost"
 import { TinyHyperGraphSolver } from "./core"
+import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import { TinyHyperGraphSectionSolver } from "./section-solver"
 import { TinyHyperGraphSectionPipelineSolver } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
 import type {
@@ -522,6 +523,20 @@ export const loadSerializedHyperGraphAsPoly = (
     }
   }
 
+  for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+    const metadata = regionMetadata[regionId]
+    metadata.layer =
+      getZLayerLabel(
+        getAvailableZFromMask(topology.regionAvailableZMask?.[regionId] ?? 0),
+      ) ??
+      getZLayerLabel(
+        (topology.regionIncidentPorts[regionId] ?? []).map(
+          (portId) => topology.portZ[portId],
+        ),
+      ) ??
+      "z0"
+  }
+
   const polyTopology: PolyHyperGraphTopology = {
     ...topology,
     regionWidth,
@@ -716,10 +731,31 @@ const getRegionLabel = (
   )
 }
 
+const getRegionVisualizationLayer = (
+  solver: PolyHyperGraphSolver,
+  regionId: RegionId,
+): string =>
+  getZLayerLabel(
+    getAvailableZFromMask(
+      solver.topology.regionAvailableZMask?.[regionId] ?? 0,
+    ),
+  ) ??
+  getZLayerLabel(
+    (solver.topology.regionIncidentPorts[regionId] ?? []).map(
+      (portId) => solver.topology.portZ[portId],
+    ),
+  ) ??
+  "z0"
+
 const getPortPoint = (solver: PolyHyperGraphSolver, portId: PortId) => ({
   x: solver.topology.portX[portId],
   y: solver.topology.portY[portId],
 })
+
+const getPortVisualizationLayer = (
+  solver: PolyHyperGraphSolver,
+  portId: PortId,
+): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
 const getPortLabel = (solver: PolyHyperGraphSolver, portId: PortId) => {
   const [region1Id, region2Id] =
@@ -744,6 +780,7 @@ const pushRouteEndpoints = (
     graphics.points.push({
       ...getPortPoint(solver, startPortId),
       color: routeColor,
+      layer: getPortVisualizationLayer(solver, startPortId),
       label: formatLabel(
         `route: ${routeLabel}`,
         "endpoint: start",
@@ -753,6 +790,7 @@ const pushRouteEndpoints = (
     graphics.points.push({
       ...getPortPoint(solver, endPortId),
       color: routeColor,
+      layer: getPortVisualizationLayer(solver, endPortId),
       label: formatLabel(
         `route: ${routeLabel}`,
         "endpoint: end",
@@ -777,6 +815,11 @@ const pushSolvedSegments = (
       graphics.lines.push({
         points: [getPortPoint(solver, port1Id), getPortPoint(solver, port2Id)],
         strokeColor: getRouteColor(solver, routeId),
+        layer:
+          getZLayerLabel([
+            solver.topology.portZ[port1Id],
+            solver.topology.portZ[port2Id],
+          ]) ?? "z0",
         label: formatLabel(
           `route: ${getRouteLabel(solver, routeId)}`,
           `region: ${getSerializedRegionId(solver.topology, regionId)}`,
@@ -806,6 +849,7 @@ const pushCandidateFrontier = (
     graphics.points.push({
       ...getPortPoint(solver, candidate.portId),
       color: candidateIndex === 0 ? "green" : "rgba(128, 128, 128, 0.4)",
+      layer: getPortVisualizationLayer(solver, candidate.portId),
       label: formatLabel(
         getPortLabel(solver, candidate.portId),
         `g: ${candidate.g.toFixed(2)}`,
@@ -836,6 +880,7 @@ const pushCandidateFrontier = (
         ? getRouteColor(solver, routeId, 0.95)
         : "rgba(0, 160, 120, 0.95)",
     strokeDash: "4 3",
+    layer: getPortVisualizationLayer(solver, currentCandidate.portId),
     label: formatLabel(
       routeId !== undefined
         ? `route: ${getRouteLabel(solver, routeId)}`
@@ -870,6 +915,7 @@ export const visualizePolyHyperGraph = (
       points: getRegionPolygon(solver.topology, regionId),
       fill: getRegionFill(solver, regionId),
       stroke: "rgba(80, 80, 120, 0.55)",
+      layer: getRegionVisualizationLayer(solver, regionId),
       label: getRegionLabel(solver, regionId),
     })
   }
@@ -882,6 +928,7 @@ export const visualizePolyHyperGraph = (
         solver.topology.portZ[portId] > 0
           ? "rgba(52, 152, 219, 0.55)"
           : "rgba(80, 80, 80, 0.45)",
+      layer: getPortVisualizationLayer(solver, portId),
       label: getPortLabel(solver, portId),
     })
   }

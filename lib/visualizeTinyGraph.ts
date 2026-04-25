@@ -1,13 +1,12 @@
 import type { GraphicsObject } from "graphics-debug"
 import type { TinyHyperGraphSolver } from "./index"
+import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import type { PortId, RegionId, RouteId } from "./types"
 
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
 const TRANSITION_CROSSING_COLOR = "rgba(22, 160, 133, 0.95)"
 const TRANSITION_CROSSING_DASH = "2 4 2"
-const PORT_LAYER_CIRCLE_OFFSET = 0.01
-const PORT_LAYER_POINT_OFFSET = 0.002
 const REGION_RECT_GAP = 0.05
 const HOT_REGION_FILL = { r: 255, g: 64, b: 64, a: 0.72 }
 const NEVER_ROUTED_ENDPOINT_STROKE = "rgba(220, 38, 38, 0.98)"
@@ -37,30 +36,6 @@ const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
 const mixColorChannel = (from: number, to: number, amount: number) =>
   Math.round(from + (to - from) * amount)
-
-const getZLayerLabel = (layers: readonly number[]): string | undefined => {
-  const normalizedLayers = layers.filter(
-    (layer): layer is number => Number.isInteger(layer) && layer >= 0,
-  )
-
-  if (normalizedLayers.length === 0) {
-    return undefined
-  }
-
-  return `z${normalizedLayers.join(",")}`
-}
-
-const getAvailableZFromMask = (mask: number): number[] => {
-  const availableZ: number[] = []
-
-  for (let z = 0; z < 31; z++) {
-    if ((mask & (1 << z)) !== 0) {
-      availableZ.push(z)
-    }
-  }
-
-  return availableZ
-}
 
 const mixColor = (base: RgbaColor, overlay: RgbaColor, amount: number) => ({
   r: mixColorChannel(base.r, overlay.r, amount),
@@ -196,7 +171,7 @@ const getRegionCenter = (solver: TinyHyperGraphSolver, regionId: RegionId) => ({
 const getRegionVisualizationLayer = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
-): string | undefined => {
+): string => {
   const regionMetadata = solver.topology.regionMetadata?.[regionId]
   const metadataAvailableZ = Array.isArray(regionMetadata?.availableZ)
     ? regionMetadata.availableZ.filter(
@@ -206,7 +181,7 @@ const getRegionVisualizationLayer = (
     : []
 
   if (metadataAvailableZ.length > 0) {
-    return getZLayerLabel(metadataAvailableZ)
+    return getZLayerLabel(metadataAvailableZ) ?? "z0"
   }
 
   const maskLayers = getAvailableZFromMask(
@@ -214,7 +189,7 @@ const getRegionVisualizationLayer = (
   )
 
   if (maskLayers.length > 0) {
-    return getZLayerLabel(maskLayers)
+    return getZLayerLabel(maskLayers) ?? "z0"
   }
 
   const incidentPortLayers = [
@@ -225,7 +200,7 @@ const getRegionVisualizationLayer = (
     ),
   ].sort((left, right) => left - right)
 
-  return getZLayerLabel(incidentPortLayers)
+  return getZLayerLabel(incidentPortLayers) ?? "z0"
 }
 
 const getRegionCostLabel = (
@@ -293,30 +268,14 @@ const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   y: solver.topology.portY[portId],
 })
 
-const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
-  const portPoint = getPortPoint(solver, portId)
-  const layerOffset = solver.topology.portZ[portId] * PORT_LAYER_POINT_OFFSET
+const getPortRenderPoint = getPortPoint
 
-  return {
-    x: portPoint.x + layerOffset,
-    y: portPoint.y + layerOffset,
-  }
-}
-
-const getPortCircleCenter = (solver: TinyHyperGraphSolver, portId: PortId) => {
-  const portPoint = getPortPoint(solver, portId)
-  const layerOffset = solver.topology.portZ[portId] * PORT_LAYER_CIRCLE_OFFSET
-
-  return {
-    x: portPoint.x + layerOffset,
-    y: portPoint.y + layerOffset,
-  }
-}
+const getPortCircleCenter = getPortPoint
 
 const getPortVisualizationLayer = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
-): string | undefined => getZLayerLabel([solver.topology.portZ[portId]])
+): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
 const getPortIdentifierLabel = (
   solver: TinyHyperGraphSolver,
