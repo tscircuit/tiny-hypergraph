@@ -406,16 +406,6 @@ const getSegmentStyle = (
   const z1 = solver.topology.portZ[port1Id]
   const z2 = solver.topology.portZ[port2Id]
 
-  if (z1 > 0 && z2 > 0) {
-    return {
-      strokeColor: scaleColorAlpha(
-        BOTTOM_LAYER_TRACE_COLOR,
-        getRouteOpacity(solver, routeId),
-      ),
-      strokeDash: BOTTOM_LAYER_TRACE_DASH,
-    }
-  }
-
   if (z1 !== z2) {
     return {
       strokeColor: scaleColorAlpha(
@@ -423,6 +413,16 @@ const getSegmentStyle = (
         getRouteOpacity(solver, routeId),
       ),
       strokeDash: TRANSITION_CROSSING_DASH,
+    }
+  }
+
+  if (z1 > 0) {
+    return {
+      strokeColor: scaleColorAlpha(
+        BOTTOM_LAYER_TRACE_COLOR,
+        getRouteOpacity(solver, routeId),
+      ),
+      strokeDash: BOTTOM_LAYER_TRACE_DASH,
     }
   }
 

@@ -30,6 +30,35 @@ export type * from "./poly-types"
 
 const DEFAULT_BOUNDARY_COORDINATE_SCALE = 36000
 const MIN_REGION_DIMENSION = 1e-9
+const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
+const BOTTOM_LAYER_TRACE_DASH = "3 2"
+const TRANSITION_CROSSING_COLOR = "rgba(22, 160, 133, 0.95)"
+const TRANSITION_CROSSING_DASH = "2 4 2"
+const ZERO_COST_REGION_FILL = "rgba(128, 128, 128, 0.2)"
+const MULTI_LAYER_POLYGON_STROKE = "rgba(128, 128, 128, 0.85)"
+const MULTI_LAYER_POLYGON_DASH = "4 3"
+const POLY_LAYER_COLORS = [
+  {
+    fill: "rgba(220, 38, 38, 0.65)",
+    stroke: "rgba(220, 38, 38, 0.95)",
+  },
+  {
+    fill: "rgba(37, 99, 235, 0.65)",
+    stroke: "rgba(37, 99, 235, 0.95)",
+  },
+  {
+    fill: "rgba(22, 163, 74, 0.65)",
+    stroke: "rgba(22, 163, 74, 0.95)",
+  },
+  {
+    fill: "rgba(249, 115, 22, 0.65)",
+    stroke: "rgba(249, 115, 22, 0.95)",
+  },
+]
+const FALLBACK_LAYER_COLOR = {
+  fill: "rgba(107, 114, 128, 0.55)",
+  stroke: "rgba(107, 114, 128, 0.95)",
+}
 
 interface SegmentGeometryScratch {
   lesserAngle: number
@@ -683,6 +712,38 @@ const getRouteColor = (
   return `hsla(${Math.abs(hash) % 360}, 70%, 45%, ${alpha})`
 }
 
+const getLayerColor = (z: number | undefined) =>
+  z !== undefined
+    ? (POLY_LAYER_COLORS[z] ?? FALLBACK_LAYER_COLOR)
+    : FALLBACK_LAYER_COLOR
+
+const getRegionLayerIds = (
+  solver: PolyHyperGraphSolver,
+  regionId: RegionId,
+): number[] => {
+  const maskLayers = getAvailableZFromMask(
+    solver.topology.regionAvailableZMask?.[regionId] ?? 0,
+  )
+
+  if (maskLayers.length > 0) {
+    return maskLayers
+  }
+
+  const incidentLayers = [
+    ...new Set(
+      (solver.topology.regionIncidentPorts[regionId] ?? []).map(
+        (portId) => solver.topology.portZ[portId],
+      ),
+    ),
+  ].filter((z) => Number.isInteger(z) && z >= 0)
+
+  if (incidentLayers.length > 0) {
+    return incidentLayers.sort((left, right) => left - right)
+  }
+
+  return [0]
+}
+
 const getRegionPolygon = (
   topology: PolyHyperGraphTopology,
   regionId: RegionId,
@@ -705,12 +766,26 @@ const getRegionPolygon = (
 const getRegionFill = (solver: PolyHyperGraphSolver, regionId: RegionId) => {
   const regionCost =
     solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+  if (regionCost === 0) {
+    return ZERO_COST_REGION_FILL
+  }
+
   const hotness = Math.min(1, Math.max(0, Math.pow(regionCost, 0.8)))
   const blue = Math.round(245 - hotness * 105)
   const green = Math.round(248 - hotness * 168)
 
   return `rgba(245, ${green}, ${blue}, ${0.18 + hotness * 0.48})`
 }
+
+const getRegionStroke = (solver: PolyHyperGraphSolver, regionId: RegionId) => {
+  const layers = getRegionLayerIds(solver, regionId)
+  return layers.length > 1
+    ? MULTI_LAYER_POLYGON_STROKE
+    : getLayerColor(layers[0]).stroke
+}
+
+const isMultiLayerRegion = (solver: PolyHyperGraphSolver, regionId: RegionId) =>
+  getRegionLayerIds(solver, regionId).length > 1
 
 const getRegionLabel = (
   solver: PolyHyperGraphSolver,
@@ -734,18 +809,7 @@ const getRegionLabel = (
 const getRegionVisualizationLayer = (
   solver: PolyHyperGraphSolver,
   regionId: RegionId,
-): string =>
-  getZLayerLabel(
-    getAvailableZFromMask(
-      solver.topology.regionAvailableZMask?.[regionId] ?? 0,
-    ),
-  ) ??
-  getZLayerLabel(
-    (solver.topology.regionIncidentPorts[regionId] ?? []).map(
-      (portId) => solver.topology.portZ[portId],
-    ),
-  ) ??
-  "z0"
+): string => getZLayerLabel(getRegionLayerIds(solver, regionId)) ?? "z0"
 
 const getPortPoint = (solver: PolyHyperGraphSolver, portId: PortId) => ({
   x: solver.topology.portX[portId],
@@ -756,6 +820,40 @@ const getPortVisualizationLayer = (
   solver: PolyHyperGraphSolver,
   portId: PortId,
 ): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
+
+const getPortFill = (solver: PolyHyperGraphSolver, portId: PortId): string =>
+  getLayerColor(solver.topology.portZ[portId]).fill
+
+const getPortStroke = (solver: PolyHyperGraphSolver, portId: PortId): string =>
+  getLayerColor(solver.topology.portZ[portId]).stroke
+
+const getSegmentStyle = (
+  solver: PolyHyperGraphSolver,
+  routeId: RouteId,
+  port1Id: PortId,
+  port2Id: PortId,
+): { strokeColor: string; strokeDash?: string } => {
+  const z1 = solver.topology.portZ[port1Id]
+  const z2 = solver.topology.portZ[port2Id]
+
+  if (z1 !== z2) {
+    return {
+      strokeColor: TRANSITION_CROSSING_COLOR,
+      strokeDash: TRANSITION_CROSSING_DASH,
+    }
+  }
+
+  if (z1 > 0) {
+    return {
+      strokeColor: BOTTOM_LAYER_TRACE_COLOR,
+      strokeDash: BOTTOM_LAYER_TRACE_DASH,
+    }
+  }
+
+  return {
+    strokeColor: getRouteColor(solver, routeId),
+  }
+}
 
 const getPortLabel = (solver: PolyHyperGraphSolver, portId: PortId) => {
   const [region1Id, region2Id] =
@@ -814,7 +912,6 @@ const pushSolvedSegments = (
     ] ?? []) {
       graphics.lines.push({
         points: [getPortPoint(solver, port1Id), getPortPoint(solver, port2Id)],
-        strokeColor: getRouteColor(solver, routeId),
         layer:
           getZLayerLabel([
             solver.topology.portZ[port1Id],
@@ -824,6 +921,7 @@ const pushSolvedSegments = (
           `route: ${getRouteLabel(solver, routeId)}`,
           `region: ${getSerializedRegionId(solver.topology, regionId)}`,
         ),
+        ...getSegmentStyle(solver, routeId, port1Id, port2Id),
       })
     }
   }
@@ -911,23 +1009,37 @@ export const visualizePolyHyperGraph = (
   }
 
   for (let regionId = 0; regionId < solver.topology.regionCount; regionId++) {
+    const polygonPoints = getRegionPolygon(solver.topology, regionId)
+    const isMultiLayer = isMultiLayerRegion(solver, regionId)
+
     graphics.polygons.push({
-      points: getRegionPolygon(solver.topology, regionId),
+      points: polygonPoints,
       fill: getRegionFill(solver, regionId),
-      stroke: "rgba(80, 80, 120, 0.55)",
+      stroke: getRegionStroke(solver, regionId),
       layer: getRegionVisualizationLayer(solver, regionId),
       label: getRegionLabel(solver, regionId),
     })
+
+    if (isMultiLayer && polygonPoints.length > 0) {
+      graphics.lines.push({
+        points: [...polygonPoints, polygonPoints[0]!],
+        strokeColor: MULTI_LAYER_POLYGON_STROKE,
+        strokeDash: MULTI_LAYER_POLYGON_DASH,
+        layer: getRegionVisualizationLayer(solver, regionId),
+        label: formatLabel(
+          `layer outline: ${getSerializedRegionId(solver.topology, regionId)}`,
+          getRegionLabel(solver, regionId),
+        ),
+      })
+    }
   }
 
   for (let portId = 0; portId < solver.topology.portCount; portId++) {
     graphics.circles.push({
       center: getPortPoint(solver, portId),
       radius: 0.05,
-      fill:
-        solver.topology.portZ[portId] > 0
-          ? "rgba(52, 152, 219, 0.55)"
-          : "rgba(80, 80, 80, 0.45)",
+      fill: getPortFill(solver, portId),
+      stroke: getPortStroke(solver, portId),
       layer: getPortVisualizationLayer(solver, portId),
       label: getPortLabel(solver, portId),
     })
