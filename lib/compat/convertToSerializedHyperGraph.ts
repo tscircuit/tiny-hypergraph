@@ -1,5 +1,6 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import type { TinyHyperGraphSolver } from "../index"
+import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 import type { PortId, RegionId } from "../types"
 
 type SerializedConnection = NonNullable<
@@ -27,18 +28,6 @@ const toObjectRecord = (value: unknown): Record<string, unknown> => {
 
 const normalizePortIdFallback = (value: string) =>
   value.includes("::") ? value.slice(0, value.indexOf("::")) : value
-
-const getAvailableZFromMask = (mask: number): number[] => {
-  const availableZ: number[] = []
-
-  for (let z = 0; z < 31; z++) {
-    if ((mask & (1 << z)) !== 0) {
-      availableZ.push(z)
-    }
-  }
-
-  return availableZ
-}
 
 const getSerializedRegionId = (
   solver: TinyHyperGraphSolver,
@@ -108,6 +97,15 @@ const getSerializedRegionData = (
     }
   }
 
+  data.layer =
+    getZLayerLabel(Array.isArray(data.availableZ) ? data.availableZ : []) ??
+    getZLayerLabel(
+      (solver.topology.regionIncidentPorts[regionId] ?? []).map(
+        (portId) => solver.topology.portZ[portId],
+      ),
+    ) ??
+    "z0"
+
   return data
 }
 
@@ -128,6 +126,8 @@ const getSerializedPortData = (
   if (typeof data.z !== "number") {
     data.z = solver.topology.portZ[portId]
   }
+
+  data.layer = getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
   return data
 }

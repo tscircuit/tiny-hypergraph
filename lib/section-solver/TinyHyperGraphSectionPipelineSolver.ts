@@ -1,5 +1,5 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BasePipelineSolver } from "@tscircuit/solver-utils"
+import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
@@ -313,12 +313,20 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
 
-  override pipelineDef = [
+  loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
+    topology: TinyHyperGraphTopology
+    problem: TinyHyperGraphProblem
+    solution: TinyHyperGraphSolution
+  } {
+    return loadSerializedHyperGraph(serializedHyperGraph)
+  }
+
+  override pipelineDef: PipelineStep<any>[] = [
     {
       solverName: "solveGraph",
       solverClass: TinyHyperGraphSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
-        const { topology, problem } = loadSerializedHyperGraph(
+        const { topology, problem } = instance.loadHyperGraph(
           instance.inputProblem.serializedHyperGraph,
         )
 
@@ -365,7 +373,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       ...DEFAULT_SECTION_SOLVER_OPTIONS,
       ...this.inputProblem.sectionSolverOptions,
     }
-    const { topology, problem, solution } = loadSerializedHyperGraph(
+    const { topology, problem, solution } = this.loadHyperGraph(
       solvedSerializedHyperGraph,
     )
 
@@ -437,7 +445,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
-      const { topology, problem } = loadSerializedHyperGraph(
+      const { topology, problem } = this.loadHyperGraph(
         this.inputProblem.serializedHyperGraph,
       )
       this.initialVisualizationSolver = new TinyHyperGraphSolver(

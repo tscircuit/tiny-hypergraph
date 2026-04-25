@@ -589,6 +589,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return isKnownSingleLayerMask(regionAvailableZMask)
   }
 
+  protected computeRegionCostForRegion(
+    regionId: RegionId,
+    numSameLayerIntersections: number,
+    numCrossLayerIntersections: number,
+    numEntryExitChanges: number,
+    traceCount: number,
+  ): number {
+    return computeRegionCost(
+      this.topology.regionWidth[regionId],
+      this.topology.regionHeight[regionId],
+      numSameLayerIntersections,
+      numCrossLayerIntersections,
+      numEntryExitChanges,
+      traceCount,
+      this.topology.regionAvailableZMask?.[regionId] ?? 0,
+    )
+  }
+
   populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
@@ -680,14 +698,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       existingCrossingLayerIntersections,
       existingEntryExitLayerChanges,
       existingSegmentCount,
-      existingRegionCost: computeRegionCost(
-        topology.regionWidth[regionId],
-        topology.regionHeight[regionId],
+      existingRegionCost: this.computeRegionCostForRegion(
+        regionId,
         existingSameLayerIntersections,
         existingCrossingLayerIntersections,
         existingEntryExitLayerChanges,
         existingSegmentCount,
-        topology.regionAvailableZMask?.[regionId] ?? 0,
       ),
     }
   }
@@ -1050,15 +1066,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const newRegionCost =
-      computeRegionCost(
-        topology.regionWidth[nextRegionId],
-        topology.regionHeight[nextRegionId],
+      this.computeRegionCostForRegion(
+        nextRegionId,
         regionCache.existingSameLayerIntersections + newSameLayerIntersections,
         regionCache.existingCrossingLayerIntersections +
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
-        topology.regionAvailableZMask?.[nextRegionId] ?? 0,
       ) - regionCache.existingRegionCost
 
     return (
