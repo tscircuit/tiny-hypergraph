@@ -49,8 +49,11 @@ export const computeRegionCostForArea = (
     ? numSameLayerIntersections * IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST
     : 0
 
+  const VIA_SIZE_AREA_FACTOR = 2.25
+
   return (
-    (estViasRequired * viaSize ** 2 * traceCountMult) / area +
+    (estViasRequired * viaSize ** 2 * traceCountMult * VIA_SIZE_AREA_FACTOR) /
+      area +
     impossibleSingleLayerIntersectionCost
   )
 }
