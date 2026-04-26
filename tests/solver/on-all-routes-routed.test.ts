@@ -139,12 +139,139 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
 })
 
+test("rerip can keep lower weighted routed traces in place", () => {
+  const solver = createTestSolver({
+    RIP_PERCENTAGE_START: 0.34,
+    RIP_PERCENTAGE_END: 0.34,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 1, 2, 2])
+  solver.state.regionSegments[0] = [
+    [0, 0, 1],
+    [1, 1, 2],
+    [2, 2, 3],
+  ]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.9)
+
+  solver.step()
+
+  const retainedRouteIds = new Set<number>()
+  for (const regionSegments of solver.state.regionSegments) {
+    for (const [routeId] of regionSegments) {
+      retainedRouteIds.add(routeId)
+    }
+  }
+
+  const reroutedRouteIds = Array.from(solver.state.unroutedRoutes)
+
+  expect(solver.state.ripCount).toBe(1)
+  expect(retainedRouteIds.size).toBe(1)
+  expect(reroutedRouteIds.length).toBe(2)
+  for (const routeId of reroutedRouteIds) {
+    expect(retainedRouteIds.has(routeId)).toBe(false)
+  }
+  expect(
+    [...retainedRouteIds, ...reroutedRouteIds].sort((a, b) => a - b),
+  ).toEqual([0, 1, 2])
+})
+
+test("partial rerip clears every route scheduled for rerouting", () => {
+  const solver = createTestSolver()
+
+  solver.state.ripCount = 1
+  solver.state.currentRouteId = 1
+  solver.state.unroutedRoutes = [2]
+  solver.state.regionSegments[0] = [
+    [0, 0, 1],
+    [1, 1, 2],
+    [2, 2, 3],
+  ]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.9)
+
+  solver.resetRoutingStateForRerip([0])
+
+  expect(solver.state.regionSegments.flat()).toEqual([])
+  expect(Array.from(solver.state.unroutedRoutes).sort((a, b) => a - b)).toEqual(
+    [0, 1, 2],
+  )
+})
+
+test("partial rerip also clears selected routes' same-net traces", () => {
+  const solver = createTestSolver()
+  solver.problem.routeNet[1] = solver.problem.routeNet[0]!
+
+  solver.state.ripCount = 1
+  solver.state.unroutedRoutes = []
+  solver.state.regionSegments[0] = [
+    [0, 0, 1],
+    [1, 1, 2],
+    [2, 2, 3],
+  ]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.9)
+
+  solver.resetRoutingStateForRerip([0])
+
+  const retainedRouteIds = solver.state.regionSegments
+    .flat()
+    .map(([routeId]) => routeId)
+
+  expect(retainedRouteIds).toEqual([2])
+  expect(Array.from(solver.state.unroutedRoutes).sort((a, b) => a - b)).toEqual(
+    [0, 1],
+  )
+})
+
+test("solved path segments prune repeated-port loops", () => {
+  const solver = createTestSolver()
+  solver.state.goalPortId = 3
+
+  const start: Candidate = {
+    nextRegionId: 0,
+    portId: 0,
+    f: 0,
+    g: 0,
+    h: 0,
+  }
+  const firstVisit: Candidate = {
+    nextRegionId: 1,
+    portId: 1,
+    f: 0,
+    g: 0,
+    h: 0,
+    prevCandidate: start,
+  }
+  const loopCandidate: Candidate = {
+    nextRegionId: 0,
+    portId: 2,
+    f: 0,
+    g: 0,
+    h: 0,
+    prevCandidate: firstVisit,
+  }
+  const repeatedPort: Candidate = {
+    nextRegionId: 0,
+    portId: 1,
+    f: 0,
+    g: 0,
+    h: 0,
+    prevCandidate: loopCandidate,
+  }
+
+  expect(solver.getSolvedPathSegments(repeatedPort)).toEqual([
+    { regionId: 0, fromPortId: 0, toPortId: 1 },
+    { regionId: 0, fromPortId: 1, toPortId: 3 },
+  ])
+})
+
 test("constructor options override snake-case hyperparameters before setup", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
     RIP_THRESHOLD_START: 0.12,
     RIP_THRESHOLD_END: 0.34,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 7,
+    RIP_PERCENTAGE_START: 0.56,
+    RIP_PERCENTAGE_END: 0.12,
     RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
     MAX_ITERATIONS: 1234,
   })
@@ -153,6 +280,8 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_THRESHOLD_START).toBe(0.12)
   expect(solver.RIP_THRESHOLD_END).toBe(0.34)
   expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)
+  expect(solver.RIP_PERCENTAGE_START).toBe(0.56)
+  expect(solver.RIP_PERCENTAGE_END).toBe(0.12)
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
