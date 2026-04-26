@@ -1,0 +1,224 @@
+loading dataset=hg07
+loaded dataset=hg07 samples=105
+dataset=hg07 samples=105/105 run=run012 families=default
+sample001 success baselineCost=  0.017 finalCost=  0.017 delta=  0.000 attempts=  5 duration=0.014s
+# no artifacts written
+sample002 success baselineCost=  0.451 finalCost=  0.451 delta=  0.000 attempts=  7 duration=0.086s
+# no artifacts written
+sample003 success baselineCost=  0.242 finalCost=  0.220 delta=  0.022 attempts=  8 duration=0.043s
+# no artifacts written
+sample004 success baselineCost=  0.175 finalCost=  0.149 delta=  0.026 attempts=  8 duration=0.038s
+# no artifacts written
+sample005 success baselineCost=  0.042 finalCost=  0.042 delta=  0.000 attempts=  5 duration=0.005s
+# no artifacts written
+sample006 success baselineCost=  0.301 finalCost=  0.301 delta=  0.000 attempts= 10 duration=0.009s
+# no artifacts written
+sample007 success baselineCost=  0.143 finalCost=  0.143 delta=  0.000 attempts= 10 duration=0.009s
+# no artifacts written
+sample008 success baselineCost=  0.121 finalCost=  0.121 delta=  0.000 attempts=  9 duration=0.010s
+# no artifacts written
+sample009 success baselineCost=  0.301 finalCost=  0.301 delta=  0.000 attempts=  8 duration=0.012s
+# no artifacts written
+sample010 success baselineCost=  0.043 finalCost=  0.043 delta=  0.000 attempts=  9 duration=0.007s
+# no artifacts written
+sample011 success baselineCost=  0.301 finalCost=  0.301 delta=  0.000 attempts= 10 duration=0.007s
+# no artifacts written
+sample012 success baselineCost=  0.156 finalCost=  0.156 delta=  0.000 attempts=  9 duration=0.012s
+# no artifacts written
+sample013 success baselineCost=  0.233 finalCost=  0.233 delta=  0.000 attempts=  8 duration=0.021s
+# no artifacts written
+sample014 failed  baselineCost=    n/a finalCost=    n/a delta=    n/a attempts=  0 duration=0.000s
+# wrote /Users/seve/.codex/worktrees/23fc/tiny-hypergraph/results/run012/sample014/logs.txt
+# snapshot skipped renderError=true
+sample015 success baselineCost=  0.039 finalCost=  0.039 delta=  0.000 attempts=  5 duration=0.002s
+# no artifacts written
+sample016 success baselineCost=  0.059 finalCost=  0.059 delta=  0.000 attempts=  5 duration=0.003s
+# no artifacts written
+sample017 success baselineCost=  0.105 finalCost=  0.105 delta=  0.000 attempts=  8 duration=0.015s
+# no artifacts written
+sample018 success baselineCost=  0.314 finalCost=  0.291 delta=  0.022 attempts=  6 duration=0.070s
+# no artifacts written
+sample019 success baselineCost=  0.156 finalCost=  0.156 delta=  0.000 attempts= 10 duration=0.011s
+# no artifacts written
+sample020 success baselineCost=  0.217 finalCost=  0.217 delta=  0.000 attempts=  7 duration=0.044s
+# no artifacts written
+sample021 success baselineCost=  0.846 finalCost=  0.485 delta=  0.361 attempts=  9 duration=0.108s
+# no artifacts written
+sample022 success baselineCost=  0.209 finalCost=  0.209 delta=  0.000 attempts= 10 duration=0.027s
+# no artifacts written
+sample023 success baselineCost=  0.334 finalCost=  0.206 delta=  0.128 attempts=  5 duration=0.095s
+# no artifacts written
+sample024 success baselineCost=  0.383 finalCost=  0.375 delta=  0.008 attempts=  6 duration=0.031s
+# no artifacts written
+sample025 success baselineCost=  0.420 finalCost=  0.217 delta=  0.203 attempts= 10 duration=0.025s
+# no artifacts written
+sample026 success baselineCost=  0.337 finalCost=  0.240 delta=  0.098 attempts=  6 duration=0.034s
+# no artifacts written
+sample027 success baselineCost=  0.250 finalCost=  0.250 delta=  0.000 attempts=  7 duration=0.114s
+# no artifacts written
+sample028 success baselineCost=  0.253 finalCost=  0.237 delta=  0.016 attempts= 10 duration=0.014s
+# no artifacts written
+sample029 success baselineCost=  0.636 finalCost=  0.454 delta=  0.182 attempts=  6 duration=0.057s
+# no artifacts written
+sample030 success baselineCost=  0.302 finalCost=  0.302 delta=  0.000 attempts=  9 duration=0.016s
+# no artifacts written
+sample031 success baselineCost=  0.337 finalCost=  0.337 delta=  0.000 attempts=  8 duration=0.024s
+# no artifacts written
+sample032 success baselineCost=  0.448 finalCost=  0.428 delta=  0.020 attempts=  7 duration=0.179s
+# no artifacts written
+sample033 success baselineCost=  0.047 finalCost=  0.047 delta=  0.000 attempts=  5 duration=0.002s
+# no artifacts written
+sample034 success baselineCost=  0.217 finalCost=  0.217 delta=  0.000 attempts= 10 duration=0.012s
+# no artifacts written
+sample035 success baselineCost=  0.375 finalCost=  0.301 delta=  0.074 attempts=  7 duration=0.072s
+# no artifacts written
+sample036 success baselineCost=  0.053 finalCost=  0.053 delta=  0.000 attempts= 10 duration=0.002s
+# no artifacts written
+sample037 success baselineCost=  0.794 finalCost=  0.410 delta=  0.383 attempts=  6 duration=0.135s
+# no artifacts written
+sample038 success baselineCost=  0.156 finalCost=  0.156 delta=  0.000 attempts= 10 duration=0.021s
+# no artifacts written
+sample039 success baselineCost=  0.480 finalCost=  0.193 delta=  0.287 attempts=  8 duration=0.090s
+# no artifacts written
+sample040 success baselineCost=  0.238 finalCost=  0.156 delta=  0.082 attempts=  9 duration=0.020s
+# no artifacts written
+sample041 success baselineCost=  0.363 finalCost=  0.363 delta=  0.000 attempts=  9 duration=0.051s
+# no artifacts written
+sample042 success baselineCost=  0.122 finalCost=  0.087 delta=  0.035 attempts=  8 duration=0.010s
+# no artifacts written
+sample043 success baselineCost=  0.175 finalCost=  0.175 delta=  0.000 attempts= 10 duration=0.006s
+# no artifacts written
+sample044 success baselineCost=  0.196 finalCost=  0.191 delta=  0.005 attempts=  8 duration=0.036s
+# no artifacts written
+sample045 success baselineCost=  0.100 finalCost=  0.100 delta=  0.000 attempts= 10 duration=0.006s
+# no artifacts written
+sample046 success baselineCost=  0.000 finalCost=  0.000 delta=  0.000 attempts=  0 duration=0.001s
+# no artifacts written
+sample047 success baselineCost=  0.217 finalCost=  0.052 delta=  0.165 attempts= 10 duration=0.012s
+# no artifacts written
+sample048 success baselineCost=  0.260 finalCost=  0.260 delta=  0.000 attempts= 10 duration=0.010s
+# no artifacts written
+sample049 success baselineCost=  0.450 finalCost=  0.450 delta=  0.000 attempts= 10 duration=0.010s
+# no artifacts written
+sample050 success baselineCost=  0.382 finalCost=  0.266 delta=  0.115 attempts=  7 duration=0.114s
+# no artifacts written
+sample051 success baselineCost=  0.421 finalCost=  0.346 delta=  0.074 attempts=  7 duration=0.051s
+# no artifacts written
+sample052 success baselineCost=  0.133 finalCost=  0.090 delta=  0.043 attempts=  7 duration=0.013s
+# no artifacts written
+sample053 success baselineCost=  0.244 finalCost=  0.224 delta=  0.020 attempts=  9 duration=0.091s
+# no artifacts written
+sample054 success baselineCost=  0.217 finalCost=  0.217 delta=  0.000 attempts= 10 duration=0.097s
+# no artifacts written
+sample055 success baselineCost=  0.507 finalCost=  0.421 delta=  0.086 attempts=  7 duration=0.131s
+# no artifacts written
+sample056 success baselineCost=  0.363 finalCost=  0.363 delta=  0.000 attempts=  8 duration=0.094s
+# no artifacts written
+sample057 success baselineCost=  0.298 finalCost=  0.208 delta=  0.090 attempts=  9 duration=0.089s
+# no artifacts written
+sample058 success baselineCost=  0.257 finalCost=  0.257 delta=  0.000 attempts=  6 duration=0.043s
+# no artifacts written
+sample059 success baselineCost=  1.161 finalCost=  0.652 delta=  0.509 attempts=  5 duration=0.102s
+# no artifacts written
+sample060 success baselineCost=  0.410 finalCost=  0.372 delta=  0.038 attempts=  6 duration=0.047s
+# no artifacts written
+sample061 success baselineCost=  0.380 finalCost=  0.291 delta=  0.089 attempts=  6 duration=0.119s
+# no artifacts written
+sample062 success baselineCost=  0.376 finalCost=  0.333 delta=  0.043 attempts=  8 duration=0.114s
+# no artifacts written
+sample063 success baselineCost=  0.270 finalCost=  0.076 delta=  0.193 attempts=  8 duration=0.005s
+# no artifacts written
+sample064 success baselineCost=  0.217 finalCost=  0.217 delta=  0.000 attempts= 10 duration=0.027s
+# no artifacts written
+sample065 success baselineCost=  0.301 finalCost=  0.301 delta=  0.000 attempts=  6 duration=0.026s
+# no artifacts written
+sample066 success baselineCost=  0.062 finalCost=  0.062 delta=  0.000 attempts=  9 duration=0.009s
+# no artifacts written
+sample067 success baselineCost=  0.731 finalCost=  0.648 delta=  0.083 attempts=  6 duration=0.250s
+# no artifacts written
+sample068 success baselineCost=  0.506 finalCost=  0.473 delta=  0.033 attempts=  5 duration=0.140s
+# no artifacts written
+sample069 success baselineCost=  0.041 finalCost=  0.041 delta=  0.000 attempts=  9 duration=0.003s
+# no artifacts written
+sample070 success baselineCost=  0.253 finalCost=  0.253 delta=  0.000 attempts=  9 duration=0.047s
+# no artifacts written
+sample071 success baselineCost=  0.706 finalCost=  0.604 delta=  0.101 attempts=  6 duration=0.115s
+# no artifacts written
+sample072 success baselineCost=  0.110 finalCost=  0.108 delta=  0.002 attempts=  9 duration=0.023s
+# no artifacts written
+sample073 success baselineCost=  0.988 finalCost=  0.783 delta=  0.205 attempts=  8 duration=0.034s
+# no artifacts written
+sample074 success baselineCost=  0.117 finalCost=  0.103 delta=  0.015 attempts= 10 duration=0.004s
+# no artifacts written
+sample075 success baselineCost=  0.217 finalCost=  0.217 delta=  0.000 attempts=  9 duration=0.002s
+# no artifacts written
+sample076 success baselineCost=  0.360 finalCost=  0.335 delta=  0.025 attempts= 10 duration=0.035s
+# no artifacts written
+sample077 success baselineCost=  0.623 finalCost=  0.261 delta=  0.362 attempts=  6 duration=0.087s
+# no artifacts written
+sample078 success baselineCost=  0.101 finalCost=  0.101 delta=  0.000 attempts=  8 duration=0.007s
+# no artifacts written
+sample079 success baselineCost=  0.107 finalCost=  0.107 delta=  0.000 attempts= 10 duration=0.003s
+# no artifacts written
+sample080 success baselineCost=  0.182 finalCost=  0.077 delta=  0.105 attempts=  9 duration=0.009s
+# no artifacts written
+sample081 success baselineCost=  0.148 finalCost=  0.148 delta=  0.000 attempts= 10 duration=0.007s
+# no artifacts written
+sample082 success baselineCost=  0.228 finalCost=  0.217 delta=  0.011 attempts=  8 duration=0.011s
+# no artifacts written
+sample083 success baselineCost=  0.469 finalCost=  0.321 delta=  0.148 attempts=  5 duration=0.154s
+# no artifacts written
+sample084 success baselineCost=  0.250 finalCost=  0.110 delta=  0.141 attempts= 10 duration=0.008s
+# no artifacts written
+sample085 success baselineCost=  0.172 finalCost=  0.147 delta=  0.025 attempts=  9 duration=0.023s
+# no artifacts written
+sample086 success baselineCost=  0.182 finalCost=  0.095 delta=  0.087 attempts=  8 duration=0.043s
+# no artifacts written
+sample087 success baselineCost=  0.156 finalCost=  0.156 delta=  0.000 attempts= 10 duration=0.008s
+# no artifacts written
+sample088 success baselineCost=  0.520 finalCost=  0.444 delta=  0.076 attempts=  6 duration=0.154s
+# no artifacts written
+sample089 success baselineCost=  0.358 finalCost=  0.242 delta=  0.117 attempts=  7 duration=0.044s
+# no artifacts written
+sample090 success baselineCost=  0.173 finalCost=  0.066 delta=  0.106 attempts=  9 duration=0.011s
+# no artifacts written
+sample091 success baselineCost=  0.325 finalCost=  0.300 delta=  0.025 attempts=  7 duration=0.157s
+# no artifacts written
+sample092 success baselineCost=  0.181 finalCost=  0.181 delta=  0.000 attempts=  8 duration=0.006s
+# no artifacts written
+sample093 success baselineCost=  0.634 finalCost=  0.615 delta=  0.019 attempts=  5 duration=0.158s
+# no artifacts written
+sample094 success baselineCost=  1.141 finalCost=  1.037 delta=  0.104 attempts=  6 duration=0.066s
+# no artifacts written
+sample095 success baselineCost=  0.197 finalCost=  0.118 delta=  0.079 attempts= 10 duration=0.007s
+# no artifacts written
+sample096 success baselineCost=  0.032 finalCost=  0.032 delta=  0.000 attempts= 10 duration=0.004s
+# no artifacts written
+sample097 success baselineCost=  0.890 finalCost=  0.649 delta=  0.241 attempts=  4 duration=0.126s
+# no artifacts written
+sample098 success baselineCost=  0.513 finalCost=  0.512 delta=  0.001 attempts=  6 duration=0.096s
+# no artifacts written
+sample099 success baselineCost=  0.237 finalCost=  0.200 delta=  0.037 attempts=  9 duration=0.032s
+# no artifacts written
+sample100 success baselineCost=  0.211 finalCost=  0.150 delta=  0.061 attempts=  8 duration=0.042s
+# no artifacts written
+sample101 success baselineCost=  0.989 finalCost=  0.989 delta=  0.000 attempts=  5 duration=0.015s
+# no artifacts written
+sample102 success baselineCost=  0.301 finalCost=  0.301 delta=  0.000 attempts=  9 duration=0.008s
+# no artifacts written
+sample103 success baselineCost=  0.060 finalCost=  0.043 delta=  0.017 attempts=  9 duration=0.011s
+# no artifacts written
+sample104 success baselineCost=  0.074 finalCost=  0.074 delta=  0.000 attempts= 10 duration=0.006s
+# no artifacts written
+sample105 success baselineCost=  0.187 finalCost=  0.187 delta=  0.000 attempts=  6 duration=0.023s
+# no artifacts written
+success rate: 99.0%
+improved rate: 52.9%
+zero-final-max-region-cost rate: 1.0%
+avg baseline max region cost: 0.309
+avg final max region cost: 0.254
+avg max region delta: 0.054
+avg candidate count: 7.846
+avg duration: 0.046s
+P50 duration: 0.023s
+P95 duration: 0.154s
