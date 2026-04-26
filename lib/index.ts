@@ -2,6 +2,10 @@ export * from "./core"
 export * from "./poly"
 export * from "./bus-solver"
 export * from "./region-graph"
+export {
+  DEFAULT_MIN_VIA_PAD_DIAMETER,
+  TRACE_VIA_MARGIN,
+} from "./computeRegionCost"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 export {
   TinyHyperGraphSectionSolver,
