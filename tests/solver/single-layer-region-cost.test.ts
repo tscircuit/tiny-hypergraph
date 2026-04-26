@@ -88,39 +88,6 @@ test("single-bit availableZ masks are all treated as known single-layer regions"
   expect(isKnownSingleLayerMask(0)).toBe(false)
 })
 
-test("region cost uses the supplied via size", () => {
-  const width = 3
-  const height = 3
-  const sameLayerIntersections = 1
-  const crossLayerIntersections = 0
-  const entryExitChanges = 0
-  const traceCount = 2
-  const regionAvailableZMask = 0
-
-  const smallerViaCost = computeRegionCost(
-    width,
-    height,
-    sameLayerIntersections,
-    crossLayerIntersections,
-    entryExitChanges,
-    traceCount,
-    regionAvailableZMask,
-    0.45,
-  )
-  const largerViaCost = computeRegionCost(
-    width,
-    height,
-    sameLayerIntersections,
-    crossLayerIntersections,
-    entryExitChanges,
-    traceCount,
-    regionAvailableZMask,
-    0.9,
-  )
-
-  expect(largerViaCost).toBeGreaterThan(smallerViaCost)
-})
-
 test("same-layer crossings incur the impossible single-layer penalty for higher routed layers too", () => {
   const width = 3
   const height = 3
@@ -138,7 +105,6 @@ test("same-layer crossings incur the impossible single-layer penalty for higher 
       entryExitChanges,
       traceCount,
       1 << 2,
-      0.45,
     ),
   ).toBeGreaterThan(10)
 
@@ -151,7 +117,6 @@ test("same-layer crossings incur the impossible single-layer penalty for higher 
       entryExitChanges,
       traceCount,
       1 << 3,
-      0.45,
     ),
   ).toBeGreaterThan(10)
 })

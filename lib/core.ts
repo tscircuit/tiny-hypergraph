@@ -24,7 +24,6 @@ import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
-export const DEFAULT_VIA_SIZE = 0.45
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -171,7 +170,6 @@ export interface TinyHyperGraphWorkingState {
 
 export interface TinyHyperGraphSolverOptions {
   DISTANCE_TO_COST?: number
-  VIA_SIZE?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
@@ -184,7 +182,6 @@ export interface TinyHyperGraphSolverOptions {
 
 export interface TinyHyperGraphSolverOptionTarget {
   DISTANCE_TO_COST: number
-  VIA_SIZE: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
@@ -205,9 +202,6 @@ export const applyTinyHyperGraphSolverOptions = (
 
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
-  }
-  if (options.VIA_SIZE !== undefined) {
-    solver.VIA_SIZE = options.VIA_SIZE
   }
   if (options.RIP_THRESHOLD_START !== undefined) {
     solver.RIP_THRESHOLD_START = options.RIP_THRESHOLD_START
@@ -241,7 +235,6 @@ export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
-  VIA_SIZE: solver.VIA_SIZE,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
@@ -277,7 +270,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
-  VIA_SIZE = DEFAULT_VIA_SIZE
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -612,7 +604,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       numEntryExitChanges,
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
-      this.VIA_SIZE,
     )
   }
 
