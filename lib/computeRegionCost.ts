@@ -1,4 +1,5 @@
 const traceWidth = 0.1
+const TRACE_VIA_MARGIN = 0.15
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
 
 export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
@@ -37,6 +38,8 @@ export const computeRegionCostForArea = (
   regionAvailableZMask: number,
   viaSize: number,
 ) => {
+  const viaSizeWithMargin = viaSize + TRACE_VIA_MARGIN
+
   const estViasRequired =
     numSameLayerIntersections * 2 +
     numCrossLayerIntersections * 1 +
@@ -50,7 +53,7 @@ export const computeRegionCostForArea = (
     : 0
 
   return (
-    (estViasRequired * viaSize ** 2 * traceCountMult) / area +
+    (estViasRequired * viaSizeWithMargin ** 2 * traceCountMult) / area +
     impossibleSingleLayerIntersectionCost
   )
 }
