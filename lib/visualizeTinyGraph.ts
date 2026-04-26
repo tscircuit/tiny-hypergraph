@@ -378,6 +378,27 @@ const getPortNetLabel = (
 const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
   `z: ${solver.topology.portZ[portId]}`
 
+const getPortPairZLabel = (
+  solver: TinyHyperGraphSolver,
+  port1Id: PortId,
+  port2Id: PortId,
+): string => {
+  const startZ = solver.topology.portZ[port1Id]
+  const endZ = solver.topology.portZ[port2Id]
+
+  return startZ === endZ ? `z: ${startZ}` : `z: ${startZ} -> ${endZ}`
+}
+
+const getRouteEndpointZLabel = (
+  solver: TinyHyperGraphSolver,
+  routeId: RouteId,
+): string =>
+  getPortPairZLabel(
+    solver,
+    solver.problem.routeStartPort[routeId],
+    solver.problem.routeEndPort[routeId],
+  )
+
 const getPortLabel = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
@@ -492,6 +513,7 @@ const pushSolvedRegionSegments = (
         label: formatLabel(
           `route: ${getRouteLabel(solver, routeId)}`,
           `region: region-${regionId}`,
+          getPortPairZLabel(solver, port1Id, port2Id),
         ),
         ...getSegmentStyle(solver, routeId, port1Id, port2Id),
       })
@@ -600,14 +622,20 @@ const pushInitialRouteHints = (
       points: [startPoint, endPoint],
       strokeColor: getRenderedRouteColor(solver, routeId),
       strokeDash: "3 3",
-      label: getRouteLabel(solver, routeId),
+      label: formatLabel(
+        getRouteLabel(solver, routeId),
+        getRouteEndpointZLabel(solver, routeId),
+      ),
     })
 
     graphics.points.push({
       x: midPoint.x,
       y: midPoint.y,
       color: getRenderedRouteColor(solver, routeId, 1),
-      label: getRouteLabel(solver, routeId),
+      label: formatLabel(
+        getRouteLabel(solver, routeId),
+        getRouteEndpointZLabel(solver, routeId),
+      ),
     })
   }
 }
@@ -673,7 +701,7 @@ const pushActiveRoute = (
     points: [startPoint, endPoint],
     strokeColor: routeColor,
     strokeDash: "10 5",
-    label: routeLabel,
+    label: formatLabel(routeLabel, getRouteEndpointZLabel(solver, routeId)),
   })
 }
 

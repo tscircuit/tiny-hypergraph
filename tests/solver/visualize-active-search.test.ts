@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { TinyHyperGraphSolver } from "lib/index"
+import { sameNetSharedBottleneckFixture } from "tests/fixtures/same-net-shared-bottleneck.fixture"
 
 test("visualize renders an active search iteration without throwing", () => {
   const { topology, problem } = loadSerializedHyperGraph(datasetHg07.sample002)
@@ -46,4 +47,47 @@ test("visualize assigns z-layer labels to region and port objects", () => {
   expect(region0Rect?.layer).toBe(expectedRegionLayer)
   expect(port0Circle?.layer).toBe(expectedPortLayer)
   expect(startEndpoint?.layer).toMatch(/^z\d+(,\d+)*$/)
+})
+
+test("visualize includes z labels on route points", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    sameNetSharedBottleneckFixture,
+  )
+  const solver = new TinyHyperGraphSolver(topology, problem)
+  const graphics = solver.visualize()
+  const routePointLabels = (graphics.points ?? [])
+    .map((point) => point.label)
+    .filter(
+      (label): label is string =>
+        typeof label === "string" &&
+        (label.includes("route-a") || label.includes("route-b")),
+    )
+
+  expect(routePointLabels.length).toBeGreaterThan(0)
+  for (const label of routePointLabels) {
+    expect(label).toContain("z: 0")
+  }
+})
+
+test("visualize includes z labels on solved route segment hovers", () => {
+  const { topology, problem } = loadSerializedHyperGraph(
+    sameNetSharedBottleneckFixture,
+  )
+  const solver = new TinyHyperGraphSolver(topology, problem)
+
+  solver.solve()
+
+  const graphics = solver.visualize()
+  const routeSegmentLabels = (graphics.lines ?? [])
+    .map((line) => line.label)
+    .filter(
+      (label): label is string =>
+        typeof label === "string" &&
+        (label.includes("route: route-a") || label.includes("route: route-b")),
+    )
+
+  expect(routeSegmentLabels.length).toBeGreaterThan(0)
+  for (const label of routeSegmentLabels) {
+    expect(label).toContain("z: 0")
+  }
 })
