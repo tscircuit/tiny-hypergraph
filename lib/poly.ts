@@ -672,7 +672,6 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       numEntryExitChanges,
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
-      this.VIA_SIZE,
     )
   }
 
