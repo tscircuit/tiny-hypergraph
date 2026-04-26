@@ -3,6 +3,7 @@ import type { GraphicsObject } from "graphics-debug"
 import {
   applyTinyHyperGraphSolverOptions,
   createEmptyRegionIntersectionCache,
+  DEFAULT_VIA_SIZE,
   getTinyHyperGraphSolverOptions,
   type RegionCostSummary,
   TinyHyperGraphSolver,
@@ -862,6 +863,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   activeRouteIds: RouteId[] = []
 
   DISTANCE_TO_COST = 0.05
+  VIA_SIZE = DEFAULT_VIA_SIZE
   VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05
