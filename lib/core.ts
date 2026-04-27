@@ -1272,8 +1272,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     const routeIdsToRip = this.selectRouteIdsToRip(
       this.RIP_THRESHOLD_RAMP_ATTEMPTS,
-      undefined,
-      regionIdsOverCostThreshold,
     )
 
     state.ripCount += 1

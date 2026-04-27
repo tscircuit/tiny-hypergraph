@@ -594,6 +594,12 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
 
+  private getSectionMaxRips() {
+    return Number.isFinite(this.MAX_RIPS)
+      ? Math.max(0, this.MAX_RIPS)
+      : this.RIP_THRESHOLD_RAMP_ATTEMPTS
+  }
+
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
@@ -775,9 +781,11 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override onAllRoutesRouted() {
     const { state } = this
-    const maxRips = Math.min(this.MAX_RIPS, this.RIP_THRESHOLD_RAMP_ATTEMPTS)
+    const maxRips = this.getSectionMaxRips()
     const ripThresholdProgress =
-      maxRips <= 0 ? 1 : Math.min(1, state.ripCount / maxRips)
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS <= 0
+        ? 1
+        : Math.min(1, state.ripCount / this.RIP_THRESHOLD_RAMP_ATTEMPTS)
     const currentRipThreshold =
       this.RIP_THRESHOLD_START +
       (this.RIP_THRESHOLD_END - this.RIP_THRESHOLD_START) * ripThresholdProgress
@@ -880,7 +888,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     const routeIdsToRip = this.selectRouteIdsToRip(
       maxRips,
       activeRouteIdSet,
-      regionIdsOverCostThreshold,
+      this.mutableRegionIds,
     )
 
     state.ripCount += 1
@@ -896,6 +904,18 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override onOutOfCandidates() {
     const { state } = this
+    const maxRips = this.getSectionMaxRips()
+
+    if (state.ripCount >= maxRips) {
+      if (this.bestSnapshot) {
+        this.restoreBestState()
+        this.solved = true
+      } else {
+        this.failed = true
+        this.error = `Exceeded MAX_RIPS=${maxRips} while routing section`
+      }
+      return
+    }
 
     for (const regionId of this.mutableRegionIds) {
       const regionCost =
@@ -904,7 +924,6 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
         regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
 
-    const maxRips = Math.min(this.MAX_RIPS, this.RIP_THRESHOLD_RAMP_ATTEMPTS)
     const activeRouteIdSet = new Set(this.activeRouteIds)
     const ripPercentage = this.getCurrentRipPercentage(maxRips)
     const routeIdsToRip = this.selectRouteIdsToRip(
@@ -952,6 +971,9 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   optimizedSolver?: TinyHyperGraphSolver
   sectionSolver?: TinyHyperGraphSectionSearchSolver
   activeRouteIds: RouteId[] = []
+  private readonly hasExplicitRipThresholdStart: boolean
+  private readonly hasExplicitRipThresholdEnd: boolean
+  private readonly hasExplicitMaxRips: boolean
 
   DISTANCE_TO_COST = 0.05
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
@@ -979,6 +1001,10 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     options?: TinyHyperGraphSectionSolverOptions,
   ) {
     super()
+    this.hasExplicitRipThresholdStart =
+      options?.RIP_THRESHOLD_START !== undefined
+    this.hasExplicitRipThresholdEnd = options?.RIP_THRESHOLD_END !== undefined
+    this.hasExplicitMaxRips = options?.MAX_RIPS !== undefined
     applyTinyHyperGraphSectionSolverOptions(this, options)
     this.baselineSolver = createSolvedSolverFromSolution(
       topology,
@@ -1003,12 +1029,23 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   }
 
   applySectionRipPolicy() {
-    this.RIP_THRESHOLD_START = 0.05
-    this.RIP_THRESHOLD_END = Math.max(
-      this.RIP_THRESHOLD_START,
-      this.sectionBaselineSummary.maxRegionCost,
-    )
-    this.MAX_RIPS = Math.min(this.MAX_RIPS, 20)
+    if (!this.hasExplicitRipThresholdStart) {
+      this.RIP_THRESHOLD_START = 0.05
+    }
+    if (!this.hasExplicitRipThresholdEnd) {
+      this.RIP_THRESHOLD_END = Math.max(
+        this.RIP_THRESHOLD_START,
+        this.sectionBaselineSummary.maxRegionCost,
+      )
+    } else {
+      this.RIP_THRESHOLD_END = Math.max(
+        this.RIP_THRESHOLD_START,
+        this.RIP_THRESHOLD_END,
+      )
+    }
+    if (!this.hasExplicitMaxRips) {
+      this.MAX_RIPS = Math.min(this.MAX_RIPS, 20)
+    }
   }
 
   override _setup() {
