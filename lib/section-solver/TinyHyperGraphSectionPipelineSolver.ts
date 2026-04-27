@@ -69,12 +69,14 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
+  sectionSolverOptions?: TinyHyperGraphSectionSolverOptions,
 ) => {
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
   const replayedSolver = new TinyHyperGraphSectionSolver(
     replay.topology,
     replay.problem,
     replay.solution,
+    sectionSolverOptions,
   )
 
   return getMaxRegionCost(replayedSolver.baselineSolver)
@@ -248,6 +250,7 @@ const findBestAutomaticSectionMask = (
         const candidateReplayScoreStartTime = performance.now()
         const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
           sectionSolver.getOutput(),
+          sectionSolverOptions,
         )
         candidateReplayScoreMs +=
           performance.now() - candidateReplayScoreStartTime
@@ -301,6 +304,7 @@ export interface TinyHyperGraphSectionPipelineSearchConfig {
 
 export interface TinyHyperGraphSectionPipelineInput {
   serializedHyperGraph: SerializedHyperGraph
+  minViaPadDiameter?: number
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
@@ -321,6 +325,26 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return loadSerializedHyperGraph(serializedHyperGraph)
   }
 
+  getSolveGraphOptions(): TinyHyperGraphSolverOptions {
+    return {
+      ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+      ...(this.inputProblem.minViaPadDiameter === undefined
+        ? {}
+        : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.inputProblem.solveGraphOptions,
+    }
+  }
+
+  getSectionSolverOptions(): TinyHyperGraphSectionSolverOptions {
+    return {
+      ...DEFAULT_SECTION_SOLVER_OPTIONS,
+      ...(this.inputProblem.minViaPadDiameter === undefined
+        ? {}
+        : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.inputProblem.sectionSolverOptions,
+    }
+  }
+
   override pipelineDef: PipelineStep<any>[] = [
     {
       solverName: "solveGraph",
@@ -333,10 +357,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         return [
           topology,
           problem,
-          {
-            ...DEFAULT_SOLVE_GRAPH_OPTIONS,
-            ...instance.inputProblem.solveGraphOptions,
-          },
+          instance.getSolveGraphOptions(),
         ] as ConstructorParameters<typeof TinyHyperGraphSolver>
       },
     },
@@ -369,10 +390,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       throw new Error("solveGraph solver is unavailable")
     }
 
-    const sectionSolverOptions = {
-      ...DEFAULT_SECTION_SOLVER_OPTIONS,
-      ...this.inputProblem.sectionSolverOptions,
-    }
+    const sectionSolverOptions = this.getSectionSolverOptions()
     const { topology, problem, solution } = this.loadHyperGraph(
       solvedSerializedHyperGraph,
     )
@@ -451,6 +469,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       this.initialVisualizationSolver = new TinyHyperGraphSolver(
         topology,
         problem,
+        this.getSolveGraphOptions(),
       )
     }
 

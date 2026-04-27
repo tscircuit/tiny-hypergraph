@@ -1,7 +1,11 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
-import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
+import {
+  DEFAULT_MIN_VIA_PAD_DIAMETER,
+  computeRegionCost,
+  isKnownSingleLayerMask,
+} from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
@@ -169,6 +173,7 @@ export interface TinyHyperGraphWorkingState {
 }
 
 export interface TinyHyperGraphSolverOptions {
+  minViaPadDiameter?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -181,6 +186,7 @@ export interface TinyHyperGraphSolverOptions {
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
+  minViaPadDiameter: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -200,6 +206,9 @@ export const applyTinyHyperGraphSolverOptions = (
     return
   }
 
+  if (options.minViaPadDiameter !== undefined) {
+    solver.minViaPadDiameter = options.minViaPadDiameter
+  }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
   }
@@ -234,6 +243,7 @@ export const applyTinyHyperGraphSolverOptions = (
 export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
+  minViaPadDiameter: solver.minViaPadDiameter,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -270,6 +280,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -604,6 +615,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       numEntryExitChanges,
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
+      this.minViaPadDiameter,
     )
   }
 

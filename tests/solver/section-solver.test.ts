@@ -136,6 +136,7 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
     solution,
     {
       DISTANCE_TO_COST: 0.2,
+      minViaPadDiameter: 0.25,
       RIP_THRESHOLD_START: 0.11,
       RIP_THRESHOLD_END: 0.22,
       RIP_THRESHOLD_RAMP_ATTEMPTS: 9,
@@ -151,13 +152,15 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
 
   expect(sectionSolver.DISTANCE_TO_COST).toBe(0.2)
   expect(sectionSolver.sectionSolver?.DISTANCE_TO_COST).toBe(0.2)
+  expect(sectionSolver.minViaPadDiameter).toBe(0.25)
+  expect(sectionSolver.sectionSolver?.minViaPadDiameter).toBe(0.25)
   expect(sectionSolver.RIP_THRESHOLD_START).toBe(0.05)
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.05)
   expect(sectionSolver.RIP_THRESHOLD_END).toBe(
-    sectionSolver.sectionBaselineSummary.maxRegionCost,
+    Math.max(0.05, sectionSolver.sectionBaselineSummary.maxRegionCost),
   )
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(
-    sectionSolver.sectionBaselineSummary.maxRegionCost,
+    Math.max(0.05, sectionSolver.sectionBaselineSummary.maxRegionCost),
   )
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(9)
   expect(sectionSolver.sectionSolver?.RIP_CONGESTION_REGION_COST_FACTOR).toBe(
@@ -255,6 +258,29 @@ test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", ()
   expect(pipelineSolver.failed).toBe(false)
   expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(5)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})
+
+test("section pipeline applies top-level minViaPadDiameter to both stages", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+    minViaPadDiameter: 0.25,
+    sectionSolverOptions: {
+      MAX_HOT_REGIONS: 1,
+    },
+  })
+
+  pipelineSolver.solve()
+
+  const solveGraphSolver =
+    pipelineSolver.getSolver<TinyHyperGraphSolver>("solveGraph")
+  const sectionSolver =
+    pipelineSolver.getSolver<TinyHyperGraphSectionSolver>("optimizeSection")
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(solveGraphSolver?.minViaPadDiameter).toBe(0.25)
+  expect(sectionSolver?.minViaPadDiameter).toBe(0.25)
+  expect(sectionSolver?.baselineSolver.minViaPadDiameter).toBe(0.25)
 })
 
 test("section pipeline only uses threehop and fourhop families when explicitly enabled", () => {

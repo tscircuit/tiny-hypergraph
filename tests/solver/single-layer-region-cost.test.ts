@@ -6,7 +6,9 @@ import {
 } from "lib/index"
 import {
   computeRegionCost,
+  DEFAULT_MIN_VIA_PAD_DIAMETER,
   isKnownSingleLayerMask,
+  TRACE_VIA_MARGIN,
 } from "lib/computeRegionCost"
 
 const createTopology = (
@@ -119,4 +121,21 @@ test("same-layer crossings incur the impossible single-layer penalty for higher 
       1 << 3,
     ),
   ).toBeGreaterThan(10)
+})
+
+test("region cost uses min via pad diameter plus trace-via margin", () => {
+  const area = 9
+  const traceCount = 2
+  const traceCountMult = 1 + traceCount / 5
+  const minViaPadDiameter = 0.2
+  const expectedCost =
+    ((minViaPadDiameter + TRACE_VIA_MARGIN) ** 2 * traceCountMult) / area
+
+  expect(
+    computeRegionCost(3, 3, 0, 1, 0, traceCount, 0, minViaPadDiameter),
+  ).toBeCloseTo(expectedCost)
+  expect(computeRegionCost(3, 3, 0, 1, 0, traceCount)).toBeCloseTo(
+    ((DEFAULT_MIN_VIA_PAD_DIAMETER + TRACE_VIA_MARGIN) ** 2 * traceCountMult) /
+      area,
+  )
 })

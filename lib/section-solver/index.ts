@@ -11,6 +11,7 @@ import {
   type TinyHyperGraphTopology,
   type TinyHyperGraphSolverOptions,
 } from "../core"
+import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
 import { shuffle } from "../shuffle"
 import type {
   PortId,
@@ -862,6 +863,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   activeRouteIds: RouteId[] = []
 
   DISTANCE_TO_COST = 0.05
+  minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05

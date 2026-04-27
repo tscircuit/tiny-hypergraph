@@ -672,6 +672,7 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       numEntryExitChanges,
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
+      this.minViaPadDiameter,
     )
   }
 
@@ -1077,6 +1078,9 @@ export class PolyHyperGraphSectionPipelineSolver extends TinyHyperGraphSectionPi
           problem,
           {
             RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
+            ...(instance.inputProblem.minViaPadDiameter === undefined
+              ? {}
+              : { minViaPadDiameter: instance.inputProblem.minViaPadDiameter }),
             ...instance.inputProblem.solveGraphOptions,
           },
         ] as ConstructorParameters<typeof PolyHyperGraphSolver>
@@ -1106,6 +1110,7 @@ export class PolyHyperGraphSectionPipelineSolver extends TinyHyperGraphSectionPi
       this.initialVisualizationSolver = new PolyHyperGraphSolver(
         topology,
         problem,
+        this.getSolveGraphOptions(),
       )
     }
 
