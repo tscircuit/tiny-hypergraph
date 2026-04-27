@@ -70,16 +70,6 @@ const getRegionCenter = (solver: RegionPathSolver, regionId: RegionId) => ({
   y: solver.regionGraph.regionCenterY[regionId],
 })
 
-const getRegionLayer = (solver: RegionPathSolver, regionId: RegionId) => {
-  const metadata = solver.regionGraph.regionMetadata?.[regionId]
-  const layer =
-    metadata && typeof metadata === "object" && "layer" in metadata
-      ? metadata.layer
-      : undefined
-
-  return typeof layer === "string" && layer.startsWith("z") ? layer : "z0"
-}
-
 const getRouteLabel = (solver: RegionPathSolver, routeId: RouteId) => {
   const routeMetadata = solver.regionProblem.routeMetadata?.[routeId] as
     | {
@@ -162,7 +152,6 @@ const pushRouteHints = (
       points: [startPoint, endPoint],
       strokeColor: getRouteColor(solver, routeId, 0.28),
       strokeDash: "4 4",
-      layer: getRegionLayer(solver, startRegionId),
       label: formatLabel(
         `${getRouteLabel(solver, routeId)} (hint)`,
         `start: ${getSerializedRegionId(solver.regionGraph, startRegionId)}`,
@@ -184,7 +173,6 @@ const pushSolvedRoutes = (
     graphics.lines.push({
       points: regionPath.map((regionId) => getRegionCenter(solver, regionId)),
       strokeColor: getRouteColor(solver, routeId, 0.95),
-      layer: getRegionLayer(solver, regionPath[0]!),
       label: formatLabel(
         `route: ${getRouteLabel(solver, routeId)}`,
         `cost: ${solver.state.solvedRouteCosts[routeId].toFixed(3)}`,
@@ -208,7 +196,6 @@ const pushRouteEndpoints = (
       x: startPoint.x,
       y: startPoint.y,
       color: routeColor,
-      layer: getRegionLayer(solver, startRegionId),
       label: formatLabel(
         `route: ${getRouteLabel(solver, routeId)}`,
         `endpoint: start`,
@@ -220,7 +207,6 @@ const pushRouteEndpoints = (
       x: endPoint.x,
       y: endPoint.y,
       color: routeColor,
-      layer: getRegionLayer(solver, endRegionId),
       label: formatLabel(
         `route: ${getRouteLabel(solver, routeId)}`,
         `endpoint: end`,
@@ -245,7 +231,6 @@ const pushActiveFrontier = (
       x: center.x,
       y: center.y,
       color: "rgba(245, 158, 11, 0.95)",
-      layer: getRegionLayer(solver, candidate.regionId),
       label: formatLabel(
         `frontier: ${getSerializedRegionId(solver.regionGraph, candidate.regionId)}`,
         `g: ${candidate.g.toFixed(3)}`,
@@ -291,7 +276,6 @@ export const visualizeRegionGraph = (
             regionId)
           ? "rgba(17, 24, 39, 0.9)"
           : "rgba(148, 163, 184, 0.5)",
-      layer: getRegionLayer(solver, regionId),
       label: getRegionLabel(solver, regionId),
     })
   }

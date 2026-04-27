@@ -1,5 +1,4 @@
 export * from "./core"
-export * from "./poly"
 export * from "./bus-solver"
 export * from "./region-graph"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
