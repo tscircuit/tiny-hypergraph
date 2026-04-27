@@ -4,7 +4,7 @@ import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyper
 import { computeRegionCost, isKnownSingleLayerMask } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
-import { shuffle } from "./shuffle"
+import { createMulberry32, shuffle } from "./shuffle"
 import {
   createStaticallyUnroutableRouteSummary,
   getStaticReachabilityError,
@@ -173,6 +173,8 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
+  RIP_PERCENTAGE_START?: number
+  RIP_PERCENTAGE_END?: number
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
@@ -185,6 +187,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
+  RIP_PERCENTAGE_START: number
+  RIP_PERCENTAGE_END: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   MAX_ITERATIONS: number
   VERBOSE: boolean
@@ -212,6 +216,12 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.RIP_THRESHOLD_RAMP_ATTEMPTS !== undefined) {
     solver.RIP_THRESHOLD_RAMP_ATTEMPTS = options.RIP_THRESHOLD_RAMP_ATTEMPTS
   }
+  if (options.RIP_PERCENTAGE_START !== undefined) {
+    solver.RIP_PERCENTAGE_START = options.RIP_PERCENTAGE_START
+  }
+  if (options.RIP_PERCENTAGE_END !== undefined) {
+    solver.RIP_PERCENTAGE_END = options.RIP_PERCENTAGE_END
+  }
   if (options.RIP_CONGESTION_REGION_COST_FACTOR !== undefined) {
     solver.RIP_CONGESTION_REGION_COST_FACTOR =
       options.RIP_CONGESTION_REGION_COST_FACTOR
@@ -238,6 +248,8 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
+  RIP_PERCENTAGE_START: solver.RIP_PERCENTAGE_START,
+  RIP_PERCENTAGE_END: solver.RIP_PERCENTAGE_END,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
@@ -254,6 +266,11 @@ interface SegmentGeometryScratch {
   greaterAngle: number
   layerMask: number
   entryExitLayerChanges: number
+}
+
+interface RouteRipScore {
+  routeId: RouteId
+  score: number
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -274,6 +291,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
+  RIP_PERCENTAGE_START = 1
+  RIP_PERCENTAGE_END = 0.1
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
 
@@ -714,13 +733,40 @@ export class TinyHyperGraphSolver extends BaseSolver {
     toPortId: PortId
   }> {
     const { state } = this
-    const candidatePath: Candidate[] = []
+    let candidatePath: Candidate[] = []
     let cursor: Candidate | undefined = finalCandidate
 
     while (cursor) {
       candidatePath.unshift(cursor)
       cursor = cursor.prevCandidate
     }
+
+    const candidateIndexByPortId = new Map<PortId, number>()
+    const simplifiedCandidatePath: Candidate[] = []
+    for (const candidate of candidatePath) {
+      const previousIndex = candidateIndexByPortId.get(candidate.portId)
+
+      if (previousIndex !== undefined) {
+        simplifiedCandidatePath.splice(
+          previousIndex,
+          simplifiedCandidatePath.length - previousIndex,
+        )
+        candidateIndexByPortId.clear()
+        for (let index = 0; index < simplifiedCandidatePath.length; index++) {
+          candidateIndexByPortId.set(
+            simplifiedCandidatePath[index]!.portId,
+            index,
+          )
+        }
+      }
+
+      candidateIndexByPortId.set(
+        candidate.portId,
+        simplifiedCandidatePath.length,
+      )
+      simplifiedCandidatePath.push(candidate)
+    }
+    candidatePath = simplifiedCandidatePath
 
     const solvedSegments: Array<{
       regionId: RegionId
@@ -748,8 +794,158 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return solvedSegments
   }
 
-  resetRoutingStateForRerip() {
-    const { topology, problem, state } = this
+  protected getCurrentRipPercentage(maxRips: number) {
+    const effectiveMaxRips =
+      Number.isFinite(maxRips) && maxRips > 0
+        ? maxRips
+        : this.RIP_THRESHOLD_RAMP_ATTEMPTS
+    const ripPercentageProgress =
+      effectiveMaxRips <= 0
+        ? 1
+        : Math.min(1, this.state.ripCount / effectiveMaxRips)
+    const ripPercentage =
+      this.RIP_PERCENTAGE_START +
+      (this.RIP_PERCENTAGE_END - this.RIP_PERCENTAGE_START) *
+        ripPercentageProgress
+
+    return Math.max(0, Math.min(1, ripPercentage))
+  }
+
+  protected getRouteRipScores(
+    routeIdFilter?: ReadonlySet<RouteId>,
+    regionIds?: readonly RegionId[],
+  ): RouteRipScore[] {
+    const { topology, state } = this
+    const routeScores = new Map<RouteId, number>()
+    const scoredRegionIds =
+      regionIds ?? Array.from({ length: topology.regionCount }, (_, i) => i)
+
+    for (const regionId of scoredRegionIds) {
+      const regionSegments = state.regionSegments[regionId] ?? []
+      const traceCount = regionSegments.length
+
+      if (traceCount === 0) {
+        continue
+      }
+
+      const regionCost =
+        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const approximateCostContribution = regionCost / traceCount
+
+      for (const [routeId] of regionSegments) {
+        if (routeIdFilter && !routeIdFilter.has(routeId)) {
+          continue
+        }
+
+        routeScores.set(
+          routeId,
+          (routeScores.get(routeId) ?? 0) + approximateCostContribution,
+        )
+      }
+    }
+
+    return [...routeScores.entries()].map(([routeId, score]) => ({
+      routeId,
+      score,
+    }))
+  }
+
+  protected selectRouteIdsToRip(
+    maxRips: number,
+    routeIdFilter?: ReadonlySet<RouteId>,
+    regionIds?: readonly RegionId[],
+  ): RouteId[] {
+    const ripPercentage = this.getCurrentRipPercentage(maxRips)
+
+    if (ripPercentage >= 1 - Number.EPSILON) {
+      return routeIdFilter ? [...routeIdFilter] : range(this.problem.routeCount)
+    }
+
+    const routeRipScores = this.getRouteRipScores(routeIdFilter, regionIds)
+
+    if (routeRipScores.length === 0) {
+      return []
+    }
+
+    const targetRipCount = Math.min(
+      routeRipScores.length,
+      Math.max(1, Math.ceil(routeRipScores.length * ripPercentage)),
+    )
+
+    if (targetRipCount >= routeRipScores.length) {
+      return routeRipScores.map(({ routeId }) => routeId)
+    }
+
+    const selectedRouteIds: RouteId[] = []
+    const remainingRouteRipScores = [...routeRipScores]
+    const random = createMulberry32(
+      Math.imul(this.state.ripCount + 1, 0x9e3779b1),
+    )
+
+    while (
+      selectedRouteIds.length < targetRipCount &&
+      remainingRouteRipScores.length > 0
+    ) {
+      const totalScore = remainingRouteRipScores.reduce(
+        (sum, { score }) => sum + Math.max(0, score),
+        0,
+      )
+
+      if (totalScore <= Number.EPSILON) {
+        break
+      }
+
+      let randomScore = random() * totalScore
+      let selectedIndex = remainingRouteRipScores.length - 1
+
+      for (let index = 0; index < remainingRouteRipScores.length; index++) {
+        randomScore -= Math.max(0, remainingRouteRipScores[index]!.score)
+
+        if (randomScore <= 0) {
+          selectedIndex = index
+          break
+        }
+      }
+
+      const [selectedRouteRipScore] = remainingRouteRipScores.splice(
+        selectedIndex,
+        1,
+      )
+      selectedRouteIds.push(selectedRouteRipScore!.routeId)
+    }
+
+    if (selectedRouteIds.length < targetRipCount) {
+      const fallbackRouteIds = shuffle(
+        remainingRouteRipScores.map(({ routeId }) => routeId),
+        this.state.ripCount + 1,
+      )
+      selectedRouteIds.push(
+        ...fallbackRouteIds.slice(0, targetRipCount - selectedRouteIds.length),
+      )
+    }
+
+    return selectedRouteIds
+  }
+
+  protected appendSolvedSegmentToRoutingState(
+    regionId: RegionId,
+    routeId: RouteId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ) {
+    const { state } = this
+    state.currentRouteNetId = this.problem.routeNet[routeId]
+    state.regionSegments[regionId]!.push([routeId, fromPortId, toPortId])
+    state.portAssignment[fromPortId] = state.currentRouteNetId
+    state.portAssignment[toPortId] = state.currentRouteNetId
+    this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+  }
+
+  protected resetRoutingStateWithRetainedSegments(
+    retainedSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
+    unroutedRoutes: readonly RouteId[],
+  ) {
+    const { topology, state } = this
 
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
@@ -762,10 +958,106 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    state.unroutedRoutes = shuffle([...unroutedRoutes], state.ripCount)
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+
+    for (
+      let regionId = 0;
+      regionId < retainedSegmentsByRegion.length;
+      regionId++
+    ) {
+      for (const [routeId, fromPortId, toPortId] of retainedSegmentsByRegion[
+        regionId
+      ] ?? []) {
+        this.appendSolvedSegmentToRoutingState(
+          regionId,
+          routeId,
+          fromPortId,
+          toPortId,
+        )
+      }
+    }
+
+    state.currentRouteNetId = undefined
+  }
+
+  protected getReripUnroutedRouteIds(routeIdsToRip: ReadonlySet<RouteId>) {
+    const { problem, state } = this
+    const unroutedRouteIds = new Set<RouteId>()
+
+    for (const routeId of routeIdsToRip) {
+      if (routeId >= 0 && routeId < problem.routeCount) {
+        unroutedRouteIds.add(routeId)
+      }
+    }
+
+    if (state.currentRouteId !== undefined) {
+      unroutedRouteIds.add(state.currentRouteId)
+    }
+
+    for (const routeId of state.unroutedRoutes) {
+      unroutedRouteIds.add(routeId)
+    }
+
+    return [...this.expandRouteIdsToSameNets(unroutedRouteIds)]
+  }
+
+  protected expandRouteIdsToSameNets(
+    routeIds: ReadonlySet<RouteId>,
+    routeIdFilter?: ReadonlySet<RouteId>,
+  ) {
+    const routeNetIds = new Set<NetId>()
+    const expandedRouteIds = new Set<RouteId>(routeIds)
+
+    for (const routeId of routeIds) {
+      if (routeId >= 0 && routeId < this.problem.routeCount) {
+        routeNetIds.add(this.problem.routeNet[routeId]!)
+      }
+    }
+
+    if (routeNetIds.size === 0) {
+      return expandedRouteIds
+    }
+
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      if (routeIdFilter && !routeIdFilter.has(routeId)) {
+        continue
+      }
+
+      if (routeNetIds.has(this.problem.routeNet[routeId]!)) {
+        expandedRouteIds.add(routeId)
+      }
+    }
+
+    return expandedRouteIds
+  }
+
+  resetRoutingStateForRerip(routeIdsToRip?: readonly RouteId[]) {
+    const { problem, state } = this
+
+    if (routeIdsToRip === undefined) {
+      this.resetRoutingStateWithRetainedSegments([], range(problem.routeCount))
+      return
+    }
+
+    const routeIdsToRipSet = new Set(routeIdsToRip)
+    const unroutedRouteIds = this.getReripUnroutedRouteIds(routeIdsToRipSet)
+    const routeIdsToClearSet = new Set(unroutedRouteIds)
+    const retainedSegmentsByRegion = state.regionSegments.map((segments) =>
+      segments
+        .filter(([routeId]) => !routeIdsToClearSet.has(routeId))
+        .map(
+          ([routeId, fromPortId, toPortId]) =>
+            [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
+        ),
+    )
+
+    this.resetRoutingStateWithRetainedSegments(
+      retainedSegmentsByRegion,
+      unroutedRouteIds,
+    )
   }
 
   protected getMaxRegionCost() {
@@ -963,17 +1255,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCosts[regionId] * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
 
+    const ripPercentage = this.getCurrentRipPercentage(
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+    )
+    const routeIdsToRip = this.selectRouteIdsToRip(
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+    )
+
     state.ripCount += 1
-    this.resetRoutingStateForRerip()
+    this.resetRoutingStateForRerip(routeIdsToRip)
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
       maxRegionCostBeforeRip: maxRegionCost,
       reripRegionCount: regionIdsOverCostThreshold.length,
+      reripRouteCount: routeIdsToRip.length,
+      ripPercentage,
     }
     this.logRipEvent("hot_regions", maxRegionCost, {
       hotRegionCount: regionIdsOverCostThreshold.length,
       currentRipThreshold,
+      ripPercentage,
+      routeCount: routeIdsToRip.length,
     })
   }
 
@@ -989,16 +1292,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
 
+    const ripPercentage = this.getCurrentRipPercentage(
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+    )
+    const routeIdsToRip = this.selectRouteIdsToRip(
+      this.RIP_THRESHOLD_RAMP_ATTEMPTS,
+    )
+
     state.ripCount += 1
-    this.resetRoutingStateForRerip()
+    this.resetRoutingStateForRerip(routeIdsToRip)
     this.stats = {
       ...this.stats,
       ripCount: state.ripCount,
       maxRegionCost: maxRegionCostBeforeRip,
       maxRegionCostBeforeRip,
       reripReason: "out_of_candidates",
+      reripRouteCount: routeIdsToRip.length,
+      ripPercentage,
     }
     this.logRipEvent("out_of_candidates", maxRegionCostBeforeRip, {
+      ripPercentage,
+      routeCount: routeIdsToRip.length,
       ...(currentRouteId === undefined
         ? {}
         : {
