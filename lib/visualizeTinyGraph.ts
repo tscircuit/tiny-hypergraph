@@ -269,10 +269,7 @@ const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   y: solver.topology.portY[portId],
 })
 
-const getPortRenderPoint = (
-  solver: TinyHyperGraphSolver,
-  portId: PortId,
-) => {
+const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
   const portPoint = getPortPoint(solver, portId)
   const layerOffset =
     solver.topology.portZ[portId] * PORT_LAYER_COORDINATE_OFFSET
