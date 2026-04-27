@@ -124,7 +124,7 @@ test("section solver visualize highlights the section without idle gray port-reg
   expect(graphics.title).toContain("sectionPorts=")
 })
 
-test("section solver enforces section-specific rip thresholds and max rip cap", () => {
+test("section solver preserves explicit rip thresholds and max rip cap", () => {
   const { topology, problem, solution } = loadSerializedHyperGraph(
     sectionSolverFixtureGraph,
   )
@@ -153,14 +153,10 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
 
   expect(sectionSolver.DISTANCE_TO_COST).toBe(0.2)
   expect(sectionSolver.sectionSolver?.DISTANCE_TO_COST).toBe(0.2)
-  expect(sectionSolver.RIP_THRESHOLD_START).toBe(0.05)
-  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.05)
-  expect(sectionSolver.RIP_THRESHOLD_END).toBe(
-    sectionSolver.sectionBaselineSummary.maxRegionCost,
-  )
-  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(
-    sectionSolver.sectionBaselineSummary.maxRegionCost,
-  )
+  expect(sectionSolver.RIP_THRESHOLD_START).toBe(0.11)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_START).toBe(0.11)
+  expect(sectionSolver.RIP_THRESHOLD_END).toBe(0.22)
+  expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_END).toBe(0.22)
   expect(sectionSolver.sectionSolver?.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(9)
   expect(sectionSolver.RIP_PERCENTAGE_START).toBe(0.91)
   expect(sectionSolver.sectionSolver?.RIP_PERCENTAGE_START).toBe(0.91)
@@ -172,8 +168,8 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
   expect(sectionSolver.sectionSolver?.MAX_ITERATIONS).toBe(4567)
   expect(sectionSolver.STATIC_REACHABILITY_PRECHECK).toBe(false)
   expect(sectionSolver.sectionSolver?.STATIC_REACHABILITY_PRECHECK).toBe(false)
-  expect(sectionSolver.MAX_RIPS).toBe(20)
-  expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(20)
+  expect(sectionSolver.MAX_RIPS).toBe(80)
+  expect(sectionSolver.sectionSolver?.MAX_RIPS).toBe(80)
   expect(
     sectionSolver.sectionSolver?.MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT,
   ).toBe(3)
