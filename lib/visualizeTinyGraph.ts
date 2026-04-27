@@ -8,6 +8,7 @@ const BOTTOM_LAYER_TRACE_DASH = "3 2"
 const TRANSITION_CROSSING_COLOR = "rgba(22, 160, 133, 0.95)"
 const TRANSITION_CROSSING_DASH = "2 4 2"
 const REGION_RECT_GAP = 0.05
+const PORT_LAYER_COORDINATE_OFFSET = 0.005
 const HOT_REGION_FILL = { r: 255, g: 64, b: 64, a: 0.72 }
 const NEVER_ROUTED_ENDPOINT_STROKE = "rgba(220, 38, 38, 0.98)"
 const NEVER_ROUTED_ENDPOINT_FILL = "rgba(220, 38, 38, 0.12)"
@@ -268,9 +269,21 @@ const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
   y: solver.topology.portY[portId],
 })
 
-const getPortRenderPoint = getPortPoint
+const getPortRenderPoint = (
+  solver: TinyHyperGraphSolver,
+  portId: PortId,
+) => {
+  const portPoint = getPortPoint(solver, portId)
+  const layerOffset =
+    solver.topology.portZ[portId] * PORT_LAYER_COORDINATE_OFFSET
 
-const getPortCircleCenter = getPortPoint
+  return {
+    x: portPoint.x + layerOffset,
+    y: portPoint.y + layerOffset,
+  }
+}
+
+const getPortCircleCenter = getPortRenderPoint
 
 const getPortVisualizationLayer = (
   solver: TinyHyperGraphSolver,

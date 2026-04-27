@@ -6,8 +6,6 @@ import type {
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 
-const PORT_LAYER_COORDINATE_OFFSET = 0.005
-
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
 ) => {
@@ -211,17 +209,13 @@ const getSerializedPortZ = (
   return Number.isFinite(z) ? z : 0
 }
 
-const getSerializedPortLayerOffset = (
-  port: SerializedHyperGraph["ports"][number],
-): number => getSerializedPortZ(port) * PORT_LAYER_COORDINATE_OFFSET
-
 const getSerializedPortX = (
   port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.x ?? 0) + getSerializedPortLayerOffset(port)
+): number => Number(port.d?.x ?? 0)
 
 const getSerializedPortY = (
   port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.y ?? 0) + getSerializedPortLayerOffset(port)
+): number => Number(port.d?.y ?? 0)
 
 const computePortAngle = (
   port: SerializedHyperGraph["ports"][number],

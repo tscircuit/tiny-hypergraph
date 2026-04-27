@@ -3,7 +3,7 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { TinyHyperGraphSolver } from "lib/index"
 
-test("loadSerializedHyperGraph offsets serialized port coordinates by z layer", () => {
+test("loadSerializedHyperGraph keeps serialized coordinates exact and offsets only visualization", () => {
   const graph: SerializedHyperGraph = {
     regions: [
       {
@@ -30,11 +30,11 @@ test("loadSerializedHyperGraph offsets serialized port coordinates by z layer", 
 
   const { topology, problem } = loadSerializedHyperGraph(graph)
 
-  expect(topology.portX[0]).toBeCloseTo(1.01)
-  expect(topology.portY[0]).toBeCloseTo(0.51)
+  expect(topology.portX[0]).toBeCloseTo(1)
+  expect(topology.portY[0]).toBeCloseTo(0.5)
   expect(topology.portZ[0]).toBe(2)
-  expect(topology.portAngleForRegion1[0]).toBe(4590)
-  expect(topology.portAngleForRegion2?.[0]).toBe(22410)
+  expect(topology.portAngleForRegion1[0]).toBe(4500)
+  expect(topology.portAngleForRegion2?.[0]).toBe(22500)
 
   const solver = new TinyHyperGraphSolver(topology, problem)
   const portCircle = (solver.visualize().circles ?? []).find((circle) =>
