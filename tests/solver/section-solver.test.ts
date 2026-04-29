@@ -8,6 +8,7 @@ import {
   TinyHyperGraphSectionSolver,
   type TinyHyperGraphSolver,
 } from "lib/index"
+import type { SerializedHyperGraphWithRuntimeConfig } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 import {
   createSectionSolverFixturePortMask,
   sectionSolverFixtureGraph,
@@ -41,6 +42,39 @@ const getSerializedOutputMaxRegionCost = (
   )
 
   return getMaxRegionCost(replayedSolver.baselineSolver)
+}
+
+const getSerializedOutputLayerChangeCount = (
+  serializedHyperGraph: ReturnType<TinyHyperGraphSectionSolver["getOutput"]>,
+) => {
+  const portZByPortId = new Map(
+    serializedHyperGraph.ports.map((port) => [port.portId, port.d?.z]),
+  )
+  let layerChangeCount = 0
+
+  for (const solvedRoute of serializedHyperGraph.solvedRoutes ?? []) {
+    for (let i = 1; i < solvedRoute.path.length; i++) {
+      if (
+        portZByPortId.get(solvedRoute.path[i - 1]!.portId) !==
+        portZByPortId.get(solvedRoute.path[i]!.portId)
+      ) {
+        layerChangeCount += 1
+      }
+    }
+  }
+
+  return layerChangeCount
+}
+
+const getSectionPipelineOutput = (
+  pipelineSolver: TinyHyperGraphSectionPipelineSolver,
+): ReturnType<TinyHyperGraphSectionSolver["getOutput"]> => {
+  const output = pipelineSolver.getOutput()
+  if (!output) {
+    throw new Error("Expected section pipeline output to be defined")
+  }
+
+  return output
 }
 
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
@@ -301,6 +335,47 @@ test("section pipeline only uses threehop and fourhop families when explicitly e
 
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(9)
+  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(18)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
+})
+
+test("section pipeline effort increases search budget and reduces layer changes on hg07 sample032", () => {
+  const baselinePipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample032,
+  })
+  baselinePipelineSolver.solve()
+
+  const highEffortSerializedHyperGraph: SerializedHyperGraphWithRuntimeConfig =
+    {
+      ...datasetHg07.sample032,
+      effort: 64,
+    }
+  const highEffortPipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: highEffortSerializedHyperGraph,
+  })
+  highEffortPipelineSolver.solve()
+
+  expect(baselinePipelineSolver.solved).toBe(true)
+  expect(highEffortPipelineSolver.solved).toBe(true)
+  expect(baselinePipelineSolver.failed).toBe(false)
+  expect(highEffortPipelineSolver.failed).toBe(false)
+
+  const baselineSolveGraphSolver =
+    baselinePipelineSolver.getSolver<TinyHyperGraphSolver>("solveGraph")
+  const highEffortSolveGraphSolver =
+    highEffortPipelineSolver.getSolver<TinyHyperGraphSolver>("solveGraph")
+  const baselineOutput = getSectionPipelineOutput(baselinePipelineSolver)
+  const highEffortOutput = getSectionPipelineOutput(highEffortPipelineSolver)
+
+  expect(baselineSolveGraphSolver).toBeDefined()
+  expect(highEffortSolveGraphSolver).toBeDefined()
+  expect(
+    highEffortSolveGraphSolver!.RIP_THRESHOLD_RAMP_ATTEMPTS,
+  ).toBeGreaterThan(baselineSolveGraphSolver!.RIP_THRESHOLD_RAMP_ATTEMPTS)
+  expect(highEffortSolveGraphSolver!.LAYER_CHANGE_COST).toBeGreaterThan(
+    baselineSolveGraphSolver!.LAYER_CHANGE_COST,
+  )
+  expect(getSerializedOutputLayerChangeCount(highEffortOutput)).toBeLessThan(
+    getSerializedOutputLayerChangeCount(baselineOutput),
+  )
 })

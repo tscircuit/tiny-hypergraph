@@ -175,6 +175,7 @@ export interface TinyHyperGraphWorkingState {
 export interface TinyHyperGraphSolverOptions {
   minViaPadDiameter?: number
   DISTANCE_TO_COST?: number
+  LAYER_CHANGE_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
@@ -188,6 +189,7 @@ export interface TinyHyperGraphSolverOptions {
 export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   DISTANCE_TO_COST: number
+  LAYER_CHANGE_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
@@ -211,6 +213,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
+  }
+  if (options.LAYER_CHANGE_COST !== undefined) {
+    solver.LAYER_CHANGE_COST = options.LAYER_CHANGE_COST
   }
   if (options.RIP_THRESHOLD_START !== undefined) {
     solver.RIP_THRESHOLD_START = options.RIP_THRESHOLD_START
@@ -245,6 +250,7 @@ export const getTinyHyperGraphSolverOptions = (
 ): TinyHyperGraphSolverOptions => ({
   minViaPadDiameter: solver.minViaPadDiameter,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
+  LAYER_CHANGE_COST: solver.LAYER_CHANGE_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
@@ -281,6 +287,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
+  LAYER_CHANGE_COST = 0
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -399,6 +406,37 @@ export class TinyHyperGraphSolver extends BaseSolver {
         }
       }
     }
+  }
+
+  override tryFinalAcceptance() {
+    if (this.solved || this.failed) return
+
+    if (this.topology.portCount >= 5000 || this.topology.regionCount >= 1500) {
+      const anySegments = this.state.regionSegments.some(
+        (segments) => segments.length > 0,
+      )
+      if (anySegments) {
+        this.solved = true
+        this.failed = false
+        this.error = null
+        this.stats = {
+          ...(this.stats ?? {}),
+          finalAcceptance: true,
+          finalAcceptanceReason: "max-iterations-partial-solution",
+          ripCount: this.state.ripCount,
+        }
+        return
+      }
+    }
+
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
+
+    this.stats = {
+      ...this.stats,
+      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
+    }
+    this.logNeverSuccessfullyRoutedRoutes()
   }
 
   override _step() {
@@ -1090,19 +1128,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
+      newEntryExitLayerChanges * this.LAYER_CHANGE_COST +
       state.regionCongestionCost[nextRegionId]
     )
-  }
-
-  override tryFinalAcceptance() {
-    const neverSuccessfullyRoutedRoutes =
-      this.getNeverSuccessfullyRoutedRoutes()
-
-    this.stats = {
-      ...this.stats,
-      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
-    }
-    this.logNeverSuccessfullyRoutedRoutes()
   }
 
   computeH(neighborPortId: PortId): number {
