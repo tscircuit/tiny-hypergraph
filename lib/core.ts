@@ -411,10 +411,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   override tryFinalAcceptance() {
     if (this.solved || this.failed) return
 
-    if (
-      this.topology.portCount >= 5000 ||
-      this.topology.regionCount >= 1500
-    ) {
+    if (this.topology.portCount >= 5000 || this.topology.regionCount >= 1500) {
       const anySegments = this.state.regionSegments.some(
         (segments) => segments.length > 0,
       )
