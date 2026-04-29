@@ -287,6 +287,37 @@ const getPortVisualizationLayer = (
   portId: PortId,
 ): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
+
+const getPortReuseCount = (solver: TinyHyperGraphSolver, portId: PortId): number => {
+  let count = 0
+
+  for (const regionSegments of solver.state.regionSegments) {
+    for (const [, fromPortId, toPortId] of regionSegments) {
+      if (fromPortId === portId) count += 1
+      if (toPortId === portId) count += 1
+    }
+  }
+
+  return count
+}
+
+const pushReusedPortHighlights = (
+  solver: TinyHyperGraphSolver,
+  graphics: Required<GraphicsObject>,
+) => {
+  for (let portId = 0; portId < solver.topology.portCount; portId++) {
+    const reuseCount = getPortReuseCount(solver, portId)
+    if (reuseCount < 2) continue
+
+    graphics.circles.push({
+      center: getPortCircleCenter(solver, portId),
+      radius: 0.12,
+      fill: "rgba(255, 80, 80, 0.18)",
+      stroke: "rgba(255, 80, 80, 0.4)",
+      label: formatLabel(getPortLabel(solver, portId), `reuse count: ${reuseCount}`),
+    })
+  }
+}
 const getPortIdentifierLabel = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
@@ -958,6 +989,7 @@ export const visualizeTinyHyperGraph = (
     }
   } else {
     pushSolvedRegionSegments(solver, graphics)
+    pushReusedPortHighlights(solver, graphics)
     pushRoutePortZPoints(solver, graphics)
     if (shouldShowBusUnassignedPorts(solver)) {
       pushUnassignedPortCircles(solver, graphics)
