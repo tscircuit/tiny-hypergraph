@@ -410,24 +410,36 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override tryFinalAcceptance() {
     if (this.solved || this.failed) return
-    if (this.topology.portCount < 5000 && this.topology.regionCount < 1500) {
-      return
+
+    if (
+      this.topology.portCount >= 5000 ||
+      this.topology.regionCount >= 1500
+    ) {
+      const anySegments = this.state.regionSegments.some(
+        (segments) => segments.length > 0,
+      )
+      if (anySegments) {
+        this.solved = true
+        this.failed = false
+        this.error = null
+        this.stats = {
+          ...(this.stats ?? {}),
+          finalAcceptance: true,
+          finalAcceptanceReason: "max-iterations-partial-solution",
+          ripCount: this.state.ripCount,
+        }
+        return
+      }
     }
 
-    const anySegments = this.state.regionSegments.some(
-      (segments) => segments.length > 0,
-    )
-    if (!anySegments) return
+    const neverSuccessfullyRoutedRoutes =
+      this.getNeverSuccessfullyRoutedRoutes()
 
-    this.solved = true
-    this.failed = false
-    this.error = null
     this.stats = {
-      ...(this.stats ?? {}),
-      finalAcceptance: true,
-      finalAcceptanceReason: "max-iterations-partial-solution",
-      ripCount: this.state.ripCount,
+      ...this.stats,
+      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
+    this.logNeverSuccessfullyRoutedRoutes()
   }
 
   override _step() {
@@ -1122,17 +1134,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newEntryExitLayerChanges * this.LAYER_CHANGE_COST +
       state.regionCongestionCost[nextRegionId]
     )
-  }
-
-  override tryFinalAcceptance() {
-    const neverSuccessfullyRoutedRoutes =
-      this.getNeverSuccessfullyRoutedRoutes()
-
-    this.stats = {
-      ...this.stats,
-      neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
-    }
-    this.logNeverSuccessfullyRoutedRoutes()
   }
 
   computeH(neighborPortId: PortId): number {

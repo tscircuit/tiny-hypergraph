@@ -335,7 +335,7 @@ test("section pipeline only uses threehop and fourhop families when explicitly e
 
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(9)
+  expect(pipelineSolver.stats.sectionSearchGeneratedCandidateCount).toBe(18)
   expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
 })
 
