@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { convertPortPointPathingSolverInputToSerializedHyperGraph } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
+import {
+  convertPortPointPathingSolverInputToSerializedHyperGraph,
+  type SerializedHyperGraphWithRuntimeConfig,
+} from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 
 test("convertPortPointPathingSolverInputToSerializedHyperGraph flattens solver params into a serialized hypergraph", () => {
   const serializedHyperGraph =
@@ -31,10 +34,18 @@ test("convertPortPointPathingSolverInputToSerializedHyperGraph flattens solver p
             mutuallyConnectedNetworkId: "net-0",
           },
         ],
+        effort: 8,
+        layerCount: 4,
+        flags: {
+          RIPPING_ENABLED: true,
+        },
+        weights: {
+          LAYER_CHANGE_COST: 0.25,
+        },
       },
     ])
 
-  expect(serializedHyperGraph).toEqual({
+  const expectedHyperGraph: SerializedHyperGraphWithRuntimeConfig = {
     regions: [
       {
         regionId: "r0",
@@ -58,5 +69,15 @@ test("convertPortPointPathingSolverInputToSerializedHyperGraph flattens solver p
         mutuallyConnectedNetworkId: "net-0",
       },
     ],
-  })
+    effort: 8,
+    layerCount: 4,
+    flags: {
+      RIPPING_ENABLED: true,
+    },
+    weights: {
+      LAYER_CHANGE_COST: 0.25,
+    },
+  }
+
+  expect(serializedHyperGraph).toEqual(expectedHyperGraph)
 })

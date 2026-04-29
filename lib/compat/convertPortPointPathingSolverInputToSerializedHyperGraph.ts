@@ -1,6 +1,16 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 
-export interface SerializedHyperGraphPortPointPathingSolverParams {
+type SerializedHyperGraphRuntimeConfig = {
+  effort?: number
+  layerCount?: number
+  flags?: Record<string, boolean>
+  weights?: Record<string, number>
+}
+
+export type SerializedHyperGraphWithRuntimeConfig = SerializedHyperGraph &
+  SerializedHyperGraphRuntimeConfig
+
+type SerializedHyperGraphPortPointPathingSolverParamsBase = {
   format: "serialized-hg-port-point-pathing-solver-params"
   graph: {
     regions: SerializedHyperGraph["regions"]
@@ -13,20 +23,34 @@ export interface SerializedHyperGraphPortPointPathingSolverParams {
   weights?: unknown
 }
 
+export type SerializedHyperGraphPortPointPathingSolverParams =
+  SerializedHyperGraphPortPointPathingSolverParamsBase &
+    SerializedHyperGraphRuntimeConfig
+
 export type SerializedHyperGraphPortPointPathingSolverInput =
   | SerializedHyperGraphPortPointPathingSolverParams
   | SerializedHyperGraphPortPointPathingSolverParams[]
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
 const isSerializedHyperGraphPortPointPathingSolverParams = (
   value: unknown,
-): value is SerializedHyperGraphPortPointPathingSolverParams =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as { format?: unknown }).format ===
-    "serialized-hg-port-point-pathing-solver-params" &&
-  Array.isArray((value as { graph?: { regions?: unknown } }).graph?.regions) &&
-  Array.isArray((value as { graph?: { ports?: unknown } }).graph?.ports) &&
-  Array.isArray((value as { connections?: unknown }).connections)
+): value is SerializedHyperGraphPortPointPathingSolverParams => {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  const { format, graph, connections } = value
+
+  return (
+    format === "serialized-hg-port-point-pathing-solver-params" &&
+    isRecord(graph) &&
+    Array.isArray(graph.regions) &&
+    Array.isArray(graph.ports) &&
+    Array.isArray(connections)
+  )
+}
 
 export const getSinglePortPointPathingSolverParams = (
   input: SerializedHyperGraphPortPointPathingSolverInput,
@@ -46,7 +70,7 @@ export const getSinglePortPointPathingSolverParams = (
 }
 export const convertPortPointPathingSolverInputToSerializedHyperGraph = (
   input: SerializedHyperGraphPortPointPathingSolverInput,
-): SerializedHyperGraph => {
+): SerializedHyperGraphWithRuntimeConfig => {
   const params = getSinglePortPointPathingSolverParams(input)
 
   if (!isSerializedHyperGraphPortPointPathingSolverParams(params)) {
@@ -55,9 +79,15 @@ export const convertPortPointPathingSolverInputToSerializedHyperGraph = (
     )
   }
 
-  return {
+  const serializedHyperGraph: SerializedHyperGraphWithRuntimeConfig = {
     regions: params.graph.regions,
     ports: params.graph.ports,
     connections: params.connections,
+    effort: params.effort,
+    layerCount: params.layerCount,
+    flags: params.flags,
+    weights: params.weights,
   }
+
+  return serializedHyperGraph
 }

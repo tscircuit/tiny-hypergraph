@@ -60,6 +60,97 @@ const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
 
+type SerializedHyperGraphRuntimeConfig = {
+  effort?: number
+  layerCount?: number
+  flags?: Record<string, boolean>
+  weights?: Record<string, number>
+}
+
+type SerializedHyperGraphWithRuntimeConfig = SerializedHyperGraph &
+  SerializedHyperGraphRuntimeConfig
+
+type DerivedPipelineOptions = {
+  solveGraphOptions?: TinyHyperGraphSolverOptions
+  sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
+  sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
+}
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value))
+
+const getEffortLevel = (effort: number | undefined) => {
+  if (!Number.isFinite(effort) || effort === undefined) {
+    return 0
+  }
+
+  return Math.max(0, Math.log2(Math.max(1, effort)))
+}
+
+const getDerivedPipelineOptionsFromSerializedHyperGraph = (
+  serializedHyperGraph: SerializedHyperGraphWithRuntimeConfig,
+): DerivedPipelineOptions => {
+  const effortLevel = getEffortLevel(serializedHyperGraph.effort)
+  const weights = serializedHyperGraph.weights ?? {}
+  const rippingEnabled = serializedHyperGraph.flags?.RIPPING_ENABLED !== false
+  const layerChangeCostWeight =
+    typeof weights.LAYER_CHANGE_COST === "number"
+      ? weights.LAYER_CHANGE_COST
+      : 0
+  const derivedLayerChangeCost =
+    layerChangeCostWeight > 0 ? layerChangeCostWeight : effortLevel * 0.02
+  const derivedSolveRampAttempts = rippingEnabled
+    ? clamp(Math.round(5 + effortLevel * 6), 5, 48)
+    : 0
+  const derivedMaxIterations =
+    typeof weights.MAX_ITERATIONS_PER_PATH === "number" &&
+    weights.MAX_ITERATIONS_PER_PATH > 0
+      ? Math.max(1e6, weights.MAX_ITERATIONS_PER_PATH)
+      : Math.round(1e6 * Math.max(1, 1 + effortLevel * 2))
+  const derivedSectionHotRegions = clamp(
+    Math.round(DEFAULT_MAX_HOT_REGIONS + effortLevel),
+    DEFAULT_MAX_HOT_REGIONS,
+    8,
+  )
+  const derivedSectionRampAttempts = rippingEnabled
+    ? clamp(Math.round(16 + effortLevel * 4), 16, 32)
+    : 0
+  const derivedSectionRipsWithoutImprovement = clamp(
+    Math.round(6 + effortLevel * 4),
+    6,
+    32,
+  )
+
+  return {
+    solveGraphOptions: {
+      LAYER_CHANGE_COST: derivedLayerChangeCost,
+      MAX_ITERATIONS: derivedMaxIterations,
+      RIP_THRESHOLD_START:
+        typeof weights.START_RIPPING_PF_THRESHOLD === "number"
+          ? weights.START_RIPPING_PF_THRESHOLD
+          : undefined,
+      RIP_THRESHOLD_END:
+        typeof weights.END_RIPPING_PF_THRESHOLD === "number"
+          ? weights.END_RIPPING_PF_THRESHOLD
+          : undefined,
+      RIP_THRESHOLD_RAMP_ATTEMPTS: derivedSolveRampAttempts,
+    },
+    sectionSolverOptions: {
+      LAYER_CHANGE_COST: derivedLayerChangeCost,
+      MAX_HOT_REGIONS: derivedSectionHotRegions,
+      MAX_ITERATIONS: derivedMaxIterations,
+      MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT:
+        derivedSectionRipsWithoutImprovement,
+      EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST:
+        derivedSectionRipsWithoutImprovement,
+      RIP_THRESHOLD_RAMP_ATTEMPTS: derivedSectionRampAttempts,
+    },
+    sectionSearchConfig: {
+      maxHotRegions: derivedSectionHotRegions,
+    },
+  }
+}
+
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
     (maxRegionCost, regionIntersectionCache) =>
@@ -303,7 +394,7 @@ export interface TinyHyperGraphSectionPipelineSearchConfig {
 }
 
 export interface TinyHyperGraphSectionPipelineInput {
-  serializedHyperGraph: SerializedHyperGraph
+  serializedHyperGraph: SerializedHyperGraphWithRuntimeConfig
   minViaPadDiameter?: number
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
   solveGraphOptions?: TinyHyperGraphSolverOptions
@@ -325,12 +416,19 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return loadSerializedHyperGraph(serializedHyperGraph)
   }
 
+  getDerivedPipelineOptions() {
+    return getDerivedPipelineOptionsFromSerializedHyperGraph(
+      this.inputProblem.serializedHyperGraph,
+    )
+  }
+
   getSolveGraphOptions(): TinyHyperGraphSolverOptions {
     return {
       ...DEFAULT_SOLVE_GRAPH_OPTIONS,
       ...(this.inputProblem.minViaPadDiameter === undefined
         ? {}
         : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.getDerivedPipelineOptions().solveGraphOptions,
       ...this.inputProblem.solveGraphOptions,
     }
   }
@@ -341,8 +439,25 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       ...(this.inputProblem.minViaPadDiameter === undefined
         ? {}
         : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.getDerivedPipelineOptions().sectionSolverOptions,
       ...this.inputProblem.sectionSolverOptions,
     }
+  }
+
+  getEffectiveSectionSearchConfig() {
+    const derivedSectionSearchConfig =
+      this.getDerivedPipelineOptions().sectionSearchConfig
+
+    if (this.inputProblem.sectionSearchConfig !== undefined) {
+      return {
+        ...derivedSectionSearchConfig,
+        ...this.inputProblem.sectionSearchConfig,
+      }
+    }
+
+    return this.inputProblem.sectionSolverOptions?.MAX_HOT_REGIONS === undefined
+      ? derivedSectionSearchConfig
+      : undefined
   }
 
   override pipelineDef: PipelineStep<any>[] = [
@@ -354,11 +469,11 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           instance.inputProblem.serializedHyperGraph,
         )
 
-        return [
-          topology,
-          problem,
-          instance.getSolveGraphOptions(),
-        ] as ConstructorParameters<typeof TinyHyperGraphSolver>
+        const constructorParams: ConstructorParameters<
+          typeof TinyHyperGraphSolver
+        > = [topology, problem, instance.getSolveGraphOptions()]
+
+        return constructorParams
       },
     },
     {
@@ -410,7 +525,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
             topology,
             problem,
             solution,
-            this.inputProblem.sectionSearchConfig,
+            this.getEffectiveSectionSearchConfig(),
             sectionSolverOptions,
           )
 

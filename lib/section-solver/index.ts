@@ -864,6 +864,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
 
   DISTANCE_TO_COST = 0.05
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
+  LAYER_CHANGE_COST = 0
   VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05
