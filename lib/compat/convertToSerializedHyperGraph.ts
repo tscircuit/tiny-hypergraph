@@ -208,45 +208,56 @@ const getOrderedRoutePath = (
 
   const orderedPortIds = [startPortId]
   const orderedRegionIds: RegionId[] = []
-  const usedSegmentIndices = new Set<number>()
-  let currentPortId = startPortId
-  let previousPortId: PortId | undefined
 
-  while (currentPortId !== endPortId) {
-    const nextSegments = (segmentsByPort.get(currentPortId) ?? []).filter(
-      (routeSegment) => {
-        if (usedSegmentIndices.has(routeSegment.segmentIndex)) return false
-
-        const nextPortId =
-          routeSegment.fromPortId === currentPortId
-            ? routeSegment.toPortId
-            : routeSegment.fromPortId
-
-        return nextPortId !== previousPortId
-      },
-    )
-
-    if (nextSegments.length !== 1) {
-      throw new Error(
-        `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
-      )
+  const appendSimplePathToEnd = (
+    currentPortId: PortId,
+    usedSegmentIndices: Set<number>,
+    visitedPortIds: Set<PortId>,
+  ): boolean => {
+    if (currentPortId === endPortId) {
+      return true
     }
 
-    const nextSegment = nextSegments[0]!
-    const nextPortId =
-      nextSegment.fromPortId === currentPortId
-        ? nextSegment.toPortId
-        : nextSegment.fromPortId
+    for (const routeSegment of segmentsByPort.get(currentPortId) ?? []) {
+      if (usedSegmentIndices.has(routeSegment.segmentIndex)) continue
 
-    usedSegmentIndices.add(nextSegment.segmentIndex)
-    orderedRegionIds.push(nextSegment.regionId)
-    orderedPortIds.push(nextPortId)
-    previousPortId = currentPortId
-    currentPortId = nextPortId
+      const nextPortId =
+        routeSegment.fromPortId === currentPortId
+          ? routeSegment.toPortId
+          : routeSegment.fromPortId
+
+      if (visitedPortIds.has(nextPortId)) continue
+
+      usedSegmentIndices.add(routeSegment.segmentIndex)
+      visitedPortIds.add(nextPortId)
+      orderedRegionIds.push(routeSegment.regionId)
+      orderedPortIds.push(nextPortId)
+
+      if (
+        appendSimplePathToEnd(nextPortId, usedSegmentIndices, visitedPortIds)
+      ) {
+        return true
+      }
+
+      orderedPortIds.pop()
+      orderedRegionIds.pop()
+      visitedPortIds.delete(nextPortId)
+      usedSegmentIndices.delete(routeSegment.segmentIndex)
+    }
+
+    return false
   }
 
-  if (usedSegmentIndices.size !== routeSegments.length) {
-    throw new Error(`Route ${routeId} contains disconnected solved segments`)
+  if (
+    !appendSimplePathToEnd(
+      startPortId,
+      new Set<number>(),
+      new Set([startPortId]),
+    )
+  ) {
+    throw new Error(
+      `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
+    )
   }
 
   return {
