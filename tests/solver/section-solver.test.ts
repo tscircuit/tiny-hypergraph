@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { samples as busRoutingSamples } from "@tsci/tscircuit.dataset-srj12-bus-routing"
+import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
@@ -19,6 +21,39 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
       Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
     0,
   )
+
+const normalizeBusRoutingSample = (
+  sampleName: string,
+): SerializedHyperGraph => {
+  const sample = busRoutingSamples.find(
+    (candidate) => candidate.sampleName === sampleName,
+  )
+
+  if (!sample) {
+    throw new Error(`Missing bus routing sample: ${sampleName}`)
+  }
+
+  const solverInput = sample.tinyHypergraphBenchmark.solverInput as {
+    graph: {
+      regions: Array<Record<string, unknown>>
+      ports: SerializedHyperGraph["ports"]
+    }
+    connections: NonNullable<SerializedHyperGraph["connections"]>
+  }
+
+  return {
+    regions: solverInput.graph.regions.map((region) => ({
+      ...region,
+      pointIds: Array.isArray(region.pointIds)
+        ? region.pointIds
+        : Array.isArray(region.portIds)
+          ? region.portIds
+          : [],
+    })) as SerializedHyperGraph["regions"],
+    ports: solverInput.graph.ports,
+    connections: solverInput.connections,
+  }
+}
 
 const getSolvedRoutePortIds = (
   output: ReturnType<TinyHyperGraphSectionSolver["getOutput"]>,
@@ -242,6 +277,31 @@ test("section pipeline searches multiple masks and commits an improving output o
   expect(getSerializedOutputMaxRegionCost(optimizeSectionOutput!)).toBeLessThan(
     getSerializedOutputMaxRegionCost(solveGraphOutput!),
   )
+})
+
+test("section pipeline serializes srj12 bus-routing sample001 without a repeated-start-port path", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: normalizeBusRoutingSample("sample001"),
+  })
+
+  pipelineSolver.solve()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+
+  const solveGraphOutput =
+    pipelineSolver.getStageOutput<
+      ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+    >("solveGraph")
+
+  expect(solveGraphOutput).toBeDefined()
+  expect(solveGraphOutput!.solvedRoutes).toHaveLength(2)
+
+  for (const solvedRoute of solveGraphOutput!.solvedRoutes ?? []) {
+    const portIds = solvedRoute.path.map((candidate) => candidate.portId)
+    expect(portIds.length).toBeGreaterThan(1)
+    expect(new Set(portIds).size).toBe(portIds.length)
+  }
 })
 
 test("section pipeline accepts MAX_HOT_REGIONS through sectionSolverOptions", () => {

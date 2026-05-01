@@ -9,12 +9,14 @@
     "format:check": "biome format .",
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
+    "benchmark:bus": "./benchmark-bus.sh",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
+    "@tsci/tscircuit.dataset-srj12-bus-routing": "https://github.com/tscircuit/dataset-srj12-bus-routing#7d6a44e76c0419959ad0d0e382a19f65857ad7b8",
     "@tscircuit/find-convex-regions": "^0.1.3",
     "@tscircuit/hypergraph": "^0.0.71",
     "@tscircuit/solver-utils": "^0.0.17",
