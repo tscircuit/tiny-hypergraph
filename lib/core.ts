@@ -99,7 +99,7 @@ export interface TinyHyperGraphProblem {
 }
 
 export interface TinyHyperGraphProblemSetup {
-  // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
+  // portHCostToEndOfRoute[portId * routeCount + routeId] = route search heuristic cost
   portHCostToEndOfRoute: Float64Array
   portEndpointNetIds: Array<Set<NetId>>
 }
@@ -259,6 +259,36 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
+const getDistanceToSegment = (
+  pointX: number,
+  pointY: number,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+) => {
+  const segmentX = endX - startX
+  const segmentY = endY - startY
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY
+
+  if (segmentLengthSquared === 0) {
+    return Math.hypot(pointX - startX, pointY - startY)
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      ((pointX - startX) * segmentX + (pointY - startY) * segmentY) /
+        segmentLengthSquared,
+    ),
+  )
+  const projectedX = startX + segmentX * t
+  const projectedY = startY + segmentY * t
+
+  return Math.hypot(pointX - projectedX, pointY - projectedY)
+}
+
 interface SegmentGeometryScratch {
   lesserAngle: number
   greaterAngle: number
@@ -355,14 +385,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
       )
 
       const endPortId = problem.routeEndPort[routeId]
+      const startPortId = problem.routeStartPort[routeId]
+      const startX = portX[startPortId]
+      const startY = portY[startPortId]
       const endX = portX[endPortId]
       const endY = portY[endPortId]
 
       for (let portId = 0; portId < topology.portCount; portId++) {
-        const dx = portX[portId] - endX
-        const dy = portY[portId] - endY
+        const x = portX[portId]
+        const y = portY[portId]
+        const dx = x - endX
+        const dy = y - endY
+        const distanceToGoal = Math.hypot(dx, dy)
+        const distanceToStraightLinePath = getDistanceToSegment(
+          x,
+          y,
+          startX,
+          startY,
+          endX,
+          endY,
+        )
         portHCostToEndOfRoute[portId * problem.routeCount + routeId] =
-          Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+          (distanceToGoal + distanceToStraightLinePath) * this.DISTANCE_TO_COST
       }
     }
 

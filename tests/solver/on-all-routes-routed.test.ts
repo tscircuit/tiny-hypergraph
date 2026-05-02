@@ -157,3 +157,36 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
+
+test("route heuristic adds distance to goal and distance to straight-line path", () => {
+  const topology: TinyHyperGraphTopology = {
+    portCount: 3,
+    regionCount: 1,
+    regionIncidentPorts: [[0, 1, 2]],
+    incidentPortRegion: [[0], [0], [0]],
+    regionWidth: new Float64Array([1]),
+    regionHeight: new Float64Array([1]),
+    regionCenterX: new Float64Array([0]),
+    regionCenterY: new Float64Array([0]),
+    portAngleForRegion1: new Int32Array(3),
+    portAngleForRegion2: new Int32Array(3),
+    portX: new Float64Array([0, 4, 2]),
+    portY: new Float64Array([0, 0, 3]),
+    portZ: new Int32Array(3),
+  }
+  const problem: TinyHyperGraphProblem = {
+    routeCount: 1,
+    portSectionMask: new Int8Array(3).fill(1),
+    routeStartPort: new Int32Array([0]),
+    routeEndPort: new Int32Array([1]),
+    routeNet: new Int32Array([0]),
+    regionNetId: new Int32Array([-1]),
+  }
+  const solver = new TinyHyperGraphSolver(topology, problem, {
+    DISTANCE_TO_COST: 0.5,
+  })
+
+  const offLinePortHeuristic = solver.problemSetup.portHCostToEndOfRoute[2]
+
+  expect(offLinePortHeuristic).toBeCloseTo((Math.hypot(2, 3) + 3) * 0.5)
+})
