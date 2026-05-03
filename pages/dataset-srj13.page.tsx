@@ -97,6 +97,7 @@ const normalizeSerializedHyperGraph = (
   }
 
   return {
+    ...solverInput,
     regions: solverInput.graph.regions.map((region) => ({
       ...region,
       pointIds: Array.isArray(region.pointIds)
@@ -107,7 +108,7 @@ const normalizeSerializedHyperGraph = (
     })) as SerializedHyperGraph["regions"],
     ports: solverInput.graph.ports,
     connections: solverInput.connections,
-  }
+  } as SerializedHyperGraph
 }
 
 const getSolverOptions = (

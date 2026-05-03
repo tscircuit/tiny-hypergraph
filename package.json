@@ -33,6 +33,6 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#tiny-hg-data"
+    "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#161a835ed40ce72a2fa18ffe5ba6ba6392fcc176"
   }
 }
