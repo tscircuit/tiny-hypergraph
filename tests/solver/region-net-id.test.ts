@@ -62,6 +62,50 @@ test("solver does not traverse regions reserved for a different net", () => {
   expect(solver.stats.staticallyUnroutableRouteCount).toBe(1)
 })
 
+test("solver can use max-flow impossible precheck when enabled", () => {
+  const topology: TinyHyperGraphTopology = {
+    portCount: 4,
+    regionCount: 5,
+    regionIncidentPorts: [[0, 1], [1, 2], [2, 3], [0], [3]],
+    incidentPortRegion: [
+      [0, 3],
+      [0, 1],
+      [1, 2],
+      [2, 4],
+    ],
+    regionWidth: new Float64Array(5).fill(1),
+    regionHeight: new Float64Array(5).fill(1),
+    regionCenterX: new Float64Array(5).fill(0),
+    regionCenterY: new Float64Array(5).fill(0),
+    portAngleForRegion1: new Int32Array(4),
+    portAngleForRegion2: new Int32Array(4),
+    portX: new Float64Array([0, 1, 2, 3]),
+    portY: new Float64Array(4),
+    portZ: new Int32Array(4),
+  }
+
+  const problem: TinyHyperGraphProblem = {
+    routeCount: 1,
+    portSectionMask: new Int8Array(4).fill(1),
+    routeMetadata: [{ connectionId: "blocked-route" }],
+    routeStartPort: new Int32Array([0]),
+    routeEndPort: new Int32Array([3]),
+    routeNet: new Int32Array([0]),
+    regionNetId: Int32Array.from([-1, 1, -1, -1, -1]),
+  }
+
+  const solver = new TinyHyperGraphSolver(topology, problem, {
+    MAX_FLOW_IMPOSSIBILITY_CHECK: true,
+  })
+  solver.setup()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(true)
+  expect(solver.error).toContain("Max-flow impossibility check failed")
+  expect(solver.error).toContain("blocked-route")
+  expect(solver.stats.maxFlowUnroutableRouteCount).toBe(1)
+})
+
 test("solver can still rerip on out-of-candidates when static precheck is disabled", () => {
   const topology: TinyHyperGraphTopology = {
     portCount: 4,
@@ -113,4 +157,6 @@ test("solver can still rerip on out-of-candidates when static precheck is disabl
     0.5 * solver.RIP_CONGESTION_REGION_COST_FACTOR,
   )
   expect(solver.stats.reripReason).toBe("out_of_candidates")
+  expect(solver.stats.maxFlowBeforeRip).toBe(0)
+  expect(solver.stats.maxFlowImpossibleBeforeRip).toBe(true)
 })

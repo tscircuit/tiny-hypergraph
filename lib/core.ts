@@ -8,6 +8,15 @@ import {
 } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
+import {
+  getMaxFlowImpossibilityError,
+  getRouteMaxFlow,
+  getMaxFlowUnroutableRoutes,
+} from "./max-flow-impossibility"
+import {
+  createRegionGraph,
+  createRegionPathProblem,
+} from "./region-graph/graph"
 import { shuffle } from "./shuffle"
 import {
   createStaticallyUnroutableRouteSummary,
@@ -132,6 +141,15 @@ export interface NeverSuccessfullyRoutedRouteSummary {
   pointIds: string[]
 }
 
+interface CompleteRoutingSnapshot {
+  maxRegionCost: number
+  totalRegionCost: number
+  ripCount: number
+  portAssignment: Int32Array
+  regionSegments: Array<[RouteId, PortId, PortId][]>
+  regionIntersectionCaches: RegionIntersectionCache[]
+}
+
 export interface Candidate {
   prevRegionId?: RegionId
   portId: PortId
@@ -165,6 +183,8 @@ export interface TinyHyperGraphWorkingState {
   candidateBestCostGeneration: number
 
   goalPortId: PortId
+  goalConnectedPortMask: Int8Array | undefined
+  startConnectedPortMask: Int8Array | undefined
 
   ripCount: number
 
@@ -183,6 +203,7 @@ export interface TinyHyperGraphSolverOptions {
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
+  MAX_FLOW_IMPOSSIBILITY_CHECK?: boolean
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -196,6 +217,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
+  MAX_FLOW_IMPOSSIBILITY_CHECK: boolean
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -238,6 +260,9 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
       options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS
   }
+  if (options.MAX_FLOW_IMPOSSIBILITY_CHECK !== undefined) {
+    solver.MAX_FLOW_IMPOSSIBILITY_CHECK = options.MAX_FLOW_IMPOSSIBILITY_CHECK
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -254,6 +279,7 @@ export const getTinyHyperGraphSolverOptions = (
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+  MAX_FLOW_IMPOSSIBILITY_CHECK: solver.MAX_FLOW_IMPOSSIBILITY_CHECK,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -269,6 +295,8 @@ interface SegmentGeometryScratch {
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private _endpointPointIdByPortId?: Array<string | undefined>
+  private bestCompleteRoutingSnapshot?: CompleteRoutingSnapshot
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
@@ -292,6 +320,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
+  MAX_FLOW_IMPOSSIBILITY_CHECK = false
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -319,6 +348,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ),
       candidateBestCostGeneration: 1,
       goalPortId: -1,
+      goalConnectedPortMask: undefined,
+      startConnectedPortMask: undefined,
       ripCount: 0,
       regionCongestionCost: new Float64Array(topology.regionCount).fill(0),
     }
@@ -372,30 +403,88 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  get endpointPointIdByPortId(): Array<string | undefined> {
+    if (this._endpointPointIdByPortId) {
+      return this._endpointPointIdByPortId
+    }
+
+    const endpointPointIdByPortId = Array.from(
+      { length: this.topology.portCount },
+      () => undefined as string | undefined,
+    )
+
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      const pointIds =
+        this.getRouteMetadata(
+          routeId,
+        )?.simpleRouteConnection?.pointsToConnect?.map(({ pointId }) =>
+          typeof pointId === "string" ? pointId : undefined,
+        ) ?? []
+      const startPointId = pointIds[0]
+      const endPointId = pointIds[1]
+
+      if (startPointId !== undefined) {
+        endpointPointIdByPortId[this.problem.routeStartPort[routeId]!] =
+          startPointId
+      }
+      if (endPointId !== undefined) {
+        endpointPointIdByPortId[this.problem.routeEndPort[routeId]!] =
+          endPointId
+      }
+    }
+
+    this._endpointPointIdByPortId = endpointPointIdByPortId
+    return endpointPointIdByPortId
+  }
+
   override _setup() {
     void this.problemSetup
 
     if (this.STATIC_REACHABILITY_PRECHECK) {
-      const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
+      if (!this.MAX_FLOW_IMPOSSIBILITY_CHECK) {
+        const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
+          topology: this.topology,
+          problem: this.problem,
+          problemSetup: this.problemSetup,
+          portAssignment: this.state.portAssignment,
+          routeIds: this.state.unroutedRoutes,
+          maxPrecheckHops: Math.max(
+            0,
+            this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+          ),
+          getStartingNextRegionId: (routeId, startingPortId) =>
+            this.getStartingNextRegionId(routeId, startingPortId),
+          getRouteSummary: (routeId) => this.getRouteSummary(routeId),
+        })
+        if (staticallyUnroutableRoutes.length > 0) {
+          this.failed = true
+          this.error = getStaticReachabilityError(staticallyUnroutableRoutes)
+          this.stats = {
+            ...this.stats,
+            staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
+          }
+        }
+        return
+      }
+
+      const maxFlowUnroutableRoutes = getMaxFlowUnroutableRoutes({
         topology: this.topology,
         problem: this.problem,
         problemSetup: this.problemSetup,
         portAssignment: this.state.portAssignment,
         routeIds: this.state.unroutedRoutes,
-        maxPrecheckHops: Math.max(
-          0,
-          this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
-        ),
+        regionIntersectionCaches: this.state.regionIntersectionCaches,
         getStartingNextRegionId: (routeId, startingPortId) =>
           this.getStartingNextRegionId(routeId, startingPortId),
         getRouteSummary: (routeId) => this.getRouteSummary(routeId),
       })
-      if (staticallyUnroutableRoutes.length > 0) {
+      if (maxFlowUnroutableRoutes.length > 0) {
         this.failed = true
-        this.error = getStaticReachabilityError(staticallyUnroutableRoutes)
+        this.error = getMaxFlowImpossibilityError(maxFlowUnroutableRoutes)
         this.stats = {
           ...this.stats,
-          staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
+          maxFlowUnroutableRouteCount: maxFlowUnroutableRoutes.length,
+          staticallyUnroutableRouteCount: maxFlowUnroutableRoutes.length,
         }
       }
     }
@@ -428,18 +517,66 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      this.setCandidateBestCost(
-        this.getHopId(startingPortId, startingNextRegionId),
-        0,
-      )
-      state.candidateQueue.queue({
-        nextRegionId: startingNextRegionId,
-        portId: startingPortId,
-        f: 0,
-        g: 0,
-        h: 0,
-      })
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
+      state.goalConnectedPortMask = this.createSameNetConnectedPortMask(
+        state.goalPortId,
+        state.currentRouteNetId!,
+      )
+      state.startConnectedPortMask = this.createSameNetConnectedPortMask(
+        startingPortId,
+        state.currentRouteNetId!,
+      )
+
+      for (let portId = 0; portId < topology.portCount; portId++) {
+        if (state.startConnectedPortMask[portId] !== 1) continue
+
+        const incidentRegions =
+          portId === startingPortId
+            ? [startingNextRegionId]
+            : (topology.incidentPortRegion[portId] ?? [])
+
+        for (const nextRegionId of incidentRegions) {
+          if (
+            nextRegionId === undefined ||
+            this.isRegionReservedForDifferentNet(nextRegionId)
+          ) {
+            continue
+          }
+
+          const hopId = this.getHopId(portId, nextRegionId)
+          this.setCandidateBestCost(hopId, 0)
+          const h = this.computeH(portId)
+          state.candidateQueue.queue({
+            nextRegionId,
+            portId,
+            f: h,
+            g: 0,
+            h,
+          })
+        }
+      }
+
+      if (state.candidateQueue.length === 0) {
+        this.failed = true
+        this.error = `Start port ${startingPortId} has no legal starting regions`
+        return
+      }
+
+      if (
+        this.hasConnectedPortMaskOverlap(
+          state.startConnectedPortMask,
+          state.goalConnectedPortMask,
+        )
+      ) {
+        this.onPathFound({
+          nextRegionId: startingNextRegionId,
+          portId: startingPortId,
+          f: 0,
+          g: 0,
+          h: 0,
+        })
+        return
+      }
     }
 
     const currentCandidate = state.candidateQueue.dequeue()
@@ -507,7 +644,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         prevCandidate: currentCandidate,
       }
 
-      if (neighborPortId === state.goalPortId) {
+      if (this.isRouteGoalPort(neighborPortId)) {
         this.onPathFound(newCandidate)
         return
       }
@@ -594,6 +731,97 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  isRouteGoalPort(portId: PortId): boolean {
+    return (
+      portId === this.state.goalPortId ||
+      this.state.goalConnectedPortMask?.[portId] === 1
+    )
+  }
+
+  createSameNetConnectedPortMask(
+    anchorPortId: PortId,
+    routeNetId: NetId,
+  ): Int8Array {
+    const { topology, problem, state } = this
+    const mask = new Int8Array(topology.portCount)
+    mask[anchorPortId] = 1
+
+    if (state.portAssignment[anchorPortId] !== routeNetId) {
+      return mask
+    }
+
+    const sameNetAdjacentPorts = Array.from(
+      { length: topology.portCount },
+      () => [] as PortId[],
+    )
+    const sameNetEndpointPortsByPointId = new Map<string, PortId[]>()
+
+    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+      if (problem.routeNet[routeId] !== routeNetId) continue
+
+      for (const portId of [
+        problem.routeStartPort[routeId]!,
+        problem.routeEndPort[routeId]!,
+      ]) {
+        const pointId = this.endpointPointIdByPortId[portId]
+        if (pointId === undefined) continue
+
+        const ports = sameNetEndpointPortsByPointId.get(pointId) ?? []
+        ports.push(portId)
+        sameNetEndpointPortsByPointId.set(pointId, ports)
+      }
+    }
+
+    for (const ports of sameNetEndpointPortsByPointId.values()) {
+      for (const portId of ports) {
+        for (const otherPortId of ports) {
+          if (otherPortId === portId) continue
+          sameNetAdjacentPorts[portId]!.push(otherPortId)
+        }
+      }
+    }
+
+    for (const regionSegments of state.regionSegments) {
+      for (const [segmentRouteId, fromPortId, toPortId] of regionSegments) {
+        if (problem.routeNet[segmentRouteId] !== routeNetId) continue
+        sameNetAdjacentPorts[fromPortId]!.push(toPortId)
+        sameNetAdjacentPorts[toPortId]!.push(fromPortId)
+      }
+    }
+
+    const queue = [anchorPortId]
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+      const portId = queue[queueIndex]!
+
+      for (const nextPortId of sameNetAdjacentPorts[portId]!) {
+        if (mask[nextPortId] === 1) continue
+        if (
+          nextPortId !== anchorPortId &&
+          state.portAssignment[nextPortId] !== routeNetId
+        ) {
+          continue
+        }
+        mask[nextPortId] = 1
+        queue.push(nextPortId)
+      }
+    }
+
+    return mask
+  }
+
+  hasConnectedPortMaskOverlap(
+    firstMask: Int8Array,
+    secondMask: Int8Array,
+  ): boolean {
+    for (let portId = 0; portId < firstMask.length; portId++) {
+      if (firstMask[portId] === 1 && secondMask[portId] === 1) {
+        return true
+      }
+    }
+
+    return false
+  }
+
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
@@ -654,6 +882,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     regionId: RegionId,
     port1Id: PortId,
     port2Id: PortId,
+    netId = this.state.currentRouteNetId!,
   ) {
     const { topology, state } = this
     const regionCache = state.regionIntersectionCaches[regionId]
@@ -668,7 +897,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newEntryExitLayerChanges,
     ] = countNewIntersectionsWithValues(
       regionCache,
-      state.currentRouteNetId!,
+      netId,
       segmentGeometry.lesserAngle,
       segmentGeometry.greaterAngle,
       segmentGeometry.layerMask,
@@ -678,7 +907,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const netIds = new Int32Array(nextLength)
     netIds.set(regionCache.netIds)
-    netIds[nextLength - 1] = state.currentRouteNetId!
+    netIds[nextLength - 1] = netId
 
     const lesserAngles = new Int32Array(nextLength)
     lesserAngles.set(regionCache.lesserAngles)
@@ -749,7 +978,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const lastCandidate = candidatePath[candidatePath.length - 1]
-    if (lastCandidate && lastCandidate.portId !== state.goalPortId) {
+    if (lastCandidate && !this.isRouteGoalPort(lastCandidate.portId)) {
       solvedSegments.push({
         regionId: lastCandidate.nextRegionId,
         fromPortId: lastCandidate.portId,
@@ -778,6 +1007,94 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+    state.goalConnectedPortMask = undefined
+    state.startConnectedPortMask = undefined
+  }
+
+  private cloneRegionIntersectionCache(
+    cache: RegionIntersectionCache,
+  ): RegionIntersectionCache {
+    return {
+      netIds: new Int32Array(cache.netIds),
+      lesserAngles: new Int32Array(cache.lesserAngles),
+      greaterAngles: new Int32Array(cache.greaterAngles),
+      layerMasks: new Int32Array(cache.layerMasks),
+      existingCrossingLayerIntersections:
+        cache.existingCrossingLayerIntersections,
+      existingSameLayerIntersections: cache.existingSameLayerIntersections,
+      existingEntryExitLayerChanges: cache.existingEntryExitLayerChanges,
+      existingRegionCost: cache.existingRegionCost,
+      existingSegmentCount: cache.existingSegmentCount,
+    }
+  }
+
+  private saveBestCompleteRoutingSnapshot(
+    maxRegionCost: number,
+    totalRegionCost: number,
+  ) {
+    if (
+      this.bestCompleteRoutingSnapshot &&
+      maxRegionCost >= this.bestCompleteRoutingSnapshot.maxRegionCost
+    ) {
+      return
+    }
+
+    this.bestCompleteRoutingSnapshot = {
+      maxRegionCost,
+      totalRegionCost,
+      ripCount: this.state.ripCount,
+      portAssignment: new Int32Array(this.state.portAssignment),
+      regionSegments: this.state.regionSegments.map((segments) =>
+        segments.map(([routeId, fromPortId, toPortId]) => [
+          routeId,
+          fromPortId,
+          toPortId,
+        ]),
+      ),
+      regionIntersectionCaches: this.state.regionIntersectionCaches.map(
+        (cache) => this.cloneRegionIntersectionCache(cache),
+      ),
+    }
+  }
+
+  private restoreBestCompleteRoutingSnapshot() {
+    const snapshot = this.bestCompleteRoutingSnapshot
+    if (!snapshot) {
+      return false
+    }
+
+    this.state.portAssignment = new Int32Array(snapshot.portAssignment)
+    this.state.regionSegments = snapshot.regionSegments.map((segments) =>
+      segments.map(([routeId, fromPortId, toPortId]) => [
+        routeId,
+        fromPortId,
+        toPortId,
+      ]),
+    )
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches.map(
+      (cache) => this.cloneRegionIntersectionCache(cache),
+    )
+    this.state.currentRouteNetId = undefined
+    this.state.currentRouteId = undefined
+    this.state.unroutedRoutes = []
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.state.goalConnectedPortMask = undefined
+    this.state.startConnectedPortMask = undefined
+    this.state.ripCount = snapshot.ripCount
+    this.solved = true
+    this.failed = false
+    this.error = null
+    this.stats = {
+      ...this.stats,
+      acceptedBestCompleteRouting: true,
+      maxRegionCost: snapshot.maxRegionCost,
+      totalRegionCost: snapshot.totalRegionCost,
+      ripCount: snapshot.ripCount,
+    }
+
+    return true
   }
 
   protected getMaxRegionCost() {
@@ -791,6 +1108,252 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return maxRegionCost
+  }
+
+  private getEndpointDistance(routeId: RouteId) {
+    const startPortId = this.problem.routeStartPort[routeId]!
+    const endPortId = this.problem.routeEndPort[routeId]!
+    return Math.hypot(
+      this.topology.portX[startPortId] - this.topology.portX[endPortId],
+      this.topology.portY[startPortId] - this.topology.portY[endPortId],
+    )
+  }
+
+  private tryMaterializeRegionPathSolution() {
+    const { topology, problem } = this
+    const regionGraph = createRegionGraph(topology)
+    const regionProblem = createRegionPathProblem(topology, problem)
+    const edgeByPairKey = new Map<
+      string,
+      ReturnType<typeof createRegionGraph>["edges"][number]
+    >()
+
+    for (const edge of regionGraph.edges) {
+      edgeByPairKey.set(
+        edge.regionIdA < edge.regionIdB
+          ? `${edge.regionIdA}:${edge.regionIdB}`
+          : `${edge.regionIdB}:${edge.regionIdA}`,
+        edge,
+      )
+    }
+
+    const edgeNets = new Map<string, Set<NetId>>()
+    const regionUsage = new Int32Array(topology.regionCount)
+    const routeRegionPaths = Array.from(
+      { length: problem.routeCount },
+      () => [] as RegionId[],
+    )
+    const routeOrder = range(problem.routeCount).sort(
+      (leftRouteId, rightRouteId) =>
+        this.getEndpointDistance(rightRouteId) -
+        this.getEndpointDistance(leftRouteId),
+    )
+
+    for (const routeId of routeOrder) {
+      const routeNetId = problem.routeNet[routeId]!
+      const startRegionId = regionProblem.routeStartRegion[routeId]!
+      const goalRegionId = regionProblem.routeEndRegion[routeId]!
+      const distanceByRegionId = new Float64Array(topology.regionCount).fill(
+        Number.POSITIVE_INFINITY,
+      )
+      const previousRegionId = new Int32Array(topology.regionCount).fill(-1)
+      const visitedRegionIds = new Uint8Array(topology.regionCount)
+      distanceByRegionId[startRegionId] = 0
+
+      for (;;) {
+        let currentRegionId = -1
+        let currentDistance = Number.POSITIVE_INFINITY
+        for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+          if (
+            visitedRegionIds[regionId] === 0 &&
+            distanceByRegionId[regionId] < currentDistance
+          ) {
+            currentDistance = distanceByRegionId[regionId]
+            currentRegionId = regionId
+          }
+        }
+
+        if (currentRegionId === -1 || currentRegionId === goalRegionId) {
+          break
+        }
+
+        visitedRegionIds[currentRegionId] = 1
+        for (const edge of regionGraph.incidentEdges[currentRegionId] ?? []) {
+          const nextRegionId =
+            edge.regionIdA === currentRegionId ? edge.regionIdB : edge.regionIdA
+
+          if (
+            regionProblem.regionNetId[nextRegionId] !== -1 &&
+            regionProblem.regionNetId[nextRegionId] !== routeNetId
+          ) {
+            continue
+          }
+
+          const edgeKey =
+            currentRegionId < nextRegionId
+              ? `${currentRegionId}:${nextRegionId}`
+              : `${nextRegionId}:${currentRegionId}`
+          const netsUsingEdge = edgeNets.get(edgeKey) ?? new Set<NetId>()
+          const wouldUseNewPort = !netsUsingEdge.has(routeNetId)
+          if (wouldUseNewPort && netsUsingEdge.size >= edge.portIds.length) {
+            continue
+          }
+
+          const edgeCost =
+            (wouldUseNewPort
+              ? (netsUsingEdge.size + 1) / edge.portIds.length
+              : 0.05 / edge.portIds.length) * 50
+          const regionCapacity = Math.max(
+            1e-6,
+            topology.regionWidth[nextRegionId] *
+              topology.regionHeight[nextRegionId],
+          )
+          const regionCost = (regionUsage[nextRegionId] + 1) / regionCapacity
+          const nextDistance =
+            distanceByRegionId[currentRegionId] + edgeCost + regionCost
+
+          if (nextDistance < distanceByRegionId[nextRegionId]) {
+            distanceByRegionId[nextRegionId] = nextDistance
+            previousRegionId[nextRegionId] = currentRegionId
+          }
+        }
+      }
+
+      if (!Number.isFinite(distanceByRegionId[goalRegionId])) {
+        return false
+      }
+
+      const regionPath: RegionId[] = []
+      for (
+        let regionId = goalRegionId;
+        regionId !== -1;
+        regionId = previousRegionId[regionId]!
+      ) {
+        regionPath.unshift(regionId)
+      }
+      routeRegionPaths[routeId] = regionPath
+
+      for (const regionId of regionPath) {
+        regionUsage[regionId] += 1
+      }
+      for (let i = 0; i < regionPath.length - 1; i++) {
+        const regionIdA = regionPath[i]!
+        const regionIdB = regionPath[i + 1]!
+        const edgeKey =
+          regionIdA < regionIdB
+            ? `${regionIdA}:${regionIdB}`
+            : `${regionIdB}:${regionIdA}`
+        const netsUsingEdge = edgeNets.get(edgeKey) ?? new Set<NetId>()
+        netsUsingEdge.add(routeNetId)
+        edgeNets.set(edgeKey, netsUsingEdge)
+      }
+    }
+
+    const assignedPortByEdgeNet = new Map<string, PortId>()
+    for (const [edgeKey, netsUsingEdge] of edgeNets) {
+      const edge = edgeByPairKey.get(edgeKey)
+      if (!edge || netsUsingEdge.size > edge.portIds.length) {
+        return false
+      }
+
+      let portIndex = 0
+      for (const netId of netsUsingEdge) {
+        assignedPortByEdgeNet.set(
+          `${edgeKey}:${netId}`,
+          edge.portIds[portIndex]!,
+        )
+        portIndex += 1
+      }
+    }
+
+    this.state.portAssignment.fill(-1)
+    this.state.regionSegments = Array.from(
+      { length: topology.regionCount },
+      () => [],
+    )
+    this.state.regionIntersectionCaches = Array.from(
+      { length: topology.regionCount },
+      () => createEmptyRegionIntersectionCache(),
+    )
+
+    for (const routeId of routeOrder) {
+      const routeNetId = problem.routeNet[routeId]!
+      const regionPath = routeRegionPaths[routeId]!
+      const portPath: PortId[] = [problem.routeStartPort[routeId]!]
+
+      for (let i = 0; i < regionPath.length - 1; i++) {
+        const regionIdA = regionPath[i]!
+        const regionIdB = regionPath[i + 1]!
+        const edgeKey =
+          regionIdA < regionIdB
+            ? `${regionIdA}:${regionIdB}`
+            : `${regionIdB}:${regionIdA}`
+        const portId = assignedPortByEdgeNet.get(`${edgeKey}:${routeNetId}`)
+        if (portId === undefined) {
+          return false
+        }
+        portPath.push(portId)
+      }
+      portPath.push(problem.routeEndPort[routeId]!)
+
+      this.state.currentRouteId = routeId
+      this.state.currentRouteNetId = routeNetId
+
+      for (let i = 0; i < portPath.length - 1; i++) {
+        const regionId = regionPath[Math.min(i, regionPath.length - 1)]!
+        const fromPortId = portPath[i]!
+        const toPortId = portPath[i + 1]!
+        const fromAssignedNetId = this.state.portAssignment[fromPortId]
+        const toAssignedNetId = this.state.portAssignment[toPortId]
+        if (
+          (fromAssignedNetId !== -1 && fromAssignedNetId !== routeNetId) ||
+          (toAssignedNetId !== -1 && toAssignedNetId !== routeNetId)
+        ) {
+          return false
+        }
+
+        this.state.regionSegments[regionId]!.push([
+          routeId,
+          fromPortId,
+          toPortId,
+        ])
+        this.state.portAssignment[fromPortId] = routeNetId
+        this.state.portAssignment[toPortId] = routeNetId
+        this.appendSegmentToRegionCache(
+          regionId,
+          fromPortId,
+          toPortId,
+          routeNetId,
+        )
+      }
+    }
+
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = []
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.state.goalConnectedPortMask = undefined
+    this.state.startConnectedPortMask = undefined
+    this.solved = true
+    this.failed = false
+    this.error = null
+
+    let maxRegionCost = 0
+    let totalRegionCost = 0
+    for (const regionCache of this.state.regionIntersectionCaches) {
+      maxRegionCost = Math.max(maxRegionCost, regionCache.existingRegionCost)
+      totalRegionCost += regionCache.existingRegionCost
+    }
+    this.stats = {
+      ...this.stats,
+      acceptedRegionPathMaterialization: true,
+      maxRegionCost,
+      totalRegionCost,
+    }
+
+    return true
   }
 
   protected getRouteMetadata(routeId: RouteId):
@@ -942,23 +1505,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
+    let totalRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
+      totalRegionCost += regionCost
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
       }
     }
 
+    this.saveBestCompleteRoutingSnapshot(maxRegionCost, totalRegionCost)
+
     this.stats = {
       ...this.stats,
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
+      totalRegionCost,
       ripCount: state.ripCount,
     }
 
@@ -993,6 +1561,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
+    const maxFlowBeforeRip =
+      currentRouteId === undefined
+        ? null
+        : getRouteMaxFlow(
+            {
+              topology: this.topology,
+              problem: this.problem,
+              problemSetup: this.problemSetup,
+              portAssignment: state.portAssignment,
+              routeIds: [currentRouteId],
+              regionIntersectionCaches: state.regionIntersectionCaches,
+              getStartingNextRegionId: (routeId, startingPortId) =>
+                this.getStartingNextRegionId(routeId, startingPortId),
+              getRouteSummary: (routeId) => this.getRouteSummary(routeId),
+            },
+            currentRouteId,
+            1,
+          )
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
@@ -1009,6 +1595,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       maxRegionCost: maxRegionCostBeforeRip,
       maxRegionCostBeforeRip,
       reripReason: "out_of_candidates",
+      ...(maxFlowBeforeRip === null
+        ? {}
+        : {
+            maxFlowBeforeRip,
+            maxFlowImpossibleBeforeRip: maxFlowBeforeRip < 1,
+          }),
     }
     this.logRipEvent("out_of_candidates", maxRegionCostBeforeRip, {
       ...(currentRouteId === undefined
@@ -1043,6 +1635,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
+    state.goalConnectedPortMask = undefined
+    state.startConnectedPortMask = undefined
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
@@ -1103,6 +1697,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
     this.logNeverSuccessfullyRoutedRoutes()
+
+    if (this.restoreBestCompleteRoutingSnapshot()) {
+      return
+    }
+
+    this.tryMaterializeRegionPathSolution()
   }
 
   computeH(neighborPortId: PortId): number {
