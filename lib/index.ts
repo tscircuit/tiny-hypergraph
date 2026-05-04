@@ -1,4 +1,5 @@
 export * from "./core"
+export * from "./max-flow-impossibility"
 export * from "./poly"
 export * from "./bus-solver"
 export * from "./region-graph"

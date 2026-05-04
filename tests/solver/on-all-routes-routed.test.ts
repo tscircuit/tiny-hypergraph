@@ -124,6 +124,38 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.state.goalPortId).toBe(-1)
 })
 
+test("final acceptance restores the best complete routing pass", () => {
+  const solver = createTestSolver()
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+
+  solver.step()
+  expect(solver.solved).toBe(false)
+  expect(
+    solver.state.regionSegments.map((segments) => segments.length),
+  ).toEqual([0, 0])
+
+  solver.tryFinalAcceptance()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+  expect(solver.state.regionSegments[1]).toEqual([[1, 2, 3]])
+  expect(
+    solver.state.regionIntersectionCaches.map(
+      (cache) => cache.existingRegionCost,
+    ),
+  ).toEqual([0.5, 0.1])
+  expect(solver.stats.acceptedBestCompleteRouting).toBe(true)
+  expect(solver.stats.maxRegionCost).toBe(0.5)
+})
+
 test("completed routing is accepted once all region costs are under the threshold", () => {
   const solver = createTestSolver()
 
@@ -147,6 +179,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     RIP_THRESHOLD_RAMP_ATTEMPTS: 7,
     RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
     MAX_ITERATIONS: 1234,
+    MAX_FLOW_IMPOSSIBILITY_CHECK: true,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -155,5 +188,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_THRESHOLD_RAMP_ATTEMPTS).toBe(7)
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
+  expect(solver.MAX_FLOW_IMPOSSIBILITY_CHECK).toBe(true)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
