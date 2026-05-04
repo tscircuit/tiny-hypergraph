@@ -266,11 +266,67 @@ interface SegmentGeometryScratch {
   entryExitLayerChanges: number
 }
 
+interface SolvedStateSnapshot {
+  portAssignment: Int32Array
+  regionSegments: Array<[RouteId, PortId, PortId][]>
+  regionIntersectionCaches: RegionIntersectionCache[]
+}
+
+const cloneRegionSegments = (
+  regionSegments: Array<[RouteId, PortId, PortId][]>,
+): Array<[RouteId, PortId, PortId][]> =>
+  regionSegments.map((segments) =>
+    segments.map(
+      ([routeId, fromPortId, toPortId]) =>
+        [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
+    ),
+  )
+
+const cloneRegionIntersectionCache = (
+  regionIntersectionCache: RegionIntersectionCache,
+): RegionIntersectionCache => ({
+  netIds: new Int32Array(regionIntersectionCache.netIds),
+  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
+  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
+  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  existingCrossingLayerIntersections:
+    regionIntersectionCache.existingCrossingLayerIntersections,
+  existingSameLayerIntersections:
+    regionIntersectionCache.existingSameLayerIntersections,
+  existingEntryExitLayerChanges:
+    regionIntersectionCache.existingEntryExitLayerChanges,
+  existingRegionCost: regionIntersectionCache.existingRegionCost,
+  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+})
+
+const cloneSolvedStateSnapshot = (
+  snapshot: SolvedStateSnapshot,
+): SolvedStateSnapshot => ({
+  portAssignment: new Int32Array(snapshot.portAssignment),
+  regionSegments: cloneRegionSegments(snapshot.regionSegments),
+  regionIntersectionCaches: snapshot.regionIntersectionCaches.map(
+    cloneRegionIntersectionCache,
+  ),
+})
+
+const compareRegionCostSummaries = (
+  left: RegionCostSummary,
+  right: RegionCostSummary,
+) => {
+  if (left.maxRegionCost !== right.maxRegionCost) {
+    return left.maxRegionCost - right.maxRegionCost
+  }
+
+  return left.totalRegionCost - right.totalRegionCost
+}
+
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
+  protected bestSolvedStateSnapshot?: SolvedStateSnapshot
+  protected bestSolvedRegionCostSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
@@ -781,16 +837,59 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   protected getMaxRegionCost() {
+    return this.getRegionCostSummary().maxRegionCost
+  }
+
+  protected getRegionCostSummary(): RegionCostSummary {
     const { topology, state } = this
     let maxRegionCost = 0
+    let totalRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
       maxRegionCost = Math.max(maxRegionCost, regionCost)
+      totalRegionCost += regionCost
     }
 
-    return maxRegionCost
+    return {
+      maxRegionCost,
+      totalRegionCost,
+    }
+  }
+
+  protected captureBestSolvedState(summary: RegionCostSummary) {
+    if (
+      this.bestSolvedRegionCostSummary &&
+      compareRegionCostSummaries(summary, this.bestSolvedRegionCostSummary) >= 0
+    ) {
+      return
+    }
+
+    this.bestSolvedRegionCostSummary = summary
+    this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
+      portAssignment: this.state.portAssignment,
+      regionSegments: this.state.regionSegments,
+      regionIntersectionCaches: this.state.regionIntersectionCaches,
+    })
+  }
+
+  protected restoreBestSolvedState() {
+    if (!this.bestSolvedStateSnapshot) {
+      return false
+    }
+
+    const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+    this.state.portAssignment = snapshot.portAssignment
+    this.state.regionSegments = snapshot.regionSegments
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = []
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    return true
   }
 
   protected getRouteMetadata(routeId: RouteId):
@@ -942,16 +1041,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
+    let totalRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
+      totalRegionCost += regionCost
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
       }
+    }
+
+    this.captureBestSolvedState({
+      maxRegionCost,
+      totalRegionCost,
+    })
+    const bestSolvedRegionCostSummary = this.bestSolvedRegionCostSummary ?? {
+      maxRegionCost,
+      totalRegionCost,
     }
 
     this.stats = {
@@ -959,6 +1069,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
+      totalRegionCost,
+      bestMaxRegionCost: bestSolvedRegionCostSummary.maxRegionCost,
+      bestTotalRegionCost: bestSolvedRegionCostSummary.totalRegionCost,
       ripCount: state.ripCount,
     }
 
@@ -966,6 +1079,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
     ) {
+      this.restoreBestSolvedState()
       this.solved = true
       return
     }
@@ -1103,6 +1217,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
     this.logNeverSuccessfullyRoutedRoutes()
+
+    if (!this.bestSolvedStateSnapshot) {
+      return
+    }
+
+    this.restoreBestSolvedState()
+    this.solved = true
+    this.failed = false
+    this.error = null
   }
 
   computeH(neighborPortId: PortId): number {
