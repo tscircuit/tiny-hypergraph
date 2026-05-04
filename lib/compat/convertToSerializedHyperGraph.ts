@@ -180,18 +180,32 @@ const getOrderedRoutePath = (
   orderedPortIds: PortId[]
   orderedRegionIds: RegionId[]
 } => {
-  if (routeSegments.length === 0) {
-    throw new Error(`Route ${routeId} has no solved segments`)
-  }
-
   const startPortId = solver.problem.routeStartPort[routeId]
   const endPortId = solver.problem.routeEndPort[routeId]
+  const routeNetId = solver.problem.routeNet[routeId]
   const segmentsByPort = new Map<
     PortId,
     Array<RouteSegment & { segmentIndex: number }>
   >()
 
-  routeSegments.forEach((routeSegment, segmentIndex) => {
+  const routeAndReusableSameNetSegments = [...routeSegments]
+  solver.state.regionSegments.forEach((regionSegments, regionId) => {
+    for (const [segmentRouteId, fromPortId, toPortId] of regionSegments) {
+      if (segmentRouteId === routeId) continue
+      if (solver.problem.routeNet[segmentRouteId] !== routeNetId) continue
+      routeAndReusableSameNetSegments.push({
+        regionId,
+        fromPortId,
+        toPortId,
+      })
+    }
+  })
+
+  if (routeAndReusableSameNetSegments.length === 0) {
+    throw new Error(`Route ${routeId} has no solved segments`)
+  }
+
+  routeAndReusableSameNetSegments.forEach((routeSegment, segmentIndex) => {
     const indexedRouteSegment = {
       ...routeSegment,
       segmentIndex,

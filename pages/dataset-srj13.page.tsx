@@ -42,7 +42,7 @@ type ImportGlob = <T>(
 
 const datasetManifest = datasetDistManifest as Srj13Manifest
 const SAMPLE_HASH_PARAM = "sample"
-const DEFAULT_MAX_ITERATIONS = 250_000
+const DEFAULT_MAX_ITERATIONS = 1_000_000
 const tinyHypergraphBenchmarkLoaders = (
   import.meta as ImportMeta & { glob: ImportGlob }
 ).glob<TinyHypergraphBenchmarkCase>(
@@ -124,6 +124,7 @@ const getSolverOptions = (
 
   return {
     MAX_ITERATIONS: DEFAULT_MAX_ITERATIONS,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 2,
     ...(Number.isFinite(minViaPadDiameter) && minViaPadDiameter > 0
       ? { minViaPadDiameter }
       : {}),
