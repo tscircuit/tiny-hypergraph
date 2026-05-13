@@ -1,5 +1,6 @@
 export * from "./core"
 export * from "./chokepoint-solver"
+export * from "./chokepoint-flow"
 export * from "./poly"
 export * from "./bus-solver"
 export * from "./region-graph"

@@ -1,19 +1,19 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { analyzePortCapacityMinCut } from "./chokepoint-flow"
 import {
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import type { NetId, PortId, RegionId, RouteId } from "./types"
+import type { PortId, RegionId, RouteId } from "./types"
 
 export interface ChokepointSolverOptions extends TinyHyperGraphSolverOptions {
   MAX_CHOKEPOINT_EXPANSION_PASSES?: number
   MAX_CHOKEPOINT_EXPANSIONS?: number
   MAX_CHOKEPOINT_SEARCH_PORTS?: number
   MAX_CHOKEPOINT_SEARCH_ROUTES?: number
-  REQUIRE_CHOKEPOINT_CORRIDOR?: boolean
   CHOKEPOINT_PORT_SPACING?: number
 }
 
@@ -36,11 +36,7 @@ export interface ChokepointSolverInput {
   options?: ChokepointSolverOptions
 }
 
-interface ReachabilityContext {
-  endpointNetIdsByPort: Array<Set<NetId>>
-}
-
-const DEFAULT_MAX_CHOKEPOINT_EXPANSION_PASSES = 1
+const DEFAULT_MAX_CHOKEPOINT_EXPANSION_PASSES = 8
 const DEFAULT_MAX_CHOKEPOINT_EXPANSIONS = 8
 const DEFAULT_MAX_CHOKEPOINT_SEARCH_PORTS = 256
 const DEFAULT_MAX_CHOKEPOINT_SEARCH_ROUTES = 32
@@ -56,161 +52,6 @@ const createPortSectionMask = (
       (sourcePortId) => problem.portSectionMask[sourcePortId] ?? 1,
     ),
   )
-
-const getEndpointNetIdsByPort = (
-  problem: TinyHyperGraphProblem,
-  portCount: number,
-) => {
-  const endpointNetIdsByPort = Array.from(
-    { length: portCount },
-    () => new Set<NetId>(),
-  )
-
-  for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-    const routeNetId = problem.routeNet[routeId]!
-    endpointNetIdsByPort[problem.routeStartPort[routeId]!]!.add(routeNetId)
-    endpointNetIdsByPort[problem.routeEndPort[routeId]!]!.add(routeNetId)
-  }
-
-  return endpointNetIdsByPort
-}
-
-const isEndpointReservedForDifferentNet = (
-  context: ReachabilityContext,
-  routeNetId: NetId,
-  portId: PortId,
-) => {
-  for (const endpointNetId of context.endpointNetIdsByPort[portId] ?? []) {
-    if (endpointNetId !== routeNetId) {
-      return true
-    }
-  }
-
-  return false
-}
-
-const isRegionReservedForDifferentNet = (
-  problem: TinyHyperGraphProblem,
-  routeNetId: NetId,
-  regionId: RegionId,
-) => {
-  const reservedNetId = problem.regionNetId[regionId]
-  return reservedNetId !== -1 && reservedNetId !== routeNetId
-}
-
-const getStartingNextRegionId = (
-  topology: TinyHyperGraphTopology,
-  problem: TinyHyperGraphProblem,
-  routeId: RouteId,
-  startingPortId: PortId,
-): RegionId | undefined => {
-  const startingIncidentRegions = topology.incidentPortRegion[startingPortId]
-  const routeNetId = problem.routeNet[routeId]
-
-  return (
-    startingIncidentRegions?.find(
-      (regionId) => problem.regionNetId[regionId] === -1,
-    ) ??
-    startingIncidentRegions?.find(
-      (regionId) => problem.regionNetId[regionId] === routeNetId,
-    ) ??
-    startingIncidentRegions?.[0]
-  )
-}
-
-const canRouteReachGoal = (
-  topology: TinyHyperGraphTopology,
-  problem: TinyHyperGraphProblem,
-  context: ReachabilityContext,
-  routeId: RouteId,
-  bannedPortId?: PortId,
-): boolean => {
-  const routeNetId = problem.routeNet[routeId]!
-  const startPortId = problem.routeStartPort[routeId]!
-  const goalPortId = problem.routeEndPort[routeId]!
-
-  if (startPortId === bannedPortId || goalPortId === bannedPortId) {
-    return false
-  }
-  if (startPortId === goalPortId) {
-    return true
-  }
-
-  const startRegionId = getStartingNextRegionId(
-    topology,
-    problem,
-    routeId,
-    startPortId,
-  )
-  if (startRegionId === undefined) {
-    return false
-  }
-
-  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
-    { portId: startPortId, nextRegionId: startRegionId },
-  ]
-  const seenHops = new Set<number>([
-    startPortId * topology.regionCount + startRegionId,
-  ])
-
-  for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
-    const candidate = queue[queueIndex]!
-    if (
-      isRegionReservedForDifferentNet(
-        problem,
-        routeNetId,
-        candidate.nextRegionId,
-      )
-    ) {
-      continue
-    }
-
-    for (const neighborPortId of topology.regionIncidentPorts[
-      candidate.nextRegionId
-    ] ?? []) {
-      if (neighborPortId === bannedPortId) {
-        continue
-      }
-      if (
-        isEndpointReservedForDifferentNet(context, routeNetId, neighborPortId)
-      ) {
-        continue
-      }
-      if (neighborPortId === goalPortId) {
-        return true
-      }
-      if (neighborPortId === candidate.portId) {
-        continue
-      }
-      if (problem.portSectionMask[neighborPortId] === 0) {
-        continue
-      }
-
-      const incidentRegions = topology.incidentPortRegion[neighborPortId] ?? []
-      const nextRegionId =
-        incidentRegions[0] === candidate.nextRegionId
-          ? incidentRegions[1]
-          : incidentRegions[0]
-
-      if (
-        nextRegionId === undefined ||
-        isRegionReservedForDifferentNet(problem, routeNetId, nextRegionId)
-      ) {
-        continue
-      }
-
-      const hopId = neighborPortId * topology.regionCount + nextRegionId
-      if (seenHops.has(hopId)) {
-        continue
-      }
-
-      seenHops.add(hopId)
-      queue.push({ portId: neighborPortId, nextRegionId })
-    }
-  }
-
-  return false
-}
 
 const getInteriorPortPredicate = (problem: TinyHyperGraphProblem) => {
   const endpointPortIds = new Set<PortId>()
@@ -239,98 +80,20 @@ const findChokepointPorts = (
     return []
   }
 
-  const context = {
-    endpointNetIdsByPort: getEndpointNetIdsByPort(problem, topology.portCount),
+  const analysis = analyzePortCapacityMinCut({ topology, problem })
+  if (analysis.maxFlow >= analysis.demand) {
+    return []
   }
+
   const isInteriorPort = getInteriorPortPredicate(problem)
-  const reachableRouteIds = new Set<RouteId>()
-
-  for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-    if (canRouteReachGoal(topology, problem, context, routeId)) {
-      reachableRouteIds.add(routeId)
-    }
-  }
-
-  const chokepoints: Array<{ portId: PortId; routeIds: RouteId[] }> = []
-
-  for (let portId = 0; portId < topology.portCount; portId++) {
-    if (!isInteriorPort(portId) || problem.portSectionMask[portId] === 0) {
-      continue
-    }
-
-    const affectedRouteIds: RouteId[] = []
-    const affectedNetIds = new Set<NetId>()
-    for (const routeId of reachableRouteIds) {
-      if (!canRouteReachGoal(topology, problem, context, routeId, portId)) {
-        affectedRouteIds.push(routeId)
-        affectedNetIds.add(problem.routeNet[routeId]!)
+  return analysis.minCutPortIds
+    .filter((portId) => isInteriorPort(portId))
+    .map((portId) => {
+      return {
+        portId,
+        routeIds: analysis.routeIds,
       }
-    }
-
-    if (affectedNetIds.size > 1) {
-      chokepoints.push({ portId, routeIds: affectedRouteIds })
-    }
-  }
-
-  if (options.REQUIRE_CHOKEPOINT_CORRIDOR === false) {
-    return chokepoints
-  }
-
-  return filterChokepointsToCorridors(topology, chokepoints)
-}
-
-const getPortRegionPairKey = (
-  topology: TinyHyperGraphTopology,
-  portId: PortId,
-) => {
-  const [regionAId, regionBId] = topology.incidentPortRegion[portId] ?? []
-  if (regionAId === undefined || regionBId === undefined) {
-    return undefined
-  }
-
-  return regionAId < regionBId
-    ? `${regionAId}:${regionBId}`
-    : `${regionBId}:${regionAId}`
-}
-
-const filterChokepointsToCorridors = (
-  topology: TinyHyperGraphTopology,
-  chokepoints: Array<{ portId: PortId; routeIds: RouteId[] }>,
-) => {
-  const chokepointPortIds = new Set(
-    chokepoints.map((chokepoint) => chokepoint.portId),
-  )
-  const portPairKeys = new Map<PortId, string>()
-
-  for (let portId = 0; portId < topology.portCount; portId++) {
-    const pairKey = getPortRegionPairKey(topology, portId)
-    if (pairKey) {
-      portPairKeys.set(portId, pairKey)
-    }
-  }
-
-  return chokepoints.filter((chokepoint) => {
-    const incidentRegionIds = topology.incidentPortRegion[chokepoint.portId]
-    if (!incidentRegionIds) {
-      return false
-    }
-
-    for (const regionId of incidentRegionIds) {
-      for (const adjacentPortId of topology.regionIncidentPorts[regionId] ??
-        []) {
-        if (
-          adjacentPortId !== chokepoint.portId &&
-          chokepointPortIds.has(adjacentPortId) &&
-          portPairKeys.get(adjacentPortId) !==
-            portPairKeys.get(chokepoint.portId)
-        ) {
-          return true
-        }
-      }
-    }
-
-    return false
-  })
+    })
 }
 
 const cloneMetadata = (metadata: any, replacementIndex?: number) => {

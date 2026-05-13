@@ -14,6 +14,7 @@ import {
   PolyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
+  type ChokepointSolverOptions,
   type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSolver,
   loadSerializedHyperGraphAsPoly,
@@ -65,6 +66,7 @@ Options:
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
   --solver NAME   Solver variant: core or poly. Defaults to core.
+  --chokepoints   Enable flow-based chokepoint preprocessing before solveGraph.
   --families LIST Override candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
   --help          Show this help text.
@@ -163,6 +165,7 @@ const parseArgs = () => {
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
   let solverVariant: SolverVariant = "core"
+  let chokepointsEnabled = false
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -218,6 +221,11 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--chokepoints") {
+      chokepointsEnabled = true
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -227,7 +235,13 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies, solverVariant }
+  return {
+    limit,
+    sampleName,
+    candidateFamilies,
+    solverVariant,
+    chokepointsEnabled,
+  }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -360,7 +374,13 @@ const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
 const main = async () => {
-  const { limit, sampleName, candidateFamilies, solverVariant } = parseArgs()
+  const {
+    limit,
+    sampleName,
+    candidateFamilies,
+    solverVariant,
+    chokepointsEnabled,
+  } = parseArgs()
   const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
@@ -374,8 +394,11 @@ const main = async () => {
       ? PolyHyperGraphSectionPipelineSolver
       : TinyHyperGraphSectionPipelineSolver
 
+  const chokepointSolverOptions: ChokepointSolverOptions | undefined =
+    chokepointsEnabled ? {} : undefined
+
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} chokepoints=${chokepointsEnabled ? "on" : "off"}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -387,6 +410,7 @@ const main = async () => {
     try {
       const pipelineSolver = new PipelineSolver({
         serializedHyperGraph,
+        chokepointSolverOptions,
         sectionSearchConfig: candidateFamilies
           ? { candidateFamilies }
           : undefined,
@@ -478,6 +502,7 @@ const main = async () => {
       try {
         const pipelineSolver = new PipelineSolver({
           serializedHyperGraph,
+          chokepointSolverOptions,
           sectionSearchConfig: candidateFamilies
             ? { candidateFamilies }
             : undefined,

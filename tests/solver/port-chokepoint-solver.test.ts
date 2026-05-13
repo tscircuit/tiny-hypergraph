@@ -73,7 +73,7 @@ test("chokepoint solver visualization snapshot", () => {
   expect(stagedSvg).toMatchSvgSnapshot(import.meta.path)
 
   expect(expanded.expansions).toHaveLength(2)
-  expect(expanded.passCount).toBe(1)
+  expect(expanded.passCount).toBe(2)
   expect(solver.solved).toBe(true)
 })
 
@@ -109,7 +109,7 @@ test("chokepoint preprocessing respects safety caps", () => {
     expandPortChokepoints({
       topology,
       problem,
-      options: { MAX_CHOKEPOINT_EXPANSIONS: 1 },
+      options: { MAX_CHOKEPOINT_EXPANSIONS: 0 },
     }).expansions,
   ).toHaveLength(0)
   expect(
