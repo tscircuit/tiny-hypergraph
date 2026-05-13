@@ -10,6 +10,10 @@ import type { NetId, PortId, RegionId, RouteId } from "./types"
 
 export interface ChokepointSolverOptions extends TinyHyperGraphSolverOptions {
   MAX_CHOKEPOINT_EXPANSION_PASSES?: number
+  MAX_CHOKEPOINT_EXPANSIONS?: number
+  MAX_CHOKEPOINT_SEARCH_PORTS?: number
+  MAX_CHOKEPOINT_SEARCH_ROUTES?: number
+  REQUIRE_CHOKEPOINT_CORRIDOR?: boolean
   CHOKEPOINT_PORT_SPACING?: number
 }
 
@@ -36,7 +40,10 @@ interface ReachabilityContext {
   endpointNetIdsByPort: Array<Set<NetId>>
 }
 
-const DEFAULT_MAX_CHOKEPOINT_EXPANSION_PASSES = 16
+const DEFAULT_MAX_CHOKEPOINT_EXPANSION_PASSES = 1
+const DEFAULT_MAX_CHOKEPOINT_EXPANSIONS = 8
+const DEFAULT_MAX_CHOKEPOINT_SEARCH_PORTS = 256
+const DEFAULT_MAX_CHOKEPOINT_SEARCH_ROUTES = 32
 const DEFAULT_RELATIVE_CHOKEPOINT_PORT_SPACING = 0.12
 const MIN_CHOKEPOINT_PORT_SPACING = 0.05
 
@@ -219,7 +226,19 @@ const getInteriorPortPredicate = (problem: TinyHyperGraphProblem) => {
 const findChokepointPorts = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
+  options: ChokepointSolverOptions = {},
 ): Array<{ portId: PortId; routeIds: RouteId[] }> => {
+  const maxSearchPorts =
+    options.MAX_CHOKEPOINT_SEARCH_PORTS ?? DEFAULT_MAX_CHOKEPOINT_SEARCH_PORTS
+  const maxSearchRoutes =
+    options.MAX_CHOKEPOINT_SEARCH_ROUTES ?? DEFAULT_MAX_CHOKEPOINT_SEARCH_ROUTES
+  if (
+    topology.portCount > maxSearchPorts ||
+    problem.routeCount > maxSearchRoutes
+  ) {
+    return []
+  }
+
   const context = {
     endpointNetIdsByPort: getEndpointNetIdsByPort(problem, topology.portCount),
   }
@@ -253,7 +272,65 @@ const findChokepointPorts = (
     }
   }
 
-  return chokepoints
+  if (options.REQUIRE_CHOKEPOINT_CORRIDOR === false) {
+    return chokepoints
+  }
+
+  return filterChokepointsToCorridors(topology, chokepoints)
+}
+
+const getPortRegionPairKey = (
+  topology: TinyHyperGraphTopology,
+  portId: PortId,
+) => {
+  const [regionAId, regionBId] = topology.incidentPortRegion[portId] ?? []
+  if (regionAId === undefined || regionBId === undefined) {
+    return undefined
+  }
+
+  return regionAId < regionBId
+    ? `${regionAId}:${regionBId}`
+    : `${regionBId}:${regionAId}`
+}
+
+const filterChokepointsToCorridors = (
+  topology: TinyHyperGraphTopology,
+  chokepoints: Array<{ portId: PortId; routeIds: RouteId[] }>,
+) => {
+  const chokepointPortIds = new Set(
+    chokepoints.map((chokepoint) => chokepoint.portId),
+  )
+  const portPairKeys = new Map<PortId, string>()
+
+  for (let portId = 0; portId < topology.portCount; portId++) {
+    const pairKey = getPortRegionPairKey(topology, portId)
+    if (pairKey) {
+      portPairKeys.set(portId, pairKey)
+    }
+  }
+
+  return chokepoints.filter((chokepoint) => {
+    const incidentRegionIds = topology.incidentPortRegion[chokepoint.portId]
+    if (!incidentRegionIds) {
+      return false
+    }
+
+    for (const regionId of incidentRegionIds) {
+      for (const adjacentPortId of topology.regionIncidentPorts[regionId] ??
+        []) {
+        if (
+          adjacentPortId !== chokepoint.portId &&
+          chokepointPortIds.has(adjacentPortId) &&
+          portPairKeys.get(adjacentPortId) !==
+            portPairKeys.get(chokepoint.portId)
+        ) {
+          return true
+        }
+      }
+    }
+
+    return false
+  })
 }
 
 const cloneMetadata = (metadata: any, replacementIndex?: number) => {
@@ -477,8 +554,18 @@ export const expandPortChokepoints = ({
   let passCount = 0
 
   for (; passCount < maxPasses; passCount++) {
-    const chokepoints = findChokepointPorts(expandedTopology, expandedProblem)
+    const chokepoints = findChokepointPorts(
+      expandedTopology,
+      expandedProblem,
+      options,
+    )
     if (chokepoints.length === 0) {
+      break
+    }
+    if (
+      expansions.length + chokepoints.length >
+      (options.MAX_CHOKEPOINT_EXPANSIONS ?? DEFAULT_MAX_CHOKEPOINT_EXPANSIONS)
+    ) {
       break
     }
 
@@ -549,6 +636,7 @@ export class ChokepointSolver extends BaseSolver {
       this.chokepoints = findChokepointPorts(
         this.inputTopology,
         this.inputProblem,
+        this.options,
       )
       this.phase = "identified"
       this.stats = {

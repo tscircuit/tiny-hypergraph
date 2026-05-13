@@ -101,3 +101,22 @@ test("section pipeline can opt into chokepoint preprocessing before solveGraph",
   expect(solveGraphSolver?.solved).toBe(true)
   expect(solveGraphSolver?.failed).toBe(false)
 })
+
+test("chokepoint preprocessing respects safety caps", () => {
+  const { topology, problem } = loadSerializedHyperGraph(portChokepointFixture)
+
+  expect(
+    expandPortChokepoints({
+      topology,
+      problem,
+      options: { MAX_CHOKEPOINT_EXPANSIONS: 1 },
+    }).expansions,
+  ).toHaveLength(0)
+  expect(
+    expandPortChokepoints({
+      topology,
+      problem,
+      options: { MAX_CHOKEPOINT_SEARCH_PORTS: topology.portCount - 1 },
+    }).expansions,
+  ).toHaveLength(0)
+})
