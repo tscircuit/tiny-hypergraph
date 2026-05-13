@@ -120,3 +120,22 @@ test("chokepoint preprocessing respects safety caps", () => {
     }).expansions,
   ).toHaveLength(0)
 })
+
+test("chokepoint solver expands single-net cutsets when corridor filtering is disabled", () => {
+  const singleNetFixture = {
+    ...portChokepointFixture,
+    connections: portChokepointFixture.connections?.map((connection) => ({
+      ...connection,
+      mutuallyConnectedNetworkId: "shared-net",
+    })),
+  }
+  const { topology, problem } = loadSerializedHyperGraph(singleNetFixture)
+
+  expect(
+    expandPortChokepoints({
+      topology,
+      problem,
+      options: { REQUIRE_CHOKEPOINT_CORRIDOR: false },
+    }).expansions.length,
+  ).toBeGreaterThan(0)
+})

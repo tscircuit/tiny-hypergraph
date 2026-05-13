@@ -267,7 +267,7 @@ const findChokepointPorts = (
       }
     }
 
-    if (affectedNetIds.size > 1) {
+    if (affectedNetIds.size > 0) {
       chokepoints.push({ portId, routeIds: affectedRouteIds })
     }
   }
