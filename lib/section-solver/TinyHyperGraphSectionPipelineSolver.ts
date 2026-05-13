@@ -1,6 +1,12 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import {
+  ChokepointSolver,
+  type ChokepointSolverOptions,
+  type ChokepointSolverOutput,
+  expandPortChokepoints,
+} from "../chokepoint-solver"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
   TinyHyperGraphProblem,
@@ -59,6 +65,17 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
+
+const preprocessChokepoints = (
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+  options?: ChokepointSolverOptions,
+) =>
+  expandPortChokepoints({
+    topology,
+    problem,
+    options: options ?? { MAX_CHOKEPOINT_EXPANSION_PASSES: 0 },
+  })
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -306,6 +323,7 @@ export interface TinyHyperGraphSectionPipelineInput {
   serializedHyperGraph: SerializedHyperGraph
   minViaPadDiameter?: number
   createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
+  chokepointSolverOptions?: ChokepointSolverOptions
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
@@ -347,16 +365,39 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override pipelineDef: PipelineStep<any>[] = [
     {
-      solverName: "solveGraph",
-      solverClass: TinyHyperGraphSolver,
+      solverName: "preprocessChokepoints",
+      solverClass: ChokepointSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
         const { topology, problem } = instance.loadHyperGraph(
           instance.inputProblem.serializedHyperGraph,
         )
 
         return [
-          topology,
-          problem,
+          {
+            topology,
+            problem,
+            options: instance.inputProblem.chokepointSolverOptions ?? {
+              MAX_CHOKEPOINT_EXPANSION_PASSES: 0,
+            },
+          },
+        ] as ConstructorParameters<typeof ChokepointSolver>
+      },
+    },
+    {
+      solverName: "solveGraph",
+      solverClass: TinyHyperGraphSolver,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
+        const preprocessed = instance.getStageOutput<ChokepointSolverOutput>(
+          "preprocessChokepoints",
+        )
+
+        if (!preprocessed) {
+          throw new Error("preprocessChokepoints did not produce an output")
+        }
+
+        return [
+          preprocessed.topology,
+          preprocessed.problem,
           instance.getSolveGraphOptions(),
         ] as ConstructorParameters<typeof TinyHyperGraphSolver>
       },
@@ -466,9 +507,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       const { topology, problem } = this.loadHyperGraph(
         this.inputProblem.serializedHyperGraph,
       )
-      this.initialVisualizationSolver = new TinyHyperGraphSolver(
+      const preprocessed = preprocessChokepoints(
         topology,
         problem,
+        this.inputProblem.chokepointSolverOptions,
+      )
+      this.initialVisualizationSolver = new TinyHyperGraphSolver(
+        preprocessed.topology,
+        preprocessed.problem,
         this.getSolveGraphOptions(),
       )
     }
