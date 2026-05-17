@@ -139,6 +139,78 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
 })
 
+test("completed routing restores the best solution when a later solution is worse", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_END: 1,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 2,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([10, 10, -1, -1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.05)
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([-1, -1, 20, 20])
+  solver.state.regionSegments[0] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.4)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.05)
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(Array.from(solver.state.portAssignment)).toEqual([10, 10, -1, -1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+  expect(
+    solver.state.regionIntersectionCaches.map(
+      (cache) => cache.existingRegionCost,
+    ),
+  ).toEqual([0.2, 0.05])
+  expect(solver.stats.bestMaxRegionCost).toBe(0.2)
+})
+
+test("final acceptance restores the best complete solution before max-iteration failure", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_END: 1,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 2,
+    STATIC_REACHABILITY_PRECHECK: false,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([10, 10, -1, -1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.05)
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
+
+  solver.MAX_ITERATIONS = solver.iterations + 1
+  solver.state.unroutedRoutes = [0]
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.error).toBeNull()
+  expect(Array.from(solver.state.portAssignment)).toEqual([10, 10, -1, -1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+  expect(
+    solver.state.regionIntersectionCaches.map(
+      (cache) => cache.existingRegionCost,
+    ),
+  ).toEqual([0.2, 0.05])
+})
+
 test("constructor options override snake-case hyperparameters before setup", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
