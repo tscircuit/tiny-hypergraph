@@ -1,4 +1,4 @@
-const createMulberry32 = (seed: number) => {
+export const createMulberry32 = (seed: number) => {
   let state = seed >>> 0
 
   return () => {
