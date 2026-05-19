@@ -3,7 +3,7 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { type ChangeEvent, useEffect, useMemo, useState } from "react"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
-  TinyHyperGraphSolver,
+  TinyHyperGraphVirtualFanoutSolver,
   type TinyHyperGraphSolverOptions,
 } from "lib/index"
 import { Debugger } from "./components/Debugger"
@@ -42,7 +42,7 @@ type ImportGlob = <T>(
 
 const datasetManifest = datasetDistManifest as Srj13Manifest
 const SAMPLE_HASH_PARAM = "sample"
-const DEFAULT_MAX_ITERATIONS = 250_000
+const DEFAULT_MAX_ITERATIONS = 2_000_000
 const tinyHypergraphBenchmarkLoaders = (
   import.meta as ImportMeta & { glob: ImportGlob }
 ).glob<TinyHypergraphBenchmarkCase>(
@@ -277,7 +277,7 @@ export default function DatasetSrj13Page() {
             createSolver={() => {
               const { topology, problem } =
                 loadSerializedHyperGraph(serializedHyperGraph)
-              return new TinyHyperGraphSolver(
+              return new TinyHyperGraphVirtualFanoutSolver(
                 topology,
                 problem,
                 getSolverOptions(benchmarkCase),
