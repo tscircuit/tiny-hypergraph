@@ -182,6 +182,7 @@ const normalizeSerializedHyperGraph = (
   }
 
   return {
+    ...solverInput,
     regions: solverInput.graph.regions.map((region) => ({
       ...region,
       pointIds: Array.isArray(region.pointIds)
@@ -192,7 +193,7 @@ const normalizeSerializedHyperGraph = (
     })) as SerializedHyperGraph["regions"],
     ports: solverInput.graph.ports,
     connections: solverInput.connections,
-  }
+  } as SerializedHyperGraph
 }
 
 const getSolverOptions = (
@@ -209,6 +210,8 @@ const getSolverOptions = (
 
   return {
     MAX_ITERATIONS: maxIterations,
+    USE_LAZY_ROUTE_HEURISTIC: true,
+    USE_SPARSE_CANDIDATE_STORAGE: true,
     ...(Number.isFinite(minViaPadDiameter) && minViaPadDiameter > 0
       ? { minViaPadDiameter }
       : {}),
