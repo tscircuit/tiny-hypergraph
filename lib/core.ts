@@ -96,6 +96,9 @@ export interface TinyHyperGraphProblem {
   routeNet: Int32Array // NetId[]
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
   regionNetId: Int32Array
+
+  /** portPenalty[portId] = extra cost paid when a route traverses the port */
+  portPenalty?: Float64Array
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -1129,7 +1132,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
-      state.regionCongestionCost[nextRegionId]
+      state.regionCongestionCost[nextRegionId] +
+      (this.problem.portPenalty?.[neighborPortId] ?? 0)
     )
   }
 
