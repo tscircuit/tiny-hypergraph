@@ -42,6 +42,45 @@ export const createEmptyRegionIntersectionCache =
     existingSegmentCount: 0,
   })
 
+const cloneRegionSegments = (
+  regionSegments: Array<[RouteId, PortId, PortId][]>,
+): Array<[RouteId, PortId, PortId][]> =>
+  regionSegments.map((segments) =>
+    segments.map(
+      ([routeId, fromPortId, toPortId]) =>
+        [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
+    ),
+  )
+
+const cloneRegionIntersectionCache = (
+  regionIntersectionCache: RegionIntersectionCache,
+): RegionIntersectionCache => ({
+  netIds: new Int32Array(regionIntersectionCache.netIds),
+  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
+  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
+  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  existingCrossingLayerIntersections:
+    regionIntersectionCache.existingCrossingLayerIntersections,
+  existingSameLayerIntersections:
+    regionIntersectionCache.existingSameLayerIntersections,
+  existingEntryExitLayerChanges:
+    regionIntersectionCache.existingEntryExitLayerChanges,
+  existingRegionCost: regionIntersectionCache.existingRegionCost,
+  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+})
+
+const cloneSolvedStateSnapshot = (
+  snapshot: SolvedStateSnapshot,
+): SolvedStateSnapshot => ({
+  portAssignment: new Int32Array(snapshot.portAssignment),
+  regionSegments: cloneRegionSegments(snapshot.regionSegments),
+  regionIntersectionCaches: snapshot.regionIntersectionCaches.map(
+    cloneRegionIntersectionCache,
+  ),
+  regionCongestionCost: new Float64Array(snapshot.regionCongestionCost),
+  ripCount: snapshot.ripCount,
+})
+
 export interface TinyHyperGraphTopology {
   portCount: number
   regionCount: number
@@ -124,6 +163,14 @@ export interface RegionCostSummary {
   totalRegionCost: number
 }
 
+interface SolvedStateSnapshot {
+  portAssignment: Int32Array
+  regionSegments: Array<[RouteId, PortId, PortId][]>
+  regionIntersectionCaches: RegionIntersectionCache[]
+  regionCongestionCost: Float64Array
+  ripCount: number
+}
+
 export interface NeverSuccessfullyRoutedRouteSummary {
   routeId: RouteId
   connectionId: string
@@ -188,6 +235,7 @@ export interface TinyHyperGraphSolverOptions {
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -203,6 +251,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -251,6 +300,10 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
       options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS
   }
+  if (options.ACCEPT_BEST_SOLUTION_ON_TIMEOUT !== undefined) {
+    solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT =
+      options.ACCEPT_BEST_SOLUTION_ON_TIMEOUT
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -269,6 +322,7 @@ export const getTinyHyperGraphSolverOptions = (
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -286,6 +340,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private _problemSetup?: TinyHyperGraphProblemSetup
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
+  protected bestSolvedStateSnapshot?: SolvedStateSnapshot
+  protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
@@ -309,6 +365,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -971,6 +1028,54 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  protected compareRegionCostSummaries(
+    left: RegionCostSummary,
+    right: RegionCostSummary,
+  ) {
+    if (left.maxRegionCost !== right.maxRegionCost) {
+      return left.maxRegionCost - right.maxRegionCost
+    }
+
+    return left.totalRegionCost - right.totalRegionCost
+  }
+
+  protected captureBestSolvedState(summary: RegionCostSummary) {
+    if (
+      this.bestSolvedStateSummary &&
+      this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) >= 0
+    ) {
+      return
+    }
+
+    this.bestSolvedStateSummary = summary
+    this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
+      portAssignment: this.state.portAssignment,
+      regionSegments: this.state.regionSegments,
+      regionIntersectionCaches: this.state.regionIntersectionCaches,
+      regionCongestionCost: this.state.regionCongestionCost,
+      ripCount: this.state.ripCount,
+    })
+  }
+
+  protected restoreBestSolvedState() {
+    if (!this.bestSolvedStateSnapshot) {
+      return
+    }
+
+    const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+    this.state.portAssignment = snapshot.portAssignment
+    this.state.regionSegments = snapshot.regionSegments
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
+    this.state.regionCongestionCost = snapshot.regionCongestionCost
+    this.state.ripCount = snapshot.ripCount
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = []
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+  }
+
   onAllRoutesRouted() {
     const { topology, state } = this
     const ripThresholdProgress =
@@ -984,23 +1089,33 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionIdsOverCostThreshold: RegionId[] = []
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
+    let totalRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
+      totalRegionCost += regionCost
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
       }
     }
 
+    this.captureBestSolvedState({
+      maxRegionCost,
+      totalRegionCost,
+    })
+
     this.stats = {
       ...this.stats,
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
+      totalRegionCost,
+      bestMaxRegionCost: this.bestSolvedStateSummary?.maxRegionCost,
+      bestTotalRegionCost: this.bestSolvedStateSummary?.totalRegionCost,
       ripCount: state.ripCount,
     }
 
@@ -1145,6 +1260,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ...this.stats,
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
+
+    if (
+      this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT &&
+      this.bestSolvedStateSnapshot &&
+      this.bestSolvedStateSummary
+    ) {
+      this.restoreBestSolvedState()
+      this.stats = {
+        ...this.stats,
+        acceptedBestSolutionOnTimeout: true,
+        maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+      }
+      this.solved = true
+      this.failed = false
+      this.error = null
+      return
+    }
+
     this.logNeverSuccessfullyRoutedRoutes()
   }
 

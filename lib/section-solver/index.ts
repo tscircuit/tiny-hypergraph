@@ -882,6 +882,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   override MAX_ITERATIONS = 1e6
   STATIC_REACHABILITY_PRECHECK = false
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
 
   constructor(
     public topology: TinyHyperGraphTopology,
