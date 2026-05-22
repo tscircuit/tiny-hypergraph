@@ -1,22 +1,23 @@
-import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import {
-  getPngBufferFromGraphicsObject,
-  stackGraphicsHorizontally,
-  type GraphicsObject,
-} from "graphics-debug"
 import { mkdir, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
+import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import {
+  type GraphicsObject,
+  getPngBufferFromGraphicsObject,
+  stackGraphicsHorizontally,
+} from "graphics-debug"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
   ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  loadSerializedHyperGraphAsPoly,
   OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   PolyHyperGraphSectionPipelineSolver,
+  type TinyHyperGraphSectionCandidateFamily,
+  type TinyHyperGraphSectionPipelineInput,
   TinyHyperGraphSectionPipelineSolver,
   TinyHyperGraphSectionSolver,
-  type TinyHyperGraphSectionCandidateFamily,
   type TinyHyperGraphSolver,
-  loadSerializedHyperGraphAsPoly,
 } from "../../lib/index"
 
 type DatasetModule = Record<string, unknown> & {
@@ -31,6 +32,9 @@ type DatasetSampleMeta = {
   circuitKey: string
   circuitId: string
   stepsToPortPointSolve: number
+  solveGraphOptions?: Record<string, unknown> | null
+  sectionSolverOptions?: Record<string, unknown> | null
+  minViaPadDiameter?: number | null
 }
 
 type BenchmarkSampleResult = {
@@ -54,14 +58,17 @@ type BenchmarkSampleResult = {
 }
 
 type SolverVariant = "core" | "poly"
+type DatasetName = "hg07" | "hard01"
 
 const IMPROVEMENT_EPSILON = 1e-9
+const DATASET_NAMES = ["hg07", "hard01"] as const
 
 const HELP_TEXT = `Usage: ./benchmark.sh [options]
 
-Run the hg07 section-pipeline benchmark and write per-sample artifacts under ./results/runNNN/.
+Run the section-pipeline benchmark and write per-sample artifacts under ./results/runNNN/.
 
 Options:
+  --dataset NAME  Dataset to run: hg07 or hard01. Defaults to hg07.
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
   --solver NAME   Solver variant: core or poly. Defaults to core.
@@ -71,6 +78,7 @@ Options:
 
 Examples:
   ./benchmark.sh
+  ./benchmark.sh --dataset hard01
   ./benchmark.sh --limit 20
   ./benchmark.sh --limit 20 --solver poly
   ./benchmark.sh --sample 2
@@ -95,6 +103,18 @@ const usageError = (message: string): never => {
   console.error("")
   console.error(HELP_TEXT)
   process.exit(1)
+}
+
+const parseDatasetName = (value: string): DatasetName => {
+  const normalizedValue = value.trim().toLowerCase()
+
+  if (DATASET_NAMES.includes(normalizedValue as DatasetName)) {
+    return normalizedValue as DatasetName
+  }
+
+  return usageError(
+    `Invalid --dataset value: ${value}. Expected one of: ${DATASET_NAMES.join(", ")}`,
+  )
 }
 
 const formatSampleName = (value: string): string => {
@@ -163,6 +183,7 @@ const parseArgs = () => {
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
   let solverVariant: SolverVariant = "core"
+  let datasetName: DatasetName = "hg07"
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -181,6 +202,17 @@ const parseArgs = () => {
       }
 
       limit = Math.floor(parsedValue)
+      index += 1
+      continue
+    }
+
+    if (arg === "--dataset") {
+      const rawValue = process.argv[index + 1]
+      if (!rawValue) {
+        usageError("Missing value for --dataset")
+      }
+
+      datasetName = parseDatasetName(rawValue)
       index += 1
       continue
     }
@@ -227,7 +259,7 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies, solverVariant }
+  return { limit, sampleName, candidateFamilies, solverVariant, datasetName }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -299,13 +331,108 @@ const getNextRunDirectory = async (resultsDir: string) => {
   }
 }
 
-const loadDatasetModule = async (): Promise<DatasetModule> => {
-  console.log("loading dataset=hg07")
-  const datasetModule = (await import("dataset-hg07")) as DatasetModule
+const loadDatasetModule = async (
+  datasetName: DatasetName,
+): Promise<DatasetModule> => {
+  console.log(`loading dataset=${datasetName}`)
+  const datasetModule =
+    datasetName === "hard01"
+      ? ((await import("../../datasets/hard01")) as unknown as DatasetModule)
+      : ((await import("dataset-hg07")) as unknown as DatasetModule)
   console.log(
-    `loaded dataset=hg07 samples=${datasetModule.manifest.sampleCount}`,
+    `loaded dataset=${datasetName} samples=${datasetModule.manifest.sampleCount}`,
   )
   return datasetModule
+}
+
+const normalizeSolverOptions = (
+  rawOptions: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined => {
+  if (!rawOptions) {
+    return undefined
+  }
+
+  const normalizedOptions = Object.fromEntries(
+    Object.entries(rawOptions)
+      .map(([key, value]) => [
+        key,
+        key === "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST" &&
+        value === null
+          ? Number.POSITIVE_INFINITY
+          : value,
+      ])
+      .filter(([, value]) => value !== null),
+  )
+
+  return Object.keys(normalizedOptions).length > 0
+    ? normalizedOptions
+    : undefined
+}
+
+const getPipelineInput = (
+  sampleMeta: DatasetSampleMeta,
+  serializedHyperGraph: SerializedHyperGraph,
+  candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null,
+): TinyHyperGraphSectionPipelineInput => ({
+  serializedHyperGraph,
+  ...(sampleMeta.minViaPadDiameter === null ||
+  sampleMeta.minViaPadDiameter === undefined
+    ? {}
+    : { minViaPadDiameter: sampleMeta.minViaPadDiameter }),
+  ...(candidateFamilies ? { sectionSearchConfig: { candidateFamilies } } : {}),
+  ...(() => {
+    const solveGraphOptions = normalizeSolverOptions(
+      sampleMeta.solveGraphOptions,
+    ) as TinyHyperGraphSectionPipelineInput["solveGraphOptions"] | undefined
+    const sectionSolverOptions = normalizeSolverOptions(
+      sampleMeta.sectionSolverOptions,
+    ) as TinyHyperGraphSectionPipelineInput["sectionSolverOptions"] | undefined
+
+    return {
+      ...(solveGraphOptions ? { solveGraphOptions } : {}),
+      ...(sectionSolverOptions ? { sectionSolverOptions } : {}),
+    }
+  })(),
+})
+
+const getPipelineMaxIterations = (
+  input: TinyHyperGraphSectionPipelineInput,
+): number | undefined => {
+  const solveGraphMaxIterations = Number(
+    input.solveGraphOptions?.MAX_ITERATIONS,
+  )
+  const sectionSolverMaxIterations = Number(
+    input.sectionSolverOptions?.MAX_ITERATIONS,
+  )
+  const stageMaxIterations = [
+    solveGraphMaxIterations,
+    sectionSolverMaxIterations,
+  ].filter((value) => Number.isFinite(value) && value > 0)
+
+  if (stageMaxIterations.length === 0) {
+    return undefined
+  }
+
+  return stageMaxIterations.reduce((sum, value) => sum + value, 0) + 1_000_000
+}
+
+const createPipelineSolver = (
+  PipelineSolver:
+    | typeof TinyHyperGraphSectionPipelineSolver
+    | typeof PolyHyperGraphSectionPipelineSolver,
+  input: TinyHyperGraphSectionPipelineInput,
+) => {
+  const pipelineSolver = new PipelineSolver(input)
+  const pipelineMaxIterations = getPipelineMaxIterations(input)
+
+  if (
+    pipelineMaxIterations !== undefined &&
+    pipelineMaxIterations > pipelineSolver.MAX_ITERATIONS
+  ) {
+    pipelineSolver.MAX_ITERATIONS = pipelineMaxIterations
+  }
+
+  return pipelineSolver
 }
 
 const getSelectedSamples = (
@@ -356,12 +483,10 @@ const getSnapshotPng = async (
   })
 }
 
-const stringifyLogValue = (value: unknown) =>
-  typeof value === "string" ? value : JSON.stringify(value, null, 2)
-
 const main = async () => {
-  const { limit, sampleName, candidateFamilies, solverVariant } = parseArgs()
-  const datasetModule = await loadDatasetModule()
+  const { limit, sampleName, candidateFamilies, solverVariant, datasetName } =
+    parseArgs()
+  const datasetModule = await loadDatasetModule(datasetName)
   const cwd = process.cwd()
   const resultsDir = path.join(cwd, "results")
   const { runName } = await getNextRunDirectory(resultsDir)
@@ -375,7 +500,7 @@ const main = async () => {
       : TinyHyperGraphSectionPipelineSolver
 
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=${datasetName} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -385,12 +510,10 @@ const main = async () => {
     ] as SerializedHyperGraph
 
     try {
-      const pipelineSolver = new PipelineSolver({
-        serializedHyperGraph,
-        sectionSearchConfig: candidateFamilies
-          ? { candidateFamilies }
-          : undefined,
-      })
+      const pipelineSolver = createPipelineSolver(
+        PipelineSolver,
+        getPipelineInput(sampleMeta, serializedHyperGraph, candidateFamilies),
+      )
       pipelineSolver.solve()
 
       if (pipelineSolver.failed) {
@@ -476,12 +599,10 @@ const main = async () => {
       let snapshotErrorMessage: string | null = null
 
       try {
-        const pipelineSolver = new PipelineSolver({
-          serializedHyperGraph,
-          sectionSearchConfig: candidateFamilies
-            ? { candidateFamilies }
-            : undefined,
-        })
+        const pipelineSolver = createPipelineSolver(
+          PipelineSolver,
+          getPipelineInput(sampleMeta, serializedHyperGraph, candidateFamilies),
+        )
         const png = await getSnapshotPng(pipelineSolver)
         await writeFile(snapshotPath, png)
         wroteSnapshot = true

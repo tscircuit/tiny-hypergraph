@@ -1,0 +1,244 @@
+{
+  "datasetName": "hard01",
+  "source": {
+    "repo": "git@github.com:tscircuit/tscircuit-autorouter",
+    "npmPackage": "@tscircuit/autorouting-dataset-01",
+    "npmPackageVersion": "1.0.53",
+    "selection": "benchmark sample numbers"
+  },
+  "sampleCount": 8,
+  "samples": [
+    {
+      "sampleName": "sample120",
+      "circuitKey": "circuit214",
+      "circuitId": "214",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 120,
+      "stepsToPortPointSolve": 5147,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample139",
+      "circuitKey": "circuit233",
+      "circuitId": "233",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 139,
+      "stepsToPortPointSolve": 5919,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample148",
+      "circuitKey": "circuit242",
+      "circuitId": "242",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 148,
+      "stepsToPortPointSolve": 5101,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample152",
+      "circuitKey": "circuit246",
+      "circuitId": "246",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 152,
+      "stepsToPortPointSolve": 6757,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample157",
+      "circuitKey": "circuit251",
+      "circuitId": "251",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 157,
+      "stepsToPortPointSolve": 6505,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample170",
+      "circuitKey": "circuit264",
+      "circuitId": "264",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 170,
+      "stepsToPortPointSolve": 5976,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample173",
+      "circuitKey": "circuit267",
+      "circuitId": "267",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 173,
+      "stepsToPortPointSolve": 3468,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    },
+    {
+      "sampleName": "sample186",
+      "circuitKey": "circuit280",
+      "circuitId": "280",
+      "sourceDataset": "dataset01",
+      "sourceSampleNumber": 186,
+      "stepsToPortPointSolve": 6846,
+      "minViaPadDiameter": null,
+      "solveGraphOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 10,
+        "MAX_ITERATIONS": 10000000
+      },
+      "sectionSolverOptions": {
+        "DISTANCE_TO_COST": 0.05,
+        "RIP_THRESHOLD_START": 0.05,
+        "RIP_THRESHOLD_END": 0.8,
+        "RIP_CONGESTION_REGION_COST_FACTOR": 0.1,
+        "MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT": 6,
+        "EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST": null,
+        "minViaPadDiameter": 0.3,
+        "RIP_THRESHOLD_RAMP_ATTEMPTS": 16,
+        "MAX_ITERATIONS": 1000000
+      }
+    }
+  ]
+}
