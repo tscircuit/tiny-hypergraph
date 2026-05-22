@@ -883,6 +883,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK = false
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
+  GREEDY_FINAL_ROUTE_ITERS = 4
 
   constructor(
     public topology: TinyHyperGraphTopology,
