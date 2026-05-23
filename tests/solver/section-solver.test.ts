@@ -215,6 +215,26 @@ test("section solver enforces section-specific rip thresholds and max rip cap", 
   ).toBe(2)
 })
 
+test("section solver final acceptance falls back to the baseline solution", () => {
+  const { topology, problem, solution } = loadSerializedHyperGraph(
+    sectionSolverFixtureGraph,
+  )
+  problem.portSectionMask = createSectionSolverFixturePortMask(topology)
+
+  const sectionSolver = new TinyHyperGraphSectionSolver(
+    topology,
+    problem,
+    solution,
+  )
+
+  sectionSolver.tryFinalAcceptance()
+
+  expect(sectionSolver.solved).toBe(true)
+  expect(sectionSolver.failed).toBe(false)
+  expect(sectionSolver.stats.sectionSolverTimeoutFallbackToBaseline).toBe(true)
+  expect(sectionSolver.getSolvedSolver()).toBe(sectionSolver.baselineSolver)
+})
+
 test("section pipeline visualize renders the input graph at iteration zero", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: sectionSolverFixtureGraph,
@@ -244,6 +264,36 @@ test("section pipeline visualize infers z-layer labels from incident ports", () 
 
   expect(startRegionRect?.layer).toBe("z0")
   expect(startPortCircle?.layer).toBe("z0")
+})
+
+test("section pipeline uses bounded default iteration limits", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: datasetHg07.sample029,
+  })
+
+  expect(pipelineSolver.MAX_ITERATIONS).toBe(200_000)
+  expect(pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS).toBe(50_000)
+})
+
+test("section pipeline final acceptance falls back to solveGraph output", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: sectionSolverFixtureGraph,
+  })
+  const pipelineOutputs = pipelineSolver.getAllOutputs() as Record<
+    string,
+    ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+  >
+  pipelineOutputs.solveGraph = sectionSolverFixtureGraph
+  pipelineSolver.pipelineOutputs = pipelineOutputs
+
+  pipelineSolver.tryFinalAcceptance()
+
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(
+    pipelineSolver.stats.acceptedSolveGraphOutputOnSectionPipelineTimeout,
+  ).toBe(true)
+  expect(pipelineSolver.getOutput()).toBe(sectionSolverFixtureGraph)
 })
 
 test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {

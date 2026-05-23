@@ -551,6 +551,10 @@ const createSectionRoutePlans = (
       routeEndPort,
       routeNet: new Int32Array(problem.routeNet),
       regionNetId: new Int32Array(problem.regionNetId),
+      portPenalty:
+        problem.portPenalty === undefined
+          ? undefined
+          : new Float64Array(problem.portPenalty),
     },
     routePlans,
     activeRouteIds,
@@ -834,12 +838,25 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   }
 
   override tryFinalAcceptance() {
-    if (!this.bestSnapshot) {
-      super.tryFinalAcceptance()
+    if (this.bestSnapshot) {
+      this.restoreBestState()
+      this.solved = true
       return
     }
 
-    this.restoreBestState()
+    if (this.fixedSnapshot) {
+      restoreSolvedStateSnapshot(this, this.fixedSnapshot)
+    }
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = [...this.activeRouteIds]
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.stats = {
+      ...this.stats,
+      acceptedFixedSectionStateOnTimeout: true,
+    }
     this.solved = true
   }
 
@@ -878,6 +895,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   override MAX_ITERATIONS = 1e6
   STATIC_REACHABILITY_PRECHECK = false
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
+  ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
+  GREEDY_FINAL_ROUTE_ITERS = 4
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -975,8 +994,18 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     }
 
     if (this.sectionSolver.failed) {
-      this.error = this.sectionSolver.error
-      this.failed = true
+      this.optimizedSolver = this.baselineSolver
+      this.stats = {
+        ...this.stats,
+        initialMaxRegionCost: this.baselineSummary.maxRegionCost,
+        initialTotalRegionCost: this.baselineSummary.totalRegionCost,
+        finalMaxRegionCost: this.baselineSummary.maxRegionCost,
+        finalTotalRegionCost: this.baselineSummary.totalRegionCost,
+        optimized: false,
+        sectionSearchFailedFallbackToBaseline: true,
+        sectionSearchError: this.sectionSolver.error,
+      }
+      this.solved = true
       return
     }
 
@@ -1010,6 +1039,22 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       optimized,
     }
     this.solved = true
+  }
+
+  override tryFinalAcceptance() {
+    this.optimizedSolver = this.baselineSolver
+    this.stats = {
+      ...this.stats,
+      initialMaxRegionCost: this.baselineSummary.maxRegionCost,
+      initialTotalRegionCost: this.baselineSummary.totalRegionCost,
+      finalMaxRegionCost: this.baselineSummary.maxRegionCost,
+      finalTotalRegionCost: this.baselineSummary.totalRegionCost,
+      optimized: false,
+      sectionSolverTimeoutFallbackToBaseline: true,
+    }
+    this.solved = true
+    this.failed = false
+    this.error = null
   }
 
   getSolvedSolver(): TinyHyperGraphSolver {

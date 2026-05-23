@@ -47,11 +47,14 @@ const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
+const DEFAULT_SECTION_SOLVER_MAX_ITERATIONS = 50_000
+const DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS = 200_000
+
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 16,
   RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
-  MAX_ITERATIONS: 1e6,
+  MAX_ITERATIONS: DEFAULT_SECTION_SOLVER_MAX_ITERATIONS,
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 6,
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
 }
@@ -120,6 +123,10 @@ const createProblemWithPortSectionMask = (
   routeEndPort: new Int32Array(problem.routeEndPort),
   routeNet: new Int32Array(problem.routeNet),
   regionNetId: new Int32Array(problem.regionNetId),
+  portPenalty:
+    problem.portPenalty === undefined
+      ? undefined
+      : new Float64Array(problem.portPenalty),
 })
 
 const getSectionMaskCandidates = (
@@ -317,6 +324,11 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
 
+  constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
+    super(inputProblem)
+    this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+  }
+
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
     topology: TinyHyperGraphTopology
     problem: TinyHyperGraphProblem
@@ -494,5 +506,18 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
       null
     )
+  }
+
+  override tryFinalAcceptance() {
+    if (this.getStageOutput<SerializedHyperGraph>("solveGraph")) {
+      this.stats = {
+        ...this.stats,
+        acceptedSolveGraphOutputOnSectionPipelineTimeout: true,
+      }
+      this.activeSubSolver = undefined
+      this.solved = true
+      this.failed = false
+      this.error = null
+    }
   }
 }
