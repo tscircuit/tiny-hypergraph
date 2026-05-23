@@ -9,7 +9,7 @@ import { useEffect, useState } from "react"
 import { Debugger } from "./components/Debugger"
 
 const staticReachabilityFailureFixtureUrl = new URL(
-  "../tests/fixtures/portPointPathingSolver_input_2.json",
+  "../tests/fixtures/static-reachability-failure-port-point-pathing-input.json",
   import.meta.url,
 ).href
 
@@ -88,10 +88,12 @@ export default function StaticReachabilityFailurePage() {
           serializedHyperGraph={serializedHyperGraph}
           createSolver={(graph) => {
             const { topology, problem } = loadSerializedHyperGraph(graph)
-            return new TinyHyperGraphSolver(topology, problem, {
+            const solver = new TinyHyperGraphSolver(topology, problem, {
               MAX_ITERATIONS: 50_000,
               STATIC_REACHABILITY_PRECHECK: true,
             })
+            solver.setup()
+            return solver
           }}
         />
       </div>
