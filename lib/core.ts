@@ -2,21 +2,20 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
-  DEFAULT_MIN_VIA_PAD_DIAMETER,
   computeRegionCost,
+  DEFAULT_MIN_VIA_PAD_DIAMETER,
   isKnownSingleLayerMask,
 } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
+import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
   createStaticallyUnroutableRouteSummary,
-  getStaticReachabilityError,
   getStaticallyUnroutableRoutes,
+  getStaticReachabilityError,
 } from "./static-reachability"
-import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import type {
-  DynamicAnglePair,
   HopId,
   NetId,
   PortId,
@@ -351,6 +350,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
+  private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
     greaterAngle: 0,
@@ -475,6 +475,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           this.getStartingNextRegionId(routeId, startingPortId),
         getRouteSummary: (routeId) => this.getRouteSummary(routeId),
       })
+      this.staticallyUnroutableRoutes = staticallyUnroutableRoutes
       if (staticallyUnroutableRoutes.length > 0) {
         this.failed = true
         this.error = getStaticReachabilityError(staticallyUnroutableRoutes)
@@ -763,7 +764,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     port1Id: PortId,
     port2Id: PortId,
   ) {
-    const { topology, state } = this
+    const { state } = this
     const regionCache = state.regionIntersectionCaches[regionId]
     const segmentGeometry = this.populateSegmentGeometryScratch(
       regionId,
@@ -966,6 +967,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return neverSuccessfullyRoutedRoutes
+  }
+
+  getStaticallyUnroutableRoutes(): StaticallyUnroutableRouteSummary[] {
+    return this.staticallyUnroutableRoutes
   }
 
   protected logNeverSuccessfullyRoutedRoutes() {
@@ -1357,7 +1362,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
-    const { topology, state } = this
+    const { state } = this
 
     const nextRegionId = currentCandidate.nextRegionId
 

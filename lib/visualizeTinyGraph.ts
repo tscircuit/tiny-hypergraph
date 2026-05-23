@@ -2,6 +2,10 @@ import type { GraphicsObject } from "graphics-debug"
 import type { TinyHyperGraphSolver } from "./index"
 import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import type { PortId, RegionId, RouteId } from "./types"
+import {
+  getStaticallyUnroutableRouteIds,
+  visualizeStaticReachabilityFailure,
+} from "./visualizeStaticReachabilityFailure"
 
 const BOTTOM_LAYER_TRACE_COLOR = "rgba(52, 152, 219, 0.95)"
 const BOTTOM_LAYER_TRACE_DASH = "3 2"
@@ -259,7 +263,7 @@ const getRegionRectFill = (
   const cost = clamp01(
     solver.state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0,
   )
-  const redness = Math.pow(cost, 0.8)
+  const redness = cost ** 0.8
 
   return toRgbaString(mixColor(baseFill, HOT_REGION_FILL, redness))
 }
@@ -612,8 +616,11 @@ const pushInitialRouteHints = (
 const pushRouteEndpoints = (
   solver: TinyHyperGraphSolver,
   graphics: Required<GraphicsObject>,
+  routeIds?: Set<RouteId>,
 ) => {
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
+    if (routeIds && !routeIds.has(routeId)) continue
+
     const startPortId = solver.problem.routeStartPort[routeId]
     const endPortId = solver.problem.routeEndPort[routeId]
     const startPoint = getPortRenderPoint(solver, startPortId)
@@ -889,6 +896,7 @@ export const visualizeTinyHyperGraph = (
     coordinateSystem: "cartesian",
   }
   const sectionPortMask = getHighlightedSectionPortMask(solver, options)
+  const staticallyUnroutableRouteIds = getStaticallyUnroutableRouteIds(solver)
 
   for (let regionId = 0; regionId < solver.topology.regionCount; regionId++) {
     const regionMetadata = solver.topology.regionMetadata?.[regionId]
@@ -919,7 +927,7 @@ export const visualizeTinyHyperGraph = (
     }
   }
 
-  pushRouteEndpoints(solver, graphics)
+  pushRouteEndpoints(solver, graphics, staticallyUnroutableRouteIds)
 
   if (solver.iterations === 0) {
     for (const polygon of graphics.polygons) {
@@ -953,8 +961,12 @@ export const visualizeTinyHyperGraph = (
       })
     }
 
-    if (options.showInitialRouteHints !== false) {
-      pushInitialRouteHints(solver, graphics)
+    if (staticallyUnroutableRouteIds) {
+      visualizeStaticReachabilityFailure(solver, graphics)
+    } else {
+      if (options.showInitialRouteHints !== false) {
+        pushInitialRouteHints(solver, graphics)
+      }
     }
   } else {
     pushSolvedRegionSegments(solver, graphics)
@@ -988,6 +1000,9 @@ export const visualizeTinyHyperGraph = (
     `iter=${solver.iterations}`,
     `pending=${pendingCount}`,
     sectionPortMask ? `sectionPorts=${sectionPortCount}` : undefined,
+    staticallyUnroutableRouteIds
+      ? `staticReachabilityFailed=${staticallyUnroutableRouteIds.size}`
+      : undefined,
     solver.failed ? "failed" : solver.solved ? "solved" : "running",
   ]
     .filter(Boolean)
