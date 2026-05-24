@@ -34,6 +34,7 @@
   },
   "include": [
     "cosmos.decorator.tsx",
+    "datasets/**/*.ts",
     "lib/**/*.ts",
     "pages/**/*.tsx",
     "scripts/**/*.ts",

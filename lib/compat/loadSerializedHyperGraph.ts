@@ -543,6 +543,35 @@ export const loadSerializedHyperGraph = (
     routeNet[routeIndex] = getNetIndex(connection)
   })
 
+  const terminalNetIndexById = new Map<string, number>()
+  for (
+    let routeIndex = 0;
+    routeIndex < routableConnections.length;
+    routeIndex++
+  ) {
+    const { connection } = routableConnections[routeIndex]!
+    const netId =
+      connection.mutuallyConnectedNetworkId ?? connection.connectionId
+    terminalNetIndexById.set(netId, routeNet[routeIndex]!)
+  }
+
+  for (
+    let regionIndex = 0;
+    regionIndex < regionMetadata.length;
+    regionIndex++
+  ) {
+    const metadata = regionMetadata[regionIndex]
+    const terminalNetId = metadata?._tinyTerminalNetId
+    if (typeof terminalNetId !== "string") {
+      continue
+    }
+
+    const netIndex = terminalNetIndexById.get(terminalNetId)
+    if (netIndex !== undefined) {
+      regionNetId[regionIndex] = netIndex
+    }
+  }
+
   const topology: TinyHyperGraphTopology = {
     portCount,
     regionCount,
