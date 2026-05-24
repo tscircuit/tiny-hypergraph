@@ -27,6 +27,7 @@
     "graphics-debug": "^0.0.93",
     "react-cosmos-plugin-vite": "^7.2.0",
     "stack-svgs": "^0.0.1",
+    "tiny-hypergraph-repros": "https://github.com/tscircuit/tiny-hypergraph-repros#b97e503be77470c0ddae83e32a23d6d01998be06",
     "vite": "^8.0.1"
   },
   "peerDependencies": {
