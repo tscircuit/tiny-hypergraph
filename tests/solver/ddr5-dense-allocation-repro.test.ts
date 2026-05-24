@@ -5,9 +5,7 @@ import {
   type SerializedHyperGraphPortPointPathingSolverInput,
 } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
-import ddr5PortPointPathingInput from "../fixtures/ddr5-pipeline7-port-point-pathing.json" with {
-  type: "json",
-}
+import { ddr5Pipeline7PortPointPathingInput } from "tiny-hypergraph-repros"
 
 const TINY_TERMINAL_REGION_SIZE = 1e-6
 
@@ -144,7 +142,7 @@ const addConnectionTerminalPorts = (
 
 test("repro: DDR5 pipeline7 port-point-pathing input implies multi-GB dense hop state", () => {
   const input = getSinglePortPointPathingSolverParams(
-    ddr5PortPointPathingInput as SerializedHyperGraphPortPointPathingSolverInput,
+    ddr5Pipeline7PortPointPathingInput as SerializedHyperGraphPortPointPathingSolverInput,
   )
   const graph = addConnectionTerminalPorts({
     regions: input.graph.regions,
