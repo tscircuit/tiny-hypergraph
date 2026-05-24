@@ -1361,10 +1361,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteId = undefined
   }
 
+  protected isEstablishingInitialSolution(): boolean {
+    return !this.bestSolvedStateSnapshot
+  }
+
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
     const { state } = this
 
     const nextRegionId = currentCandidate.nextRegionId
+
+    if (this.isEstablishingInitialSolution()) {
+      return (
+        currentCandidate.g + (this.problem.portPenalty?.[neighborPortId] ?? 0)
+      )
+    }
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
     const segmentGeometry = this.populateSegmentGeometryScratch(
