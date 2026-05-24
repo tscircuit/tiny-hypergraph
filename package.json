@@ -11,6 +11,7 @@
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:bus": "./benchmark-bus.sh",
     "benchmark:srj13": "./benchmark-srj13.sh",
+    "generate:srj18": "bun run scripts/benchmarking/generate-srj18.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
@@ -34,6 +35,8 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#161a835ed40ce72a2fa18ffe5ba6ba6392fcc176"
+    "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#161a835ed40ce72a2fa18ffe5ba6ba6392fcc176",
+    "@tscircuit/capacity-autorouter": "^0.0.557",
+    "dataset-srj18": "git+https://github.com/tscircuit/dataset-srj18.git#48cd2f8f651bc9213a339580fdf125d2a1dd9254"
   }
 }
