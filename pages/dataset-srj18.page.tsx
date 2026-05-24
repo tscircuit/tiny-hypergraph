@@ -49,6 +49,9 @@ const setSampleIndexInHash = (sampleIndex: number) => {
 const getSampleLoader = (sampleName: string) =>
   srj18SampleLoaders[`../generated-datasets/srj18/${sampleName}.hg.json`]
 
+const getGenerateSampleCommand = (sampleName: string) =>
+  `bun run generate:srj18 -- --sample ${sampleName}`
+
 export default function DatasetSrj18Page() {
   const [selectedSampleIndex, setSelectedSampleIndex] = useState(
     getSampleIndexFromHash,
@@ -90,7 +93,9 @@ export default function DatasetSrj18Page() {
     const loadSample = async () => {
       const load = getSampleLoader(selectedSampleName)
       if (!load) {
-        throw new Error(`Missing generated srj18 sample: ${selectedSampleName}`)
+        throw new Error(
+          `Missing generated-datasets/srj18/${selectedSampleName}.hg.json`,
+        )
       }
 
       const nextSerializedHyperGraph = await load()
@@ -158,7 +163,22 @@ export default function DatasetSrj18Page() {
       <div className="min-h-0 flex-1">
         {loadError ? (
           <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            {loadError}
+            <div className="font-medium">
+              Missing generated srj18 sample: {selectedSampleName}
+            </div>
+            <div className="mt-1">{loadError}</div>
+            <div className="mt-3 text-amber-950">
+              Generate this sample:
+              <pre className="mt-1 overflow-auto rounded bg-white p-2 text-xs text-slate-900">
+                {getGenerateSampleCommand(selectedSampleName)}
+              </pre>
+            </div>
+            <div className="mt-2 text-amber-950">
+              Generate all samples:
+              <pre className="mt-1 overflow-auto rounded bg-white p-2 text-xs text-slate-900">
+                bun run generate:srj18
+              </pre>
+            </div>
           </div>
         ) : serializedHyperGraph ? (
           <Debugger
