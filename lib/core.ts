@@ -29,6 +29,8 @@ import { visualizeTinyGraph } from "./visualizeTinyGraph"
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
+export const GREEDY_PANIC_START_FRAC = 0.7
+const DEFAULT_GREEDY_PANIC_START_FRAC = GREEDY_PANIC_START_FRAC
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -238,6 +240,7 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
+  GREEDY_PANIC_START_FRAC?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -255,6 +258,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
+  GREEDY_PANIC_START_FRAC?: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -310,6 +314,9 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
     solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
   }
+  if (options.GREEDY_PANIC_START_FRAC !== undefined) {
+    solver.GREEDY_PANIC_START_FRAC = options.GREEDY_PANIC_START_FRAC
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -330,6 +337,7 @@ export const getTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
+  GREEDY_PANIC_START_FRAC: solver.GREEDY_PANIC_START_FRAC,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -375,6 +383,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
+  GREEDY_PANIC_START_FRAC = DEFAULT_GREEDY_PANIC_START_FRAC
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -726,6 +735,35 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
     )
+  }
+
+  protected getGreedyPanicPenaltyScale(): number {
+    if (this.bestSolvedStateSnapshot) {
+      return 1
+    }
+
+    const currentRouteId = this.state.currentRouteId
+    if (
+      currentRouteId === undefined ||
+      this.routeAttemptCountByRouteId[currentRouteId]! <= 1 ||
+      this.routeSuccessCountByRouteId[currentRouteId]! > 0
+    ) {
+      return 1
+    }
+
+    const startFrac = Math.min(1, Math.max(0, this.GREEDY_PANIC_START_FRAC))
+    const maxIterations = Math.max(1, this.MAX_ITERATIONS)
+    const progress = Math.min(1, Math.max(0, this.iterations / maxIterations))
+
+    if (progress <= startFrac) {
+      return 1
+    }
+
+    if (startFrac >= 1) {
+      return 1
+    }
+
+    return Math.max(0, (1 - progress) / (1 - startFrac))
   }
 
   populateSegmentGeometryScratch(
@@ -1403,11 +1441,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 
+    const penaltyScale = this.getGreedyPanicPenaltyScale()
+
     return (
       currentCandidate.g +
       newRegionCost +
-      state.regionCongestionCost[nextRegionId] +
-      (this.problem.portPenalty?.[neighborPortId] ?? 0)
+      (state.regionCongestionCost[nextRegionId] +
+        (this.problem.portPenalty?.[neighborPortId] ?? 0)) *
+        penaltyScale
     )
   }
 
