@@ -37,5 +37,6 @@ hypergraph
 
 CPU.*
 results
+generated-datasets
 cosmos-export
 .vercel

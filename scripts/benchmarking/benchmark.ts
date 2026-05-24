@@ -4,7 +4,7 @@ import {
   stackGraphicsHorizontally,
   type GraphicsObject,
 } from "graphics-debug"
-import { mkdir, readdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
@@ -54,14 +54,16 @@ type BenchmarkSampleResult = {
 }
 
 type SolverVariant = "core" | "poly"
+type DatasetKey = "hg07" | "srj18"
 
 const IMPROVEMENT_EPSILON = 1e-9
 
 const HELP_TEXT = `Usage: ./benchmark.sh [options]
 
-Run the hg07 section-pipeline benchmark and write per-sample artifacts under ./results/runNNN/.
+Run the section-pipeline benchmark and write per-sample artifacts under ./results/runNNN/.
 
 Options:
+  --dataset NAME  Dataset to run: hg07 or 18/srj18. Defaults to hg07.
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
   --solver NAME   Solver variant: core or poly. Defaults to core.
@@ -71,6 +73,7 @@ Options:
 
 Examples:
   ./benchmark.sh
+  ./benchmark.sh --dataset 18
   ./benchmark.sh --limit 20
   ./benchmark.sh --limit 20 --solver poly
   ./benchmark.sh --sample 2
@@ -163,6 +166,7 @@ const parseArgs = () => {
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
   let solverVariant: SolverVariant = "core"
+  let datasetKey: DatasetKey = "hg07"
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -181,6 +185,20 @@ const parseArgs = () => {
       }
 
       limit = Math.floor(parsedValue)
+      index += 1
+      continue
+    }
+
+    if (arg === "--dataset") {
+      const rawValue = process.argv[index + 1]
+      if (rawValue === "hg07" || rawValue === "7") {
+        datasetKey = "hg07"
+      } else if (rawValue === "18" || rawValue === "srj18") {
+        datasetKey = "srj18"
+      } else {
+        usageError(`Invalid --dataset value: ${rawValue ?? "<missing>"}`)
+      }
+
       index += 1
       continue
     }
@@ -227,7 +245,7 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies, solverVariant }
+  return { limit, sampleName, candidateFamilies, solverVariant, datasetKey }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -299,13 +317,85 @@ const getNextRunDirectory = async (resultsDir: string) => {
   }
 }
 
-const loadDatasetModule = async (): Promise<DatasetModule> => {
+const loadHg07DatasetModule = async (): Promise<DatasetModule> => {
   console.log("loading dataset=hg07")
   const datasetModule = (await import("dataset-hg07")) as DatasetModule
   console.log(
     `loaded dataset=hg07 samples=${datasetModule.manifest.sampleCount}`,
   )
   return datasetModule
+}
+
+const loadSrj18DatasetModule = async (
+  cwd: string,
+  limit: number | null,
+  sampleName: string | null,
+): Promise<DatasetModule> => {
+  const {
+    ensureSrj18DatasetGenerated,
+    getSrj18DatasetDir,
+    getSrj18SampleNames,
+  } = await import("./generate-srj18")
+
+  const allSampleNames = getSrj18SampleNames()
+  if (sampleName && !allSampleNames.includes(sampleName)) {
+    usageError(`Unknown sample: ${sampleName}`)
+  }
+
+  const requestedSampleNames = sampleName
+    ? [sampleName]
+    : allSampleNames.slice(
+        0,
+        limit === null
+          ? allSampleNames.length
+          : Math.min(limit, allSampleNames.length),
+      )
+
+  await ensureSrj18DatasetGenerated(cwd, requestedSampleNames)
+
+  const datasetDir = getSrj18DatasetDir(cwd)
+  console.log(`loading dataset=srj18 dir=${datasetDir}`)
+
+  const datasetModule: DatasetModule = {
+    manifest: {
+      sampleCount: allSampleNames.length,
+      samples: allSampleNames.map((srj18SampleName) => ({
+        sampleName: srj18SampleName,
+        circuitKey: "srj18",
+        circuitId: srj18SampleName,
+        stepsToPortPointSolve: 0,
+      })),
+    },
+  }
+
+  for (const srj18SampleName of requestedSampleNames) {
+    const serializedHyperGraph = JSON.parse(
+      await readFile(
+        path.join(datasetDir, `${srj18SampleName}.hg.json`),
+        "utf8",
+      ),
+    ) as SerializedHyperGraph
+
+    datasetModule[srj18SampleName] = serializedHyperGraph
+  }
+
+  console.log(
+    `loaded dataset=srj18 samples=${datasetModule.manifest.sampleCount}`,
+  )
+  return datasetModule
+}
+
+const loadDatasetModule = async (
+  datasetKey: DatasetKey,
+  cwd: string,
+  limit: number | null,
+  sampleName: string | null,
+): Promise<DatasetModule> => {
+  if (datasetKey === "srj18") {
+    return loadSrj18DatasetModule(cwd, limit, sampleName)
+  }
+
+  return loadHg07DatasetModule()
 }
 
 const getSelectedSamples = (
@@ -360,9 +450,15 @@ const stringifyLogValue = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2)
 
 const main = async () => {
-  const { limit, sampleName, candidateFamilies, solverVariant } = parseArgs()
-  const datasetModule = await loadDatasetModule()
   const cwd = process.cwd()
+  const { limit, sampleName, candidateFamilies, solverVariant, datasetKey } =
+    parseArgs()
+  const datasetModule = await loadDatasetModule(
+    datasetKey,
+    cwd,
+    limit,
+    sampleName,
+  )
   const resultsDir = path.join(cwd, "results")
   const { runName } = await getNextRunDirectory(resultsDir)
   const runDir = path.join(resultsDir, runName)
@@ -375,7 +471,7 @@ const main = async () => {
       : TinyHyperGraphSectionPipelineSolver
 
   console.log(
-    `dataset=hg07 samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
   )
 
   for (const sampleMeta of sampleMetas) {
