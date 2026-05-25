@@ -15,9 +15,10 @@ const SAMPLE_NAMES = Array.from(
 )
 const srj18SampleLoaders = (
   import.meta as ImportMeta & { glob: ImportGlob }
-).glob<SerializedHyperGraph>("../generated-datasets/srj18/*.hg.json", {
-  import: "default",
-})
+).glob<SerializedHyperGraph>(
+  "../node_modules/dataset-srj18/generated-datasets/srj18/*.hg.json",
+  { import: "default" },
+)
 
 const clampSampleIndex = (sampleIndex: number) =>
   Math.min(
@@ -47,10 +48,9 @@ const setSampleIndexInHash = (sampleIndex: number) => {
 }
 
 const getSampleLoader = (sampleName: string) =>
-  srj18SampleLoaders[`../generated-datasets/srj18/${sampleName}.hg.json`]
-
-const getGenerateSampleCommand = (sampleName: string) =>
-  `bun run generate:srj18 -- --sample ${sampleName}`
+  srj18SampleLoaders[
+    `../node_modules/dataset-srj18/generated-datasets/srj18/${sampleName}.hg.json`
+  ]
 
 export default function DatasetSrj18Page() {
   const [selectedSampleIndex, setSelectedSampleIndex] = useState(
@@ -94,7 +94,7 @@ export default function DatasetSrj18Page() {
       const load = getSampleLoader(selectedSampleName)
       if (!load) {
         throw new Error(
-          `Missing generated-datasets/srj18/${selectedSampleName}.hg.json`,
+          `Missing dataset-srj18/generated-datasets/srj18/${selectedSampleName}.hg.json`,
         )
       }
 
@@ -156,29 +156,17 @@ export default function DatasetSrj18Page() {
           Next
         </button>
         <div className="text-sm text-slate-700">
-          {selectedSampleName} • srj18 • generated {generatedSampleNames.length}
-          /{SAMPLE_NAMES.length}
+          {selectedSampleName} • srj18 • loaded {generatedSampleNames.length}/
+          {SAMPLE_NAMES.length}
         </div>
       </div>
       <div className="min-h-0 flex-1">
         {loadError ? (
           <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
             <div className="font-medium">
-              Missing generated srj18 sample: {selectedSampleName}
+              Missing srj18 package sample: {selectedSampleName}
             </div>
             <div className="mt-1">{loadError}</div>
-            <div className="mt-3 text-amber-950">
-              Generate this sample:
-              <pre className="mt-1 overflow-auto rounded bg-white p-2 text-xs text-slate-900">
-                {getGenerateSampleCommand(selectedSampleName)}
-              </pre>
-            </div>
-            <div className="mt-2 text-amber-950">
-              Generate all samples:
-              <pre className="mt-1 overflow-auto rounded bg-white p-2 text-xs text-slate-900">
-                bun run generate:srj18
-              </pre>
-            </div>
           </div>
         ) : serializedHyperGraph ? (
           <Debugger

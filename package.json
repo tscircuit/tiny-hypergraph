@@ -11,7 +11,6 @@
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:bus": "./benchmark-bus.sh",
     "benchmark:srj13": "./benchmark-srj13.sh",
-    "generate:srj18": "bun run scripts/benchmarking/generate-srj18.ts",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
@@ -27,7 +26,7 @@
     "@types/bun": "latest",
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
-    "dataset-srj18": "git+https://github.com/tscircuit/dataset-srj18.git#48cd2f8f651bc9213a339580fdf125d2a1dd9254",
+    "dataset-srj18": "github:tscircuit/dataset-srj18#cafe0b46c28e6101d0e8d1b8ea184fdeebc5cc1a",
     "graphics-debug": "^0.0.93",
     "react-cosmos-plugin-vite": "^7.2.0",
     "stack-svgs": "^0.0.1",
