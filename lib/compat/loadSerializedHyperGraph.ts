@@ -33,6 +33,25 @@ const isFullObstacleRegion = (
   return netId === undefined || netId === -1
 }
 
+const getParentObstacleIds = (
+  region: SerializedHyperGraph["regions"][number],
+): string[] => {
+  const parentObstacleIds = region.d?._parentObstacleIds
+  if (Array.isArray(parentObstacleIds)) {
+    return parentObstacleIds.filter(
+      (parentObstacleId): parentObstacleId is string =>
+        typeof parentObstacleId === "string" && parentObstacleId.length > 0,
+    )
+  }
+
+  const parentObstacleId = region.d?.parentObstacleId
+  if (typeof parentObstacleId === "string" && parentObstacleId.length > 0) {
+    return [parentObstacleId]
+  }
+
+  return []
+}
+
 const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
   const connectedRegionIds = new Set<string>()
   for (const connection of serializedHyperGraph.connections ?? []) {
@@ -40,12 +59,23 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
     connectedRegionIds.add(connection.endRegionId)
   }
 
+  const preservedParentObstacleIds = new Set<string>()
+  for (const region of serializedHyperGraph.regions) {
+    if (!connectedRegionIds.has(region.regionId)) continue
+    for (const parentObstacleId of getParentObstacleIds(region)) {
+      preservedParentObstacleIds.add(parentObstacleId)
+    }
+  }
+
   const removedRegionIds = new Set(
     serializedHyperGraph.regions
       .filter(
         (region) =>
           isFullObstacleRegion(region) &&
-          !connectedRegionIds.has(region.regionId),
+          !connectedRegionIds.has(region.regionId) &&
+          !getParentObstacleIds(region).some((parentObstacleId) =>
+            preservedParentObstacleIds.has(parentObstacleId),
+          ),
       )
       .map((region) => region.regionId),
   )
