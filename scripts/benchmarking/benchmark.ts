@@ -6,6 +6,7 @@ import {
 } from "graphics-debug"
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import {
   ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
@@ -326,18 +327,27 @@ const loadHg07DatasetModule = async (): Promise<DatasetModule> => {
   return datasetModule
 }
 
+const getSrj18DatasetDir = () =>
+  path.join(
+    path.dirname(fileURLToPath(import.meta.resolve("dataset-srj18"))),
+    "generated-datasets",
+    "srj18",
+  )
+
+const getSrj18SampleNames = async () =>
+  (await readdir(getSrj18DatasetDir()))
+    .map((entryName) => /^(sample\d+)\.hg\.json$/.exec(entryName)?.[1] ?? null)
+    .filter((sampleName): sampleName is string => sampleName !== null)
+    .sort((leftSampleName, rightSampleName) =>
+      leftSampleName.localeCompare(rightSampleName),
+    )
+
 const loadSrj18DatasetModule = async (
   cwd: string,
   limit: number | null,
   sampleName: string | null,
 ): Promise<DatasetModule> => {
-  const {
-    ensureSrj18DatasetGenerated,
-    getSrj18DatasetDir,
-    getSrj18SampleNames,
-  } = await import("./generate-srj18")
-
-  const allSampleNames = getSrj18SampleNames()
+  const allSampleNames = await getSrj18SampleNames()
   if (sampleName && !allSampleNames.includes(sampleName)) {
     usageError(`Unknown sample: ${sampleName}`)
   }
@@ -351,9 +361,7 @@ const loadSrj18DatasetModule = async (
           : Math.min(limit, allSampleNames.length),
       )
 
-  await ensureSrj18DatasetGenerated(cwd, requestedSampleNames)
-
-  const datasetDir = getSrj18DatasetDir(cwd)
+  const datasetDir = getSrj18DatasetDir()
   console.log(`loading dataset=srj18 dir=${datasetDir}`)
 
   const datasetModule: DatasetModule = {
