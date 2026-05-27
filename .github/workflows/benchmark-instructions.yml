@@ -1,0 +1,63 @@
+name: Benchmark Instructions
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  post-instructions:
+    name: Post benchmark instructions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment benchmark usage
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const body = [
+              "## Benchmark This PR",
+              "",
+              "Run benchmarks by commenting on this PR:",
+              "",
+              "```",
+              "/benchmark [benchmark.sh args...]",
+              "/benchmark --dataset <hg07|18|srj18> --limit <n> --sample <n|sampleNNN> --solver <core|poly> --families <default|default+deep|all|comma-separated-family-list>",
+              "```",
+              "",
+              "Everything after `/benchmark` is forwarded directly to `./benchmark.sh`.",
+              "",
+              "Supported `./benchmark.sh` options in this repo:",
+              "- `--dataset NAME` where `NAME` is `hg07`, `7`, `18`, or `srj18`",
+              "- `--limit N` to run the first `N` samples",
+              "- `--sample VALUE` where `VALUE` is a sample number or name such as `2`, `002`, or `sample002`",
+              "- `--solver NAME` where `NAME` is `core` or `poly`",
+              "- `--families LIST` where `LIST` is a preset (`default`, `default+deep`, `all`) or a comma-separated candidate-family list",
+              "",
+              "Notes:",
+              "- Use either `--limit` or `--sample`, not both.",
+              "- Default dataset is `hg07`.",
+              "- Default solver is `core`.",
+              "- Benchmark outputs are written under `./results/runNNN/`.",
+              "",
+              "Examples:",
+              "- `/benchmark` -> run the default hg07 benchmark with the core solver",
+              "- `/benchmark --dataset 18` -> run the srj18 dataset",
+              "- `/benchmark --limit 20` -> run the first 20 samples",
+              "- `/benchmark --limit 20 --solver poly` -> run 20 samples with the poly solver",
+              "- `/benchmark --sample 2` -> run sample002",
+              "- `/benchmark --sample sample002` -> run sample002 explicitly",
+              "- `/benchmark --limit 40 --families default+deep` -> run 40 samples with the deep family preset",
+              "",
+              "Artifacts for failed samples include `logs.txt` and `snapshot.png` under the corresponding run directory.",
+            ].join("\n")
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            })
