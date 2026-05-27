@@ -41,12 +41,47 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
     connectedRegionIds.add(connection.endRegionId)
   }
 
+  const fullObstacleRegions = new Map(
+    serializedHyperGraph.regions
+      .filter((region) => isFullObstacleRegion(region))
+      .map((region) => [region.regionId, region]),
+  )
+
+  const preservedObstacleRegionIds = new Set<string>()
+  const obstacleQueue: string[] = []
+
+  for (const regionId of connectedRegionIds) {
+    if (!fullObstacleRegions.has(regionId)) continue
+    preservedObstacleRegionIds.add(regionId)
+    obstacleQueue.push(regionId)
+  }
+
+  while (obstacleQueue.length > 0) {
+    const currentRegionId = obstacleQueue.shift()!
+
+    for (const port of serializedHyperGraph.ports) {
+      const neighborRegionId =
+        port.region1Id === currentRegionId
+          ? port.region2Id
+          : port.region2Id === currentRegionId
+            ? port.region1Id
+            : null
+
+      if (neighborRegionId === null) continue
+      if (!fullObstacleRegions.has(neighborRegionId)) continue
+      if (preservedObstacleRegionIds.has(neighborRegionId)) continue
+
+      preservedObstacleRegionIds.add(neighborRegionId)
+      obstacleQueue.push(neighborRegionId)
+    }
+  }
+
   const removedRegionIds = new Set(
     serializedHyperGraph.regions
       .filter(
         (region) =>
           isFullObstacleRegion(region) &&
-          !connectedRegionIds.has(region.regionId),
+          !preservedObstacleRegionIds.has(region.regionId),
       )
       .map((region) => region.regionId),
   )
