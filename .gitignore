@@ -36,6 +36,12 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 hypergraph
 
 CPU.*
+benchmark-result.json
+benchmark-result.txt
+benchmark-result-main.json
+benchmark-result-main.txt
+benchmark-result-pr.json
+benchmark-result-pr.txt
 results
 generated-datasets
 cosmos-export
