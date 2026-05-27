@@ -70,6 +70,7 @@ jobs:
         id: parse
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.TSCIRCUIT_BOT_GITHUB_TOKEN || github.token }}
           script: |
             const splitShellArgs = (input) => {
               const args = []
@@ -164,14 +165,18 @@ jobs:
               })
               ref = pr.data.head.sha
 
-              const statusComment = await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: `## Tiny Hypergraph Benchmark\n\nRunning benchmark on \`${ref.slice(0, 7)}\`...\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
-              })
+              try {
+                const statusComment = await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: `## Tiny Hypergraph Benchmark\n\nRunning benchmark on \`${ref.slice(0, 7)}\`...\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+                })
 
-              statusCommentId = String(statusComment.data.id)
+                statusCommentId = String(statusComment.data.id)
+              } catch (error) {
+                core.warning(`Could not create benchmark status comment: ${error.message}`)
+              }
             }
 
             if (context.eventName === 'workflow_dispatch') {
@@ -247,7 +252,7 @@ jobs:
       - name: Download main branch benchmark result
         if: always() && github.event_name == 'issue_comment'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TSCIRCUIT_BOT_GITHUB_TOKEN || github.token }}
         run: |
           RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/benchmark.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null || echo "")
           if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
@@ -288,6 +293,7 @@ jobs:
         if: always() && github.event_name == 'issue_comment' && steps.parse.outputs.status_comment_id != ''
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.TSCIRCUIT_BOT_GITHUB_TOKEN || github.token }}
           script: |
             const fs = require('node:fs')
             const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
