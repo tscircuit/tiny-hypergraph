@@ -1,0 +1,442 @@
+name: Tiny Hypergraph Benchmark
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dataset_name:
+        description: "Dataset to benchmark: hg07 or srj18"
+        required: false
+        type: string
+      limit:
+        description: "Run the first N samples"
+        required: false
+        type: string
+      sample:
+        description: "Run one sample by number or name"
+        required: false
+        type: string
+      solver:
+        description: "Solver variant: core or poly"
+        required: false
+        type: string
+      families:
+        description: "Candidate families preset/list: default, default+deep, all, or comma-separated"
+        required: false
+        type: string
+      ref:
+        description: "Git ref (branch, tag, or SHA) to benchmark"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  benchmark:
+    name: Run benchmark
+    if: |
+      github.event_name == 'workflow_dispatch' || (
+        github.event_name == 'push' &&
+        github.ref_name == 'main'
+      ) || (
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.title, '[BENCHMARK TEST]')
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        github.event.comment.user.type != 'Bot' &&
+        startsWith(github.event.comment.body, '/benchmark') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      )
+    runs-on: ${{ vars.BENCHMARK_RUNNER || 'blacksmith-32vcpu-ubuntu-2404-arm' }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Parse benchmark command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const splitShellArgs = (input) => {
+              const args = []
+              let current = ''
+              let quote = null
+              let escaping = false
+              let tokenStarted = false
+
+              const pushCurrent = () => {
+                if (!tokenStarted) return
+                args.push(current)
+                current = ''
+                tokenStarted = false
+              }
+
+              for (const char of input) {
+                if (escaping) {
+                  if (quote === '"' && char === '\n') {
+                    escaping = false
+                    continue
+                  }
+                  if (quote === '"' && !['"', '\\', '$', '`'].includes(char)) {
+                    current += '\\'
+                  }
+                  current += char
+                  tokenStarted = true
+                  escaping = false
+                  continue
+                }
+
+                if (quote === "'") {
+                  if (char === "'") {
+                    quote = null
+                  } else {
+                    current += char
+                  }
+                  tokenStarted = true
+                  continue
+                }
+
+                if (quote === '"') {
+                  if (char === '"') {
+                    quote = null
+                  } else if (char === '\\') {
+                    escaping = true
+                  } else {
+                    current += char
+                  }
+                  tokenStarted = true
+                  continue
+                }
+
+                if (/\s/.test(char)) {
+                  pushCurrent()
+                  continue
+                }
+
+                if (char === "'" || char === '"') {
+                  quote = char
+                  tokenStarted = true
+                  continue
+                }
+
+                if (char === '\\') {
+                  escaping = true
+                  tokenStarted = true
+                  continue
+                }
+
+                current += char
+                tokenStarted = true
+              }
+
+              if (escaping) current += '\\'
+              if (quote !== null) throw new Error('Unterminated quote in /benchmark command')
+              pushCurrent()
+              return args
+            }
+
+            let benchmarkArgs = []
+            let ref = context.sha
+            let statusCommentId = ''
+
+            if (context.eventName === 'issue_comment') {
+              const body = context.payload.comment.body.trim()
+              benchmarkArgs = splitShellArgs(body.replace(/^\/benchmark\b/, '').trim())
+
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              })
+              ref = pr.data.head.sha
+
+              const statusComment = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## Tiny Hypergraph Benchmark\n\nRunning benchmark on \`${ref.slice(0, 7)}\`...\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+              })
+
+              statusCommentId = String(statusComment.data.id)
+            }
+
+            if (context.eventName === 'workflow_dispatch') {
+              const inputs = context.payload.inputs || {}
+              const datasetName = (inputs.dataset_name || '').trim()
+              const limit = (inputs.limit || '').trim()
+              const sample = (inputs.sample || '').trim()
+              const solver = (inputs.solver || '').trim()
+              const families = (inputs.families || '').trim()
+
+              if (datasetName) benchmarkArgs.push('--dataset', datasetName)
+              if (limit) benchmarkArgs.push('--limit', limit)
+              if (sample) benchmarkArgs.push('--sample', sample)
+              if (solver) benchmarkArgs.push('--solver', solver)
+              if (families) benchmarkArgs.push('--families', families)
+
+              ref = (inputs.ref || '').trim() || ref
+            }
+
+            if (context.eventName === 'pull_request') {
+              ref = context.payload.pull_request.head.sha
+            }
+
+            core.setOutput('benchmark_args_json', JSON.stringify(benchmarkArgs))
+            core.setOutput('ref', ref)
+            core.setOutput('status_comment_id', statusCommentId)
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.parse.outputs.ref }}
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run benchmark
+        env:
+          BENCHMARK_ARGS_JSON: ${{ steps.parse.outputs.benchmark_args_json }}
+        run: |
+          chmod +x ./benchmark.sh
+          set +e
+          node <<'NODE'
+          const { spawnSync } = require('node:child_process')
+          const args = JSON.parse(process.env.BENCHMARK_ARGS_JSON || '[]')
+          const renderedArgs = args.map((arg) => JSON.stringify(arg)).join(' ')
+          console.log(`Running benchmark command: ./benchmark.sh${renderedArgs ? ` ${renderedArgs}` : ''}`)
+
+          const result = spawnSync('./benchmark.sh', args, {
+            stdio: 'inherit',
+            env: process.env,
+          })
+
+          if (result.error) throw result.error
+          process.exit(result.status ?? 1)
+          NODE
+          STATUS=$?
+          set -e
+
+          if [ -f benchmark-result.txt ]; then
+            cp benchmark-result.txt benchmark-result-pr.txt
+          fi
+          if [ -f benchmark-result.json ]; then
+            cp benchmark-result.json benchmark-result-pr.json
+          fi
+
+          exit "$STATUS"
+
+      - name: Download main branch benchmark result
+        if: always() && github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api "repos/${{ github.repository }}/actions/workflows/benchmark.yml/runs?branch=main&event=push&status=success&per_page=1" --jq '.workflow_runs[0].id' 2>/dev/null || echo "")
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "(no main branch benchmark result available)" > benchmark-result-main.txt
+            echo "" > benchmark-result-main.json
+            exit 0
+          fi
+
+          gh run download "$RUN_ID" --repo "${{ github.repository }}" --name benchmark-result --dir ./main-artifact 2>/dev/null || true
+          if [ -f ./main-artifact/benchmark-result.txt ]; then
+            cp ./main-artifact/benchmark-result.txt benchmark-result-main.txt
+          else
+            echo "(no main branch benchmark result available)" > benchmark-result-main.txt
+          fi
+
+          if [ -f ./main-artifact/benchmark-result.json ]; then
+            cp ./main-artifact/benchmark-result.json benchmark-result-main.json
+          else
+            echo "" > benchmark-result-main.json
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: |
+            benchmark-result.txt
+            benchmark-result.json
+            benchmark-result-pr.txt
+            benchmark-result-pr.json
+            benchmark-result-main.txt
+            benchmark-result-main.json
+            results/**
+          if-no-files-found: ignore
+
+      - name: Update benchmark comment
+        if: always() && github.event_name == 'issue_comment' && steps.parse.outputs.status_comment_id != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs')
+            const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+            const jobStatus = '${{ job.status }}'
+            const maxLength = 60000
+
+            const readText = (path) =>
+              fs.existsSync(path) ? fs.readFileSync(path, 'utf8').trim() : ''
+
+            const readJson = (path) => {
+              const raw = readText(path)
+              if (!raw) return null
+              try {
+                return JSON.parse(raw)
+              } catch {
+                return null
+              }
+            }
+
+            const escapeHtml = (value) =>
+              String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+
+            const formatNumber = (value, digits = 3) =>
+              typeof value === 'number' && Number.isFinite(value)
+                ? value.toFixed(digits)
+                : 'n/a'
+
+            const formatTime = (value) =>
+              typeof value === 'number' && Number.isFinite(value)
+                ? `${(value / 1000).toFixed(3)}s`
+                : 'n/a'
+
+            const formatValue = (value) =>
+              value === null || value === undefined || value === ''
+                ? 'n/a'
+                : escapeHtml(value)
+
+            const truncate = (value, maxLength = 120) => {
+              const text = String(value ?? '')
+              return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`
+            }
+
+            const renderSummaryRows = (label, report) => {
+              if (!report) {
+                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
+              }
+
+              return [
+                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.sampleCount ?? 'n/a'} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.improvedRate ?? 'n/a'} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} |`,
+              ]
+            }
+
+            const renderComparison = (mainReport, prReport) => [
+              '| Run | Dataset | Solver | Families | Samples | Success | Improved | P50 | P95 |',
+              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |',
+              ...renderSummaryRows('Main', mainReport),
+              ...renderSummaryRows('PR', prReport),
+            ]
+
+            const renderSamples = (report, options = {}) => {
+              if (!Array.isArray(report?.samples) || report.samples.length === 0) {
+                return ['Per-sample results unavailable.']
+              }
+
+              const samples = options.limit ? report.samples.slice(0, options.limit) : report.samples
+              const omittedCount = report.samples.length - samples.length
+              return [
+                '| Sample | Status | Baseline | Final | Delta | Attempts | Duration | Error |',
+                '| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |',
+                ...samples.map((sample) => {
+                  const firstErrorLine = sample.error ? String(sample.error).split('\n')[0] : ''
+                  return `| ${escapeHtml(sample.sampleName)} | ${escapeHtml(sample.status)} | ${formatNumber(sample.baselineMaxRegionCost)} | ${formatNumber(sample.finalMaxRegionCost)} | ${formatNumber(sample.delta)} | ${sample.candidateCount ?? 0} | ${formatTime(sample.durationMs)} | ${escapeHtml(truncate(firstErrorLine))} |`
+                }),
+                ...(omittedCount > 0
+                  ? ['', `_${omittedCount} additional sample${omittedCount === 1 ? '' : 's'} omitted to keep the comment compact._`]
+                  : []),
+              ]
+            }
+
+            const renderReport = (report, fallbackText, options = {}) => {
+              if (!report) {
+                return fallbackText
+                  ? ['```', fallbackText.slice(0, 8000), '```']
+                  : ['(benchmark results were not produced)']
+              }
+
+              return [
+                '| Metric | Value |',
+                '| --- | ---: |',
+                `| Dataset | ${formatValue(report.datasetName)} |`,
+                `| Solver | ${formatValue(report.solverVariant)} |`,
+                `| Families | ${formatValue(report.candidateFamilies)} |`,
+                `| Samples | ${report.sampleCount ?? 'n/a'} |`,
+                `| Success rate | ${report.summary?.successRate ?? 'n/a'} |`,
+                `| Improved rate | ${report.summary?.improvedRate ?? 'n/a'} |`,
+                `| Zero final max region cost rate | ${report.summary?.zeroFinalCostRate ?? 'n/a'} |`,
+                `| Avg baseline max region cost | ${formatNumber(report.summary?.avgBaselineMaxRegionCost)} |`,
+                `| Avg final max region cost | ${formatNumber(report.summary?.avgFinalMaxRegionCost)} |`,
+                `| Avg max region delta | ${formatNumber(report.summary?.avgMaxRegionDelta)} |`,
+                `| Avg candidate count | ${formatNumber(report.summary?.avgCandidateCount)} |`,
+                `| Avg duration | ${formatTime(report.summary?.avgDurationMs)} |`,
+                `| P50 duration | ${formatTime(report.summary?.p50DurationMs)} |`,
+                `| P95 duration | ${formatTime(report.summary?.p95DurationMs)} |`,
+                '',
+                ...renderSamples(report, options),
+              ]
+            }
+
+            const renderDetails = (summary, lines, open = false) => [
+              `<details${open ? ' open' : ''}>`,
+              `<summary>${summary}</summary>`,
+              '',
+              ...lines,
+              '',
+              '</details>',
+            ]
+
+            const mainText = readText('benchmark-result-main.txt')
+            const prText = readText('benchmark-result-pr.txt') || readText('benchmark-result.txt')
+            const mainReport = readJson('benchmark-result-main.json')
+            const prReport = readJson('benchmark-result-pr.json') || readJson('benchmark-result.json')
+            const title = jobStatus === 'success'
+              ? '## Tiny Hypergraph Benchmark Results'
+              : '## Tiny Hypergraph Benchmark Failed'
+
+            const renderBody = (options = {}) => [
+              title,
+              '',
+              ...renderComparison(mainReport, prReport),
+              '',
+              ...renderDetails('Main Branch Details', renderReport(mainReport, mainText, options)),
+              '',
+              ...renderDetails('PR Details', renderReport(prReport, prText, options), true),
+              '',
+              `Workflow: [View run](${runUrl})`,
+              `Artifact: ${runUrl}`,
+            ].join('\n')
+
+            const fullBody = renderBody()
+            const body = fullBody.length <= maxLength
+              ? fullBody
+              : renderBody({ limit: 50 })
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: Number('${{ steps.parse.outputs.status_comment_id }}'),
+              body,
+            })

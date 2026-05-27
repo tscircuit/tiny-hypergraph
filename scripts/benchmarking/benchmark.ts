@@ -4,7 +4,7 @@ import {
   stackGraphicsHorizontally,
   type GraphicsObject,
 } from "graphics-debug"
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
@@ -52,6 +52,31 @@ type BenchmarkSampleResult = {
   error: string | null
   logsPath: string | null
   snapshotPath: string | null
+}
+
+type BenchmarkReport = {
+  version: 1
+  datasetName: DatasetKey
+  solverVariant: SolverVariant
+  candidateFamilies: string
+  sampleCount: number
+  successCount: number
+  failedCount: number
+  improvedCount: number
+  zeroFinalCostCount: number
+  summary: {
+    successRate: string
+    improvedRate: string
+    zeroFinalCostRate: string
+    avgBaselineMaxRegionCost: number
+    avgFinalMaxRegionCost: number
+    avgMaxRegionDelta: number
+    avgCandidateCount: number
+    avgDurationMs: number
+    p50DurationMs: number
+    p95DurationMs: number
+  }
+  samples: BenchmarkSampleResult[]
 }
 
 type SolverVariant = "core" | "poly"
@@ -258,6 +283,9 @@ const formatMetric = (value: number | null, digits = 3) =>
 const formatPercent = (numerator: number, denominator: number) =>
   `${((numerator / Math.max(denominator, 1)) * 100).toFixed(1)}%`
 
+const formatDuration = (durationMs: number) =>
+  `${(durationMs / 1000).toFixed(3)}s`
+
 const percentile = (values: number[], p: number) => {
   if (values.length === 0) return 0
 
@@ -274,6 +302,115 @@ const average = (values: number[]) =>
   values.length === 0
     ? 0
     : values.reduce((sum, value) => sum + value, 0) / values.length
+
+const formatMarkdownTableCell = (value: string) =>
+  value.replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>")
+
+const truncateTableCell = (value: string, maxLength: number) =>
+  value.length <= maxLength ? value : `${value.slice(0, maxLength - 3)}...`
+
+type TableAlign = "left" | "right"
+
+const renderMarkdownTable = (
+  headers: string[],
+  rows: string[][],
+  alignments: TableAlign[] = [],
+) => {
+  const columnWidths = headers.map((header, columnIndex) =>
+    Math.max(
+      header.length,
+      ...rows.map((row) => row[columnIndex]?.length ?? 0),
+      3,
+    ),
+  )
+
+  const padCell = (value: string, columnIndex: number) => {
+    const width = columnWidths[columnIndex] ?? value.length
+    return alignments[columnIndex] === "right"
+      ? value.padStart(width)
+      : value.padEnd(width)
+  }
+
+  const separator = columnWidths.map((width, columnIndex) => {
+    if (alignments[columnIndex] === "right") {
+      return `${"-".repeat(Math.max(width - 1, 2))}:`
+    }
+
+    return "-".repeat(width)
+  })
+
+  return [
+    `| ${headers.map((header, index) => padCell(header, index)).join(" | ")} |`,
+    `| ${separator.join(" | ")} |`,
+    ...rows.map(
+      (row) =>
+        `| ${row.map((cell, index) => padCell(cell, index)).join(" | ")} |`,
+    ),
+  ]
+}
+
+const formatBenchmarkReportText = (report: BenchmarkReport) => {
+  const metricRows = [
+    ["Success rate", report.summary.successRate],
+    ["Improved rate", report.summary.improvedRate],
+    ["Zero final max region cost rate", report.summary.zeroFinalCostRate],
+    [
+      "Avg baseline max region cost",
+      report.summary.avgBaselineMaxRegionCost.toFixed(3),
+    ],
+    [
+      "Avg final max region cost",
+      report.summary.avgFinalMaxRegionCost.toFixed(3),
+    ],
+    ["Avg max region delta", report.summary.avgMaxRegionDelta.toFixed(3)],
+    ["Avg candidate count", report.summary.avgCandidateCount.toFixed(3)],
+    ["Avg duration", formatDuration(report.summary.avgDurationMs)],
+    ["P50 duration", formatDuration(report.summary.p50DurationMs)],
+    ["P95 duration", formatDuration(report.summary.p95DurationMs)],
+  ]
+
+  const sampleRows = report.samples.map((sample) => [
+    sample.sampleName,
+    sample.status,
+    formatMetric(sample.baselineMaxRegionCost),
+    formatMetric(sample.finalMaxRegionCost),
+    formatMetric(sample.delta),
+    String(sample.candidateCount),
+    formatDuration(sample.durationMs),
+    sample.error
+      ? truncateTableCell(
+          formatMarkdownTableCell(sample.error.split("\n")[0] ?? ""),
+          96,
+        )
+      : "",
+  ])
+
+  return `${[
+    `Benchmark Results`,
+    "",
+    `Dataset: ${report.datasetName}`,
+    `Solver: ${report.solverVariant}`,
+    `Families: ${report.candidateFamilies}`,
+    `Samples: ${report.sampleCount}`,
+    "",
+    ...renderMarkdownTable(["Metric", "Value"], metricRows, ["left", "right"]),
+    "",
+    ...renderMarkdownTable(
+      [
+        "Sample",
+        "Status",
+        "Baseline Cost",
+        "Final Cost",
+        "Delta",
+        "Attempts",
+        "Duration",
+        "Error",
+      ],
+      sampleRows,
+      ["left", "left", "right", "right", "right", "right", "right", "left"],
+    ),
+  ].join("\n")}\n`
+}
 
 const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
   solver.state.regionIntersectionCaches.reduce(
@@ -327,15 +464,32 @@ const loadHg07DatasetModule = async (): Promise<DatasetModule> => {
   return datasetModule
 }
 
-const getSrj18DatasetDir = () =>
-  path.join(
-    path.dirname(fileURLToPath(import.meta.resolve("dataset-srj18"))),
-    "generated-datasets",
-    "srj18",
-  )
+const getSrj18DatasetDir = async (cwd: string) => {
+  const candidateDirs = [
+    path.join(cwd, "generated-datasets", "srj18"),
+    path.join(
+      path.dirname(fileURLToPath(import.meta.resolve("dataset-srj18"))),
+      "generated-datasets",
+      "srj18",
+    ),
+  ]
 
-const getSrj18SampleNames = async () =>
-  (await readdir(getSrj18DatasetDir()))
+  for (const candidateDir of candidateDirs) {
+    try {
+      await access(candidateDir)
+      return candidateDir
+    } catch {
+      // Try the next known dataset layout.
+    }
+  }
+
+  return usageError(
+    `Could not find srj18 generated dataset directory. Tried: ${candidateDirs.join(", ")}`,
+  )
+}
+
+const getSrj18SampleNames = async (datasetDir: string) =>
+  (await readdir(datasetDir))
     .map((entryName) => /^(sample\d+)\.hg\.json$/.exec(entryName)?.[1] ?? null)
     .filter((sampleName): sampleName is string => sampleName !== null)
     .sort((leftSampleName, rightSampleName) =>
@@ -347,12 +501,13 @@ const loadSrj18DatasetModule = async (
   limit: number | null,
   sampleName: string | null,
 ): Promise<DatasetModule> => {
-  const allSampleNames = await getSrj18SampleNames()
+  const datasetDir = await getSrj18DatasetDir(cwd)
+  const allSampleNames = await getSrj18SampleNames(datasetDir)
   if (sampleName && !allSampleNames.includes(sampleName)) {
     usageError(`Unknown sample: ${sampleName}`)
   }
 
-  const requestedSampleNames = sampleName
+  const requestedSampleNames: string[] = sampleName
     ? [sampleName]
     : allSampleNames.slice(
         0,
@@ -361,7 +516,6 @@ const loadSrj18DatasetModule = async (
           : Math.min(limit, allSampleNames.length),
       )
 
-  const datasetDir = getSrj18DatasetDir()
   console.log(`loading dataset=srj18 dir=${datasetDir}`)
 
   const datasetModule: DatasetModule = {
@@ -677,20 +831,44 @@ const main = async () => {
     (result) => result.zeroFinalCost,
   ).length
 
-  console.log(`success rate: ${formatPercent(successCount, results.length)}`)
-  console.log(`improved rate: ${formatPercent(improvedCount, successCount)}`)
-  console.log(
-    `zero-final-max-region-cost rate: ${formatPercent(zeroFinalCostCount, successCount)}`,
+  const report: BenchmarkReport = {
+    version: 1,
+    datasetName: datasetKey,
+    solverVariant,
+    candidateFamilies: candidateFamilies?.join(",") ?? "default",
+    sampleCount: results.length,
+    successCount,
+    failedCount: results.length - successCount,
+    improvedCount,
+    zeroFinalCostCount,
+    summary: {
+      successRate: formatPercent(successCount, results.length),
+      improvedRate: formatPercent(improvedCount, successCount),
+      zeroFinalCostRate: formatPercent(zeroFinalCostCount, successCount),
+      avgBaselineMaxRegionCost: average(baselineCosts),
+      avgFinalMaxRegionCost: average(finalCosts),
+      avgMaxRegionDelta: average(deltas),
+      avgCandidateCount: average(candidateCounts),
+      avgDurationMs: average(durations),
+      p50DurationMs: percentile(durations, 50),
+      p95DurationMs: percentile(durations, 95),
+    },
+    samples: results,
+  }
+
+  const reportText = formatBenchmarkReportText(report)
+
+  console.log("")
+  console.log(reportText.trimEnd())
+
+  await writeFile("benchmark-result.txt", reportText)
+  await writeFile(
+    "benchmark-result.json",
+    `${JSON.stringify(report, null, 2)}\n`,
   )
   console.log(
-    `avg baseline max region cost: ${average(baselineCosts).toFixed(3)}`,
+    "Results written to benchmark-result.txt and benchmark-result.json",
   )
-  console.log(`avg final max region cost: ${average(finalCosts).toFixed(3)}`)
-  console.log(`avg max region delta: ${average(deltas).toFixed(3)}`)
-  console.log(`avg candidate count: ${average(candidateCounts).toFixed(3)}`)
-  console.log(`avg duration: ${formatSeconds(average(durations))}`)
-  console.log(`P50 duration: ${formatSeconds(percentile(durations, 50))}`)
-  console.log(`P95 duration: ${formatSeconds(percentile(durations, 95))}`)
 }
 
 await main()
