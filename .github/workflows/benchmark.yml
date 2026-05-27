@@ -1,0 +1,365 @@
+name: Tiny Hypergraph Benchmark
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Dataset to benchmark (`hg07` or `srj18`)
+        required: false
+        type: choice
+        options:
+          - hg07
+          - srj18
+      limit:
+        description: Number of samples to run
+        required: false
+        type: string
+      sample:
+        description: Sample number or name (for example `2` or `sample002`)
+        required: false
+        type: string
+      solver:
+        description: Solver variant
+        required: false
+        type: choice
+        options:
+          - core
+          - poly
+      families:
+        description: Candidate-family preset or comma-separated list
+        required: false
+        type: string
+      ref:
+        description: Git ref to benchmark
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run benchmark
+    if: |
+      github.event_name == 'workflow_dispatch' || (
+        github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.title, '[BENCHMARK TEST]')
+      ) || (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        github.event.comment.user.type != 'Bot' &&
+        startsWith(github.event.comment.body, '/benchmark') &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Parse benchmark command
+        id: parse
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const isComment = context.eventName === "issue_comment"
+
+            const splitShellArgs = (input) => {
+              const args = []
+              let current = ""
+              let quote = null
+              let escaping = false
+              let tokenStarted = false
+
+              const pushCurrent = () => {
+                if (!tokenStarted) return
+                args.push(current)
+                current = ""
+                tokenStarted = false
+              }
+
+              for (const char of input) {
+                if (escaping) {
+                  if (quote === '"' && char === "\n") {
+                    escaping = false
+                    continue
+                  }
+                  if (quote === '"' && !['"', "\\", "$", "`"].includes(char)) {
+                    current += "\\"
+                  }
+                  current += char
+                  tokenStarted = true
+                  escaping = false
+                  continue
+                }
+
+                if (quote === "'") {
+                  if (char === "'") {
+                    quote = null
+                  } else {
+                    current += char
+                  }
+                  tokenStarted = true
+                  continue
+                }
+
+                if (quote === '"') {
+                  if (char === '"') {
+                    quote = null
+                  } else if (char === "\\") {
+                    escaping = true
+                  } else {
+                    current += char
+                  }
+                  tokenStarted = true
+                  continue
+                }
+
+                if (/\s/.test(char)) {
+                  pushCurrent()
+                  continue
+                }
+
+                if (char === "'" || char === '"') {
+                  quote = char
+                  tokenStarted = true
+                  continue
+                }
+
+                if (char === "\\") {
+                  escaping = true
+                  tokenStarted = true
+                  continue
+                }
+
+                current += char
+                tokenStarted = true
+              }
+
+              if (escaping) {
+                current += "\\"
+              }
+
+              if (quote !== null) {
+                throw new Error("Unterminated quote in /benchmark command")
+              }
+
+              pushCurrent()
+              return args
+            }
+
+            const pushFlag = (args, flag, value) => {
+              const trimmed = String(value || "").trim()
+              if (trimmed) {
+                args.push(flag, trimmed)
+              }
+            }
+
+            let benchmarkArgs = []
+            let ref = context.sha
+            let statusCommentId = ""
+            let issueNumber = ""
+
+            if (isComment) {
+              const body = context.payload.comment.body.trim()
+              const commentArgs = body.replace(/^\/benchmark\b/, "").trim()
+              benchmarkArgs = splitShellArgs(commentArgs)
+              issueNumber = String(context.issue.number)
+
+              const pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              })
+              ref = pr.data.head.sha
+
+              const statusComment = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `## Benchmark\n\nRunning benchmark on \`${ref.slice(0, 7)}\`.\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+              })
+
+              statusCommentId = String(statusComment.data.id)
+            }
+
+            if (context.eventName === "workflow_dispatch") {
+              const inputs = context.payload.inputs || {}
+              pushFlag(benchmarkArgs, "--dataset", inputs.dataset)
+              pushFlag(benchmarkArgs, "--limit", inputs.limit)
+              pushFlag(benchmarkArgs, "--sample", inputs.sample)
+              pushFlag(benchmarkArgs, "--solver", inputs.solver)
+              pushFlag(benchmarkArgs, "--families", inputs.families)
+              ref = String(inputs.ref || "").trim() || ref
+            }
+
+            if (context.eventName === "pull_request") {
+              ref = context.payload.pull_request.head.sha
+              issueNumber = String(context.payload.pull_request.number)
+            }
+
+            core.setOutput("benchmark_args_json", JSON.stringify(benchmarkArgs))
+            core.setOutput("benchmark_args_display", benchmarkArgs.join(" "))
+            core.setOutput("ref", ref)
+            core.setOutput("status_comment_id", statusCommentId)
+            core.setOutput("issue_number", issueNumber)
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.parse.outputs.ref }}
+          persist-credentials: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run benchmark
+        id: run-benchmark
+        run: |
+          chmod +x ./benchmark.sh
+          node <<'NODE'
+          const fs = require("node:fs")
+          const { spawn } = require("node:child_process")
+
+          const args = JSON.parse(process.env.BENCHMARK_ARGS_JSON || "[]")
+          const logStream = fs.createWriteStream("benchmark.log")
+          const child = spawn("./benchmark.sh", args, {
+            env: process.env,
+            stdio: ["ignore", "pipe", "pipe"],
+          })
+
+          for (const stream of [child.stdout, child.stderr]) {
+            stream.on("data", (chunk) => {
+              process.stdout.write(chunk)
+              logStream.write(chunk)
+            })
+          }
+
+          child.on("close", (code) => {
+            logStream.end(() => {
+              process.exit(code ?? 1)
+            })
+          })
+
+          child.on("error", (error) => {
+            console.error(error)
+            logStream.end(() => {
+              process.exit(1)
+            })
+          })
+          NODE
+        env:
+          BENCHMARK_ARGS_JSON: ${{ steps.parse.outputs.benchmark_args_json }}
+        continue-on-error: true
+
+      - name: Collect benchmark outputs
+        id: collect
+        run: |
+          latest_run_dir=""
+          if [ -d results ]; then
+            latest_run_dir="$(find results -maxdepth 1 -mindepth 1 -type d -name 'run*' | sort | tail -n 1)"
+          fi
+
+          if [ -n "$latest_run_dir" ]; then
+            echo "latest_run_dir=$latest_run_dir" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -f benchmark.log ]; then
+            summary_start="$(grep -n '^success rate:' benchmark.log | tail -n 1 | cut -d: -f1 || true)"
+            if [ -n "$summary_start" ]; then
+              tail -n +"$summary_start" benchmark.log > benchmark-summary.txt
+            else
+              tail -n 40 benchmark.log > benchmark-summary.txt
+            fi
+          else
+            printf 'benchmark.log was not created\n' > benchmark-summary.txt
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            benchmark.log
+            benchmark-summary.txt
+            ${{ steps.collect.outputs.latest_run_dir }}
+          if-no-files-found: warn
+
+      - name: Update benchmark comment
+        if: always() && github.event_name == 'issue_comment' && steps.parse.outputs.status_comment_id != ''
+        uses: actions/github-script@v7
+        env:
+          BENCHMARK_EXIT_CONCLUSION: ${{ steps.run-benchmark.conclusion }}
+          BENCHMARK_ARGS_DISPLAY: ${{ steps.parse.outputs.benchmark_args_display }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("node:fs")
+
+            const summary = fs.existsSync("benchmark-summary.txt")
+              ? fs.readFileSync("benchmark-summary.txt", "utf8").trim()
+              : "No benchmark summary available."
+
+            const conclusion = process.env.BENCHMARK_EXIT_CONCLUSION === "success"
+              ? "success"
+              : "failure"
+            const statusLine = conclusion === "success"
+              ? "Benchmark completed successfully."
+              : "Benchmark failed."
+            const argsDisplay = (process.env.BENCHMARK_ARGS_DISPLAY || "").trim()
+            const commandLine = argsDisplay
+              ? `\`/benchmark ${argsDisplay}\``
+              : "`/benchmark`"
+
+            const body = [
+              "## Benchmark",
+              "",
+              statusLine,
+              "",
+              `Command: ${commandLine}`,
+              `Workflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+              "",
+              "Summary:",
+              "```",
+              summary.slice(0, 50000),
+              "```",
+            ].join("\n")
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: Number("${{ steps.parse.outputs.status_comment_id }}"),
+              body,
+            })
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Benchmark"
+            echo
+            echo "Command: \`./benchmark.sh ${{ steps.parse.outputs.benchmark_args_display }}\`"
+            echo
+            echo '```'
+            cat benchmark-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if benchmark failed
+        if: steps.run-benchmark.conclusion != 'success'
+        run: exit 1
