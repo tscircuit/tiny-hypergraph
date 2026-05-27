@@ -51,7 +51,6 @@ If you want to call the converter directly:
 import { convertToSerializedHyperGraph } from "lib/compat/convertToSerializedHyperGraph"
 
 const solvedGraph = convertToSerializedHyperGraph(solver)
-
 ```
 
 The converter expects the solver to be fully solved and not failed.
