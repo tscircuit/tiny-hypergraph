@@ -6,9 +6,13 @@ import type {
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 
-const getSerializedRegionNetId = (
-  region: SerializedHyperGraph["regions"][number],
-) => {
+type SerializedRegion = SerializedHyperGraph["regions"][number]
+type SerializedPort = SerializedHyperGraph["ports"][number]
+type SerializedConnection = NonNullable<
+  SerializedHyperGraph["connections"]
+>[number]
+
+const getSerializedRegionNetId = (region: SerializedRegion) => {
   const netId =
     typeof region.d?.netId === "number"
       ? region.d.netId
@@ -19,9 +23,7 @@ const getSerializedRegionNetId = (
   return Number.isFinite(netId) ? netId : undefined
 }
 
-const isFullObstacleRegion = (
-  region: SerializedHyperGraph["regions"][number],
-) => {
+const isFullObstacleRegion = (region: SerializedRegion) => {
   if (region.d?._containsObstacle !== true) {
     return false
   }
@@ -34,30 +36,87 @@ const isFullObstacleRegion = (
   return netId === undefined || netId === -1
 }
 
-const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+/**
+ * Normalizes serialized obstacle root ids into a string list.
+ *
+ * @param region - Obstacle region whose provenance metadata may include
+ * `_obstacleRootIds`.
+ * @returns Every string-valued root id in `_obstacleRootIds`, or an empty list
+ * when the metadata is absent or malformed.
+ */
+const getObstacleRootIds = (region: SerializedRegion): string[] => {
+  const rootIds = region.d?._obstacleRootIds
+  if (!Array.isArray(rootIds)) {
+    return []
+  }
+
+  return rootIds.filter(
+    (rootId): rootId is string => typeof rootId === "string",
+  )
+}
+
+/**
+ * Decides whether two full-obstacle regions can be traversed as the same
+ * obstacle cluster during preservation.
+ *
+ * @param regionA - Current preserved obstacle region.
+ * @param regionB - Adjacent obstacle region under consideration.
+ * @returns `true` when both regions can be treated as belonging to the same
+ * obstacle cluster, otherwise `false`.
+ * @note When both regions resolve to exactly one obstacle root id, this
+ * requires an exact root match. Ambiguous multi-root regions intentionally fall
+ * back to the previous adjacency-only behavior to avoid dropping legacy data.
+ */
+const sharesObstacleRootId = (
+  regionA: SerializedRegion | undefined,
+  regionB: SerializedRegion | undefined,
+) => {
+  if (!regionA || !regionB) return false
+
+  const rootIdsA = getObstacleRootIds(regionA)
+  const rootIdsB = getObstacleRootIds(regionB)
+
+  if (rootIdsA.length === 1 && rootIdsB.length === 1) {
+    return rootIdsA[0] === rootIdsB[0]
+  }
+
+  return true
+}
+
+/**
+ * Walks obstacle-only regions that are still relevant to at least one
+ * connection endpoint.
+ *
+ * @param serializedHyperGraph - Serialized hypergraph to prune.
+ * @returns Region ids for full-obstacle regions that should remain in the
+ * graph after preserving connected obstacle clusters.
+ */
+const getPreservedObstacleRegionIds = (
+  serializedHyperGraph: SerializedHyperGraph,
+): Set<string> => {
   const connectedRegionIds = new Set<string>()
+  const fullObstacleRegionById = new Map(
+    serializedHyperGraph.regions
+      .filter((region) => isFullObstacleRegion(region))
+      .map((region) => [region.regionId, region]),
+  )
+  const preservedObstacleRegionIds = new Set<string>()
+  const obstacleQueue: string[] = []
+  let queueIndex = 0
+
   for (const connection of serializedHyperGraph.connections ?? []) {
     connectedRegionIds.add(connection.startRegionId)
     connectedRegionIds.add(connection.endRegionId)
   }
 
-  const fullObstacleRegions = new Map(
-    serializedHyperGraph.regions
-      .filter((region) => isFullObstacleRegion(region))
-      .map((region) => [region.regionId, region]),
-  )
-
-  const preservedObstacleRegionIds = new Set<string>()
-  const obstacleQueue: string[] = []
-
   for (const regionId of connectedRegionIds) {
-    if (!fullObstacleRegions.has(regionId)) continue
+    if (!fullObstacleRegionById.has(regionId)) continue
     preservedObstacleRegionIds.add(regionId)
     obstacleQueue.push(regionId)
   }
 
-  while (obstacleQueue.length > 0) {
-    const currentRegionId = obstacleQueue.shift()!
+  while (queueIndex < obstacleQueue.length) {
+    const currentRegionId = obstacleQueue[queueIndex++]!
 
     for (const port of serializedHyperGraph.ports) {
       const neighborRegionId =
@@ -68,14 +127,39 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
             : null
 
       if (neighborRegionId === null) continue
-      if (!fullObstacleRegions.has(neighborRegionId)) continue
+      if (!fullObstacleRegionById.has(neighborRegionId)) continue
       if (preservedObstacleRegionIds.has(neighborRegionId)) continue
+      if (
+        !sharesObstacleRootId(
+          fullObstacleRegionById.get(currentRegionId),
+          fullObstacleRegionById.get(neighborRegionId),
+        )
+      ) {
+        continue
+      }
 
       preservedObstacleRegionIds.add(neighborRegionId)
       obstacleQueue.push(neighborRegionId)
     }
   }
 
+  return preservedObstacleRegionIds
+}
+
+/**
+ * Removes disconnected obstacle-only regions that should not participate in
+ * routing.
+ *
+ * @param serializedHyperGraph - Serialized graph to sanitize before loading it
+ * into the tiny hypergraph topology arrays.
+ * @returns The original graph when nothing is removed, otherwise a shallow copy
+ * with filtered `regions` and `ports`.
+ * @caution This throws when a serialized connection still references a removed
+ * obstacle region because that graph cannot be loaded safely.
+ */
+const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+  const preservedObstacleRegionIds =
+    getPreservedObstacleRegionIds(serializedHyperGraph)
   const removedRegionIds = new Set(
     serializedHyperGraph.regions
       .filter(
@@ -118,7 +202,7 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
 }
 
 const addSerializedRegionIdToMetadata = (
-  region: SerializedHyperGraph["regions"][number],
+  region: SerializedRegion,
   layer: string,
 ) => {
   const metadata =
@@ -138,10 +222,7 @@ const addSerializedRegionIdToMetadata = (
   return metadata
 }
 
-const addSerializedPortIdToMetadata = (
-  port: SerializedHyperGraph["ports"][number],
-  layer: string,
-) => {
+const addSerializedPortIdToMetadata = (port: SerializedPort, layer: string) => {
   const metadata =
     port.d && typeof port.d === "object" && !Array.isArray(port.d)
       ? { ...port.d }
@@ -159,7 +240,7 @@ const addSerializedPortIdToMetadata = (
   return metadata
 }
 
-const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
+const getRegionBounds = (region: SerializedRegion) => {
   const bounds = region.d?.bounds
   if (bounds) {
     return bounds
@@ -192,7 +273,7 @@ const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
 }
 
 const getRegionGeometry = (
-  region: SerializedHyperGraph["regions"][number],
+  region: SerializedRegion,
 ): { centerX: number; centerY: number; width: number; height: number } => {
   const bounds = getRegionBounds(region)
   const width =
@@ -218,9 +299,7 @@ const getRegionGeometry = (
   }
 }
 
-const getRegionAvailableZMask = (
-  region: SerializedHyperGraph["regions"][number],
-): number => {
+const getRegionAvailableZMask = (region: SerializedRegion): number => {
   const availableZ = region.d?.availableZ
   if (!Array.isArray(availableZ)) {
     return 0
@@ -237,24 +316,20 @@ const getRegionAvailableZMask = (
   return mask
 }
 
-const getSerializedPortZ = (
-  port: SerializedHyperGraph["ports"][number],
-): number => {
+const getSerializedPortZ = (port: SerializedPort): number => {
   const z = Number(port.d?.z ?? 0)
   return Number.isFinite(z) ? z : 0
 }
 
-const getSerializedPortX = (
-  port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.x ?? 0)
+const getSerializedPortX = (port: SerializedPort): number =>
+  Number(port.d?.x ?? 0)
 
-const getSerializedPortY = (
-  port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.y ?? 0)
+const getSerializedPortY = (port: SerializedPort): number =>
+  Number(port.d?.y ?? 0)
 
 const computePortAngle = (
-  port: SerializedHyperGraph["ports"][number],
-  region: SerializedHyperGraph["regions"][number] | undefined,
+  port: SerializedPort,
+  region: SerializedRegion | undefined,
 ): number => {
   if (!region) return 0
 
@@ -320,8 +395,8 @@ const computePortAngle = (
 }
 
 const getCentermostPortIdForRegion = (
-  region: SerializedHyperGraph["regions"][number] | undefined,
-  portById: Map<string, SerializedHyperGraph["ports"][number]>,
+  region: SerializedRegion | undefined,
+  portById: Map<string, SerializedPort>,
 ): string | undefined => {
   if (!region) return undefined
 
@@ -349,7 +424,7 @@ const getCentermostPortIdForRegion = (
 
 const getSharedPortIdsForConnection = (
   serializedHyperGraph: SerializedHyperGraph,
-  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+  connection: SerializedConnection,
 ): string[] =>
   serializedHyperGraph.ports
     .filter(
@@ -371,7 +446,7 @@ export const loadSerializedHyperGraph = (
   const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
   const regionIdToIndex = new Map<string, number>()
   const portIdToIndex = new Map<string, number>()
-  const portById = new Map<string, SerializedHyperGraph["ports"][number]>()
+  const portById = new Map<string, SerializedPort>()
   const solvedRouteByConnectionId = new Map(
     (filteredHyperGraph.solvedRoutes ?? []).map((route) => [
       route.connection.connectionId,
