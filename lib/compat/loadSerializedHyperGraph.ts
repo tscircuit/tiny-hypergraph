@@ -36,6 +36,9 @@ const isFullObstacleRegion = (region: SerializedRegion) => {
   return netId === undefined || netId === -1
 }
 
+const isTargetContainingObstacleRegion = (region: SerializedRegion) =>
+  region.d?._containsObstacle === true && region.d?._containsTarget === true
+
 /**
  * Normalizes serialized obstacle root ids into a string list.
  *
@@ -55,6 +58,22 @@ const getObstacleRootIds = (region: SerializedRegion): string[] => {
   )
 }
 
+const hasExactlyOneSharedObstacleRootId = (
+  regionA: SerializedRegion | undefined,
+  regionB: SerializedRegion | undefined,
+) => {
+  if (!regionA || !regionB) return false
+
+  const rootIdsA = getObstacleRootIds(regionA)
+  const rootIdsB = getObstacleRootIds(regionB)
+
+  return (
+    rootIdsA.length === 1 &&
+    rootIdsB.length === 1 &&
+    rootIdsA[0] === rootIdsB[0]
+  )
+}
+
 /**
  * Decides whether two full-obstacle regions can be traversed as the same
  * obstacle cluster during preservation.
@@ -63,9 +82,9 @@ const getObstacleRootIds = (region: SerializedRegion): string[] => {
  * @param regionB - Adjacent obstacle region under consideration.
  * @returns `true` when both regions can be treated as belonging to the same
  * obstacle cluster, otherwise `false`.
- * @note When both regions resolve to exactly one obstacle root id, this
- * requires an exact root match. Ambiguous multi-root regions intentionally fall
- * back to the previous adjacency-only behavior to avoid dropping legacy data.
+ * @note When both regions provide obstacle root metadata, this requires at
+ * least one shared root id. The legacy adjacency-only fallback is used only
+ * when one side lacks obstacle ancestry metadata entirely.
  */
 const sharesObstacleRootId = (
   regionA: SerializedRegion | undefined,
@@ -76,8 +95,8 @@ const sharesObstacleRootId = (
   const rootIdsA = getObstacleRootIds(regionA)
   const rootIdsB = getObstacleRootIds(regionB)
 
-  if (rootIdsA.length === 1 && rootIdsB.length === 1) {
-    return rootIdsA[0] === rootIdsB[0]
+  if (rootIdsA.length > 0 && rootIdsB.length > 0) {
+    return rootIdsA.some((rootId) => rootIdsB.includes(rootId))
   }
 
   return true
@@ -129,6 +148,17 @@ const getPreservedObstacleRegionIds = (
       if (neighborRegionId === null) continue
       if (!fullObstacleRegionById.has(neighborRegionId)) continue
       if (preservedObstacleRegionIds.has(neighborRegionId)) continue
+      if (
+        isTargetContainingObstacleRegion(
+          fullObstacleRegionById.get(neighborRegionId)!,
+        ) &&
+        !hasExactlyOneSharedObstacleRootId(
+          fullObstacleRegionById.get(currentRegionId),
+          fullObstacleRegionById.get(neighborRegionId),
+        )
+      ) {
+        continue
+      }
       if (
         !sharesObstacleRootId(
           fullObstacleRegionById.get(currentRegionId),
