@@ -1,0 +1,15 @@
+sample=sample076
+circuitId=162
+status=failed
+duration=0.009s
+
+error=
+Error: Route 18 is not a single ordered path from 1660 to 823
+    at getOrderedRoutePath (/home/ohmx/Documents/tiny-hypergraph/lib/compat/convertToSerializedHyperGraph.ts:230:17)
+    at getSerializedSolvedRoute (/home/ohmx/Documents/tiny-hypergraph/lib/compat/convertToSerializedHyperGraph.ts:300:48)
+    at map (native:1:11)
+    at convertToSerializedHyperGraph (/home/ohmx/Documents/tiny-hypergraph/lib/compat/convertToSerializedHyperGraph.ts:408:49)
+    at _step (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:137:45)
+    at step (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:34:12)
+    at solve (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:68:12)
+    at <anonymous> (/home/ohmx/Documents/tiny-hypergraph/scripts/benchmarking/benchmark.ts:295:22)
