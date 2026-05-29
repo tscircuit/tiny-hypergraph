@@ -30,6 +30,10 @@ on:
         description: "Candidate families preset/list: default, default+deep, all, or comma-separated"
         required: false
         type: string
+      concurrency:
+        description: 'Benchmark concurrency value, or "auto"'
+        required: false
+        type: string
       ref:
         description: "Git ref (branch, tag, or SHA) to benchmark"
         required: false
@@ -186,12 +190,14 @@ jobs:
               const sample = (inputs.sample || '').trim()
               const solver = (inputs.solver || '').trim()
               const families = (inputs.families || '').trim()
+              const concurrency = (inputs.concurrency || '').trim()
 
               if (datasetName) benchmarkArgs.push('--dataset', datasetName)
               if (limit) benchmarkArgs.push('--limit', limit)
               if (sample) benchmarkArgs.push('--sample', sample)
               if (solver) benchmarkArgs.push('--solver', solver)
               if (families) benchmarkArgs.push('--families', families)
+              if (concurrency) benchmarkArgs.push('--concurrency', concurrency)
 
               ref = (inputs.ref || '').trim() || ref
             }
@@ -404,17 +410,17 @@ jobs:
 
             const renderSummaryRows = (label, report) => {
               if (!report) {
-                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
+                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a |`]
               }
 
               return [
-                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.sampleCount ?? 'n/a'} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.improvedRate ?? 'n/a'} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} |`,
+                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.summary?.successRate ?? 'n/a'} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} |`,
               ]
             }
 
             const renderComparison = (mainReport, prReport) => [
-              '| Run | Dataset | Solver | Families | Samples | Success | Improved | P50 | P95 |',
-              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |',
+              '| Run | Dataset | Solver | Families | Success | P50 | P95 |',
+              '| --- | --- | --- | --- | ---: | ---: | ---: |',
               ...renderSummaryRows('Main', mainReport),
               ...renderSummaryRows('PR', prReport),
             ]
