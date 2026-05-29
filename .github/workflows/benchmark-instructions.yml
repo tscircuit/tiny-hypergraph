@@ -29,7 +29,7 @@ jobs:
               '```',
               '',
               'Everything after `/benchmark` is forwarded directly to `./benchmark.sh`.',
-              'The result comment shows the latest stored main-branch benchmark artifact beside the PR run; main is not rerun for each PR benchmark request.',
+              'The result comment shows the matching dataset from the latest stored main-branch benchmark artifact beside the PR run; main is not rerun for each PR benchmark request.',
               '',
               'Examples:',
               '- `/benchmark` -> hg07, all samples, core solver',

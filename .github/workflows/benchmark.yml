@@ -220,22 +220,85 @@ jobs:
       - name: Run benchmark
         env:
           BENCHMARK_ARGS_JSON: ${{ steps.parse.outputs.benchmark_args_json }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           chmod +x ./benchmark.sh
           set +e
           node <<'NODE'
+          const fs = require('node:fs')
           const { spawnSync } = require('node:child_process')
           const args = JSON.parse(process.env.BENCHMARK_ARGS_JSON || '[]')
-          const renderedArgs = args.map((arg) => JSON.stringify(arg)).join(' ')
-          console.log(`Running benchmark command: ./benchmark.sh${renderedArgs ? ` ${renderedArgs}` : ''}`)
+          const isMainPush = process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF_NAME === 'main'
+          const mainBranchDatasets = ['hg07', 'srj18']
 
-          const result = spawnSync('./benchmark.sh', args, {
-            stdio: 'inherit',
-            env: process.env,
-          })
+          const withoutDataset = (baseArgs) => {
+            const nextArgs = []
+            for (let index = 0; index < baseArgs.length; index += 1) {
+              if (baseArgs[index] === '--dataset') {
+                index += 1
+                continue
+              }
+              nextArgs.push(baseArgs[index])
+            }
+            return nextArgs
+          }
 
-          if (result.error) throw result.error
-          process.exit(result.status ?? 1)
+          const withDataset = (baseArgs, datasetName) => [
+            ...withoutDataset(baseArgs),
+            '--dataset',
+            datasetName,
+          ]
+
+          const runBenchmark = (benchmarkArgs) => {
+            const renderedArgs = benchmarkArgs.map((arg) => JSON.stringify(arg)).join(' ')
+            console.log(`Running benchmark command: ./benchmark.sh${renderedArgs ? ` ${renderedArgs}` : ''}`)
+
+            const result = spawnSync('./benchmark.sh', benchmarkArgs, {
+              stdio: 'inherit',
+              env: process.env,
+            })
+
+            if (result.error) throw result.error
+            return result.status ?? 1
+          }
+
+          if (isMainPush) {
+            const reports = []
+            const textReports = []
+            let status = 0
+
+            for (const datasetName of mainBranchDatasets) {
+              status = runBenchmark(withDataset(args, datasetName))
+              if (status !== 0) break
+
+              const report = JSON.parse(fs.readFileSync('benchmark-result.json', 'utf8'))
+              const text = fs.readFileSync('benchmark-result.txt', 'utf8').trim()
+              reports.push(report)
+              textReports.push(`## Dataset: ${report.datasetName || datasetName}\n\n${text}`)
+            }
+
+            if (reports.length > 0) {
+              fs.writeFileSync(
+                'benchmark-result.json',
+                JSON.stringify(
+                  {
+                    version: 2,
+                    kind: 'benchmark-report-collection',
+                    generatedFor: 'main',
+                    reports,
+                  },
+                  null,
+                  2,
+                ),
+              )
+              fs.writeFileSync('benchmark-result.txt', `${textReports.join('\n\n---\n\n')}\n`)
+            }
+
+            process.exit(status)
+          }
+
+          process.exit(runBenchmark(args))
           NODE
           STATUS=$?
           set -e
@@ -414,10 +477,42 @@ jobs:
               '</details>',
             ]
 
+            const getBenchmarkReports = (report) => {
+              if (Array.isArray(report?.reports)) {
+                return report.reports.filter(Boolean)
+              }
+              return report ? [report] : []
+            }
+
+            const selectMainReportForPr = (mainReport, prReport) => {
+              const reports = getBenchmarkReports(mainReport)
+              if (reports.length === 0) return null
+
+              const prDatasetName = prReport?.datasetName
+              if (!prDatasetName) return reports[0] ?? null
+
+              return reports.find((report) => report?.datasetName === prDatasetName) ?? null
+            }
+
+            const getMissingMainMessage = (mainReport, prReport) => {
+              const prDatasetName = prReport?.datasetName
+              if (!prDatasetName) return '(no main branch benchmark result available)'
+              const reports = getBenchmarkReports(mainReport)
+              if (reports.length === 0) {
+                return `(no main branch benchmark result available for dataset ${prDatasetName})`
+              }
+              const availableDatasets = reports.map((report) => report?.datasetName).filter(Boolean).join(', ')
+              return `(no cached main branch benchmark result for dataset ${prDatasetName}; cached datasets: ${availableDatasets || 'none'})`
+            }
+
             const mainText = readText('benchmark-result-main.txt')
             const prText = readText('benchmark-result-pr.txt') || readText('benchmark-result.txt')
-            const mainReport = readJson('benchmark-result-main.json')
+            const rawMainReport = readJson('benchmark-result-main.json')
             const prReport = readJson('benchmark-result-pr.json') || readJson('benchmark-result.json')
+            const mainReport = selectMainReportForPr(rawMainReport, prReport)
+            const mainFallbackText = mainReport
+              ? mainText
+              : getMissingMainMessage(rawMainReport, prReport)
             const title = jobStatus === 'success'
               ? '## Tiny Hypergraph Benchmark Results'
               : '## Tiny Hypergraph Benchmark Failed'
@@ -427,7 +522,7 @@ jobs:
               '',
               ...renderComparison(mainReport, prReport),
               '',
-              ...renderDetails('Main Branch Details', renderReport(mainReport, mainText, options)),
+              ...renderDetails('Main Branch Details', renderReport(mainReport, mainFallbackText, options)),
               '',
               ...renderDetails('PR Details', renderReport(prReport, prText, options), true),
               '',
