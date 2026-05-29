@@ -365,8 +365,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       throw new Error("duplicatePortProximity must be greater than zero")
     }
 
-    const { solvedRoutes: _solvedRoutes, ...restHyperGraph } =
-      this.serializedHyperGraph
     const regions: SerializedRegion[] = this.serializedHyperGraph.regions.map(
       (region) => ({
         ...region,
@@ -464,13 +462,17 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
 
     return {
-      ...restHyperGraph,
+      ...this.serializedHyperGraph,
       regions,
       ports,
       connections:
         this.serializedHyperGraph.connections === undefined
           ? undefined
           : cloneSerializableValue(this.serializedHyperGraph.connections),
+      solvedRoutes:
+        this.serializedHyperGraph.solvedRoutes === undefined
+          ? undefined
+          : cloneSerializableValue(this.serializedHyperGraph.solvedRoutes),
     }
   }
 

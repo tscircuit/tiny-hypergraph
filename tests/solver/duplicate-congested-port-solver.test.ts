@@ -48,6 +48,39 @@ const getPortIndexBySerializedId = (
       metadata.serializedPortId === serializedPortId,
   ) ?? -1
 
+const createSolvedRoutePath = (
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+  portIds: string[],
+  traversedRegionIds: string[],
+) =>
+  portIds.map((portId, pathIndex) => ({
+    portId,
+    g: pathIndex,
+    h: 0,
+    f: pathIndex,
+    hops: pathIndex,
+    ripRequired: false,
+    lastPortId: pathIndex > 0 ? portIds[pathIndex - 1] : undefined,
+    lastRegionId: pathIndex > 0 ? traversedRegionIds[pathIndex - 1] : undefined,
+    nextRegionId:
+      pathIndex < traversedRegionIds.length
+        ? traversedRegionIds[pathIndex]
+        : connection.endRegionId,
+  }))
+
+const getConnection = (
+  graph: SerializedHyperGraph,
+  connectionId: string,
+): NonNullable<SerializedHyperGraph["connections"]>[number] => {
+  const connection = graph.connections?.find(
+    (candidate) => candidate.connectionId === connectionId,
+  )
+  if (!connection) {
+    throw new Error(`Missing connection ${connectionId}`)
+  }
+  return connection
+}
+
 const createParallelPortFixture = (): SerializedHyperGraph => ({
   regions: [
     createRegion("start", -4, 0, 2, 2, ["start-port"]),
@@ -139,12 +172,22 @@ test("core solver applies port penalties when choosing an intermediate port", ()
 
 test("duplicate congested port solver duplicates independently reused ports in line with the boundary", () => {
   const duplicatePortProximity = 0.2
-  const solver = new DuplicateCongestedPortSolver(
-    createDuplicatePortFixture(),
+  const input = createDuplicatePortFixture()
+  const connection = getConnection(input, "connection-a")
+  input.solvedRoutes = [
     {
-      duplicatePortProximity,
+      connection,
+      requiredRip: false,
+      path: createSolvedRoutePath(
+        connection,
+        ["a-start-port", "shared-choke", "a-end-port"],
+        ["left", "right"],
+      ),
     },
-  )
+  ]
+  const solver = new DuplicateCongestedPortSolver(input, {
+    duplicatePortProximity,
+  })
 
   solver.solve()
 
@@ -189,7 +232,8 @@ test("duplicate congested port solver duplicates independently reused ports in l
   expect(duplicateDistance).toBeGreaterThan(0)
   expect(duplicateDistance).toBeLessThanOrEqual(duplicatePortProximity)
   expect(Math.abs(crossProduct)).toBeLessThan(1e-9)
-  expect(output.solvedRoutes).toBeUndefined()
+  expect(output.solvedRoutes).toEqual(input.solvedRoutes)
+  expect(output.solvedRoutes).not.toBe(input.solvedRoutes)
   expect(
     output.regions
       .filter(
