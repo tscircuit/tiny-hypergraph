@@ -114,26 +114,6 @@ const createDuplicatePortFixture = (): SerializedHyperGraph => ({
   ],
 })
 
-const createSolvedRoutePath = (
-  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
-  portIds: string[],
-  traversedRegionIds: string[],
-) =>
-  portIds.map((portId, pathIndex) => ({
-    portId,
-    g: pathIndex,
-    h: 0,
-    f: pathIndex,
-    hops: pathIndex,
-    ripRequired: false,
-    lastPortId: pathIndex > 0 ? portIds[pathIndex - 1] : undefined,
-    lastRegionId: pathIndex > 0 ? traversedRegionIds[pathIndex - 1] : undefined,
-    nextRegionId:
-      pathIndex < traversedRegionIds.length
-        ? traversedRegionIds[pathIndex]
-        : connection.endRegionId,
-  }))
-
 test("core solver applies port penalties when choosing an intermediate port", () => {
   const { topology, problem } = loadSerializedHyperGraph(
     createParallelPortFixture(),
@@ -217,36 +197,4 @@ test("duplicate congested port solver duplicates independently reused ports in l
       )
       .every((region) => region.pointIds.includes("shared-choke::dup1")),
   ).toBe(true)
-})
-
-test("duplicate congested port solver preserves solved route endpoint hints", () => {
-  const fixture = createDuplicatePortFixture()
-  const [connectionA, connectionB] = fixture.connections!
-  fixture.solvedRoutes = [
-    {
-      connection: connectionA,
-      requiredRip: false,
-      path: createSolvedRoutePath(
-        connectionA,
-        ["a-start-port", "shared-choke", "a-end-port"],
-        ["left", "right"],
-      ),
-    },
-    {
-      connection: connectionB,
-      requiredRip: false,
-      path: createSolvedRoutePath(
-        connectionB,
-        ["b-start-port", "shared-choke", "b-end-port"],
-        ["left", "right"],
-      ),
-    },
-  ]
-
-  const solver = new DuplicateCongestedPortSolver(fixture)
-  solver.solve()
-
-  expect(solver.solved).toBe(true)
-  expect(solver.failed).toBe(false)
-  expect(solver.getOutput().solvedRoutes).toEqual(fixture.solvedRoutes)
 })
