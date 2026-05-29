@@ -71,7 +71,7 @@ const createTestSolver = (
   return new TinyHyperGraphSolver(topology, problem, options)
 }
 
-const createGreedyFinalRouteTestSolver = (
+const createGreedyInitializationTestSolver = (
   options?: ConstructorParameters<typeof TinyHyperGraphSolver>[2],
 ) => {
   const portCount = 2
@@ -206,32 +206,35 @@ test("best solution timeout acceptance can be disabled", () => {
   expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
 })
 
-test("final acceptance greedily routes remaining routes when no complete snapshot exists", () => {
-  const solver = createGreedyFinalRouteTestSolver({
-    GREEDY_FINAL_ROUTE_ITERS: 2,
+test("greedy initialization routes through normal solver steps", () => {
+  const solver = createGreedyInitializationTestSolver({
+    GREEDY_INITIALIZATION: true,
   })
 
-  solver.tryFinalAcceptance()
+  solver.solve()
 
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
-  expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).toBe(true)
-  expect(solver.stats.greedyFinalRouteRemainingRouteCount).toBe(1)
+  expect(solver.stats.greedyInitializationCompleted).toBe(true)
+  expect(solver.stats.greedyInitializationMaxRegionCost).toBe(0)
   expect(solver.state.unroutedRoutes).toEqual([])
   expect(Array.from(solver.state.portAssignment)).toEqual([0, 0])
   expect(solver.state.regionSegments[1]).toEqual([[0, 0, 1]])
 })
 
-test("greedy final routing can be disabled independently", () => {
-  const solver = createGreedyFinalRouteTestSolver({
-    GREEDY_FINAL_ROUTE_ITERS: 0,
+test("timeout acceptance does not start a hidden greedy solver", () => {
+  const solver = createGreedyInitializationTestSolver({
+    MAX_ITERATIONS: 1,
+    GREEDY_INITIALIZATION: false,
   })
 
-  solver.tryFinalAcceptance()
+  solver.step()
 
   expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(false)
-  expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).toBeUndefined()
+  expect(solver.failed).toBe(true)
+  expect(solver.error).toBe("TinyHyperGraphSolver ran out of iterations")
+  expect(solver.stats.greedyInitializationCompleted).toBeUndefined()
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBeUndefined()
 })
 
 test("completed routing is accepted once all region costs are under the threshold", () => {
@@ -258,7 +261,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-    GREEDY_FINAL_ROUTE_ITERS: 6,
+    GREEDY_INITIALIZATION: true,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -268,6 +271,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
-  expect(solver.GREEDY_FINAL_ROUTE_ITERS).toBe(6)
+  expect(solver.GREEDY_INITIALIZATION).toBe(true)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })

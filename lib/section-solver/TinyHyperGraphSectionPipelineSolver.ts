@@ -44,6 +44,7 @@ type AutomaticSectionSearchResult = {
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
+  GREEDY_INITIALIZATION: true,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
@@ -420,8 +421,8 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           solution,
         })
-      : solvedSolver.stats.acceptedGreedyFinalRouteOnTimeout === true ||
-          solvedSolver.stats.acceptedGreedyAllRoutesOnTimeout === true
+      : solvedSolver.stats.acceptedBestSolutionOnTimeout === true &&
+          solvedSolver.stats.greedyInitializationCompleted === true
         ? (() => {
             this.stats = {
               ...this.stats,
