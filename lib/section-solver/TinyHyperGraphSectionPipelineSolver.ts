@@ -48,7 +48,7 @@ const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
 }
 
 const DEFAULT_SECTION_SOLVER_MAX_ITERATIONS = 50_000
-const DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS = 200_000
+const SECTION_PIPELINE_ITERATION_OVERHEAD = 10_000
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
@@ -326,7 +326,11 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
-    this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+    this.MAX_ITERATIONS =
+      (this.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000) +
+      (this.getSectionSolverOptions().MAX_ITERATIONS ??
+        DEFAULT_SECTION_SOLVER_MAX_ITERATIONS) +
+      SECTION_PIPELINE_ITERATION_OVERHEAD
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
@@ -416,50 +420,65 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           solution,
         })
-      : (() => {
-          const searchResult = findBestAutomaticSectionMask(
-            solvedSolver,
-            topology,
-            problem,
-            solution,
-            this.inputProblem.sectionSearchConfig,
-            sectionSolverOptions,
-          )
+      : solvedSolver.stats.acceptedGreedyFinalRouteOnTimeout === true ||
+          solvedSolver.stats.acceptedGreedyAllRoutesOnTimeout === true
+        ? (() => {
+            this.stats = {
+              ...this.stats,
+              skippedSectionSearchAfterGreedySolveGraphTimeout: true,
+              sectionSearchGeneratedCandidateCount: 0,
+              sectionSearchCandidateCount: 0,
+              sectionSearchDuplicateCandidateCount: 0,
+              selectedSectionCandidateLabel: null,
+              selectedSectionCandidateFamily: null,
+            }
 
-          this.selectedSectionCandidateLabel =
-            searchResult.winningCandidateLabel
-          this.selectedSectionCandidateFamily =
-            searchResult.winningCandidateFamily
-          this.stats = {
-            ...this.stats,
-            sectionSearchGeneratedCandidateCount:
-              searchResult.generatedCandidateCount,
-            sectionSearchCandidateCount: searchResult.candidateCount,
-            sectionSearchDuplicateCandidateCount:
-              searchResult.duplicateCandidateCount,
-            sectionSearchBaselineMaxRegionCost:
-              searchResult.baselineMaxRegionCost,
-            sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
-            sectionSearchDelta:
-              searchResult.baselineMaxRegionCost -
-              searchResult.finalMaxRegionCost,
-            selectedSectionCandidateLabel:
-              searchResult.winningCandidateLabel ?? null,
-            selectedSectionCandidateFamily:
-              searchResult.winningCandidateFamily ?? null,
-            sectionSearchMs: searchResult.totalMs,
-            sectionSearchBaselineEvaluationMs:
-              searchResult.baselineEvaluationMs,
-            sectionSearchCandidateEligibilityMs:
-              searchResult.candidateEligibilityMs,
-            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
-            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
-            sectionSearchCandidateReplayScoreMs:
-              searchResult.candidateReplayScoreMs,
-          }
+            return new Int8Array(topology.portCount)
+          })()
+        : (() => {
+            const searchResult = findBestAutomaticSectionMask(
+              solvedSolver,
+              topology,
+              problem,
+              solution,
+              this.inputProblem.sectionSearchConfig,
+              sectionSolverOptions,
+            )
 
-          return searchResult.portSectionMask
-        })()
+            this.selectedSectionCandidateLabel =
+              searchResult.winningCandidateLabel
+            this.selectedSectionCandidateFamily =
+              searchResult.winningCandidateFamily
+            this.stats = {
+              ...this.stats,
+              sectionSearchGeneratedCandidateCount:
+                searchResult.generatedCandidateCount,
+              sectionSearchCandidateCount: searchResult.candidateCount,
+              sectionSearchDuplicateCandidateCount:
+                searchResult.duplicateCandidateCount,
+              sectionSearchBaselineMaxRegionCost:
+                searchResult.baselineMaxRegionCost,
+              sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+              sectionSearchDelta:
+                searchResult.baselineMaxRegionCost -
+                searchResult.finalMaxRegionCost,
+              selectedSectionCandidateLabel:
+                searchResult.winningCandidateLabel ?? null,
+              selectedSectionCandidateFamily:
+                searchResult.winningCandidateFamily ?? null,
+              sectionSearchMs: searchResult.totalMs,
+              sectionSearchBaselineEvaluationMs:
+                searchResult.baselineEvaluationMs,
+              sectionSearchCandidateEligibilityMs:
+                searchResult.candidateEligibilityMs,
+              sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+              sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+              sectionSearchCandidateReplayScoreMs:
+                searchResult.candidateReplayScoreMs,
+            }
+
+            return searchResult.portSectionMask
+          })()
 
     this.selectedSectionMask = new Int8Array(portSectionMask)
     problem.portSectionMask = new Int8Array(portSectionMask)

@@ -270,9 +270,15 @@ test("section pipeline uses bounded default iteration limits", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: datasetHg07.sample029,
   })
+  const solveGraphMaxIterations =
+    pipelineSolver.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000
+  const sectionSolverMaxIterations =
+    pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS ?? 50_000
 
-  expect(pipelineSolver.MAX_ITERATIONS).toBe(200_000)
-  expect(pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS).toBe(50_000)
+  expect(sectionSolverMaxIterations).toBe(50_000)
+  expect(pipelineSolver.MAX_ITERATIONS).toBeGreaterThan(
+    solveGraphMaxIterations + sectionSolverMaxIterations,
+  )
 })
 
 test("section pipeline final acceptance falls back to solveGraph output", () => {

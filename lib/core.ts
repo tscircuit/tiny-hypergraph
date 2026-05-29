@@ -1225,6 +1225,62 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return true
     }
 
+    const allRouteIds = range(this.problem.routeCount)
+    for (
+      let greedyFinalRouteIter = 0;
+      greedyFinalRouteIter < greedyFinalRouteIters;
+      greedyFinalRouteIter++
+    ) {
+      const greedySolver = new GreedyFinalRouteSolver(
+        this.topology,
+        this.problem,
+        {
+          ...getTinyHyperGraphSolverOptions(this),
+          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+          GREEDY_FINAL_ROUTE_ITERS: 0,
+          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+          STATIC_REACHABILITY_PRECHECK: false,
+        },
+      )
+      greedySolver.state.unroutedRoutes =
+        greedyFinalRouteIter === 0
+          ? [...allRouteIds]
+          : shuffle(allRouteIds, this.state.ripCount + greedyFinalRouteIter)
+      greedySolver.solve()
+
+      if (!greedySolver.solved || greedySolver.failed) {
+        continue
+      }
+
+      this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
+        portAssignment: greedySolver.state.portAssignment,
+        regionSegments: greedySolver.state.regionSegments,
+        regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
+        regionCongestionCost: greedySolver.state.regionCongestionCost,
+        ripCount: greedySolver.state.ripCount,
+      })
+      this.bestSolvedStateSummary = this.summarizeSolvedState(greedySolver)
+      this.restoreBestSolvedState()
+      this.stats = {
+        ...this.stats,
+        acceptedGreedyAllRoutesOnTimeout: true,
+        greedyFinalRouteIter,
+        greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
+        greedyFinalRouteAllRouteCount: allRouteIds.length,
+        greedyFinalRouteMaxIterations: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        neverSuccessfullyRoutedRouteCount: 0,
+        maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+      }
+      this.solved = true
+      this.failed = false
+      this.error = null
+      return true
+    }
+
     this.stats = {
       ...this.stats,
       greedyFinalRouteAttemptCount: greedyFinalRouteIters,
