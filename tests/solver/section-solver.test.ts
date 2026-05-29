@@ -272,12 +272,19 @@ test("section pipeline uses bounded default iteration limits", () => {
   })
   const solveGraphMaxIterations =
     pipelineSolver.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000
+  const lateGreedyPhaseMaxIterations = pipelineSolver.getSolveGraphOptions()
+    .LATE_GREEDY_PHASE
+    ? (pipelineSolver.getSolveGraphOptions()
+        .LATE_GREEDY_PHASE_ITERATION_BUDGET ?? 50_000)
+    : 0
   const sectionSolverMaxIterations =
     pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS ?? 50_000
 
   expect(sectionSolverMaxIterations).toBe(50_000)
   expect(pipelineSolver.MAX_ITERATIONS).toBe(
-    solveGraphMaxIterations + sectionSolverMaxIterations,
+    solveGraphMaxIterations +
+      lateGreedyPhaseMaxIterations +
+      sectionSolverMaxIterations,
   )
 })
 

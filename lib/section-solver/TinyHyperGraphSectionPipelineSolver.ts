@@ -2,13 +2,14 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
-import type {
-  TinyHyperGraphProblem,
-  TinyHyperGraphSolution,
-  TinyHyperGraphSolverOptions,
-  TinyHyperGraphTopology,
+import {
+  DEFAULT_LATE_GREEDY_PHASE_ITERATION_BUDGET,
+  TinyHyperGraphSolver,
+  type TinyHyperGraphProblem,
+  type TinyHyperGraphSolution,
+  type TinyHyperGraphSolverOptions,
+  type TinyHyperGraphTopology,
 } from "../core"
-import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -45,6 +46,7 @@ type AutomaticSectionSearchResult = {
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
   GREEDY_INITIALIZATION: true,
+  LATE_GREEDY_PHASE: true,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
@@ -60,6 +62,14 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 }
 
 const DEFAULT_MAX_HOT_REGIONS = 2
+
+const getLateGreedyPhaseIterationBudget = (
+  solveGraphOptions: TinyHyperGraphSolverOptions,
+) =>
+  solveGraphOptions.LATE_GREEDY_PHASE
+    ? (solveGraphOptions.LATE_GREEDY_PHASE_ITERATION_BUDGET ??
+      DEFAULT_LATE_GREEDY_PHASE_ITERATION_BUDGET)
+    : 0
 
 const IMPROVEMENT_EPSILON = 1e-9
 
@@ -326,8 +336,10 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
+    const solveGraphOptions = this.getSolveGraphOptions()
     this.MAX_ITERATIONS =
-      (this.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000) +
+      (solveGraphOptions.MAX_ITERATIONS ?? 1_000_000) +
+      getLateGreedyPhaseIterationBudget(solveGraphOptions) +
       (this.getSectionSolverOptions().MAX_ITERATIONS ??
         DEFAULT_SECTION_SOLVER_MAX_ITERATIONS)
   }
@@ -419,65 +431,50 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           solution,
         })
-      : solvedSolver.stats.acceptedBestSolutionOnTimeout === true &&
-          solvedSolver.stats.greedyInitializationCompleted === true
-        ? (() => {
-            this.stats = {
-              ...this.stats,
-              skippedSectionSearchAfterGreedySolveGraphTimeout: true,
-              sectionSearchGeneratedCandidateCount: 0,
-              sectionSearchCandidateCount: 0,
-              sectionSearchDuplicateCandidateCount: 0,
-              selectedSectionCandidateLabel: null,
-              selectedSectionCandidateFamily: null,
-            }
+      : (() => {
+          const searchResult = findBestAutomaticSectionMask(
+            solvedSolver,
+            topology,
+            problem,
+            solution,
+            this.inputProblem.sectionSearchConfig,
+            sectionSolverOptions,
+          )
 
-            return new Int8Array(topology.portCount)
-          })()
-        : (() => {
-            const searchResult = findBestAutomaticSectionMask(
-              solvedSolver,
-              topology,
-              problem,
-              solution,
-              this.inputProblem.sectionSearchConfig,
-              sectionSolverOptions,
-            )
+          this.selectedSectionCandidateLabel =
+            searchResult.winningCandidateLabel
+          this.selectedSectionCandidateFamily =
+            searchResult.winningCandidateFamily
+          this.stats = {
+            ...this.stats,
+            sectionSearchGeneratedCandidateCount:
+              searchResult.generatedCandidateCount,
+            sectionSearchCandidateCount: searchResult.candidateCount,
+            sectionSearchDuplicateCandidateCount:
+              searchResult.duplicateCandidateCount,
+            sectionSearchBaselineMaxRegionCost:
+              searchResult.baselineMaxRegionCost,
+            sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+            sectionSearchDelta:
+              searchResult.baselineMaxRegionCost -
+              searchResult.finalMaxRegionCost,
+            selectedSectionCandidateLabel:
+              searchResult.winningCandidateLabel ?? null,
+            selectedSectionCandidateFamily:
+              searchResult.winningCandidateFamily ?? null,
+            sectionSearchMs: searchResult.totalMs,
+            sectionSearchBaselineEvaluationMs:
+              searchResult.baselineEvaluationMs,
+            sectionSearchCandidateEligibilityMs:
+              searchResult.candidateEligibilityMs,
+            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+            sectionSearchCandidateReplayScoreMs:
+              searchResult.candidateReplayScoreMs,
+          }
 
-            this.selectedSectionCandidateLabel =
-              searchResult.winningCandidateLabel
-            this.selectedSectionCandidateFamily =
-              searchResult.winningCandidateFamily
-            this.stats = {
-              ...this.stats,
-              sectionSearchGeneratedCandidateCount:
-                searchResult.generatedCandidateCount,
-              sectionSearchCandidateCount: searchResult.candidateCount,
-              sectionSearchDuplicateCandidateCount:
-                searchResult.duplicateCandidateCount,
-              sectionSearchBaselineMaxRegionCost:
-                searchResult.baselineMaxRegionCost,
-              sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
-              sectionSearchDelta:
-                searchResult.baselineMaxRegionCost -
-                searchResult.finalMaxRegionCost,
-              selectedSectionCandidateLabel:
-                searchResult.winningCandidateLabel ?? null,
-              selectedSectionCandidateFamily:
-                searchResult.winningCandidateFamily ?? null,
-              sectionSearchMs: searchResult.totalMs,
-              sectionSearchBaselineEvaluationMs:
-                searchResult.baselineEvaluationMs,
-              sectionSearchCandidateEligibilityMs:
-                searchResult.candidateEligibilityMs,
-              sectionSearchCandidateInitMs: searchResult.candidateInitMs,
-              sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
-              sectionSearchCandidateReplayScoreMs:
-                searchResult.candidateReplayScoreMs,
-            }
-
-            return searchResult.portSectionMask
-          })()
+          return searchResult.portSectionMask
+        })()
 
     this.selectedSectionMask = new Int8Array(portSectionMask)
     problem.portSectionMask = new Int8Array(portSectionMask)

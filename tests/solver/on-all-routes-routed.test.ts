@@ -226,6 +226,7 @@ test("timeout acceptance does not start a hidden greedy solver", () => {
   const solver = createGreedyInitializationTestSolver({
     MAX_ITERATIONS: 1,
     GREEDY_INITIALIZATION: false,
+    LATE_GREEDY_PHASE: false,
   })
 
   solver.step()
@@ -235,6 +236,49 @@ test("timeout acceptance does not start a hidden greedy solver", () => {
   expect(solver.error).toBe("TinyHyperGraphSolver ran out of iterations")
   expect(solver.stats.greedyInitializationCompleted).toBeUndefined()
   expect(solver.stats.acceptedBestSolutionOnTimeout).toBeUndefined()
+})
+
+test("timeout can start late greedy phase through normal solver steps", () => {
+  const solver = createTestSolver({
+    MAX_ITERATIONS: 10,
+    LATE_GREEDY_PHASE: true,
+    LATE_GREEDY_PHASE_ITERATION_BUDGET: 5,
+  })
+
+  solver.state.currentRouteId = 1
+  solver.state.currentRouteNetId = 1
+  solver.state.unroutedRoutes = [2]
+  solver.state.goalPortId = 2
+  solver.iterations = 10
+  solver.tryFinalAcceptance()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(false)
+  expect(solver.lateGreedyPhaseActive).toBe(true)
+  expect(solver.stats.lateGreedyPhaseStarted).toBe(true)
+  expect(solver.stats.lateGreedyPhaseIterationBudget).toBe(5)
+  expect(solver.stats.lateGreedyPhaseRemainingRouteCount).toBe(2)
+  expect(solver.MAX_ITERATIONS).toBe(15)
+  expect(solver.state.currentRouteId).toBeUndefined()
+  expect(solver.state.currentRouteNetId).toBeUndefined()
+  expect([...solver.state.unroutedRoutes].sort((a, b) => a - b)).toEqual([1, 2])
+})
+
+test("late greedy phase accepts completed routing without another rerip", () => {
+  const solver = createTestSolver()
+
+  solver.lateGreedyPhaseActive = true
+  solver.state.unroutedRoutes = []
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.lateGreedyPhaseActive).toBe(false)
+  expect(solver.lateGreedyPhaseCompleted).toBe(true)
+  expect(solver.stats.acceptedLateGreedyPhaseOnTimeout).toBe(true)
+  expect(solver.stats.lateGreedyPhaseMaxRegionCost).toBe(0.5)
 })
 
 test("completed routing is accepted once all region costs are under the threshold", () => {
@@ -262,6 +306,8 @@ test("constructor options override snake-case hyperparameters before setup", () 
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
     GREEDY_INITIALIZATION: true,
+    LATE_GREEDY_PHASE: true,
+    LATE_GREEDY_PHASE_ITERATION_BUDGET: 4321,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -272,5 +318,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
   expect(solver.GREEDY_INITIALIZATION).toBe(true)
+  expect(solver.LATE_GREEDY_PHASE).toBe(true)
+  expect(solver.LATE_GREEDY_PHASE_ITERATION_BUDGET).toBe(4321)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
