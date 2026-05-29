@@ -276,7 +276,7 @@ test("section pipeline uses bounded default iteration limits", () => {
     pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS ?? 50_000
 
   expect(sectionSolverMaxIterations).toBe(50_000)
-  expect(pipelineSolver.MAX_ITERATIONS).toBeGreaterThan(
+  expect(pipelineSolver.MAX_ITERATIONS).toBe(
     solveGraphMaxIterations + sectionSolverMaxIterations,
   )
 })

@@ -49,7 +49,6 @@ const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
 }
 
 const DEFAULT_SECTION_SOLVER_MAX_ITERATIONS = 50_000
-const SECTION_PIPELINE_ITERATION_OVERHEAD = 10_000
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
@@ -330,8 +329,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     this.MAX_ITERATIONS =
       (this.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000) +
       (this.getSectionSolverOptions().MAX_ITERATIONS ??
-        DEFAULT_SECTION_SOLVER_MAX_ITERATIONS) +
-      SECTION_PIPELINE_ITERATION_OVERHEAD
+        DEFAULT_SECTION_SOLVER_MAX_ITERATIONS)
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
