@@ -5,6 +5,7 @@ import {
   type GraphicsObject,
 } from "graphics-debug"
 import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { availableParallelism } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
@@ -59,6 +60,7 @@ type BenchmarkReport = {
   datasetName: DatasetKey
   solverVariant: SolverVariant
   candidateFamilies: string
+  concurrency: number
   sampleCount: number
   successCount: number
   failedCount: number
@@ -93,6 +95,7 @@ Options:
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
   --solver NAME   Solver variant: core or poly. Defaults to core.
+  --concurrency N Benchmark concurrency value, or "auto". Defaults to BENCHMARK_CONCURRENCY or CPU count.
   --families LIST Override candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
   --help          Show this help text.
@@ -101,6 +104,7 @@ Examples:
   ./benchmark.sh
   ./benchmark.sh --dataset 18
   ./benchmark.sh --limit 20
+  ./benchmark.sh --limit 20 --concurrency 4
   ./benchmark.sh --limit 20 --solver poly
   ./benchmark.sh --sample 2
   ./benchmark.sh --sample sample002
@@ -193,6 +197,7 @@ const parseArgs = () => {
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
   let solverVariant: SolverVariant = "core"
   let datasetKey: DatasetKey = "hg07"
+  let concurrency = getDefaultConcurrency()
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -225,6 +230,24 @@ const parseArgs = () => {
         usageError(`Invalid --dataset value: ${rawValue ?? "<missing>"}`)
       }
 
+      index += 1
+      continue
+    }
+
+    if (arg === "--concurrency") {
+      const rawValue = process.argv[index + 1]
+      if (rawValue === "auto") {
+        concurrency = getSystemConcurrency()
+        index += 1
+        continue
+      }
+
+      const parsedValue = Number(rawValue)
+      if (!rawValue || !Number.isFinite(parsedValue) || parsedValue <= 0) {
+        usageError(`Invalid --concurrency value: ${rawValue ?? "<missing>"}`)
+      }
+
+      concurrency = Math.floor(parsedValue)
       index += 1
       continue
     }
@@ -271,7 +294,35 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, candidateFamilies, solverVariant, datasetKey }
+  return {
+    limit,
+    sampleName,
+    candidateFamilies,
+    solverVariant,
+    datasetKey,
+    concurrency,
+  }
+}
+
+const getSystemConcurrency = () => {
+  try {
+    return Math.max(1, availableParallelism())
+  } catch {
+    return 4
+  }
+}
+
+const getDefaultConcurrency = () => {
+  const rawValue = process.env.BENCHMARK_CONCURRENCY?.trim()
+
+  if (!rawValue || rawValue === "auto") {
+    return getSystemConcurrency()
+  }
+
+  const parsedValue = Number(rawValue)
+  return Number.isFinite(parsedValue) && parsedValue > 0
+    ? Math.floor(parsedValue)
+    : getSystemConcurrency()
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -391,6 +442,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     `Dataset: ${report.datasetName}`,
     `Solver: ${report.solverVariant}`,
     `Families: ${report.candidateFamilies}`,
+    `Concurrency: ${report.concurrency}`,
     `Samples: ${report.sampleCount}`,
     "",
     ...renderMarkdownTable(["Metric", "Value"], metricRows, ["left", "right"]),
@@ -613,8 +665,14 @@ const stringifyLogValue = (value: unknown) =>
 
 const main = async () => {
   const cwd = process.cwd()
-  const { limit, sampleName, candidateFamilies, solverVariant, datasetKey } =
-    parseArgs()
+  const {
+    limit,
+    sampleName,
+    candidateFamilies,
+    solverVariant,
+    datasetKey,
+    concurrency,
+  } = parseArgs()
   const datasetModule = await loadDatasetModule(
     datasetKey,
     cwd,
@@ -633,7 +691,7 @@ const main = async () => {
       : TinyHyperGraphSectionPipelineSolver
 
   console.log(
-    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"}`,
+    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -836,6 +894,7 @@ const main = async () => {
     datasetName: datasetKey,
     solverVariant,
     candidateFamilies: candidateFamilies?.join(",") ?? "default",
+    concurrency,
     sampleCount: results.length,
     successCount,
     failedCount: results.length - successCount,
