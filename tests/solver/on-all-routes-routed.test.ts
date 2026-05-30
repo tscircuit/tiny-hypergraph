@@ -264,6 +264,36 @@ test("timeout can start panic greedy through normal solver steps", () => {
   expect([...solver.state.unroutedRoutes].sort((a, b) => a - b)).toEqual([1, 2])
 })
 
+test("timeout accepts best solved snapshot before starting panic greedy", () => {
+  const solver = createTestSolver({
+    MAX_ITERATIONS: 10,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_ITERATION_BUDGET: 5,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+  solver.step()
+  solver.solved = false
+
+  solver.state.currentRouteId = 2
+  solver.state.currentRouteNetId = 2
+  solver.state.unroutedRoutes = [1]
+  solver.iterations = 10
+  solver.tryFinalAcceptance()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.panicGreedyActive).toBe(false)
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBe(true)
+  expect(solver.stats.panicGreedyStarted).toBeUndefined()
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+})
+
 test("panic greedy accepts completed routing without another rerip", () => {
   const solver = createTestSolver()
 

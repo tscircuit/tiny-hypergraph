@@ -1417,10 +1417,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
 
-    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
-      return
-    }
-
     if (
       this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT &&
       this.bestSolvedStateSnapshot &&
@@ -1441,6 +1437,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.solved = true
       this.failed = false
       this.error = null
+      return
+    }
+
+    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
       return
     }
 
