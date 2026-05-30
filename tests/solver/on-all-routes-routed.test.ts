@@ -326,6 +326,33 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
 })
 
+test("rip limit restores the best solved snapshot instead of the last worse attempt", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 1,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([2, 2, 3, 3])
+  solver.state.regionSegments[0] = [[2, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.9)
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.stats.restoredBestSolutionOnRipLimit).toBe(true)
+  expect(solver.stats.maxRegionCost).toBe(0.2)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+})
+
 test("constructor options override snake-case hyperparameters before setup", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
