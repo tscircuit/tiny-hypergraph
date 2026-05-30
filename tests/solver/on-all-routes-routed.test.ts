@@ -311,6 +311,42 @@ test("panic greedy accepts completed routing without another rerip", () => {
   expect(solver.stats.panicGreedyMaxRegionCost).toBe(0.5)
 })
 
+test("panic greedy falls back when route complexity grows too much", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_START: 0.1,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 2,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR: 2,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, -1, -1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.stats.bestMaxRouteSegmentCount).toBe(1)
+
+  solver.panicGreedyActive = true
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 0, 0])
+  solver.state.regionSegments[0] = [
+    [0, 0, 1],
+    [0, 1, 2],
+    [0, 2, 3],
+  ]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.05)
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.stats.panicGreedyRejectedForRouteComplexity).toBe(true)
+  expect(solver.stats.panicGreedyMaxRouteSegmentCount).toBe(3)
+  expect(solver.stats.maxRouteSegmentCount).toBe(1)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, -1, -1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+})
+
 test("completed routing is accepted once all region costs are under the threshold", () => {
   const solver = createTestSolver()
 
@@ -366,6 +402,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     PANIC_GREEDY: true,
     PANIC_GREEDY_ITERATION_BUDGET: 4321,
     PANIC_GREEDY_START_COST_FACTOR: 0.5,
+    PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR: 3,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -379,5 +416,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.PANIC_GREEDY).toBe(true)
   expect(solver.PANIC_GREEDY_ITERATION_BUDGET).toBe(4321)
   expect(solver.PANIC_GREEDY_START_COST_FACTOR).toBe(0.5)
+  expect(solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR).toBe(3)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })

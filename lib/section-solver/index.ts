@@ -139,6 +139,7 @@ const summarizeRegionIntersectionCaches = (
 ): RegionCostSummary => {
   let maxRegionCost = 0
   let totalRegionCost = 0
+  let totalSegmentCount = 0
 
   for (
     let regionId = 0;
@@ -149,11 +150,15 @@ const summarizeRegionIntersectionCaches = (
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
+    totalSegmentCount +=
+      regionIntersectionCaches[regionId]?.existingSegmentCount ?? 0
   }
 
   return {
     maxRegionCost,
     totalRegionCost,
+    totalSegmentCount,
+    maxRouteSegmentCount: totalSegmentCount,
   }
 }
 
@@ -163,17 +168,22 @@ const summarizeRegionIntersectionCachesForRegionIds = (
 ): RegionCostSummary => {
   let maxRegionCost = 0
   let totalRegionCost = 0
+  let totalSegmentCount = 0
 
   for (const regionId of regionIds) {
     const regionCost =
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
+    totalSegmentCount +=
+      regionIntersectionCaches[regionId]?.existingSegmentCount ?? 0
   }
 
   return {
     maxRegionCost,
     totalRegionCost,
+    totalSegmentCount,
+    maxRouteSegmentCount: totalSegmentCount,
   }
 }
 
@@ -184,6 +194,7 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
   const excludedRegionIdSet = new Set(excludedRegionIds)
   let maxRegionCost = 0
   let totalRegionCost = 0
+  let totalSegmentCount = 0
 
   for (
     let regionId = 0;
@@ -198,11 +209,15 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
+    totalSegmentCount +=
+      regionIntersectionCaches[regionId]?.existingSegmentCount ?? 0
   }
 
   return {
     maxRegionCost,
     totalRegionCost,
+    totalSegmentCount,
+    maxRouteSegmentCount: totalSegmentCount,
   }
 }
 
@@ -212,6 +227,14 @@ const compareRegionCostSummaries = (
 ) => {
   if (left.maxRegionCost !== right.maxRegionCost) {
     return left.maxRegionCost - right.maxRegionCost
+  }
+
+  if (left.maxRouteSegmentCount !== right.maxRouteSegmentCount) {
+    return left.maxRouteSegmentCount - right.maxRouteSegmentCount
+  }
+
+  if (left.totalSegmentCount !== right.totalSegmentCount) {
+    return left.totalSegmentCount - right.totalSegmentCount
   }
 
   return left.totalRegionCost - right.totalRegionCost
@@ -720,6 +743,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     const mutableRegionCosts = new Float64Array(this.mutableRegionIds.length)
     let mutableMaxRegionCost = 0
     let mutableTotalRegionCost = 0
+    let mutableTotalSegmentCount = 0
 
     for (
       let mutableRegionIndex = 0;
@@ -732,6 +756,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       mutableRegionCosts[mutableRegionIndex] = regionCost
       mutableMaxRegionCost = Math.max(mutableMaxRegionCost, regionCost)
       mutableTotalRegionCost += regionCost
+      mutableTotalSegmentCount +=
+        state.regionIntersectionCaches[regionId]?.existingSegmentCount ?? 0
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
@@ -744,14 +770,20 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     )
     const totalRegionCost =
       this.immutableRegionSummary.totalRegionCost + mutableTotalRegionCost
+    const totalSegmentCount =
+      this.immutableRegionSummary.totalSegmentCount + mutableTotalSegmentCount
 
     this.captureBestState({
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount: totalSegmentCount,
     })
     const bestSummary = this.bestSummary ?? {
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount: totalSegmentCount,
     }
 
     if (

@@ -30,6 +30,7 @@ export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
 export const DEFAULT_PANIC_GREEDY_ITERATION_BUDGET = 50_000
 export const DEFAULT_PANIC_GREEDY_START_COST_FACTOR = 0
+export const DEFAULT_PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR = 2
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -163,6 +164,8 @@ export interface TinyHyperGraphSolution {
 export interface RegionCostSummary {
   maxRegionCost: number
   totalRegionCost: number
+  totalSegmentCount: number
+  maxRouteSegmentCount: number
 }
 
 interface SolvedStateSnapshot {
@@ -242,6 +245,7 @@ export interface TinyHyperGraphSolverOptions {
   PANIC_GREEDY?: boolean
   PANIC_GREEDY_ITERATION_BUDGET?: number
   PANIC_GREEDY_START_COST_FACTOR?: number
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -262,6 +266,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   PANIC_GREEDY?: boolean
   PANIC_GREEDY_ITERATION_BUDGET?: number
   PANIC_GREEDY_START_COST_FACTOR?: number
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR?: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -327,6 +332,10 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.PANIC_GREEDY_START_COST_FACTOR =
       options.PANIC_GREEDY_START_COST_FACTOR
   }
+  if (options.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR !== undefined) {
+    solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR =
+      options.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -350,6 +359,8 @@ export const getTinyHyperGraphSolverOptions = (
   PANIC_GREEDY: solver.PANIC_GREEDY,
   PANIC_GREEDY_ITERATION_BUDGET: solver.PANIC_GREEDY_ITERATION_BUDGET,
   PANIC_GREEDY_START_COST_FACTOR: solver.PANIC_GREEDY_START_COST_FACTOR,
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR:
+    solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -400,6 +411,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   PANIC_GREEDY = false
   PANIC_GREEDY_ITERATION_BUDGET = DEFAULT_PANIC_GREEDY_ITERATION_BUDGET
   PANIC_GREEDY_START_COST_FACTOR = DEFAULT_PANIC_GREEDY_START_COST_FACTOR
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR =
+    DEFAULT_PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR
   panicGreedyActive = false
   panicGreedyStarted = false
   panicGreedyCompleted = false
@@ -1081,6 +1094,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return left.maxRegionCost - right.maxRegionCost
     }
 
+    if (left.maxRouteSegmentCount !== right.maxRouteSegmentCount) {
+      return left.maxRouteSegmentCount - right.maxRouteSegmentCount
+    }
+
+    if (left.totalSegmentCount !== right.totalSegmentCount) {
+      return left.totalSegmentCount - right.totalSegmentCount
+    }
+
     return left.totalRegionCost - right.totalRegionCost
   }
 
@@ -1126,21 +1147,32 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): RegionCostSummary {
     let maxRegionCost = 0
     let totalRegionCost = 0
+    let totalSegmentCount = 0
+    const routeSegmentCounts = new Uint32Array(solver.problem.routeCount)
 
     for (const regionIntersectionCache of solver.state
       .regionIntersectionCaches) {
       const regionCost = regionIntersectionCache.existingRegionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
       totalRegionCost += regionCost
+      totalSegmentCount += regionIntersectionCache.existingSegmentCount
+    }
+
+    for (const regionSegments of solver.state.regionSegments) {
+      for (const [routeId] of regionSegments) {
+        routeSegmentCounts[routeId] += 1
+      }
     }
 
     return {
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount: Math.max(0, ...routeSegmentCounts),
     }
   }
 
-  protected getRemainingRouteIdsForPanicGreedy(): RouteId[] {
+  protected getPanicGreedyRouteIds(): RouteId[] {
     const routeIds = new Set<RouteId>(this.state.unroutedRoutes)
 
     if (this.state.currentRouteId !== undefined) {
@@ -1163,7 +1195,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const remainingRouteIds = this.getRemainingRouteIdsForPanicGreedy()
+    const remainingRouteIds = this.getPanicGreedyRouteIds()
     if (remainingRouteIds.length === 0) {
       return false
     }
@@ -1227,23 +1259,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
     let totalRegionCost = 0
+    let totalSegmentCount = 0
+    const routeSegmentCounts = new Uint32Array(this.problem.routeCount)
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionIntersectionCache = state.regionIntersectionCaches[regionId]
+      const regionCost = regionIntersectionCache?.existingRegionCost ?? 0
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
       totalRegionCost += regionCost
+      totalSegmentCount += regionIntersectionCache?.existingSegmentCount ?? 0
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
       }
     }
 
+    for (const regionSegments of state.regionSegments) {
+      for (const [routeId] of regionSegments) {
+        routeSegmentCounts[routeId] += 1
+      }
+    }
+
+    const maxRouteSegmentCount = Math.max(0, ...routeSegmentCounts)
+
     const currentSolvedStateSummary = {
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount,
     }
+
+    const previousBestSolvedStateSummary = this.bestSolvedStateSummary
+    const previousBestSolvedStateSnapshot = this.bestSolvedStateSnapshot
+      ? cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+      : undefined
 
     this.captureBestSolvedState(currentSolvedStateSummary)
 
@@ -1253,8 +1303,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount,
       bestMaxRegionCost: this.bestSolvedStateSummary?.maxRegionCost,
       bestTotalRegionCost: this.bestSolvedStateSummary?.totalRegionCost,
+      bestTotalSegmentCount: this.bestSolvedStateSummary?.totalSegmentCount,
+      bestMaxRouteSegmentCount:
+        this.bestSolvedStateSummary?.maxRouteSegmentCount,
       ripCount: state.ripCount,
     }
 
@@ -1272,12 +1327,50 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (this.panicGreedyActive) {
       this.panicGreedyActive = false
       this.panicGreedyCompleted = true
+      const maxRouteSegmentGrowthFactor = Math.max(
+        1,
+        this.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR,
+      )
+      const panicExceededRouteComplexity =
+        previousBestSolvedStateSnapshot &&
+        previousBestSolvedStateSummary &&
+        currentSolvedStateSummary.maxRouteSegmentCount >
+          previousBestSolvedStateSummary.maxRouteSegmentCount *
+            maxRouteSegmentGrowthFactor
+
+      if (panicExceededRouteComplexity) {
+        const bestSolvedStateSummary = previousBestSolvedStateSummary!
+        const bestSolvedStateSnapshot = cloneSolvedStateSnapshot(
+          previousBestSolvedStateSnapshot!,
+        )
+        this.bestSolvedStateSummary = bestSolvedStateSummary
+        this.bestSolvedStateSnapshot = bestSolvedStateSnapshot
+        this.restoreBestSolvedState()
+        this.stats = {
+          ...this.stats,
+          panicGreedyCompleted: true,
+          panicGreedyRejectedForRouteComplexity: true,
+          panicGreedyMaxRegionCost: maxRegionCost,
+          panicGreedyTotalRegionCost: totalRegionCost,
+          panicGreedyTotalSegmentCount: totalSegmentCount,
+          panicGreedyMaxRouteSegmentCount: maxRouteSegmentCount,
+          maxRegionCost: bestSolvedStateSummary.maxRegionCost,
+          totalRegionCost: bestSolvedStateSummary.totalRegionCost,
+          totalSegmentCount: bestSolvedStateSummary.totalSegmentCount,
+          maxRouteSegmentCount: bestSolvedStateSummary.maxRouteSegmentCount,
+        }
+        this.solved = true
+        return
+      }
+
       this.stats = {
         ...this.stats,
         panicGreedyCompleted: true,
         acceptedPanicGreedyOnTimeout: true,
         panicGreedyMaxRegionCost: maxRegionCost,
         panicGreedyTotalRegionCost: totalRegionCost,
+        panicGreedyTotalSegmentCount: totalSegmentCount,
+        panicGreedyMaxRouteSegmentCount: maxRouteSegmentCount,
       }
       this.solved = true
       return
@@ -1303,8 +1396,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
           restoredBestSolutionOnRipLimit: true,
           maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
           totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+          totalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+          maxRouteSegmentCount: this.bestSolvedStateSummary.maxRouteSegmentCount,
           bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
           bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+          bestTotalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+          bestMaxRouteSegmentCount:
+            this.bestSolvedStateSummary.maxRouteSegmentCount,
           ripCount: this.state.ripCount,
         }
       }
@@ -1482,8 +1580,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         acceptedBestSolutionOnTimeout: true,
         maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        totalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+        maxRouteSegmentCount: this.bestSolvedStateSummary.maxRouteSegmentCount,
         bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        bestTotalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+        bestMaxRouteSegmentCount:
+          this.bestSolvedStateSummary.maxRouteSegmentCount,
         ...(this.panicGreedyStarted
           ? { panicGreedyFallbackAcceptedBestSnapshot: true }
           : {}),
