@@ -3,6 +3,7 @@ import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import {
+  DEFAULT_PANIC_GREEDY_ITERATION_BUDGET,
   TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolution,
@@ -45,6 +46,7 @@ type AutomaticSectionSearchResult = {
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
   GREEDY_INITIALIZATION: true,
+  PANIC_GREEDY: true,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
@@ -60,6 +62,14 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 }
 
 const DEFAULT_MAX_HOT_REGIONS = 2
+
+const getPanicGreedyIterationBudget = (
+  solveGraphOptions: TinyHyperGraphSolverOptions,
+) =>
+  solveGraphOptions.PANIC_GREEDY
+    ? (solveGraphOptions.PANIC_GREEDY_ITERATION_BUDGET ??
+      DEFAULT_PANIC_GREEDY_ITERATION_BUDGET)
+    : 0
 
 const IMPROVEMENT_EPSILON = 1e-9
 
@@ -326,8 +336,10 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
+    const solveGraphOptions = this.getSolveGraphOptions()
     this.MAX_ITERATIONS =
-      (this.getSolveGraphOptions().MAX_ITERATIONS ?? 1_000_000) +
+      (solveGraphOptions.MAX_ITERATIONS ?? 1_000_000) +
+      getPanicGreedyIterationBudget(solveGraphOptions) +
       (this.getSectionSolverOptions().MAX_ITERATIONS ??
         DEFAULT_SECTION_SOLVER_MAX_ITERATIONS)
   }
@@ -424,7 +436,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         ? (() => {
             this.stats = {
               ...this.stats,
-              skippedSectionSearchAfterGreedySolveGraphTimeout: true,
+              skippedSectionSearchAfterTimeoutSolveGraph: true,
               sectionSearchGeneratedCandidateCount: 0,
               sectionSearchCandidateCount: 0,
               sectionSearchDuplicateCandidateCount: 0,

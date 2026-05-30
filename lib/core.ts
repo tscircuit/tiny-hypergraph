@@ -28,6 +28,8 @@ import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
+export const DEFAULT_PANIC_GREEDY_ITERATION_BUDGET = 10_000
+
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
     netIds: new Int32Array(0),
@@ -236,6 +238,8 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_INITIALIZATION?: boolean
+  PANIC_GREEDY?: boolean
+  PANIC_GREEDY_ITERATION_BUDGET?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -253,6 +257,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_INITIALIZATION?: boolean
+  PANIC_GREEDY?: boolean
+  PANIC_GREEDY_ITERATION_BUDGET?: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -308,6 +314,12 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.GREEDY_INITIALIZATION !== undefined) {
     solver.GREEDY_INITIALIZATION = options.GREEDY_INITIALIZATION
   }
+  if (options.PANIC_GREEDY !== undefined) {
+    solver.PANIC_GREEDY = options.PANIC_GREEDY
+  }
+  if (options.PANIC_GREEDY_ITERATION_BUDGET !== undefined) {
+    solver.PANIC_GREEDY_ITERATION_BUDGET = options.PANIC_GREEDY_ITERATION_BUDGET
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -328,6 +340,8 @@ export const getTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_INITIALIZATION: solver.GREEDY_INITIALIZATION,
+  PANIC_GREEDY: solver.PANIC_GREEDY,
+  PANIC_GREEDY_ITERATION_BUDGET: solver.PANIC_GREEDY_ITERATION_BUDGET,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -375,6 +389,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   GREEDY_INITIALIZATION = false
   greedyInitializationActive = false
   greedyInitializationCompleted = false
+  PANIC_GREEDY = false
+  PANIC_GREEDY_ITERATION_BUDGET = DEFAULT_PANIC_GREEDY_ITERATION_BUDGET
+  panicGreedyActive = false
+  panicGreedyStarted = false
+  panicGreedyCompleted = false
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -1110,6 +1129,68 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected getRemainingRouteIdsForPanicGreedy(): RouteId[] {
+    const routeIds = new Set<RouteId>(this.state.unroutedRoutes)
+
+    if (this.state.currentRouteId !== undefined) {
+      routeIds.add(this.state.currentRouteId)
+    }
+
+    return [...routeIds]
+  }
+
+  protected startPanicGreedy(): boolean {
+    if (!this.PANIC_GREEDY || this.panicGreedyStarted) {
+      return false
+    }
+
+    const iterationBudget = Math.max(
+      0,
+      Math.floor(this.PANIC_GREEDY_ITERATION_BUDGET),
+    )
+    if (iterationBudget === 0) {
+      return false
+    }
+
+    const remainingRouteIds = this.getRemainingRouteIdsForPanicGreedy()
+    if (remainingRouteIds.length === 0) {
+      return false
+    }
+
+    const snapshot = cloneSolvedStateSnapshot({
+      portAssignment: this.state.portAssignment,
+      regionSegments: this.state.regionSegments,
+      regionIntersectionCaches: this.state.regionIntersectionCaches,
+      regionCongestionCost: this.state.regionCongestionCost,
+      ripCount: this.state.ripCount,
+    })
+
+    this.state.portAssignment = snapshot.portAssignment
+    this.state.regionSegments = snapshot.regionSegments
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
+    this.state.regionCongestionCost = snapshot.regionCongestionCost
+    this.state.ripCount = 0
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = remainingRouteIds
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+
+    this.panicGreedyStarted = true
+    this.panicGreedyActive = true
+    this.MAX_ITERATIONS += iterationBudget
+    this.stats = {
+      ...this.stats,
+      panicGreedyStarted: true,
+      panicGreedyStartIteration: this.iterations,
+      panicGreedyIterationBudget: iterationBudget,
+      panicGreedyRemainingRouteCount: remainingRouteIds.length,
+    }
+
+    return true
+  }
+
   onAllRoutesRouted() {
     const { topology, state } = this
     const ripThresholdProgress =
@@ -1162,6 +1243,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
         greedyInitializationMaxRegionCost: maxRegionCost,
         greedyInitializationTotalRegionCost: totalRegionCost,
       }
+    }
+
+    if (this.panicGreedyActive) {
+      this.panicGreedyActive = false
+      this.panicGreedyCompleted = true
+      this.stats = {
+        ...this.stats,
+        panicGreedyCompleted: true,
+        acceptedPanicGreedyOnTimeout: true,
+        panicGreedyMaxRegionCost: maxRegionCost,
+        panicGreedyTotalRegionCost: totalRegionCost,
+      }
+      this.solved = true
+      return
     }
 
     if (
@@ -1262,6 +1357,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return currentCandidate.g
     }
 
+    if (this.panicGreedyActive) {
+      return currentCandidate.g
+    }
+
     const nextRegionId = currentCandidate.nextRegionId
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
@@ -1318,6 +1417,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
     }
 
+    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
+      return
+    }
+
     if (
       this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT &&
       this.bestSolvedStateSnapshot &&
@@ -1331,6 +1434,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
         bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        ...(this.panicGreedyStarted
+          ? { panicGreedyFallbackAcceptedBestSnapshot: true }
+          : {}),
       }
       this.solved = true
       this.failed = false
