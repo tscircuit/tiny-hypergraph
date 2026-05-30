@@ -28,7 +28,8 @@ import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
-export const DEFAULT_PANIC_GREEDY_ITERATION_BUDGET = 10_000
+export const DEFAULT_PANIC_GREEDY_ITERATION_BUDGET = 50_000
+export const DEFAULT_PANIC_GREEDY_START_COST_FACTOR = 0
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -240,6 +241,7 @@ export interface TinyHyperGraphSolverOptions {
   GREEDY_INITIALIZATION?: boolean
   PANIC_GREEDY?: boolean
   PANIC_GREEDY_ITERATION_BUDGET?: number
+  PANIC_GREEDY_START_COST_FACTOR?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -259,6 +261,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   GREEDY_INITIALIZATION?: boolean
   PANIC_GREEDY?: boolean
   PANIC_GREEDY_ITERATION_BUDGET?: number
+  PANIC_GREEDY_START_COST_FACTOR?: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -320,6 +323,10 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.PANIC_GREEDY_ITERATION_BUDGET !== undefined) {
     solver.PANIC_GREEDY_ITERATION_BUDGET = options.PANIC_GREEDY_ITERATION_BUDGET
   }
+  if (options.PANIC_GREEDY_START_COST_FACTOR !== undefined) {
+    solver.PANIC_GREEDY_START_COST_FACTOR =
+      options.PANIC_GREEDY_START_COST_FACTOR
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -342,6 +349,7 @@ export const getTinyHyperGraphSolverOptions = (
   GREEDY_INITIALIZATION: solver.GREEDY_INITIALIZATION,
   PANIC_GREEDY: solver.PANIC_GREEDY,
   PANIC_GREEDY_ITERATION_BUDGET: solver.PANIC_GREEDY_ITERATION_BUDGET,
+  PANIC_GREEDY_START_COST_FACTOR: solver.PANIC_GREEDY_START_COST_FACTOR,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -391,9 +399,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
   greedyInitializationCompleted = false
   PANIC_GREEDY = false
   PANIC_GREEDY_ITERATION_BUDGET = DEFAULT_PANIC_GREEDY_ITERATION_BUDGET
+  PANIC_GREEDY_START_COST_FACTOR = DEFAULT_PANIC_GREEDY_START_COST_FACTOR
   panicGreedyActive = false
   panicGreedyStarted = false
   panicGreedyCompleted = false
+  panicGreedyStartIteration = 0
+  panicGreedyEndIteration = 0
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -1179,16 +1190,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     this.panicGreedyStarted = true
     this.panicGreedyActive = true
+    this.panicGreedyStartIteration = this.iterations
+    this.panicGreedyEndIteration = this.iterations + iterationBudget
     this.MAX_ITERATIONS += iterationBudget
     this.stats = {
       ...this.stats,
       panicGreedyStarted: true,
       panicGreedyStartIteration: this.iterations,
       panicGreedyIterationBudget: iterationBudget,
+      panicGreedyStartCostFactor: this.PANIC_GREEDY_START_COST_FACTOR,
       panicGreedyRemainingRouteCount: remainingRouteIds.length,
     }
 
     return true
+  }
+
+  protected getPanicGreedyCostFactor() {
+    if (!this.panicGreedyActive) {
+      return 1
+    }
+
+    return Math.max(0, this.PANIC_GREEDY_START_COST_FACTOR)
   }
 
   onAllRoutesRouted() {
@@ -1357,7 +1379,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return currentCandidate.g
     }
 
-    if (this.panicGreedyActive) {
+    if (this.panicGreedyActive && this.getPanicGreedyCostFactor() <= 0) {
       return currentCandidate.g
     }
 
@@ -1400,11 +1422,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 
-    return (
-      currentCandidate.g +
+    const incrementalCost =
       newRegionCost +
       state.regionCongestionCost[nextRegionId] +
       (this.problem.portPenalty?.[neighborPortId] ?? 0)
+
+    return (
+      currentCandidate.g +
+      incrementalCost *
+        (this.panicGreedyActive ? this.getPanicGreedyCostFactor() : 1)
     )
   }
 
@@ -1415,6 +1441,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
+    }
+
+    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
+      return
     }
 
     if (
@@ -1437,10 +1467,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.solved = true
       this.failed = false
       this.error = null
-      return
-    }
-
-    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
       return
     }
 

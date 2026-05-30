@@ -275,7 +275,7 @@ test("section pipeline uses bounded default iteration limits", () => {
   const panicGreedyMaxIterations = pipelineSolver.getSolveGraphOptions()
     .PANIC_GREEDY
     ? (pipelineSolver.getSolveGraphOptions().PANIC_GREEDY_ITERATION_BUDGET ??
-      10_000)
+      50_000)
     : 0
   const sectionSolverMaxIterations =
     pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS ?? 50_000

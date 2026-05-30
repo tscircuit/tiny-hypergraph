@@ -264,7 +264,7 @@ test("timeout can start panic greedy through normal solver steps", () => {
   expect([...solver.state.unroutedRoutes].sort((a, b) => a - b)).toEqual([1, 2])
 })
 
-test("timeout accepts best solved snapshot before starting panic greedy", () => {
+test("timeout starts gradual panic greedy before accepting best solved snapshot", () => {
   const solver = createTestSolver({
     MAX_ITERATIONS: 10,
     PANIC_GREEDY: true,
@@ -286,12 +286,12 @@ test("timeout accepts best solved snapshot before starting panic greedy", () => 
   solver.iterations = 10
   solver.tryFinalAcceptance()
 
-  expect(solver.solved).toBe(true)
+  expect(solver.solved).toBe(false)
   expect(solver.failed).toBe(false)
-  expect(solver.panicGreedyActive).toBe(false)
-  expect(solver.stats.acceptedBestSolutionOnTimeout).toBe(true)
-  expect(solver.stats.panicGreedyStarted).toBeUndefined()
-  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+  expect(solver.panicGreedyActive).toBe(true)
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBeUndefined()
+  expect(solver.stats.panicGreedyStarted).toBe(true)
+  expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
 })
 
 test("panic greedy accepts completed routing without another rerip", () => {
@@ -338,6 +338,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     GREEDY_INITIALIZATION: true,
     PANIC_GREEDY: true,
     PANIC_GREEDY_ITERATION_BUDGET: 4321,
+    PANIC_GREEDY_START_COST_FACTOR: 0.5,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -350,5 +351,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.GREEDY_INITIALIZATION).toBe(true)
   expect(solver.PANIC_GREEDY).toBe(true)
   expect(solver.PANIC_GREEDY_ITERATION_BUDGET).toBe(4321)
+  expect(solver.PANIC_GREEDY_START_COST_FACTOR).toBe(0.5)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
