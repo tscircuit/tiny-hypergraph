@@ -28,7 +28,9 @@ import { visualizeTinyGraph } from "./visualizeTinyGraph"
 
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
-const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
+export const DEFAULT_PANIC_GREEDY_ITERATION_BUDGET = 50_000
+export const DEFAULT_PANIC_GREEDY_START_COST_FACTOR = 0
+export const DEFAULT_PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR = 2
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -162,6 +164,8 @@ export interface TinyHyperGraphSolution {
 export interface RegionCostSummary {
   maxRegionCost: number
   totalRegionCost: number
+  totalSegmentCount: number
+  maxRouteSegmentCount: number
 }
 
 interface SolvedStateSnapshot {
@@ -237,7 +241,11 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
-  GREEDY_FINAL_ROUTE_ITERS?: number
+  GREEDY_INITIALIZATION?: boolean
+  PANIC_GREEDY?: boolean
+  PANIC_GREEDY_ITERATION_BUDGET?: number
+  PANIC_GREEDY_START_COST_FACTOR?: number
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -254,7 +262,11 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
-  GREEDY_FINAL_ROUTE_ITERS: number
+  GREEDY_INITIALIZATION?: boolean
+  PANIC_GREEDY?: boolean
+  PANIC_GREEDY_ITERATION_BUDGET?: number
+  PANIC_GREEDY_START_COST_FACTOR?: number
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR?: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -307,8 +319,22 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT =
       options.ACCEPT_BEST_SOLUTION_ON_TIMEOUT
   }
-  if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
-    solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
+  if (options.GREEDY_INITIALIZATION !== undefined) {
+    solver.GREEDY_INITIALIZATION = options.GREEDY_INITIALIZATION
+  }
+  if (options.PANIC_GREEDY !== undefined) {
+    solver.PANIC_GREEDY = options.PANIC_GREEDY
+  }
+  if (options.PANIC_GREEDY_ITERATION_BUDGET !== undefined) {
+    solver.PANIC_GREEDY_ITERATION_BUDGET = options.PANIC_GREEDY_ITERATION_BUDGET
+  }
+  if (options.PANIC_GREEDY_START_COST_FACTOR !== undefined) {
+    solver.PANIC_GREEDY_START_COST_FACTOR =
+      options.PANIC_GREEDY_START_COST_FACTOR
+  }
+  if (options.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR !== undefined) {
+    solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR =
+      options.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR
   }
 }
 
@@ -329,7 +355,12 @@ export const getTinyHyperGraphSolverOptions = (
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
-  GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
+  GREEDY_INITIALIZATION: solver.GREEDY_INITIALIZATION,
+  PANIC_GREEDY: solver.PANIC_GREEDY,
+  PANIC_GREEDY_ITERATION_BUDGET: solver.PANIC_GREEDY_ITERATION_BUDGET,
+  PANIC_GREEDY_START_COST_FACTOR: solver.PANIC_GREEDY_START_COST_FACTOR,
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR:
+    solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -374,7 +405,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
-  GREEDY_FINAL_ROUTE_ITERS = 4
+  GREEDY_INITIALIZATION = false
+  greedyInitializationActive = false
+  greedyInitializationCompleted = false
+  PANIC_GREEDY = false
+  PANIC_GREEDY_ITERATION_BUDGET = DEFAULT_PANIC_GREEDY_ITERATION_BUDGET
+  PANIC_GREEDY_START_COST_FACTOR = DEFAULT_PANIC_GREEDY_START_COST_FACTOR
+  PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR =
+    DEFAULT_PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR
+  panicGreedyActive = false
+  panicGreedyStarted = false
+  panicGreedyCompleted = false
+  panicGreedyStartIteration = 0
+  panicGreedyEndIteration = 0
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -383,6 +426,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     super()
     applyTinyHyperGraphSolverOptions(this, options)
+    this.greedyInitializationActive = this.GREEDY_INITIALIZATION
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
@@ -1050,6 +1094,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return left.maxRegionCost - right.maxRegionCost
     }
 
+    if (left.maxRouteSegmentCount !== right.maxRouteSegmentCount) {
+      return left.maxRouteSegmentCount - right.maxRouteSegmentCount
+    }
+
+    if (left.totalSegmentCount !== right.totalSegmentCount) {
+      return left.totalSegmentCount - right.totalSegmentCount
+    }
+
     return left.totalRegionCost - right.totalRegionCost
   }
 
@@ -1090,7 +1142,37 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.state.goalPortId = -1
   }
 
-  protected getRemainingRouteIdsForGreedyFinalRoute(): RouteId[] {
+  protected summarizeSolvedState(
+    solver: TinyHyperGraphSolver,
+  ): RegionCostSummary {
+    let maxRegionCost = 0
+    let totalRegionCost = 0
+    let totalSegmentCount = 0
+    const routeSegmentCounts = new Uint32Array(solver.problem.routeCount)
+
+    for (const regionIntersectionCache of solver.state
+      .regionIntersectionCaches) {
+      const regionCost = regionIntersectionCache.existingRegionCost
+      maxRegionCost = Math.max(maxRegionCost, regionCost)
+      totalRegionCost += regionCost
+      totalSegmentCount += regionIntersectionCache.existingSegmentCount
+    }
+
+    for (const regionSegments of solver.state.regionSegments) {
+      for (const [routeId] of regionSegments) {
+        routeSegmentCounts[routeId] += 1
+      }
+    }
+
+    return {
+      maxRegionCost,
+      totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount: Math.max(0, ...routeSegmentCounts),
+    }
+  }
+
+  protected getPanicGreedyRouteIds(): RouteId[] {
     const routeIds = new Set<RouteId>(this.state.unroutedRoutes)
 
     if (this.state.currentRouteId !== undefined) {
@@ -1100,61 +1182,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return [...routeIds]
   }
 
-  protected applySnapshotToGreedyFinalRouteSolver(
-    solver: TinyHyperGraphSolver,
-    snapshot: SolvedStateSnapshot,
-    routeIds: RouteId[],
-  ) {
-    const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
-
-    solver.state.portAssignment = clonedSnapshot.portAssignment
-    solver.state.regionSegments = clonedSnapshot.regionSegments
-    solver.state.regionIntersectionCaches =
-      clonedSnapshot.regionIntersectionCaches
-    solver.state.regionCongestionCost = clonedSnapshot.regionCongestionCost
-    solver.state.ripCount = 0
-    solver.state.currentRouteId = undefined
-    solver.state.currentRouteNetId = undefined
-    solver.state.unroutedRoutes = [...routeIds]
-    solver.state.candidateQueue.clear()
-    solver.resetCandidateBestCosts()
-    solver.state.goalPortId = -1
-  }
-
-  protected summarizeSolvedState(
-    solver: TinyHyperGraphSolver,
-  ): RegionCostSummary {
-    let maxRegionCost = 0
-    let totalRegionCost = 0
-
-    for (const regionIntersectionCache of solver.state
-      .regionIntersectionCaches) {
-      const regionCost = regionIntersectionCache.existingRegionCost
-      maxRegionCost = Math.max(maxRegionCost, regionCost)
-      totalRegionCost += regionCost
-    }
-
-    return {
-      maxRegionCost,
-      totalRegionCost,
-    }
-  }
-
-  protected tryGreedyFinalRouteAcceptance(): boolean {
-    const greedyFinalRouteIters = Math.max(
-      0,
-      Math.floor(this.GREEDY_FINAL_ROUTE_ITERS),
-    )
-    if (greedyFinalRouteIters === 0) {
+  protected startPanicGreedy(): boolean {
+    if (!this.PANIC_GREEDY || this.panicGreedyStarted) {
       return false
     }
 
-    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    const iterationBudget = Math.max(
+      0,
+      Math.floor(this.PANIC_GREEDY_ITERATION_BUDGET),
+    )
+    if (iterationBudget === 0) {
+      return false
+    }
+
+    const remainingRouteIds = this.getPanicGreedyRouteIds()
     if (remainingRouteIds.length === 0) {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
+    const snapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
@@ -1162,77 +1208,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
-    for (
-      let greedyFinalRouteIter = 0;
-      greedyFinalRouteIter < greedyFinalRouteIters;
-      greedyFinalRouteIter++
-    ) {
-      const routeIds =
-        greedyFinalRouteIter === 0
-          ? remainingRouteIds
-          : shuffle(
-              remainingRouteIds,
-              this.state.ripCount + greedyFinalRouteIter,
-            )
-      const greedySolver = new GreedyFinalRouteSolver(
-        this.topology,
-        this.problem,
-        {
-          ...getTinyHyperGraphSolverOptions(this),
-          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-          GREEDY_FINAL_ROUTE_ITERS: 0,
-          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-          STATIC_REACHABILITY_PRECHECK: false,
-        },
-      )
+    this.state.portAssignment = snapshot.portAssignment
+    this.state.regionSegments = snapshot.regionSegments
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
+    this.state.regionCongestionCost = snapshot.regionCongestionCost
+    this.state.ripCount = 0
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = remainingRouteIds
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
 
-      this.applySnapshotToGreedyFinalRouteSolver(
-        greedySolver,
-        startingSnapshot,
-        routeIds,
-      )
-      greedySolver.solve()
-
-      if (!greedySolver.solved || greedySolver.failed) {
-        continue
-      }
-
-      this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
-        portAssignment: greedySolver.state.portAssignment,
-        regionSegments: greedySolver.state.regionSegments,
-        regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
-        regionCongestionCost: greedySolver.state.regionCongestionCost,
-        ripCount: greedySolver.state.ripCount,
-      })
-      this.bestSolvedStateSummary = this.summarizeSolvedState(greedySolver)
-      this.restoreBestSolvedState()
-      this.stats = {
-        ...this.stats,
-        acceptedGreedyFinalRouteOnTimeout: true,
-        greedyFinalRouteIter,
-        greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
-        greedyFinalRouteMaxIterations: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-        neverSuccessfullyRoutedRouteCount: 0,
-        maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
-        totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
-        bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
-        bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
-      }
-      this.solved = true
-      this.failed = false
-      this.error = null
-      return true
-    }
-
+    this.panicGreedyStarted = true
+    this.panicGreedyActive = true
+    this.panicGreedyStartIteration = this.iterations
+    this.panicGreedyEndIteration = this.iterations + iterationBudget
+    this.MAX_ITERATIONS += iterationBudget
     this.stats = {
       ...this.stats,
-      greedyFinalRouteAttemptCount: greedyFinalRouteIters,
-      greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
-      greedyFinalRouteMaxIterations: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+      panicGreedyStarted: true,
+      panicGreedyStartIteration: this.iterations,
+      panicGreedyIterationBudget: iterationBudget,
+      panicGreedyStartCostFactor: this.PANIC_GREEDY_START_COST_FACTOR,
+      panicGreedyRemainingRouteCount: remainingRouteIds.length,
     }
 
-    return false
+    return true
+  }
+
+  protected getPanicGreedyCostFactor() {
+    if (!this.panicGreedyActive) {
+      return 1
+    }
+
+    return Math.max(0, this.PANIC_GREEDY_START_COST_FACTOR)
   }
 
   onAllRoutesRouted() {
@@ -1249,23 +1259,43 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionCosts = new Float64Array(topology.regionCount)
     let maxRegionCost = 0
     let totalRegionCost = 0
+    let totalSegmentCount = 0
+    const routeSegmentCounts = new Uint32Array(this.problem.routeCount)
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionIntersectionCache = state.regionIntersectionCaches[regionId]
+      const regionCost = regionIntersectionCache?.existingRegionCost ?? 0
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
       totalRegionCost += regionCost
+      totalSegmentCount += regionIntersectionCache?.existingSegmentCount ?? 0
 
       if (regionCost > currentRipThreshold) {
         regionIdsOverCostThreshold.push(regionId)
       }
     }
 
-    this.captureBestSolvedState({
+    for (const regionSegments of state.regionSegments) {
+      for (const [routeId] of regionSegments) {
+        routeSegmentCounts[routeId] += 1
+      }
+    }
+
+    const maxRouteSegmentCount = Math.max(0, ...routeSegmentCounts)
+
+    const currentSolvedStateSummary = {
       maxRegionCost,
       totalRegionCost,
-    })
+      totalSegmentCount,
+      maxRouteSegmentCount,
+    }
+
+    const previousBestSolvedStateSummary = this.bestSolvedStateSummary
+    const previousBestSolvedStateSnapshot = this.bestSolvedStateSnapshot
+      ? cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+      : undefined
+
+    this.captureBestSolvedState(currentSolvedStateSummary)
 
     this.stats = {
       ...this.stats,
@@ -1273,15 +1303,111 @@ export class TinyHyperGraphSolver extends BaseSolver {
       hotRegionCount: regionIdsOverCostThreshold.length,
       maxRegionCost,
       totalRegionCost,
+      totalSegmentCount,
+      maxRouteSegmentCount,
       bestMaxRegionCost: this.bestSolvedStateSummary?.maxRegionCost,
       bestTotalRegionCost: this.bestSolvedStateSummary?.totalRegionCost,
+      bestTotalSegmentCount: this.bestSolvedStateSummary?.totalSegmentCount,
+      bestMaxRouteSegmentCount:
+        this.bestSolvedStateSummary?.maxRouteSegmentCount,
       ripCount: state.ripCount,
     }
 
-    if (
-      regionIdsOverCostThreshold.length === 0 ||
-      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
-    ) {
+    if (this.greedyInitializationActive) {
+      this.greedyInitializationActive = false
+      this.greedyInitializationCompleted = true
+      this.stats = {
+        ...this.stats,
+        greedyInitializationCompleted: true,
+        greedyInitializationMaxRegionCost: maxRegionCost,
+        greedyInitializationTotalRegionCost: totalRegionCost,
+      }
+    }
+
+    if (this.panicGreedyActive) {
+      this.panicGreedyActive = false
+      this.panicGreedyCompleted = true
+      const maxRouteSegmentGrowthFactor = Math.max(
+        1,
+        this.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR,
+      )
+      const panicExceededRouteComplexity =
+        previousBestSolvedStateSnapshot &&
+        previousBestSolvedStateSummary &&
+        currentSolvedStateSummary.maxRouteSegmentCount >
+          previousBestSolvedStateSummary.maxRouteSegmentCount *
+            maxRouteSegmentGrowthFactor
+
+      if (panicExceededRouteComplexity) {
+        const bestSolvedStateSummary = previousBestSolvedStateSummary!
+        const bestSolvedStateSnapshot = cloneSolvedStateSnapshot(
+          previousBestSolvedStateSnapshot!,
+        )
+        this.bestSolvedStateSummary = bestSolvedStateSummary
+        this.bestSolvedStateSnapshot = bestSolvedStateSnapshot
+        this.restoreBestSolvedState()
+        this.stats = {
+          ...this.stats,
+          panicGreedyCompleted: true,
+          panicGreedyRejectedForRouteComplexity: true,
+          panicGreedyMaxRegionCost: maxRegionCost,
+          panicGreedyTotalRegionCost: totalRegionCost,
+          panicGreedyTotalSegmentCount: totalSegmentCount,
+          panicGreedyMaxRouteSegmentCount: maxRouteSegmentCount,
+          maxRegionCost: bestSolvedStateSummary.maxRegionCost,
+          totalRegionCost: bestSolvedStateSummary.totalRegionCost,
+          totalSegmentCount: bestSolvedStateSummary.totalSegmentCount,
+          maxRouteSegmentCount: bestSolvedStateSummary.maxRouteSegmentCount,
+        }
+        this.solved = true
+        return
+      }
+
+      this.stats = {
+        ...this.stats,
+        panicGreedyCompleted: true,
+        acceptedPanicGreedyOnTimeout: true,
+        panicGreedyMaxRegionCost: maxRegionCost,
+        panicGreedyTotalRegionCost: totalRegionCost,
+        panicGreedyTotalSegmentCount: totalSegmentCount,
+        panicGreedyMaxRouteSegmentCount: maxRouteSegmentCount,
+      }
+      this.solved = true
+      return
+    }
+
+    if (regionIdsOverCostThreshold.length === 0) {
+      this.solved = true
+      return
+    }
+
+    if (state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS) {
+      if (
+        this.bestSolvedStateSnapshot &&
+        this.bestSolvedStateSummary &&
+        this.compareRegionCostSummaries(
+          this.bestSolvedStateSummary,
+          currentSolvedStateSummary,
+        ) < 0
+      ) {
+        this.restoreBestSolvedState()
+        this.stats = {
+          ...this.stats,
+          restoredBestSolutionOnRipLimit: true,
+          maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+          totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+          totalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+          maxRouteSegmentCount:
+            this.bestSolvedStateSummary.maxRouteSegmentCount,
+          bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+          bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+          bestTotalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+          bestMaxRouteSegmentCount:
+            this.bestSolvedStateSummary.maxRouteSegmentCount,
+          ripCount: this.state.ripCount,
+        }
+      }
+
       this.solved = true
       return
     }
@@ -1309,6 +1435,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
+    const wasGreedyInitializationActive = this.greedyInitializationActive
+
+    if (wasGreedyInitializationActive) {
+      this.greedyInitializationActive = false
+    }
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
@@ -1325,6 +1456,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       maxRegionCost: maxRegionCostBeforeRip,
       maxRegionCostBeforeRip,
       reripReason: "out_of_candidates",
+      ...(wasGreedyInitializationActive
+        ? { greedyInitializationFailed: true }
+        : {}),
     }
     this.logRipEvent("out_of_candidates", maxRegionCostBeforeRip, {
       ...(currentRouteId === undefined
@@ -1363,6 +1497,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
     const { state } = this
+
+    if (this.greedyInitializationActive) {
+      return currentCandidate.g
+    }
+
+    if (this.panicGreedyActive && this.getPanicGreedyCostFactor() <= 0) {
+      return currentCandidate.g
+    }
 
     const nextRegionId = currentCandidate.nextRegionId
 
@@ -1403,11 +1545,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 
-    return (
-      currentCandidate.g +
+    const incrementalCost =
       newRegionCost +
       state.regionCongestionCost[nextRegionId] +
       (this.problem.portPenalty?.[neighborPortId] ?? 0)
+
+    return (
+      currentCandidate.g +
+      incrementalCost *
+        (this.panicGreedyActive ? this.getPanicGreedyCostFactor() : 1)
     )
   }
 
@@ -1418,6 +1564,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.stats = {
       ...this.stats,
       neverSuccessfullyRoutedRouteCount: neverSuccessfullyRoutedRoutes.length,
+    }
+
+    if (this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT && this.startPanicGreedy()) {
+      return
     }
 
     if (
@@ -1431,19 +1581,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
         acceptedBestSolutionOnTimeout: true,
         maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        totalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+        maxRouteSegmentCount: this.bestSolvedStateSummary.maxRouteSegmentCount,
         bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        bestTotalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
+        bestMaxRouteSegmentCount:
+          this.bestSolvedStateSummary.maxRouteSegmentCount,
+        ...(this.panicGreedyStarted
+          ? { panicGreedyFallbackAcceptedBestSnapshot: true }
+          : {}),
       }
       this.solved = true
       this.failed = false
       this.error = null
-      return
-    }
-
-    if (
-      this.ACCEPT_BEST_SOLUTION_ON_TIMEOUT &&
-      this.tryGreedyFinalRouteAcceptance()
-    ) {
       return
     }
 
@@ -1472,14 +1623,5 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override getOutput() {
     return convertToSerializedHyperGraph(this)
-  }
-}
-
-class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
-  override computeG(
-    currentCandidate: Candidate,
-    _neighborPortId: PortId,
-  ): number {
-    return currentCandidate.g
   }
 }

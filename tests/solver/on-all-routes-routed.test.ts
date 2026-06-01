@@ -71,7 +71,7 @@ const createTestSolver = (
   return new TinyHyperGraphSolver(topology, problem, options)
 }
 
-const createGreedyFinalRouteTestSolver = (
+const createGreedyInitializationTestSolver = (
   options?: ConstructorParameters<typeof TinyHyperGraphSolver>[2],
 ) => {
   const portCount = 2
@@ -206,32 +206,145 @@ test("best solution timeout acceptance can be disabled", () => {
   expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
 })
 
-test("final acceptance greedily routes remaining routes when no complete snapshot exists", () => {
-  const solver = createGreedyFinalRouteTestSolver({
-    GREEDY_FINAL_ROUTE_ITERS: 2,
+test("greedy initialization routes through normal solver steps", () => {
+  const solver = createGreedyInitializationTestSolver({
+    GREEDY_INITIALIZATION: true,
   })
 
-  solver.tryFinalAcceptance()
+  solver.solve()
 
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
-  expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).toBe(true)
-  expect(solver.stats.greedyFinalRouteRemainingRouteCount).toBe(1)
+  expect(solver.stats.greedyInitializationCompleted).toBe(true)
+  expect(solver.stats.greedyInitializationMaxRegionCost).toBe(0)
   expect(solver.state.unroutedRoutes).toEqual([])
   expect(Array.from(solver.state.portAssignment)).toEqual([0, 0])
   expect(solver.state.regionSegments[1]).toEqual([[0, 0, 1]])
 })
 
-test("greedy final routing can be disabled independently", () => {
-  const solver = createGreedyFinalRouteTestSolver({
-    GREEDY_FINAL_ROUTE_ITERS: 0,
+test("timeout acceptance does not start a hidden greedy solver", () => {
+  const solver = createGreedyInitializationTestSolver({
+    MAX_ITERATIONS: 1,
+    GREEDY_INITIALIZATION: false,
+    PANIC_GREEDY: false,
   })
 
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(true)
+  expect(solver.error).toBe("TinyHyperGraphSolver ran out of iterations")
+  expect(solver.stats.greedyInitializationCompleted).toBeUndefined()
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBeUndefined()
+})
+
+test("timeout can start panic greedy through normal solver steps", () => {
+  const solver = createTestSolver({
+    MAX_ITERATIONS: 10,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_ITERATION_BUDGET: 5,
+  })
+
+  solver.state.currentRouteId = 1
+  solver.state.currentRouteNetId = 1
+  solver.state.unroutedRoutes = [2]
+  solver.state.goalPortId = 2
+  solver.iterations = 10
   solver.tryFinalAcceptance()
 
   expect(solver.solved).toBe(false)
   expect(solver.failed).toBe(false)
-  expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).toBeUndefined()
+  expect(solver.panicGreedyActive).toBe(true)
+  expect(solver.stats.panicGreedyStarted).toBe(true)
+  expect(solver.stats.panicGreedyIterationBudget).toBe(5)
+  expect(solver.stats.panicGreedyRemainingRouteCount).toBe(2)
+  expect(solver.MAX_ITERATIONS).toBe(15)
+  expect(solver.state.currentRouteId).toBeUndefined()
+  expect(solver.state.currentRouteNetId).toBeUndefined()
+  expect([...solver.state.unroutedRoutes].sort((a, b) => a - b)).toEqual([1, 2])
+})
+
+test("timeout starts gradual panic greedy before accepting best solved snapshot", () => {
+  const solver = createTestSolver({
+    MAX_ITERATIONS: 10,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_ITERATION_BUDGET: 5,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+  solver.step()
+  solver.solved = false
+
+  solver.state.currentRouteId = 2
+  solver.state.currentRouteNetId = 2
+  solver.state.unroutedRoutes = [1]
+  solver.iterations = 10
+  solver.tryFinalAcceptance()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(false)
+  expect(solver.panicGreedyActive).toBe(true)
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBeUndefined()
+  expect(solver.stats.panicGreedyStarted).toBe(true)
+  expect(Array.from(solver.state.portAssignment)).toEqual([-1, -1, -1, -1])
+})
+
+test("panic greedy accepts completed routing without another rerip", () => {
+  const solver = createTestSolver()
+
+  solver.panicGreedyActive = true
+  solver.state.unroutedRoutes = []
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.panicGreedyActive).toBe(false)
+  expect(solver.panicGreedyCompleted).toBe(true)
+  expect(solver.stats.acceptedPanicGreedyOnTimeout).toBe(true)
+  expect(solver.stats.panicGreedyMaxRegionCost).toBe(0.5)
+})
+
+test("panic greedy falls back when route complexity grows too much", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_START: 0.1,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 2,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR: 2,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, -1, -1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.stats.bestMaxRouteSegmentCount).toBe(1)
+
+  solver.panicGreedyActive = true
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 0, 0])
+  solver.state.regionSegments[0] = [
+    [0, 0, 1],
+    [0, 1, 2],
+    [0, 2, 3],
+  ]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.05)
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.stats.panicGreedyRejectedForRouteComplexity).toBe(true)
+  expect(solver.stats.panicGreedyMaxRouteSegmentCount).toBe(3)
+  expect(solver.stats.maxRouteSegmentCount).toBe(1)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, -1, -1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
 })
 
 test("completed routing is accepted once all region costs are under the threshold", () => {
@@ -249,6 +362,33 @@ test("completed routing is accepted once all region costs are under the threshol
   expect(Array.from(solver.state.regionCongestionCost)).toEqual([0, 0])
 })
 
+test("rip limit restores the best solved snapshot instead of the last worse attempt", () => {
+  const solver = createTestSolver({
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 1,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.2)
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([2, 2, 3, 3])
+  solver.state.regionSegments[0] = [[2, 0, 1]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.9)
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.stats.restoredBestSolutionOnRipLimit).toBe(true)
+  expect(solver.stats.maxRegionCost).toBe(0.2)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+  expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+})
+
 test("constructor options override snake-case hyperparameters before setup", () => {
   const solver = createTestSolver({
     DISTANCE_TO_COST: 0.25,
@@ -258,7 +398,11 @@ test("constructor options override snake-case hyperparameters before setup", () 
     RIP_CONGESTION_REGION_COST_FACTOR: 0.45,
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-    GREEDY_FINAL_ROUTE_ITERS: 6,
+    GREEDY_INITIALIZATION: true,
+    PANIC_GREEDY: true,
+    PANIC_GREEDY_ITERATION_BUDGET: 4321,
+    PANIC_GREEDY_START_COST_FACTOR: 0.5,
+    PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR: 3,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -268,6 +412,10 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.RIP_CONGESTION_REGION_COST_FACTOR).toBe(0.45)
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
-  expect(solver.GREEDY_FINAL_ROUTE_ITERS).toBe(6)
+  expect(solver.GREEDY_INITIALIZATION).toBe(true)
+  expect(solver.PANIC_GREEDY).toBe(true)
+  expect(solver.PANIC_GREEDY_ITERATION_BUDGET).toBe(4321)
+  expect(solver.PANIC_GREEDY_START_COST_FACTOR).toBe(0.5)
+  expect(solver.PANIC_GREEDY_MAX_ROUTE_SEGMENT_GROWTH_FACTOR).toBe(3)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })

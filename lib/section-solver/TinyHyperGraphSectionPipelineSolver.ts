@@ -2,13 +2,14 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
-import type {
-  TinyHyperGraphProblem,
-  TinyHyperGraphSolution,
-  TinyHyperGraphSolverOptions,
-  TinyHyperGraphTopology,
+import {
+  DEFAULT_PANIC_GREEDY_ITERATION_BUDGET,
+  TinyHyperGraphSolver,
+  type TinyHyperGraphProblem,
+  type TinyHyperGraphSolution,
+  type TinyHyperGraphSolverOptions,
+  type TinyHyperGraphTopology,
 } from "../core"
-import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -44,11 +45,12 @@ type AutomaticSectionSearchResult = {
 }
 
 const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolverOptions = {
+  GREEDY_INITIALIZATION: true,
+  PANIC_GREEDY: true,
   RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
 }
 
 const DEFAULT_SECTION_SOLVER_MAX_ITERATIONS = 50_000
-const DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS = 200_000
 
 const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
   DISTANCE_TO_COST: 0.05,
@@ -60,6 +62,14 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 }
 
 const DEFAULT_MAX_HOT_REGIONS = 2
+
+const getPanicGreedyIterationBudget = (
+  solveGraphOptions: TinyHyperGraphSolverOptions,
+) =>
+  solveGraphOptions.PANIC_GREEDY
+    ? (solveGraphOptions.PANIC_GREEDY_ITERATION_BUDGET ??
+      DEFAULT_PANIC_GREEDY_ITERATION_BUDGET)
+    : 0
 
 const IMPROVEMENT_EPSILON = 1e-9
 
@@ -326,7 +336,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
-    this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+    const solveGraphOptions = this.getSolveGraphOptions()
+    this.MAX_ITERATIONS =
+      (solveGraphOptions.MAX_ITERATIONS ?? 1_000_000) +
+      getPanicGreedyIterationBudget(solveGraphOptions) +
+      (this.getSectionSolverOptions().MAX_ITERATIONS ??
+        DEFAULT_SECTION_SOLVER_MAX_ITERATIONS)
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
@@ -416,50 +431,65 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           problem,
           solution,
         })
-      : (() => {
-          const searchResult = findBestAutomaticSectionMask(
-            solvedSolver,
-            topology,
-            problem,
-            solution,
-            this.inputProblem.sectionSearchConfig,
-            sectionSolverOptions,
-          )
+      : solvedSolver.stats.acceptedBestSolutionOnTimeout === true &&
+          solvedSolver.stats.greedyInitializationCompleted === true
+        ? (() => {
+            this.stats = {
+              ...this.stats,
+              skippedSectionSearchAfterTimeoutSolveGraph: true,
+              sectionSearchGeneratedCandidateCount: 0,
+              sectionSearchCandidateCount: 0,
+              sectionSearchDuplicateCandidateCount: 0,
+              selectedSectionCandidateLabel: null,
+              selectedSectionCandidateFamily: null,
+            }
 
-          this.selectedSectionCandidateLabel =
-            searchResult.winningCandidateLabel
-          this.selectedSectionCandidateFamily =
-            searchResult.winningCandidateFamily
-          this.stats = {
-            ...this.stats,
-            sectionSearchGeneratedCandidateCount:
-              searchResult.generatedCandidateCount,
-            sectionSearchCandidateCount: searchResult.candidateCount,
-            sectionSearchDuplicateCandidateCount:
-              searchResult.duplicateCandidateCount,
-            sectionSearchBaselineMaxRegionCost:
-              searchResult.baselineMaxRegionCost,
-            sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
-            sectionSearchDelta:
-              searchResult.baselineMaxRegionCost -
-              searchResult.finalMaxRegionCost,
-            selectedSectionCandidateLabel:
-              searchResult.winningCandidateLabel ?? null,
-            selectedSectionCandidateFamily:
-              searchResult.winningCandidateFamily ?? null,
-            sectionSearchMs: searchResult.totalMs,
-            sectionSearchBaselineEvaluationMs:
-              searchResult.baselineEvaluationMs,
-            sectionSearchCandidateEligibilityMs:
-              searchResult.candidateEligibilityMs,
-            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
-            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
-            sectionSearchCandidateReplayScoreMs:
-              searchResult.candidateReplayScoreMs,
-          }
+            return new Int8Array(topology.portCount)
+          })()
+        : (() => {
+            const searchResult = findBestAutomaticSectionMask(
+              solvedSolver,
+              topology,
+              problem,
+              solution,
+              this.inputProblem.sectionSearchConfig,
+              sectionSolverOptions,
+            )
 
-          return searchResult.portSectionMask
-        })()
+            this.selectedSectionCandidateLabel =
+              searchResult.winningCandidateLabel
+            this.selectedSectionCandidateFamily =
+              searchResult.winningCandidateFamily
+            this.stats = {
+              ...this.stats,
+              sectionSearchGeneratedCandidateCount:
+                searchResult.generatedCandidateCount,
+              sectionSearchCandidateCount: searchResult.candidateCount,
+              sectionSearchDuplicateCandidateCount:
+                searchResult.duplicateCandidateCount,
+              sectionSearchBaselineMaxRegionCost:
+                searchResult.baselineMaxRegionCost,
+              sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+              sectionSearchDelta:
+                searchResult.baselineMaxRegionCost -
+                searchResult.finalMaxRegionCost,
+              selectedSectionCandidateLabel:
+                searchResult.winningCandidateLabel ?? null,
+              selectedSectionCandidateFamily:
+                searchResult.winningCandidateFamily ?? null,
+              sectionSearchMs: searchResult.totalMs,
+              sectionSearchBaselineEvaluationMs:
+                searchResult.baselineEvaluationMs,
+              sectionSearchCandidateEligibilityMs:
+                searchResult.candidateEligibilityMs,
+              sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+              sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+              sectionSearchCandidateReplayScoreMs:
+                searchResult.candidateReplayScoreMs,
+            }
+
+            return searchResult.portSectionMask
+          })()
 
     this.selectedSectionMask = new Int8Array(portSectionMask)
     problem.portSectionMask = new Int8Array(portSectionMask)
