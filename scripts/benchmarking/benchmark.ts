@@ -1,4 +1,5 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import type { SimpleRouteJson } from "@tscircuit/capacity-autorouter"
 import {
   getPngBufferFromGraphicsObject,
   stackGraphicsHorizontally,
@@ -34,6 +35,18 @@ type DatasetSampleMeta = {
   circuitId: string
   stepsToPortPointSolve: number
 }
+
+type Srj18DatasetSource =
+  | {
+      kind: "serialized-hypergraph"
+      dir: string
+      fileExtension: ".hg.json"
+    }
+  | {
+      kind: "simple-route-json"
+      dir: string
+      fileExtension: ".json"
+    }
 
 type BenchmarkSampleResult = {
   sampleName: string
@@ -516,45 +529,143 @@ const loadHg07DatasetModule = async (): Promise<DatasetModule> => {
   return datasetModule
 }
 
-const getSrj18DatasetDir = async (cwd: string) => {
-  const candidateDirs = [
-    path.join(cwd, "generated-datasets", "srj18"),
-    path.join(
-      path.dirname(fileURLToPath(import.meta.resolve("dataset-srj18"))),
-      "generated-datasets",
-      "srj18",
-    ),
+const getSrj18DatasetSource = async (
+  cwd: string,
+): Promise<Srj18DatasetSource> => {
+  const packageDir = path.dirname(
+    fileURLToPath(import.meta.resolve("dataset-srj18")),
+  )
+  const candidateSources: Srj18DatasetSource[] = [
+    {
+      kind: "serialized-hypergraph",
+      dir: path.join(cwd, "generated-datasets", "srj18"),
+      fileExtension: ".hg.json",
+    },
+    {
+      kind: "serialized-hypergraph",
+      dir: path.join(packageDir, "generated-datasets", "srj18"),
+      fileExtension: ".hg.json",
+    },
+    {
+      kind: "simple-route-json",
+      dir: path.join(packageDir, "samples"),
+      fileExtension: ".json",
+    },
   ]
 
-  for (const candidateDir of candidateDirs) {
+  for (const candidateSource of candidateSources) {
     try {
-      await access(candidateDir)
-      return candidateDir
+      await access(candidateSource.dir)
+      return candidateSource
     } catch {
       // Try the next known dataset layout.
     }
   }
 
   return usageError(
-    `Could not find srj18 generated dataset directory. Tried: ${candidateDirs.join(", ")}`,
+    `Could not find srj18 dataset directory. Tried: ${candidateSources.map((source) => source.dir).join(", ")}`,
   )
 }
 
-const getSrj18SampleNames = async (datasetDir: string) =>
-  (await readdir(datasetDir))
-    .map((entryName) => /^(sample\d+)\.hg\.json$/.exec(entryName)?.[1] ?? null)
+const getSrj18SampleNames = async (datasetSource: Srj18DatasetSource) => {
+  const samplePattern = new RegExp(
+    `^(sample\\d+)${datasetSource.fileExtension.replace(".", "\\.")}$`,
+  )
+
+  return (await readdir(datasetSource.dir))
+    .map((entryName) => samplePattern.exec(entryName)?.[1] ?? null)
     .filter((sampleName): sampleName is string => sampleName !== null)
     .sort((leftSampleName, rightSampleName) =>
       leftSampleName.localeCompare(rightSampleName),
     )
+}
+
+const cloneSerializableRecord = (value: unknown) =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? JSON.parse(JSON.stringify(value))
+    : value
+
+const generateSrj18SerializedHyperGraph = async (
+  simpleRouteJson: SimpleRouteJson,
+): Promise<SerializedHyperGraph> => {
+  const autorouterModule = await import("@tscircuit/capacity-autorouter")
+  const AutoroutingPipelineSolver4 =
+    autorouterModule.AutoroutingPipelineSolver4_TinyHypergraph ??
+    autorouterModule.AutoroutingPipelineSolver4 ??
+    autorouterModule.AutoroutingPipelineSolver
+
+  const autorouter = new AutoroutingPipelineSolver4(simpleRouteJson, {
+    effort: 1,
+  })
+  autorouter.solveUntilPhase("portPointPathingSolver")
+  autorouter.step()
+
+  if (autorouter.failed) {
+    throw new Error(
+      autorouter.error ??
+        "srj18 hypergraph generation failed before port-point pathing",
+    )
+  }
+
+  const portPointPathingSolver = autorouter.portPointPathingSolver
+  if (!portPointPathingSolver) {
+    throw new Error(
+      "srj18 hypergraph generation did not create a port-point pathing solver",
+    )
+  }
+
+  const [params] = portPointPathingSolver.getConstructorParams()
+
+  return {
+    regions: params.graph.regions.map((region: any) => ({
+      regionId: region.regionId,
+      pointIds: region.ports.map((port: any) => port.portId),
+      d: cloneSerializableRecord(region.d),
+    })),
+    ports: params.graph.ports.map((port: any) => {
+      const { regions: _regions, ...portData } = port.d ?? {}
+
+      return {
+        portId: port.portId,
+        region1Id: port.region1.regionId,
+        region2Id: port.region2.regionId,
+        d: cloneSerializableRecord(portData),
+      }
+    }),
+    connections: params.connections.map((connection: any) => ({
+      connectionId: connection.connectionId,
+      mutuallyConnectedNetworkId: connection.mutuallyConnectedNetworkId,
+      startRegionId: connection.startRegion.regionId,
+      endRegionId: connection.endRegion.regionId,
+      d: cloneSerializableRecord(connection.simpleRouteConnection),
+    })),
+  }
+}
+
+const loadSrj18SerializedHyperGraph = async (
+  datasetSource: Srj18DatasetSource,
+  sampleName: string,
+): Promise<SerializedHyperGraph> => {
+  const samplePath = path.join(
+    datasetSource.dir,
+    `${sampleName}${datasetSource.fileExtension}`,
+  )
+  const sampleJson = JSON.parse(await readFile(samplePath, "utf8"))
+
+  if (datasetSource.kind === "serialized-hypergraph") {
+    return sampleJson as SerializedHyperGraph
+  }
+
+  return generateSrj18SerializedHyperGraph(sampleJson as SimpleRouteJson)
+}
 
 const loadSrj18DatasetModule = async (
   cwd: string,
   limit: number | null,
   sampleName: string | null,
 ): Promise<DatasetModule> => {
-  const datasetDir = await getSrj18DatasetDir(cwd)
-  const allSampleNames = await getSrj18SampleNames(datasetDir)
+  const datasetSource = await getSrj18DatasetSource(cwd)
+  const allSampleNames = await getSrj18SampleNames(datasetSource)
   if (sampleName && !allSampleNames.includes(sampleName)) {
     usageError(`Unknown sample: ${sampleName}`)
   }
@@ -568,7 +679,9 @@ const loadSrj18DatasetModule = async (
           : Math.min(limit, allSampleNames.length),
       )
 
-  console.log(`loading dataset=srj18 dir=${datasetDir}`)
+  console.log(
+    `loading dataset=srj18 kind=${datasetSource.kind} dir=${datasetSource.dir}`,
+  )
 
   const datasetModule: DatasetModule = {
     manifest: {
@@ -583,12 +696,10 @@ const loadSrj18DatasetModule = async (
   }
 
   for (const srj18SampleName of requestedSampleNames) {
-    const serializedHyperGraph = JSON.parse(
-      await readFile(
-        path.join(datasetDir, `${srj18SampleName}.hg.json`),
-        "utf8",
-      ),
-    ) as SerializedHyperGraph
+    const serializedHyperGraph = await loadSrj18SerializedHyperGraph(
+      datasetSource,
+      srj18SampleName,
+    )
 
     datasetModule[srj18SampleName] = serializedHyperGraph
   }

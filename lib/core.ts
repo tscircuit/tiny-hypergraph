@@ -1397,7 +1397,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
           maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
           totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
           totalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
-          maxRouteSegmentCount: this.bestSolvedStateSummary.maxRouteSegmentCount,
+          maxRouteSegmentCount:
+            this.bestSolvedStateSummary.maxRouteSegmentCount,
           bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
           bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
           bestTotalSegmentCount: this.bestSolvedStateSummary.totalSegmentCount,
