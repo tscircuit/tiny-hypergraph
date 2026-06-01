@@ -26,7 +26,7 @@
     "@types/bun": "latest",
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
-    "dataset-srj18": "github:tscircuit/dataset-srj18#cafe0b46c28e6101d0e8d1b8ea184fdeebc5cc1a",
+    "dataset-srj18": "github:tscircuit/dataset-srj18#28d47419660b55f36c8cf503dfa24381fd159b03",
     "graphics-debug": "^0.0.93",
     "react-cosmos-plugin-vite": "^7.2.0",
     "stack-svgs": "^0.0.1",
