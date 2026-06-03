@@ -90,3 +90,58 @@ test("serialized region net ids take precedence over endpoint net inference", ()
   expect(Array.from(problem.routeNet)).toEqual([0, 1])
   expect(Array.from(problem.regionNetId)).toEqual([42, -1, 0, -1, 1])
 })
+
+test("target obstacle regions without net ids are preserved as routable topology", () => {
+  const graph: SerializedHyperGraph = {
+    regions: [
+      createRegion("start", ["s"]),
+      createRegion("target-obstacle", ["s", "t"], {
+        _containsObstacle: true,
+        _containsTarget: true,
+      }),
+      createRegion("end", ["t"]),
+      createRegion("full-obstacle", ["blocked"], {
+        _containsObstacle: true,
+      }),
+    ],
+    ports: [
+      {
+        portId: "s",
+        region1Id: "start",
+        region2Id: "target-obstacle",
+        d: { x: 0, y: 0, z: 0 },
+      },
+      {
+        portId: "t",
+        region1Id: "target-obstacle",
+        region2Id: "end",
+        d: { x: 1, y: 0, z: 0 },
+      },
+      {
+        portId: "blocked",
+        region1Id: "full-obstacle",
+        region2Id: "target-obstacle",
+        d: { x: 0.5, y: 0.5, z: 0 },
+      },
+    ],
+    connections: [
+      {
+        connectionId: "through-target-obstacle",
+        mutuallyConnectedNetworkId: "net-0",
+        startRegionId: "start",
+        endRegionId: "end",
+      },
+    ],
+  }
+
+  const { topology } = loadSerializedHyperGraph(graph)
+  const serializedRegionIds = topology.regionMetadata?.map(
+    (metadata) => metadata.serializedRegionId,
+  )
+  const serializedPortIds = topology.portMetadata?.map(
+    (metadata) => metadata.serializedPortId,
+  )
+
+  expect(serializedRegionIds).toEqual(["start", "target-obstacle", "end"])
+  expect(serializedPortIds).toEqual(["s", "t"])
+})
