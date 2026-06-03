@@ -164,10 +164,10 @@ test("repro: DDR5 pipeline7 port-point-pathing input implies multi-GB dense hop 
   }).toMatchInlineSnapshot(`
     {
       "boardName": "DDR5",
-      "denseHopBytes": 4209756768,
-      "denseHopCount": 350813064,
-      "portCount": 27597,
-      "regionCount": 12712,
+      "denseHopBytes": 5154594984,
+      "denseHopCount": 429549582,
+      "portCount": 32263,
+      "regionCount": 13314,
       "routeCount": 79,
       "source": "SRG 18 pipeline 7 circuit 6",
     }

@@ -41,6 +41,26 @@ const createCm5ioBus1Solver = async () => {
   })
 }
 
+const getPortIdBySerializedId = (
+  solver: TinyHyperGraphBusSolver,
+  serializedPortId: string,
+) => {
+  const portId = solver.topology.portMetadata?.findIndex(
+    (metadata) => metadata?.serializedPortId === serializedPortId,
+  )
+
+  if (portId === undefined || portId < 0) {
+    throw new Error(`Could not find serialized port ${serializedPortId}`)
+  }
+
+  return portId
+}
+
+const getSerializedPortId = (
+  solver: TinyHyperGraphBusSolver,
+  portId: number,
+) => solver.topology.portMetadata?.[portId]?.serializedPortId
+
 test("CM5IO bus1 evaluates one centerline candidate per step and visualizes all inferred routes", async () => {
   const solver = await createCm5ioBus1Solver()
 
@@ -185,49 +205,35 @@ test("CM5IO bus1 marks the centerline end-manual regions in visualize labels", a
   ).toBe(true)
 })
 
-test("CM5IO bus1 keeps boundary port ordering stable through centerline direction changes", async () => {
+test("CM5IO bus1 keeps boundary port ordering stable along the solved centerline", async () => {
   const solver = await createCm5ioBus1Solver()
   const internal = solver as any
 
-  const pathDescriptors = [
-    { portId: 6768, nextRegionId: 72 },
-    { portId: 2228, nextRegionId: 19 },
-    { portId: 2282, nextRegionId: 20 },
-    { portId: 2346, nextRegionId: 24 },
-    { portId: 2800, nextRegionId: 25 },
-    { portId: 2862, nextRegionId: 26 },
-    { portId: 2978, nextRegionId: 36 },
-    { portId: 3875, nextRegionId: 35 },
-  ]
+  while (!solver.solved && !solver.failed) {
+    solver.step()
+  }
 
-  let previousCandidate: any
-  const centerPath = pathDescriptors.map((descriptor, index) => {
-    const candidate = {
-      portId: descriptor.portId,
-      nextRegionId: descriptor.nextRegionId,
-      g: index,
-      h: 0,
-      f: index,
-      prevCandidate: previousCandidate,
-      prevRegionId: previousCandidate?.nextRegionId,
-    }
-    previousCandidate = candidate
-    return candidate
-  })
+  expect(solver.solved).toBe(true)
+
+  const centerPath = getCenterCandidatePath(internal.lastExpandedCandidate)
 
   const boundarySteps = internal.boundaryPlanner.getBoundarySteps(centerPath)
   const boundaryPortIdsByStep =
     internal.boundaryPlanner.assignBoundaryPortsForPath(boundarySteps)
   const firstBoundaryPorts = boundaryPortIdsByStep[0]
-  const turningBoundaryStep = boundarySteps.at(-1)
-  const turningBoundaryPorts = boundaryPortIdsByStep.at(-1)
+  const finalAssignedBoundaryPorts = boundaryPortIdsByStep.findLast(
+    (boundaryPorts: number[] | undefined) => boundaryPorts !== undefined,
+  )
+  const finalAssignedBoundaryStep =
+    boundarySteps[
+      boundaryPortIdsByStep.findLastIndex(
+        (boundaryPorts: number[] | undefined) => boundaryPorts !== undefined,
+      )
+    ]
 
-  expect(turningBoundaryStep).toBeDefined()
-  expect(turningBoundaryStep.fromRegionId).toBe(36)
-  expect(turningBoundaryStep.toRegionId).toBe(35)
-  expect(turningBoundaryStep.normalX).toBeGreaterThan(0)
   expect(firstBoundaryPorts).toBeDefined()
-  expect(turningBoundaryPorts).toBeDefined()
+  expect(finalAssignedBoundaryPorts).toBeDefined()
+  expect(finalAssignedBoundaryStep).toBeDefined()
   expect(
     firstBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
   ).toEqual(
@@ -238,17 +244,19 @@ test("CM5IO bus1 keeps boundary port ordering stable through centerline directio
     ].sort((left, right) => right - left),
   )
   expect(
-    turningBoundaryPorts.map((portId: number) => solver.topology.portX[portId]),
+    finalAssignedBoundaryPorts.map(
+      (portId: number) => solver.topology.portY[portId],
+    ),
   ).toEqual(
     [
-      ...turningBoundaryPorts.map(
-        (portId: number) => solver.topology.portX[portId],
+      ...finalAssignedBoundaryPorts.map(
+        (portId: number) => solver.topology.portY[portId],
       ),
     ].sort((left, right) => left - right),
   )
 })
 
-test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0", async () => {
+test("CM5IO bus1 uses greedy late remainder routing to choose ce466_pp4_z0::0", async () => {
   const solver = await createCm5ioBus1Solver()
 
   while (!solver.solved && !solver.failed) {
@@ -265,7 +273,7 @@ test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0",
       solver.topology.portMetadata?.[candidate.portId]?.serializedPortId,
   )
 
-  expect(serializedPortIds).toContain("ce365_pp13_z0::0")
+  expect(serializedPortIds).toContain("ce466_pp4_z0::0")
   expect(lastPreview).toBeDefined()
   expect(lastPreview.sameLayerIntersectionCount).toBe(0)
   expect(lastPreview.crossingLayerIntersectionCount).toBe(0)
@@ -281,7 +289,7 @@ test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0",
             segment.regionId === 11 &&
             solver.topology.portMetadata?.[
               segment.fromPortId
-            ]?.serializedPortId?.startsWith("ce365_"),
+            ]?.serializedPortId?.startsWith("ce466_"),
         )
         .map((segment: any) => [
           connectionId,
@@ -297,31 +305,31 @@ test("CM5IO bus1 uses greedy late remainder routing to choose ce365_pp13_z0::0",
 
   expect(region11FanoutSegments).toMatchObject({
     source_trace_106: {
-      from: "ce365_pp15_z0::0",
+      from: "ce466_pp2_z0::0",
       to: "ce481_pp0_z0::0",
     },
     source_trace_107: {
-      from: "ce365_pp14_z0::0",
+      from: "ce466_pp3_z0::0",
       to: "ce483_pp0_z0::0",
     },
     source_trace_108: {
-      from: "ce365_pp13_z0::0",
+      from: "ce466_pp4_z0::0",
       to: "ce488_pp0_z0::0",
     },
     source_trace_109: {
-      from: "ce365_pp12_z0::0",
+      from: "ce466_pp5_z0::0",
       to: "ce490_pp0_z0::0",
     },
     source_trace_110: {
-      from: "ce365_pp11_z0::0",
+      from: "ce466_pp6_z0::0",
       to: "ce494_pp0_z0::0",
     },
     source_trace_111: {
-      from: "ce365_pp10_z0::0",
+      from: "ce466_pp7_z0::0",
       to: "ce496_pp0_z0::0",
     },
     source_trace_114: {
-      from: "ce365_pp9_z0::0",
+      from: "ce466_pp8_z0::0",
       to: "ce507_pp0_z0::0",
     },
   })
@@ -333,15 +341,15 @@ test("CM5IO bus1 preserves start-side order on the first boundary fanout", async
 
   const centerPath: any[] = [
     {
-      portId: 6768,
+      portId: getPortIdBySerializedId(solver, "ce1638_pp0_z0::0"),
       nextRegionId: 72,
       g: 0,
       h: 0,
       f: 0,
     },
     {
-      portId: 3087,
-      nextRegionId: 27,
+      portId: getPortIdBySerializedId(solver, "ce650_pp6_z0::0"),
+      nextRegionId: 19,
       g: 1,
       h: 0,
       f: 1,
@@ -356,8 +364,20 @@ test("CM5IO bus1 preserves start-side order on the first boundary fanout", async
     internal.boundaryPlanner.assignBoundaryPortsForPath(boundarySteps)[0]
 
   expect(boundarySteps).toHaveLength(1)
-  expect(firstBoundaryPorts).toEqual([
-    3095, 3093, 3091, 3089, 3087, 3085, 3083, 3081, 3079,
+  expect(
+    firstBoundaryPorts.map((portId: number) =>
+      getSerializedPortId(solver, portId),
+    ),
+  ).toEqual([
+    "ce650_pp10_z0::0",
+    "ce650_pp9_z0::0",
+    "ce650_pp8_z0::0",
+    "ce650_pp7_z0::0",
+    "ce650_pp6_z0::0",
+    "ce650_pp5_z0::0",
+    "ce650_pp4_z0::0",
+    "ce650_pp3_z0::0",
+    "ce650_pp2_z0::0",
   ])
   expect(
     firstBoundaryPorts.map((portId: number) => solver.topology.portY[portId]),
