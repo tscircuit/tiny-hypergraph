@@ -56,10 +56,8 @@ const getPortIdBySerializedId = (
   return portId
 }
 
-const getSerializedPortId = (
-  solver: TinyHyperGraphBusSolver,
-  portId: number,
-) => solver.topology.portMetadata?.[portId]?.serializedPortId
+const getSerializedPortId = (solver: TinyHyperGraphBusSolver, portId: number) =>
+  solver.topology.portMetadata?.[portId]?.serializedPortId
 
 test("CM5IO bus1 evaluates one centerline candidate per step and visualizes all inferred routes", async () => {
   const solver = await createCm5ioBus1Solver()
