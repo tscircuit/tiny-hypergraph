@@ -323,6 +323,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   selectedSectionMask?: Int8Array
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+  private cachedSectionStageParams?:
+    | [
+        TinyHyperGraphTopology,
+        TinyHyperGraphProblem,
+        TinyHyperGraphSolution,
+        TinyHyperGraphSectionSolverOptions,
+      ]
+    | undefined
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
@@ -357,6 +365,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     }
   }
 
+  override _step() {
+    if (this.trySkipEmptyOptimizeSection()) {
+      return
+    }
+
+    super._step()
+  }
+
   override pipelineDef: PipelineStep<any>[] = [
     {
       solverName: "solveGraph",
@@ -387,6 +403,10 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     TinyHyperGraphSolution,
     TinyHyperGraphSectionSolverOptions,
   ] {
+    if (this.cachedSectionStageParams) {
+      return this.cachedSectionStageParams
+    }
+
     const solvedSerializedHyperGraph =
       this.getStageOutput<SerializedHyperGraph>("solveGraph")
 
@@ -470,7 +490,50 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         .length,
     }
 
-    return [topology, problem, solution, sectionSolverOptions]
+    this.cachedSectionStageParams = [
+      topology,
+      problem,
+      solution,
+      sectionSolverOptions,
+    ]
+
+    return this.cachedSectionStageParams
+  }
+
+  private trySkipEmptyOptimizeSection() {
+    if (this.getCurrentStageName() !== "optimizeSection" || this.activeSubSolver) {
+      return false
+    }
+
+    const solveGraphOutput =
+      this.getStageOutput<SerializedHyperGraph>("solveGraph")
+
+    if (!solveGraphOutput) {
+      return false
+    }
+
+    const [, problem] = this.getSectionStageParams()
+    let sectionMaskPortCount = 0
+    for (const value of problem.portSectionMask) {
+      if (value === 1) {
+        sectionMaskPortCount += 1
+      }
+    }
+
+    if (sectionMaskPortCount !== 0) {
+      return false
+    }
+
+    this.pipelineOutputs.optimizeSection = solveGraphOutput
+    this.stats = {
+      ...this.stats,
+      activeRouteCount: 0,
+      optimized: false,
+      sectionOptimizationSkipped: true,
+      sectionOptimizationReason: "empty-section-mask",
+    }
+    this.currentPipelineStageIndex++
+    return true
   }
 
   getInitialVisualizationSolver() {
