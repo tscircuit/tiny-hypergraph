@@ -319,7 +319,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
       STATIC_REACHABILITY_PRECHECK: false,
       USE_LAZY_ROUTE_HEURISTIC: true,
-      USE_SPARSE_CANDIDATE_STORAGE: true,
       ...this.options.routeSolveOptions,
     }
   }
