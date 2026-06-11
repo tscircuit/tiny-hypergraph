@@ -11,7 +11,11 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
-import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
+import {
+  createSolvedSolverFromSolution,
+  getActiveSectionRouteIds,
+  TinyHyperGraphSectionSolver,
+} from "./index"
 import {
   createSectionMaskCandidatesForHotRegions,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
@@ -72,17 +76,24 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
+  solveGraphOptions?: TinyHyperGraphSolverOptions,
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions,
 ) => {
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
-  const replayedSolver = new TinyHyperGraphSectionSolver(
+  const replayedSolver = createSolvedSolverFromSolution(
     replay.topology,
     replay.problem,
     replay.solution,
-    sectionSolverOptions,
+    {
+      ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+      ...solveGraphOptions,
+      ...(sectionSolverOptions?.minViaPadDiameter === undefined
+        ? {}
+        : { minViaPadDiameter: sectionSolverOptions.minViaPadDiameter }),
+    },
   )
 
-  return getMaxRegionCost(replayedSolver.baselineSolver)
+  return getMaxRegionCost(replayedSolver)
 }
 
 const createPortSectionMaskForRegionIds = (
@@ -257,6 +268,12 @@ const findBestAutomaticSectionMask = (
         const candidateReplayScoreStartTime = performance.now()
         const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
           sectionSolver.getOutput(),
+          {
+            ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+            ...(sectionSolverOptions.minViaPadDiameter === undefined
+              ? {}
+              : { minViaPadDiameter: sectionSolverOptions.minViaPadDiameter }),
+          },
           sectionSolverOptions,
         )
         candidateReplayScoreMs +=
@@ -388,12 +405,23 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           instance.getSolveGraphOptions(),
         ] as ConstructorParameters<typeof TinyHyperGraphSolver>
       },
+      onSolved: (instance: TinyHyperGraphSectionPipelineSolver) => {
+        instance
+          .getSolver<TinyHyperGraphSolver>("solveGraph")
+          ?.releaseTransientSearchState()
+      },
     },
     {
       solverName: "optimizeSection",
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
+      onSolved: (instance: TinyHyperGraphSectionPipelineSolver) => {
+        instance
+          .getSolver<TinyHyperGraphSectionSolver>("optimizeSection")
+          ?.releaseTransientSearchState()
+        instance.cachedSectionStageParams = undefined
+      },
     },
   ]
 
@@ -501,7 +529,10 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   }
 
   private trySkipEmptyOptimizeSection() {
-    if (this.getCurrentStageName() !== "optimizeSection" || this.activeSubSolver) {
+    if (
+      this.getCurrentStageName() !== "optimizeSection" ||
+      this.activeSubSolver
+    ) {
       return false
     }
 
@@ -533,6 +564,9 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       sectionOptimizationReason: "empty-section-mask",
     }
     this.currentPipelineStageIndex++
+    // The section stage will never run, so the topology/problem/solution view
+    // loaded for the mask check is dead weight from here on.
+    this.cachedSectionStageParams = undefined
     return true
   }
 

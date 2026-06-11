@@ -319,7 +319,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
       STATIC_REACHABILITY_PRECHECK: false,
       USE_LAZY_ROUTE_HEURISTIC: true,
-      USE_SPARSE_CANDIDATE_STORAGE: true,
       ...this.options.routeSolveOptions,
     }
   }
@@ -378,7 +377,10 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const regions = [...this.serializedHyperGraph.regions]
     const ports = [...this.serializedHyperGraph.ports]
     const regionById = new Map(
-      this.serializedHyperGraph.regions.map((region) => [region.regionId, region]),
+      this.serializedHyperGraph.regions.map((region) => [
+        region.regionId,
+        region,
+      ]),
     )
     const regionIndexById = new Map(
       this.serializedHyperGraph.regions.map((region, regionIndex) => [
@@ -387,7 +389,9 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       ]),
     )
     const sourcePortById = new Map(
-      this.serializedHyperGraph.ports.map((port) => [port.portId, port] as const),
+      this.serializedHyperGraph.ports.map(
+        (port) => [port.portId, port] as const,
+      ),
     )
     const usedPortIds = new Set(
       this.serializedHyperGraph.ports.map((port) => port.portId),
