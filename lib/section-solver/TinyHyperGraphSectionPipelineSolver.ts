@@ -11,11 +11,7 @@ import type {
 import { TinyHyperGraphSolver } from "../core"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
-import {
-  createSolvedSolverFromSolution,
-  getActiveSectionRouteIds,
-  TinyHyperGraphSectionSolver,
-} from "./index"
+import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
 import {
   createSectionMaskCandidatesForHotRegions,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
@@ -76,24 +72,17 @@ const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
 
 const getSerializedOutputMaxRegionCost = (
   serializedHyperGraph: SerializedHyperGraph,
-  solveGraphOptions?: TinyHyperGraphSolverOptions,
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions,
 ) => {
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
-  const replayedSolver = createSolvedSolverFromSolution(
+  const replayedSolver = new TinyHyperGraphSectionSolver(
     replay.topology,
     replay.problem,
     replay.solution,
-    {
-      ...DEFAULT_SOLVE_GRAPH_OPTIONS,
-      ...solveGraphOptions,
-      ...(sectionSolverOptions?.minViaPadDiameter === undefined
-        ? {}
-        : { minViaPadDiameter: sectionSolverOptions.minViaPadDiameter }),
-    },
+    sectionSolverOptions,
   )
 
-  return getMaxRegionCost(replayedSolver)
+  return getMaxRegionCost(replayedSolver.baselineSolver)
 }
 
 const createPortSectionMaskForRegionIds = (
@@ -268,12 +257,6 @@ const findBestAutomaticSectionMask = (
         const candidateReplayScoreStartTime = performance.now()
         const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
           sectionSolver.getOutput(),
-          {
-            ...DEFAULT_SOLVE_GRAPH_OPTIONS,
-            ...(sectionSolverOptions.minViaPadDiameter === undefined
-              ? {}
-              : { minViaPadDiameter: sectionSolverOptions.minViaPadDiameter }),
-          },
           sectionSolverOptions,
         )
         candidateReplayScoreMs +=
@@ -340,14 +323,6 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   selectedSectionMask?: Int8Array
   selectedSectionCandidateLabel?: string
   selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
-  private cachedSectionStageParams?:
-    | [
-        TinyHyperGraphTopology,
-        TinyHyperGraphProblem,
-        TinyHyperGraphSolution,
-        TinyHyperGraphSectionSolverOptions,
-      ]
-    | undefined
 
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
@@ -397,23 +372,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           instance.getSolveGraphOptions(),
         ] as ConstructorParameters<typeof TinyHyperGraphSolver>
       },
-      onSolved: (instance: TinyHyperGraphSectionPipelineSolver) => {
-        instance
-          .getSolver<TinyHyperGraphSolver>("solveGraph")
-          ?.releaseTransientSearchState()
-      },
     },
     {
       solverName: "optimizeSection",
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
-      onSolved: (instance: TinyHyperGraphSectionPipelineSolver) => {
-        instance
-          .getSolver<TinyHyperGraphSectionSolver>("optimizeSection")
-          ?.releaseTransientSearchState()
-        instance.cachedSectionStageParams = undefined
-      },
     },
   ]
 
@@ -423,10 +387,6 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     TinyHyperGraphSolution,
     TinyHyperGraphSectionSolverOptions,
   ] {
-    if (this.cachedSectionStageParams) {
-      return this.cachedSectionStageParams
-    }
-
     const solvedSerializedHyperGraph =
       this.getStageOutput<SerializedHyperGraph>("solveGraph")
 
@@ -510,15 +470,9 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         .length,
     }
 
-    this.cachedSectionStageParams = [
-      topology,
-      problem,
-      solution,
-      sectionSolverOptions,
-    ]
-
-    return this.cachedSectionStageParams
+    return [topology, problem, solution, sectionSolverOptions]
   }
+
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = this.loadHyperGraph(
