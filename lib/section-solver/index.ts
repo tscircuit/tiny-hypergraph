@@ -399,7 +399,7 @@ const createSolvedSolverFromRegionSegments = (
   return solver
 }
 
-const createSolvedSolverFromSolution = (
+export const createSolvedSolverFromSolution = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
   solution: TinyHyperGraphSolution,
@@ -1065,6 +1065,23 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     }
 
     return this.optimizedSolver
+  }
+
+  /**
+   * Drop the section search solver (including its state snapshots) and the
+   * transient search state of the retained solvers once a solved output
+   * exists. `visualize()` and `getOutput()` only need `optimizedSolver` /
+   * `baselineSolver` route state, which is preserved.
+   */
+  releaseTransientSearchState() {
+    if (!this.solved || this.failed) {
+      return
+    }
+
+    this.sectionSolver = undefined
+    this.activeSubSolver = null
+    this.baselineSolver.releaseTransientSearchState()
+    this.optimizedSolver?.releaseTransientSearchState()
   }
 
   override visualize(): GraphicsObject {
