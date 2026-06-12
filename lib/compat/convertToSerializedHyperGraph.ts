@@ -20,20 +20,8 @@ interface RouteSegment {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
 
-const copyEnumerableRecord = (
-  value: Record<string, unknown>,
-): Record<string, unknown> => {
-  const clone: Record<string, unknown> = {}
-
-  for (const key in value) {
-    clone[key] = value[key]
-  }
-
-  return clone
-}
-
 const toObjectRecord = (value: unknown): Record<string, unknown> => {
-  if (isRecord(value)) return copyEnumerableRecord(value)
+  if (isRecord(value)) return { ...value }
   if (value === undefined) return {}
   return { value }
 }

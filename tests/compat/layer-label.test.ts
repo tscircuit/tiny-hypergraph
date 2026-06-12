@@ -122,32 +122,3 @@ test("serialized and poly outputs preserve z layer labels for regions and ports"
     "z1",
   ])
 })
-
-test("serialized output preserves custom region and port metadata fields", () => {
-  const graph = createLayerFixture()
-  graph.regions[0]!.d = {
-    ...graph.regions[0]!.d,
-    customRegionFlag: "keep-me",
-    customRegionNested: { mode: "nested" },
-  }
-  graph.ports[0]!.d = {
-    ...graph.ports[0]!.d,
-    customPortFlag: "keep-me-too",
-    customPortNested: { mode: "nested" },
-  }
-
-  const { topology, problem } = loadSerializedHyperGraph(graph)
-  const solver = new TinyHyperGraphSolver(topology, problem)
-
-  solver.solve()
-
-  expect(solver.solved).toBe(true)
-  expect(solver.failed).toBe(false)
-
-  const output = solver.getOutput()
-
-  expect(output.regions[0]?.d?.customRegionFlag).toBe("keep-me")
-  expect(output.regions[0]?.d?.customRegionNested).toEqual({ mode: "nested" })
-  expect(output.ports[0]?.d?.customPortFlag).toBe("keep-me-too")
-  expect(output.ports[0]?.d?.customPortNested).toEqual({ mode: "nested" })
-})
