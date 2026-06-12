@@ -88,7 +88,7 @@ const addSerializedRegionIdToMetadata = (
 ) => {
   const metadata =
     region.d && typeof region.d === "object" && !Array.isArray(region.d)
-      ? Object.create(region.d)
+      ? { ...region.d }
       : { value: region.d }
 
   metadata.layer = layer
@@ -109,7 +109,7 @@ const addSerializedPortIdToMetadata = (
 ) => {
   const metadata =
     port.d && typeof port.d === "object" && !Array.isArray(port.d)
-      ? Object.create(port.d)
+      ? { ...port.d }
       : { value: port.d }
 
   metadata.layer = layer
