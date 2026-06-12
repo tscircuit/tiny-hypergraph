@@ -382,14 +382,6 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     }
   }
 
-  override _step() {
-    if (this.trySkipEmptyOptimizeSection()) {
-      return
-    }
-
-    super._step()
-  }
-
   override pipelineDef: PipelineStep<any>[] = [
     {
       solverName: "solveGraph",
@@ -527,49 +519,6 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
     return this.cachedSectionStageParams
   }
-
-  private trySkipEmptyOptimizeSection() {
-    if (
-      this.getCurrentStageName() !== "optimizeSection" ||
-      this.activeSubSolver
-    ) {
-      return false
-    }
-
-    const solveGraphOutput =
-      this.getStageOutput<SerializedHyperGraph>("solveGraph")
-
-    if (!solveGraphOutput) {
-      return false
-    }
-
-    const [, problem] = this.getSectionStageParams()
-    let sectionMaskPortCount = 0
-    for (const value of problem.portSectionMask) {
-      if (value === 1) {
-        sectionMaskPortCount += 1
-      }
-    }
-
-    if (sectionMaskPortCount !== 0) {
-      return false
-    }
-
-    this.pipelineOutputs.optimizeSection = solveGraphOutput
-    this.stats = {
-      ...this.stats,
-      activeRouteCount: 0,
-      optimized: false,
-      sectionOptimizationSkipped: true,
-      sectionOptimizationReason: "empty-section-mask",
-    }
-    this.currentPipelineStageIndex++
-    // The section stage will never run, so the topology/problem/solution view
-    // loaded for the mask check is dead weight from here on.
-    this.cachedSectionStageParams = undefined
-    return true
-  }
-
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = this.loadHyperGraph(
