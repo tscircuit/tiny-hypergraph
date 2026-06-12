@@ -529,7 +529,10 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   }
 
   private trySkipEmptyOptimizeSection() {
-    if (this.getCurrentStageName() !== "optimizeSection" || this.activeSubSolver) {
+    if (
+      this.getCurrentStageName() !== "optimizeSection" ||
+      this.activeSubSolver
+    ) {
       return false
     }
 
