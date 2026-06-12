@@ -344,10 +344,6 @@ interface SegmentGeometryScratch {
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
-  /** Slots per port in the compact hop-cost arrays (max incident regions across ports) */
-  protected hopSlotStride: number
-  /** Fallback storage for hops whose region is not incident to the port (encoded as negative hop ids) */
-  private hopOverflowBestCost?: Map<number, number>
   private _problemSetup?: TinyHyperGraphProblemSetup
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
@@ -387,14 +383,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     super()
     applyTinyHyperGraphSolverOptions(this, options)
-    let hopSlotStride = 1
-    for (let portId = 0; portId < topology.portCount; portId++) {
-      const incidentCount = topology.incidentPortRegion[portId]?.length ?? 0
-      if (incidentCount > hopSlotStride) {
-        hopSlotStride = incidentCount
-      }
-    }
-    this.hopSlotStride = hopSlotStride
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
@@ -408,10 +396,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       candidateQueue: new MinHeap([], compareCandidatesByF),
       candidateBestCostByHopId: this.USE_SPARSE_CANDIDATE_STORAGE
         ? new Map()
-        : new Float64Array(topology.portCount * hopSlotStride),
+        : new Float64Array(topology.portCount * topology.regionCount),
       candidateBestCostGenerationByHopId: this.USE_SPARSE_CANDIDATE_STORAGE
         ? new Map()
-        : new Uint32Array(topology.portCount * hopSlotStride),
+        : new Uint32Array(topology.portCount * topology.regionCount),
       candidateBestCostGeneration: 1,
       goalPortId: -1,
       ripCount: 0,
@@ -621,8 +609,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   resetCandidateBestCosts() {
     const { state } = this
 
-    this.hopOverflowBestCost?.clear()
-
     if (state.candidateBestCostGeneration === 0xffffffff) {
       if (state.candidateBestCostByHopId instanceof Map) {
         state.candidateBestCostByHopId.clear()
@@ -640,10 +626,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   getCandidateBestCost(hopId: HopId) {
-    if (hopId < 0) {
-      return this.hopOverflowBestCost?.get(hopId) ?? Number.POSITIVE_INFINITY
-    }
-
     const { state } = this
     const bestCostGeneration = state.candidateBestCostGenerationByHopId
 
@@ -657,11 +639,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   setCandidateBestCost(hopId: HopId, bestCost: number) {
-    if (hopId < 0) {
-      ;(this.hopOverflowBestCost ??= new Map()).set(hopId, bestCost)
-      return
-    }
-
     const { state } = this
 
     if (state.candidateBestCostGenerationByHopId instanceof Map) {
@@ -681,29 +658,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  /**
-   * Drop search-only state that is no longer needed once the solver has
-   * finished. Everything released here is rebuilt on demand: `problemSetup`
-   * is a lazy getter, and the candidate queue/overflow map are reset at the
-   * start of every route attempt.
-   */
-  releaseTransientSearchState() {
-    this._problemSetup = undefined
-    this.hopOverflowBestCost = undefined
-    this.bestSolvedStateSnapshot = undefined
-    this.state.candidateQueue.clear()
-  }
-
   getHopId(portId: PortId, nextRegionId: RegionId): HopId {
-    // Hops are keyed by (port, incident-region slot) so the dense cost arrays
-    // stay O(ports * max-incidence) instead of O(ports * regions).
-    const incidentRegions = this.topology.incidentPortRegion[portId]
-    const slot = incidentRegions ? incidentRegions.indexOf(nextRegionId) : -1
-    if (slot === -1) {
-      // Non-incident hop: encode as a negative id routed to the overflow map.
-      return -(portId * this.topology.regionCount + nextRegionId) - 1
-    }
-    return portId * this.hopSlotStride + slot
+    return portId * this.topology.regionCount + nextRegionId
   }
 
   getStartingNextRegionId(

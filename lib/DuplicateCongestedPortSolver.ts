@@ -318,7 +318,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     return {
       RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
       STATIC_REACHABILITY_PRECHECK: false,
-      USE_LAZY_ROUTE_HEURISTIC: true,
       ...this.options.routeSolveOptions,
     }
   }
@@ -327,12 +326,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
-    const serializedPortIds = Array.from(
-      { length: topology.portCount },
-      (_, portId) => getSerializedPortId(topology, portId),
-    )
-    topology.portMetadata = undefined
-    topology.regionMetadata = undefined
     const portUseCounts = new Map<string, number>()
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
@@ -353,7 +346,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       }
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
-        const serializedPortId = serializedPortIds[portId] ?? `port-${portId}`
+        const serializedPortId = getSerializedPortId(topology, portId)
         portUseCounts.set(
           serializedPortId,
           (portUseCounts.get(serializedPortId) ?? 0) + 1,
@@ -374,48 +367,27 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
     const { solvedRoutes: _solvedRoutes, ...restHyperGraph } =
       this.serializedHyperGraph
-    const regions = [...this.serializedHyperGraph.regions]
-    const ports = [...this.serializedHyperGraph.ports]
-    const regionById = new Map(
-      this.serializedHyperGraph.regions.map((region) => [
-        region.regionId,
-        region,
-      ]),
+    const regions: SerializedRegion[] = this.serializedHyperGraph.regions.map(
+      (region) => ({
+        ...region,
+        pointIds: [...region.pointIds],
+        d: cloneSerializableValue(region.d),
+      }),
     )
-    const regionIndexById = new Map(
-      this.serializedHyperGraph.regions.map((region, regionIndex) => [
-        region.regionId,
-        regionIndex,
-      ]),
+    const ports: SerializedPort[] = this.serializedHyperGraph.ports.map(
+      (port) => ({
+        ...port,
+        d: cloneSerializableValue(port.d),
+      }),
+    )
+    const regionById = new Map(
+      regions.map((region) => [region.regionId, region]),
     )
     const sourcePortById = new Map(
-      this.serializedHyperGraph.ports.map(
-        (port) => [port.portId, port] as const,
-      ),
+      ports.map((port) => [port.portId, port] as const),
     )
-    const usedPortIds = new Set(
-      this.serializedHyperGraph.ports.map((port) => port.portId),
-    )
+    const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
-    const mutableRegionIds = new Set<string>()
-
-    const getMutableRegion = (regionId: string) => {
-      const regionIndex = regionIndexById.get(regionId)
-      if (regionIndex === undefined) return undefined
-
-      const region = regions[regionIndex]
-      if (!region) return undefined
-
-      if (!mutableRegionIds.has(regionId)) {
-        regions[regionIndex] = {
-          ...region,
-          pointIds: [...region.pointIds],
-        }
-        mutableRegionIds.add(regionId)
-      }
-
-      return regions[regionIndex]
-    }
 
     for (const [sourcePortId, useCount] of [...portUseCounts.entries()].sort(
       ([leftPortId], [rightPortId]) => leftPortId.localeCompare(rightPortId),
@@ -470,7 +442,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       }
 
       for (const regionId of [sourcePort.region1Id, sourcePort.region2Id]) {
-        const region = getMutableRegion(regionId)
+        const region = regionById.get(regionId)
         if (!region) continue
         insertDuplicatePortIdsAfterSource(
           region.pointIds,
@@ -498,7 +470,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       connections:
         this.serializedHyperGraph.connections === undefined
           ? undefined
-          : [...this.serializedHyperGraph.connections],
+          : cloneSerializableValue(this.serializedHyperGraph.connections),
     }
   }
 
