@@ -1,0 +1,386 @@
+{
+  "name": "dataset-srj18-pipeline7-tiny-hypergraph",
+  "generatedBy": {
+    "autorouterRepo": "git@github.com:tscircuit/tscircuit-autorouter",
+    "autorouterCommit": "5ad910a1482dfe2676d8ace78805b2676b649552",
+    "benchmarkArgs": [
+      "--dataset",
+      "18",
+      "--pipeline",
+      "7"
+    ],
+    "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+    "phase": "portPointPathingSolver"
+  },
+  "sampleCount": 16,
+  "cases": [
+    {
+      "sampleName": "sample001",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 1,
+        "scenarioName": "sample001Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 10299,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 311.09333300000003,
+        "regionCount": 1696,
+        "portCount": 13597,
+        "connectionCount": 104,
+        "solvedRouteCount": 104,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample002",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 2,
+        "scenarioName": "sample002Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 14406,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 438.02637500000003,
+        "regionCount": 2489,
+        "portCount": 21468,
+        "connectionCount": 82,
+        "solvedRouteCount": 82,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample003",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 3,
+        "scenarioName": "sample003Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 15932,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 403.690708,
+        "regionCount": 2164,
+        "portCount": 13874,
+        "connectionCount": 46,
+        "solvedRouteCount": 46,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample004",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 4,
+        "scenarioName": "sample004Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 18331,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 580.0627079999999,
+        "regionCount": 11505,
+        "portCount": 13555,
+        "connectionCount": 47,
+        "solvedRouteCount": 47,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample005",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 5,
+        "scenarioName": "sample005Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 10766,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 287.12916700000005,
+        "regionCount": 2041,
+        "portCount": 16594,
+        "connectionCount": 79,
+        "solvedRouteCount": 79,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample006",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 6,
+        "scenarioName": "sample006Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 27347,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 1545.3007079999998,
+        "regionCount": 13823,
+        "portCount": 32216,
+        "connectionCount": 79,
+        "solvedRouteCount": 79,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample007",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 7,
+        "scenarioName": "sample007Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 24060,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 963.9535419999997,
+        "regionCount": 5969,
+        "portCount": 26038,
+        "connectionCount": 161,
+        "solvedRouteCount": 161,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample008",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 8,
+        "scenarioName": "sample008Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 25648,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 843.1909580000001,
+        "regionCount": 7043,
+        "portCount": 25319,
+        "connectionCount": 136,
+        "solvedRouteCount": 136,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample009",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 9,
+        "scenarioName": "sample009Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 28864,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 902.9422080000004,
+        "regionCount": 5752,
+        "portCount": 23622,
+        "connectionCount": 101,
+        "solvedRouteCount": 101,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample010",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 10,
+        "scenarioName": "sample010Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 23592,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 881.471458,
+        "regionCount": 4157,
+        "portCount": 26386,
+        "connectionCount": 166,
+        "solvedRouteCount": 166,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample011",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 11,
+        "scenarioName": "sample011Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 19718,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 631.8119999999999,
+        "regionCount": 2989,
+        "portCount": 20093,
+        "connectionCount": 160,
+        "solvedRouteCount": 160,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample012",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 12,
+        "scenarioName": "sample012Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 46109,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 2176.450208,
+        "regionCount": 7683,
+        "portCount": 52063,
+        "connectionCount": 288,
+        "solvedRouteCount": 288,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample013",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 13,
+        "scenarioName": "sample013Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 23905,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 1693.6488750000008,
+        "regionCount": 10028,
+        "portCount": 26010,
+        "connectionCount": 125,
+        "solvedRouteCount": 125,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample014",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 14,
+        "scenarioName": "sample014Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 18848,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 1116.4823749999996,
+        "regionCount": 5719,
+        "portCount": 23886,
+        "connectionCount": 122,
+        "solvedRouteCount": 122,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample015",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 15,
+        "scenarioName": "sample015Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 33728,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 1338.435125,
+        "regionCount": 5435,
+        "portCount": 31195,
+        "connectionCount": 230,
+        "solvedRouteCount": 230,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    },
+    {
+      "sampleName": "sample016",
+      "source": {
+        "dataset": "srj18",
+        "sampleNumber": 16,
+        "scenarioName": "sample016Circuit"
+      },
+      "extractionStatus": "success",
+      "extractionError": null,
+      "resultSummary": {
+        "pipelineIterations": 27369,
+        "currentPhase": "portPointPathingSolver",
+        "elapsedMs": 684.0753750000003,
+        "regionCount": 4760,
+        "portCount": 15817,
+        "connectionCount": 104,
+        "solvedRouteCount": 104,
+        "tinyPipelineMaxIterations": 4000000,
+        "duplicateCongestedPortCount": 0,
+        "duplicateCongestedPortFallbackToOriginal": false,
+        "duplicateCongestedPortPreprocessing": "not-run-during-extraction"
+      }
+    }
+  ]
+}
