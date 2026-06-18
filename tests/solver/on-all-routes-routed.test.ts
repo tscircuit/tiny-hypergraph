@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import {
   type Candidate,
+  GREEDY_PANIC_START_FRAC,
   type TinyHyperGraphProblem,
   TinyHyperGraphSolver,
   type TinyHyperGraphTopology,
@@ -259,6 +260,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
     GREEDY_FINAL_ROUTE_ITERS: 6,
+    GREEDY_PANIC_START_FRAC: 0.8,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -269,5 +271,38 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
   expect(solver.GREEDY_FINAL_ROUTE_ITERS).toBe(6)
+  expect(solver.GREEDY_PANIC_START_FRAC).toBe(0.8)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
+})
+
+test("soft route penalties linearly drop after the greedy panic start fraction", () => {
+  const solver = createTestSolver({ MAX_ITERATIONS: 100 })
+  const currentCandidate: Candidate = {
+    nextRegionId: 0,
+    portId: 0,
+    f: 2,
+    g: 2,
+    h: 0,
+  }
+
+  solver.state.currentRouteId = 0
+  solver.state.currentRouteNetId = 0
+  solver.state.regionCongestionCost[0] = 6
+  solver.problem.portPenalty = new Float64Array([0, 4, 0, 0])
+  const solverWithProtectedCounters = solver as unknown as {
+    routeAttemptCountByRouteId: Uint32Array
+  }
+  solverWithProtectedCounters.routeAttemptCountByRouteId[0] = 2
+
+  solver.iterations = 0
+  expect(solver.computeG(currentCandidate, 1)).toBe(12)
+
+  solver.iterations = GREEDY_PANIC_START_FRAC * solver.MAX_ITERATIONS
+  expect(solver.computeG(currentCandidate, 1)).toBe(12)
+
+  solver.iterations = 85
+  expect(solver.computeG(currentCandidate, 1)).toBeCloseTo(7)
+
+  solver.iterations = solver.MAX_ITERATIONS
+  expect(solver.computeG(currentCandidate, 1)).toBe(2)
 })
