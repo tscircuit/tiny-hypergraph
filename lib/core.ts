@@ -335,6 +335,18 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
+export const DEFAULT_SPARSE_CANDIDATE_STORAGE_HOP_THRESHOLD = 200_000_000
+
+export const getCandidateStorageHopCount = (
+  topology: Pick<TinyHyperGraphTopology, "portCount" | "regionCount">,
+) => topology.portCount * topology.regionCount
+
+export const shouldUseSparseCandidateStorageForTopology = (
+  topology: Pick<TinyHyperGraphTopology, "portCount" | "regionCount">,
+) =>
+  getCandidateStorageHopCount(topology) >
+  DEFAULT_SPARSE_CANDIDATE_STORAGE_HOP_THRESHOLD
+
 interface SegmentGeometryScratch {
   lesserAngle: number
   greaterAngle: number
@@ -383,6 +395,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     super()
     applyTinyHyperGraphSolverOptions(this, options)
+    const candidateStorageHopCount = getCandidateStorageHopCount(topology)
+    const shouldUseSparseCandidateStorage =
+      options?.USE_SPARSE_CANDIDATE_STORAGE ??
+      shouldUseSparseCandidateStorageForTopology(topology)
+    this.USE_SPARSE_CANDIDATE_STORAGE = shouldUseSparseCandidateStorage
+    if (shouldUseSparseCandidateStorage) {
+      this.stats = {
+        ...this.stats,
+        candidateStorageHopCount,
+        candidateStorageMode: "sparse",
+        autoSparseCandidateStorage:
+          options?.USE_SPARSE_CANDIDATE_STORAGE === undefined,
+      }
+    }
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
