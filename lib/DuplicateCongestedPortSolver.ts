@@ -1,16 +1,18 @@
-import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import type {
+  SerializedGraphPort,
+  SerializedGraphRegion,
+  SerializedHyperGraph,
+} from "@tscircuit/hypergraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
+import { type GraphicsObject, setStepOfAllObjects } from "graphics-debug"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
-  TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
+  TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
 import type { PortId, RouteId } from "./types"
-
-type SerializedPort = SerializedHyperGraph["ports"][number]
-type SerializedRegion = SerializedHyperGraph["regions"][number]
 
 export const DUPLICATE_PORT_PROXIMITY = 0.05
 
@@ -33,6 +35,11 @@ export interface DuplicateCongestedPortSolverReport {
 interface Point {
   x: number
   y: number
+}
+
+type LoadedSerializedHyperGraph = {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
 }
 
 const EPSILON = 1e-9
@@ -66,13 +73,13 @@ const toObjectRecord = (value: unknown): Record<string, unknown> => {
 const getNumber = (value: unknown, fallback = 0) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback
 
-const getPortPoint = (port: SerializedPort): Point => ({
+const getPortPoint = (port: SerializedGraphPort): Point => ({
   x: getNumber(port.d?.x),
   y: getNumber(port.d?.y),
 })
 
 const getBoundaryKey = (
-  port: Pick<SerializedPort, "region1Id" | "region2Id">,
+  port: Pick<SerializedGraphPort, "region1Id" | "region2Id">,
 ) => [port.region1Id, port.region2Id].sort().join("\u0000")
 
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
@@ -87,7 +94,7 @@ const normalize = (point: Point): Point | undefined => {
 }
 
 const getRegionBounds = (
-  region: SerializedRegion | undefined,
+  region: SerializedGraphRegion | undefined,
 ): {
   minX: number
   maxX: number
@@ -132,7 +139,7 @@ const getRegionBounds = (
   }
 }
 
-const getRegionCenter = (region: SerializedRegion | undefined): Point => {
+const getRegionCenter = (region: SerializedGraphRegion | undefined): Point => {
   const center = region?.d?.center
   if (isRecord(center)) {
     return {
@@ -149,12 +156,12 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
 }
 
 const findNearestPortOnSameBoundary = (
-  sourcePort: SerializedPort,
-  ports: SerializedPort[],
-): SerializedPort | undefined => {
+  sourcePort: SerializedGraphPort,
+  ports: SerializedGraphPort[],
+): SerializedGraphPort | undefined => {
   const sourceBoundaryKey = getBoundaryKey(sourcePort)
   const sourcePoint = getPortPoint(sourcePort)
-  let nearestPort: SerializedPort | undefined
+  let nearestPort: SerializedGraphPort | undefined
   let nearestDistance = Number.POSITIVE_INFINITY
 
   for (const port of ports) {
@@ -172,8 +179,8 @@ const findNearestPortOnSameBoundary = (
 }
 
 const getFallbackBoundaryDirection = (
-  sourcePort: SerializedPort,
-  regionById: Map<string, SerializedRegion>,
+  sourcePort: SerializedGraphPort,
+  regionById: Map<string, SerializedGraphRegion>,
 ): Point => {
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
@@ -186,9 +193,9 @@ const getFallbackBoundaryDirection = (
 }
 
 const getDuplicateDirection = (
-  sourcePort: SerializedPort,
-  nearestBoundaryPort: SerializedPort | undefined,
-  regionById: Map<string, SerializedRegion>,
+  sourcePort: SerializedGraphPort,
+  nearestBoundaryPort: SerializedGraphPort | undefined,
+  regionById: Map<string, SerializedGraphRegion>,
 ): Point => {
   const sourcePoint = getPortPoint(sourcePort)
 
@@ -302,6 +309,10 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     portUseCounts: {},
     duplicatedPorts: [],
   }
+  private loadedGraph?: LoadedSerializedHyperGraph
+  private portUseCounts = new Map<string, number>()
+  private nextRouteId = 0
+  override activeSubSolver: TinyHyperGraphSolver | null = null
 
   constructor(
     public serializedHyperGraph: SerializedHyperGraph,
@@ -322,41 +333,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  private getPortUseCounts(): Map<string, number> {
-    const { topology, problem } = loadSerializedHyperGraph(
-      this.serializedHyperGraph,
-    )
-    const portUseCounts = new Map<string, number>()
-
-    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-      const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
-        topology,
-        routeProblem,
-        this.getIndividualRouteSolveOptions(),
-      )
-      routeSolver.solve()
-
-      if (!routeSolver.solved || routeSolver.failed) {
-        throw new Error(
-          `Route ${routeId} could not be solved independently: ${
-            routeSolver.error ?? "unknown error"
-          }`,
-        )
-      }
-
-      for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
-        const serializedPortId = getSerializedPortId(topology, portId)
-        portUseCounts.set(
-          serializedPortId,
-          (portUseCounts.get(serializedPortId) ?? 0) + 1,
-        )
-      }
-    }
-
-    return portUseCounts
-  }
-
   private duplicateCongestedPorts(
     portUseCounts: Map<string, number>,
   ): SerializedHyperGraph {
@@ -367,14 +343,13 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
     const { solvedRoutes: _solvedRoutes, ...restHyperGraph } =
       this.serializedHyperGraph
-    const regions: SerializedRegion[] = this.serializedHyperGraph.regions.map(
-      (region) => ({
+    const regions: SerializedGraphRegion[] =
+      this.serializedHyperGraph.regions.map((region) => ({
         ...region,
         pointIds: [...region.pointIds],
         d: cloneSerializableValue(region.d),
-      }),
-    )
-    const ports: SerializedPort[] = this.serializedHyperGraph.ports.map(
+      }))
+    const ports: SerializedGraphPort[] = this.serializedHyperGraph.ports.map(
       (port) => ({
         ...port,
         d: cloneSerializableValue(port.d),
@@ -475,10 +450,122 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
   }
 
   override _setup() {
+    let loaded: ReturnType<typeof loadSerializedHyperGraph>
     try {
-      const portUseCounts = this.getPortUseCounts()
-      this.revisedSerializedHyperGraph =
-        this.duplicateCongestedPorts(portUseCounts)
+      loaded = loadSerializedHyperGraph(this.serializedHyperGraph)
+    } catch (error) {
+      this.failed = true
+      this.error = error instanceof Error ? error.message : String(error)
+      return
+    }
+
+    this.loadedGraph = {
+      topology: loaded.topology,
+      problem: loaded.problem,
+    }
+
+    const routeMaxIterations =
+      this.getIndividualRouteSolveOptions().MAX_ITERATIONS ?? 1_000_000
+    this.MAX_ITERATIONS =
+      this.loadedGraph.problem.routeCount * routeMaxIterations +
+      this.loadedGraph.problem.routeCount +
+      1
+  }
+
+  override _step() {
+    const loadedGraph = this.loadedGraph
+    if (!loadedGraph) {
+      this.failed = true
+      this.error = "DuplicateCongestedPortSolver was not initialized"
+      return
+    }
+
+    if (this.activeSubSolver) {
+      this.stepActiveRouteSolver(loadedGraph)
+      return
+    }
+
+    if (this.nextRouteId < loadedGraph.problem.routeCount) {
+      this.activeSubSolver = new TinyHyperGraphSolver(
+        loadedGraph.topology,
+        createSingleRouteProblem(loadedGraph.problem, this.nextRouteId),
+        this.getIndividualRouteSolveOptions(),
+      )
+      this.updateRouteProgress(loadedGraph)
+      return
+    }
+
+    this.finishDuplicatingPorts()
+  }
+
+  override visualize(): GraphicsObject {
+    const activeRouteGraphics = this.activeSubSolver?.visualize()
+    if (activeRouteGraphics && !this.solved) {
+      return setStepOfAllObjects(activeRouteGraphics, 0)
+    }
+
+    return this.visualizeDuplicatedPorts()
+  }
+
+  override getOutput(): SerializedHyperGraph {
+    if (!this.revisedSerializedHyperGraph || this.failed) {
+      throw new Error(
+        "DuplicateCongestedPortSolver does not have a repaired topology output",
+      )
+    }
+
+    return this.revisedSerializedHyperGraph
+  }
+
+  private stepActiveRouteSolver(loadedGraph: LoadedSerializedHyperGraph): void {
+    const routeSolver = this.activeSubSolver
+    if (!routeSolver) return
+
+    try {
+      routeSolver.step()
+    } catch (error) {
+      this.failed = true
+      this.error =
+        routeSolver.error ??
+        `Route ${this.nextRouteId} could not be solved independently: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      this.failedSubSolvers = [...(this.failedSubSolvers ?? []), routeSolver]
+      return
+    }
+
+    if (!routeSolver.solved && !routeSolver.failed) {
+      this.updateRouteProgress(loadedGraph)
+      return
+    }
+
+    if (routeSolver.failed || !routeSolver.solved) {
+      this.failed = true
+      this.error = `Route ${this.nextRouteId} could not be solved independently: ${
+        routeSolver.error ?? "unknown error"
+      }`
+      this.failedSubSolvers = [...(this.failedSubSolvers ?? []), routeSolver]
+      return
+    }
+
+    for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
+      const serializedPortId = getSerializedPortId(loadedGraph.topology, portId)
+      this.portUseCounts.set(
+        serializedPortId,
+        (this.portUseCounts.get(serializedPortId) ?? 0) + 1,
+      )
+    }
+
+    this.nextRouteId++
+    this.activeSubSolver = null
+    this.updateRouteProgress(loadedGraph)
+  }
+
+  private finishDuplicatingPorts(): void {
+    try {
+      this.revisedSerializedHyperGraph = this.duplicateCongestedPorts(
+        this.portUseCounts,
+      )
       this.stats = {
         ...this.stats,
         duplicateSourcePortCount: this.report.duplicatedPorts.length,
@@ -494,19 +581,133 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  override _step() {
-    if (!this.failed) {
-      this.solved = true
+  private updateRouteProgress(loadedGraph: LoadedSerializedHyperGraph): void {
+    const routeCount = Math.max(loadedGraph.problem.routeCount, 1)
+    const activeRouteProgress = this.activeSubSolver?.progress ?? 0
+    this.progress = Math.min(
+      1,
+      (this.nextRouteId + activeRouteProgress) / routeCount,
+    )
+    this.stats = {
+      ...this.stats,
+      duplicateCongestedPortRouteCount: loadedGraph.problem.routeCount,
+      duplicateCongestedPortRoutesSolved: this.nextRouteId,
+      duplicateCongestedPortActiveRouteId:
+        this.activeSubSolver === null ? undefined : this.nextRouteId,
     }
   }
 
-  override getOutput(): SerializedHyperGraph {
-    if (!this.revisedSerializedHyperGraph || this.failed) {
-      throw new Error(
-        "DuplicateCongestedPortSolver does not have a repaired topology output",
-      )
+  private visualizeDuplicatedPorts(): GraphicsObject {
+    const graph = this.revisedSerializedHyperGraph ?? this.serializedHyperGraph
+    const portById = new Map(graph.ports.map((port) => [port.portId, port]))
+    const regionById = new Map(
+      graph.regions.map((region) => [region.regionId, region]),
+    )
+    const shownRegionIds = new Set<string>()
+    const points: NonNullable<GraphicsObject["points"]> = []
+    const lines: NonNullable<GraphicsObject["lines"]> = []
+    const circles: NonNullable<GraphicsObject["circles"]> = []
+    const rects: NonNullable<GraphicsObject["rects"]> = []
+
+    for (const duplicatedPort of this.report.duplicatedPorts) {
+      const sourcePort = portById.get(duplicatedPort.sourcePortId)
+      if (!sourcePort) continue
+      const sourcePoint = getPortPoint(sourcePort)
+
+      for (const regionId of [sourcePort.region1Id, sourcePort.region2Id]) {
+        if (shownRegionIds.has(regionId)) continue
+        const regionRect = this.getRegionRect(regionById.get(regionId))
+        if (!regionRect) continue
+        shownRegionIds.add(regionId)
+        rects.push(regionRect)
+      }
+
+      points.push({
+        ...sourcePoint,
+        color: "rgba(220, 120, 0, 0.95)",
+        label: `source ${duplicatedPort.sourcePortId}\nuses ${duplicatedPort.useCount}`,
+        layer: this.getPortLayer(sourcePort),
+        step: 0,
+      })
+      circles.push({
+        center: sourcePoint,
+        radius: 0.14,
+        fill: "rgba(220, 120, 0, 0.24)",
+        stroke: "rgba(220, 120, 0, 0.95)",
+        label: `source ${duplicatedPort.sourcePortId}\nuses ${duplicatedPort.useCount}`,
+        layer: this.getPortLayer(sourcePort),
+        step: 0,
+      })
+
+      for (const duplicatePortId of duplicatedPort.duplicatePortIds) {
+        const duplicatePort = portById.get(duplicatePortId)
+        if (!duplicatePort) continue
+        const duplicatePoint = getPortPoint(duplicatePort)
+
+        points.push({
+          ...duplicatePoint,
+          color: "rgba(0, 110, 220, 0.95)",
+          label: `duplicate ${duplicatePortId}`,
+          layer: this.getPortLayer(duplicatePort),
+          step: 0,
+        })
+        circles.push({
+          center: duplicatePoint,
+          radius: 0.08,
+          fill: "rgba(0, 110, 220, 0.20)",
+          stroke: "rgba(0, 110, 220, 0.85)",
+          label: `duplicate ${duplicatePortId}`,
+          layer: this.getPortLayer(duplicatePort),
+          step: 0,
+        })
+        lines.push({
+          points: [sourcePoint, duplicatePoint],
+          strokeWidth: 0.05,
+          strokeColor: "rgba(0, 110, 220, 0.55)",
+          layer: this.getPortLayer(duplicatePort),
+          step: 0,
+        })
+      }
     }
 
-    return this.revisedSerializedHyperGraph
+    return {
+      title: "Duplicate Congested Port Solver",
+      points,
+      lines,
+      circles,
+      rects,
+    }
+  }
+
+  private getPortLayer(port: SerializedGraphPort): string | undefined {
+    const z = port.d?.z
+    if (typeof z !== "number" || !Number.isFinite(z)) {
+      return undefined
+    }
+
+    return `z${z}`
+  }
+
+  private getRegionRect(
+    region: SerializedGraphRegion | undefined,
+  ): NonNullable<GraphicsObject["rects"]>[number] | null {
+    if (!region) return null
+
+    const bounds = getRegionBounds(region)
+    const width = bounds.maxX - bounds.minX
+    const height = bounds.maxY - bounds.minY
+    if (!(width > 0) || !(height > 0)) {
+      return null
+    }
+
+    return {
+      center: getRegionCenter(region),
+      width,
+      height,
+      fill: "rgba(255, 170, 0, 0.10)",
+      stroke: "rgba(255, 140, 0, 0.45)",
+      label: `incident ${region.regionId}`,
+      step: 0,
+    }
   }
 }
