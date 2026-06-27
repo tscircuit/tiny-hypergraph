@@ -86,3 +86,64 @@ test("route search accepts a goal neighbor before route-cost checks", () => {
   expect(routeAttemptCount).toBe(1)
   expect(routeCostWasRead).toBe(false)
 })
+
+test("route search reports missing region incident ports as failure", () => {
+  const topology: TinyHyperGraphTopology = {
+    portCount: 2,
+    regionCount: 2,
+    regionIncidentPorts: [[0, 1]],
+    incidentPortRegion: [[0], [0]],
+    regionWidth: new Float64Array([1, 1]),
+    regionHeight: new Float64Array([1, 1]),
+    regionCenterX: new Float64Array([0, 1]),
+    regionCenterY: new Float64Array([0, 0]),
+    portAngleForRegion1: new Int32Array([0, 9000]),
+    portX: new Float64Array([0, 1]),
+    portY: new Float64Array([0, 0]),
+    portZ: new Int32Array([0, 0]),
+  }
+  const problem: TinyHyperGraphProblem = {
+    routeCount: 1,
+    portSectionMask: new Int8Array([1, 1]),
+    routeStartPort: new Int32Array([0]),
+    routeEndPort: new Int32Array([1]),
+    routeNet: new Int32Array([2]),
+    regionNetId: new Int32Array([-1, -1]),
+  }
+  const state: TinyHyperGraphWorkingState = {
+    portAssignment: new Int32Array([-1, -1]),
+    regionSegments: [[], []],
+    regionIntersectionCaches: [],
+    currentRouteNetId: undefined,
+    currentRouteId: undefined,
+    unroutedRoutes: [0],
+    candidateQueue: new MinHeap([], compareCandidate),
+    candidateBestCostByHopId: new Float64Array(4),
+    candidateBestCostGenerationByHopId: new Uint32Array(4),
+    candidateBestCostGeneration: 1,
+    goalPortId: -1,
+    ripCount: 0,
+    regionCongestionCost: new Float64Array([0, 0]),
+  }
+
+  const result = runRouteSearchStep({
+    topology,
+    problem,
+    state,
+    getHopId: (portId, nextRegionId) => portId * 10 + nextRegionId,
+    getCandidateBestCost: () => Number.POSITIVE_INFINITY,
+    setCandidateBestCost: () => {},
+    resetCandidateBestCosts: () => {},
+    getStartingNextRegionId: () => 1,
+    isPortReservedForDifferentNet: () => false,
+    isRegionReservedForDifferentNet: () => false,
+    computeG: () => 0,
+    computeH: () => 0,
+    onRouteAttempt: () => {},
+  })
+
+  expect(result).toEqual({
+    _tag: "failed",
+    error: "Region 1 is missing incident ports during route search",
+  })
+})

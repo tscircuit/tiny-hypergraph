@@ -124,6 +124,11 @@ export function runRouteSearchStep(
   }
 
   const neighbors = topology.regionIncidentPorts[currentCandidate.nextRegionId]
+  if (neighbors === undefined) {
+    return failed(
+      `Region ${currentCandidate.nextRegionId} is missing incident ports during route search`,
+    )
+  }
 
   for (const neighborPortId of neighbors) {
     const assignedNetId = state.portAssignment[neighborPortId]
@@ -158,6 +163,18 @@ export function runRouteSearchStep(
 
     const h = runtime.computeH(neighborPortId)
     const incidentRegions = topology.incidentPortRegion[neighborPortId]
+    if (incidentRegions === undefined) {
+      return failed(
+        `Port ${neighborPortId} is missing incident regions during route search`,
+      )
+    }
+
+    if (!incidentRegions.includes(currentCandidate.nextRegionId)) {
+      return failed(
+        `Port ${neighborPortId} is not incident to current region ${currentCandidate.nextRegionId}`,
+      )
+    }
+
     const nextRegionId =
       incidentRegions[0] === currentCandidate.nextRegionId
         ? incidentRegions[1]

@@ -2,7 +2,11 @@ import { expect, test } from "bun:test"
 import type { Candidate } from "lib2/domain"
 import { createEmptyCache, MutableRegionCache } from "lib2/region-cache"
 import { computeRouteG } from "lib2/route-cost"
-import type { SegmentGeometry } from "lib2/segment-geometry"
+import {
+  readSegmentGeometry,
+  SegmentGeometryTopologyError,
+  type SegmentGeometry,
+} from "lib2/segment-geometry"
 
 const currentCandidate: Candidate = {
   nextRegionId: 0,
@@ -64,4 +68,36 @@ test("computeRouteG adds region cost delta, congestion, and port penalty", () =>
   })
 
   expect(routeCost).toBe(26)
+})
+
+test("readSegmentGeometry rejects ports outside the requested region", () => {
+  const topology = {
+    portCount: 2,
+    regionCount: 2,
+    regionIncidentPorts: [[0], [1]],
+    incidentPortRegion: [[0], [1]],
+    regionWidth: new Float64Array([1, 1]),
+    regionHeight: new Float64Array([1, 1]),
+    regionCenterX: new Float64Array([0, 1]),
+    regionCenterY: new Float64Array([0, 0]),
+    portAngleForRegion1: new Int32Array([0, 9000]),
+    portX: new Float64Array([0, 1]),
+    portY: new Float64Array([0, 0]),
+    portZ: new Int32Array([0, 0]),
+  }
+
+  expect(() =>
+    readSegmentGeometry(
+      topology,
+      0,
+      0,
+      1,
+      {
+        lesserAngle: 0,
+        greaterAngle: 0,
+        layerMask: 0,
+        entryExitLayerChanges: 0,
+      },
+    ),
+  ).toThrow(SegmentGeometryTopologyError)
 })

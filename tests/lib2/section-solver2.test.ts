@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib2/graph-load"
 import {
+  SectionRoutePathError,
+  TinyHyperGraphSectionPipelineSolver2,
   TinyHyperGraphSectionSolver2,
   type TinyHyperGraphSolver2,
 } from "lib2/index"
@@ -102,4 +104,52 @@ test("section solver 2 rejects incomplete timeout candidates", () => {
   expect(
     sectionSolver.stats.rejectedIncompleteSectionStateOnTimeout,
   ).toBe(true)
+})
+
+test("section solver 2 rejects ambiguous replayed regions without explicit region ids", () => {
+  const topology = {
+    portCount: 2,
+    regionCount: 2,
+    regionIncidentPorts: [
+      [0, 1],
+      [0, 1],
+    ],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 1],
+    ],
+    regionWidth: new Float64Array([1, 1]),
+    regionHeight: new Float64Array([1, 1]),
+    regionCenterX: new Float64Array([0, 0]),
+    regionCenterY: new Float64Array([0, 0]),
+    portAngleForRegion1: new Int32Array([0, 9000]),
+    portAngleForRegion2: new Int32Array([18000, 27000]),
+    portX: new Float64Array([0, 1]),
+    portY: new Float64Array([0, 0]),
+    portZ: new Int32Array([0, 0]),
+  }
+  const problem = {
+    routeCount: 1,
+    portSectionMask: new Int8Array([1, 1]),
+    routeStartPort: new Int32Array([0]),
+    routeEndPort: new Int32Array([1]),
+    routeNet: new Int32Array([0]),
+    regionNetId: new Int32Array([-1, -1]),
+  }
+  const solution = {
+    solvedRoutePathSegments: [[[0, 1] as [number, number]]],
+  }
+
+  expect(
+    () => new TinyHyperGraphSectionSolver2(topology, problem, solution),
+  ).toThrow(SectionRoutePathError)
+})
+
+test("section pipeline 2 rejects invalid custom section masks", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver2({
+    serializedHyperGraph: sectionSolverFixtureGraph,
+    createSectionMask: () => new Int8Array([2]),
+  })
+
+  expect(() => pipelineSolver.solve()).toThrow("Invalid port section mask")
 })

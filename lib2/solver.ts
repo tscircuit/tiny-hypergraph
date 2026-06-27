@@ -61,6 +61,37 @@ export type {
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
 
+/** Internal lib2 invariant failure that should not be hidden by display fallbacks. */
+export class SolverInvariantError extends Error {
+  readonly _tag = "SolverInvariantError"
+
+  constructor(
+    readonly routeId: RouteId | undefined,
+    readonly reason: string,
+  ) {
+    super(
+      routeId === undefined
+        ? `Solver invariant failed: ${reason}`
+        : `Solver invariant failed for route ${routeId}: ${reason}`,
+    )
+  }
+}
+
+export const getExistingRegionCost = (
+  regionIntersectionCaches: ArrayLike<RegionIntersectionCache>,
+  regionId: RegionId,
+): number => {
+  const cache = regionIntersectionCaches[regionId]
+  if (cache === undefined) {
+    throw new SolverInvariantError(
+      undefined,
+      `missing region intersection cache for region ${regionId}`,
+    )
+  }
+
+  return cache.existingRegionCost
+}
+
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
     netIds: new Int32Array(0),
@@ -410,7 +441,7 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
 
       if (startingNextRegionId === undefined) {
         this.failed = true
-        this.error = `Start port ${startingPortId} has no incident regions`
+        this.error = `Start port ${startingPortId} has no legal starting region`
         return
       }
 
@@ -449,6 +480,12 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    if (neighbors === undefined) {
+      throw new SolverInvariantError(
+        state.currentRouteId,
+        `region ${currentCandidate.nextRegionId} is missing incident ports`,
+      )
+    }
 
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
@@ -469,12 +506,26 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
       const g = this.computeG(currentCandidate, neighborPortId)
       if (!Number.isFinite(g)) continue
       const h = this.computeH(neighborPortId)
+      const incidentRegions = topology.incidentPortRegion[neighborPortId]
+
+      if (incidentRegions === undefined) {
+        throw new SolverInvariantError(
+          state.currentRouteId,
+          `port ${neighborPortId} is missing incident regions`,
+        )
+      }
+
+      if (!incidentRegions.includes(currentCandidate.nextRegionId)) {
+        throw new SolverInvariantError(
+          state.currentRouteId,
+          `Port ${neighborPortId} is not incident to current region ${currentCandidate.nextRegionId}`,
+        )
+      }
 
       const nextRegionId =
-        topology.incidentPortRegion[neighborPortId][0] ===
-        currentCandidate.nextRegionId
-          ? topology.incidentPortRegion[neighborPortId][1]
-          : topology.incidentPortRegion[neighborPortId][0]
+        incidentRegions[0] === currentCandidate.nextRegionId
+          ? incidentRegions[1]
+          : incidentRegions[0]
 
       if (
         nextRegionId === undefined ||
@@ -576,8 +627,7 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
       ) ??
       startingIncidentRegions.find(
         (regionId) => this.problem.regionNetId[regionId] === currentRouteNetId,
-      ) ??
-      startingIncidentRegions[0]
+      )
     )
   }
 
@@ -772,8 +822,10 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
     let maxRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCost = getExistingRegionCost(
+        state.regionIntersectionCaches,
+        regionId,
+      )
       maxRegionCost = Math.max(maxRegionCost, regionCost)
     }
 
@@ -808,7 +860,9 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
 
   protected getRouteConnectionId(routeId: RouteId) {
     const connectionId = this.getRouteMetadata(routeId)?.connectionId
-    return typeof connectionId === "string" ? connectionId : `route-${routeId}`
+    if (typeof connectionId === "string") return connectionId
+
+    throw new SolverInvariantError(routeId, "missing route connectionId metadata")
   }
 
   protected getRouteSummary(
@@ -1130,8 +1184,10 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
     let totalRegionCost = 0
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCost = getExistingRegionCost(
+        state.regionIntersectionCaches,
+        regionId,
+      )
       regionCosts[regionId] = regionCost
       maxRegionCost = Math.max(maxRegionCost, regionCost)
       totalRegionCost += regionCost
@@ -1190,8 +1246,10 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCost = getExistingRegionCost(
+        state.regionIntersectionCaches,
+        regionId,
+      )
       state.regionCongestionCost[regionId] +=
         regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
@@ -1346,6 +1404,7 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
         new SolveGraphError(
           cause instanceof Error ? cause.message : String(cause),
           this.stats,
+          cause,
         ),
       )
     }
@@ -1380,12 +1439,15 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver2 {
 /** Expected failure produced while running a lib2 solve. */
 export class SolveGraphError extends Error {
   readonly _tag = "SolveGraphError"
+  readonly errorCause: unknown | undefined
 
   constructor(
     readonly reason: string,
     readonly stats: Record<string, unknown>,
+    errorCause?: unknown,
   ) {
     super(`Unable to solve graph: ${reason}`)
+    this.errorCause = errorCause
   }
 }
 
@@ -1442,8 +1504,18 @@ export function solveGraph(
     return solveResult
   }
 
-  return ok({
-    solver,
-    graph: solver.getOutput(),
-  })
+  try {
+    return ok({
+      solver,
+      graph: solver.getOutput(),
+    })
+  } catch (cause) {
+    return err(
+        new SolveGraphError(
+          cause instanceof Error ? cause.message : String(cause),
+          solver.stats,
+          cause,
+        ),
+      )
+  }
 }

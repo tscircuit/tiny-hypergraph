@@ -135,3 +135,39 @@ Verification after independence cut:
   519.897.
 - `./benchmark2.sh --solver lib2`: solved CM5IO in 47.780s, routeCount 158,
   regionCount 2538, portCount 17816, ripCount 9, avgMaxRegionBeforeRip 3.633.
+
+## Lib2 Strict Fallback Pass
+
+- Added typed lib2 invariant errors for serialized graph loading, serialized graph
+  output, section route replay, section masks, segment geometry, and solver
+  route metadata.
+- Replaced malformed-input fallbacks with explicit throws for missing finite
+  region geometry, invalid `availableZ` values, missing finite port coordinates,
+  missing solved-route ports, missing replay regions, ambiguous replayed section
+  regions, invalid section masks, non-incident segment geometry, and missing
+  serialized output identities.
+- Replaced hidden internal fallbacks with explicit invariants for missing route
+  connection IDs, missing route network IDs, missing region cost caches, and
+  missing topology incident-port arrays.
+- Kept expected solve failures as values where the public lib2 boundary already
+  returns `Result`, including parse/load errors and solve/output errors from
+  `solveGraph`; wrapped solve errors retain their original `errorCause`.
+- Narrowed section pipeline fallback behavior: automatic section masks skip only
+  typed invalid-mask candidates, and section-search fallback to baseline is only
+  allowed for the known incomplete-timeout path.
+- Kept compatibility paths where absence means "unknown" rather than malformed:
+  missing region `availableZ`, unresolved serialized region `pointIds`, inferred
+  solved-route segment regions when no explicit region metadata exists, and
+  final pipeline fallback to a complete solve output.
+
+Verification after strict fallback pass:
+
+- `bun run typecheck`: passed.
+- `bun test tests/lib2`: 20 pass, 0 fail.
+- `bun test`: 110 pass, 0 fail, 12.33s.
+- `./benchmark.sh --limit 10 --concurrency 6 --solver lib2`: 10/10 success,
+  avg duration 0.051s, p50 0.029s, p95 0.173s, avg final max region cost
+  0.170.
+- `./benchmark-srj13.sh --limit 5 --solver lib2`: 40.0% success, avg
+  duration 8.432s, avg iterations 1,000,000.0, avg solved max region cost
+  519.897.

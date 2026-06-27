@@ -17,6 +17,14 @@ interface RouteSegment {
   toPortId: PortId
 }
 
+export class SerializedGraphOutputInvariantError extends Error {
+  readonly _tag = "SerializedGraphOutputInvariantError"
+
+  constructor(readonly reason: string) {
+    super(`Invalid serialized graph output invariant: ${reason}`)
+  }
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
 
@@ -48,7 +56,9 @@ const getSerializedRegionId = (
     }
   }
 
-  return `region-${regionId}`
+  throw new SerializedGraphOutputInvariantError(
+    `region ${regionId} is missing serializedRegionId, regionId, or capacityMeshNodeId metadata`,
+  )
 }
 
 const getSerializedPortId = (
@@ -66,7 +76,9 @@ const getSerializedPortId = (
     }
   }
 
-  return `port-${portId}`
+  throw new SerializedGraphOutputInvariantError(
+    `port ${portId} is missing serializedPortId or portId metadata`,
+  )
 }
 
 const getSerializedRegionData = (
@@ -159,17 +171,17 @@ const getOppositeRegionIdForPort = (
   traversedRegionId: RegionId,
 ): RegionId => {
   const incidentRegionIds = solver.topology.incidentPortRegion[portId] ?? []
-  const oppositeRegionId = incidentRegionIds.find(
+  const oppositeRegionIds = incidentRegionIds.filter(
     (regionId) => regionId !== traversedRegionId,
   )
 
-  if (oppositeRegionId === undefined) {
-    throw new Error(
-      `Port ${portId} is not incident to a region outside route region ${traversedRegionId}`,
+  if (oppositeRegionIds.length !== 1) {
+    throw new SerializedGraphOutputInvariantError(
+      `port ${portId} has ${oppositeRegionIds.length} opposite regions for route region ${traversedRegionId}`,
     )
   }
 
-  return oppositeRegionId
+  return oppositeRegionIds[0]!
 }
 
 const getOrderedRoutePath = (
@@ -181,7 +193,9 @@ const getOrderedRoutePath = (
   orderedRegionIds: RegionId[]
 } => {
   if (routeSegments.length === 0) {
-    throw new Error(`Route ${routeId} has no solved segments`)
+    throw new SerializedGraphOutputInvariantError(
+      `route ${routeId} has no solved segments`,
+    )
   }
 
   const startPortId = solver.problem.routeStartPort[routeId]
@@ -255,7 +269,7 @@ const getOrderedRoutePath = (
       new Set([startPortId]),
     )
   ) {
-    throw new Error(
+    throw new SerializedGraphOutputInvariantError(
       `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
     )
   }
@@ -273,30 +287,46 @@ const getSerializedConnection = (
   endRegionId: string,
 ): SerializedConnection => {
   const routeMetadata = solver.problem.routeMetadata?.[routeId]
+  if (!isRecord(routeMetadata)) {
+    throw new SerializedGraphOutputInvariantError(
+      `route ${routeId} is missing route metadata`,
+    )
+  }
+
   const metadataConnectionId =
-    isRecord(routeMetadata) && typeof routeMetadata.connectionId === "string"
+    typeof routeMetadata.connectionId === "string"
       ? routeMetadata.connectionId
       : undefined
   const metadataStartRegionId =
-    isRecord(routeMetadata) && typeof routeMetadata.startRegionId === "string"
+    typeof routeMetadata.startRegionId === "string"
       ? routeMetadata.startRegionId
       : undefined
   const metadataEndRegionId =
-    isRecord(routeMetadata) && typeof routeMetadata.endRegionId === "string"
+    typeof routeMetadata.endRegionId === "string"
       ? routeMetadata.endRegionId
       : undefined
   const metadataNetworkId =
-    isRecord(routeMetadata) &&
     typeof routeMetadata.mutuallyConnectedNetworkId === "string"
       ? routeMetadata.mutuallyConnectedNetworkId
       : undefined
 
+  if (!metadataConnectionId) {
+    throw new SerializedGraphOutputInvariantError(
+      `route ${routeId} is missing connectionId metadata`,
+    )
+  }
+
+  if (!metadataNetworkId) {
+    throw new SerializedGraphOutputInvariantError(
+      `route ${routeId} is missing mutuallyConnectedNetworkId metadata`,
+    )
+  }
+
   return {
-    connectionId: metadataConnectionId ?? `route-${routeId}`,
+    connectionId: metadataConnectionId,
     startRegionId: metadataStartRegionId ?? startRegionId,
     endRegionId: metadataEndRegionId ?? endRegionId,
-    mutuallyConnectedNetworkId:
-      metadataNetworkId ?? `net-${solver.problem.routeNet[routeId]}`,
+    mutuallyConnectedNetworkId: metadataNetworkId,
   }
 }
 
@@ -318,7 +348,9 @@ const getSerializedSolvedRoute = (
   const lastRegionId = orderedRegionIds[orderedRegionIds.length - 1]
 
   if (firstRegionId === undefined || lastRegionId === undefined) {
-    throw new Error(`Route ${routeId} could not determine endpoint regions`)
+    throw new SerializedGraphOutputInvariantError(
+      `route ${routeId} could not determine endpoint regions`,
+    )
   }
 
   const fallbackStartRegionId = getSerializedRegionId(
@@ -382,7 +414,7 @@ export const convertToSerializedHyperGraph = (
   solver: TinyHyperGraphSolver2View,
 ): SerializedHyperGraph => {
   if (!solver.solved || solver.failed) {
-    throw new Error(
+    throw new SerializedGraphOutputInvariantError(
       "convertToSerializedHyperGraph requires a solved, non-failed solver",
     )
   }
@@ -405,7 +437,9 @@ export const convertToSerializedHyperGraph = (
     const [region1Id, region2Id] = topology.incidentPortRegion[portId] ?? []
 
     if (region1Id === undefined || region2Id === undefined) {
-      throw new Error(`Port ${portId} is missing incident regions`)
+      throw new SerializedGraphOutputInvariantError(
+        `port ${portId} is missing incident regions`,
+      )
     }
 
     return {

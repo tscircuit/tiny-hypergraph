@@ -3,6 +3,7 @@ import type { GraphicsObject } from "graphics-debug"
 import {
   applyTinyHyperGraphSolver2Options,
   createEmptyRegionIntersectionCache,
+  getExistingRegionCost,
   getTinyHyperGraphSolver2Options,
   type RegionCostSummary,
   TinyHyperGraphSolver2,
@@ -37,6 +38,28 @@ interface SectionRoutePlan {
   activeStartPortId?: PortId
   activeEndPortId?: PortId
   forcedStartRegionId?: RegionId
+}
+
+export class SectionRoutePathError extends Error {
+  readonly _tag = "SectionRoutePathError"
+
+  constructor(
+    readonly routeId: RouteId,
+    reason: string,
+  ) {
+    super(`Route ${routeId} has an invalid solved path: ${reason}`)
+  }
+}
+
+export class InvalidSectionMaskError extends Error {
+  readonly _tag = "InvalidSectionMaskError"
+
+  constructor(
+    readonly routeId: RouteId,
+    reason: string,
+  ) {
+    super(`Route ${routeId} has an invalid section mask: ${reason}`)
+  }
 }
 
 export interface TinyHyperGraphSectionSolver2Options
@@ -145,8 +168,7 @@ const summarizeRegionIntersectionCaches = (
     regionId < regionIntersectionCaches.length;
     regionId++
   ) {
-    const regionCost =
-      regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCost = getExistingRegionCost(regionIntersectionCaches, regionId)
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
@@ -165,8 +187,7 @@ const summarizeRegionIntersectionCachesForRegionIds = (
   let totalRegionCost = 0
 
   for (const regionId of regionIds) {
-    const regionCost =
-      regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCost = getExistingRegionCost(regionIntersectionCaches, regionId)
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
@@ -194,8 +215,7 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
       continue
     }
 
-    const regionCost =
-      regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCost = getExistingRegionCost(regionIntersectionCaches, regionId)
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
@@ -221,18 +241,22 @@ const getSharedRegionIdForPorts = (
   topology: TinyHyperGraphTopology,
   fromPortId: PortId,
   toPortId: PortId,
+  routeId: RouteId,
 ): RegionId => {
   const fromIncidentRegions = topology.incidentPortRegion[fromPortId] ?? []
   const toIncidentRegions = topology.incidentPortRegion[toPortId] ?? []
-  const sharedRegionId = fromIncidentRegions.find((regionId) =>
+  const sharedRegionIds = fromIncidentRegions.filter((regionId) =>
     toIncidentRegions.includes(regionId),
   )
 
-  if (sharedRegionId === undefined) {
-    throw new Error(`Ports ${fromPortId} and ${toPortId} do not share a region`)
+  if (sharedRegionIds.length !== 1) {
+    throw new SectionRoutePathError(
+      routeId,
+      `ports ${fromPortId} and ${toPortId} share ${sharedRegionIds.length} regions; explicit solvedRoutePathRegionIds are required`,
+    )
   }
 
-  return sharedRegionId
+  return sharedRegionIds[0]!
 }
 
 const getOrderedRoutePath = (
@@ -258,7 +282,7 @@ const getOrderedRoutePath = (
       }
     }
 
-    throw new Error(`Route ${routeId} does not have an existing solved path`)
+    throw new SectionRoutePathError(routeId, "missing solved path")
   }
 
   const segmentsByPort = new Map<
@@ -308,8 +332,9 @@ const getOrderedRoutePath = (
     )
 
     if (nextSegments.length !== 1) {
-      throw new Error(
-        `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
+      throw new SectionRoutePathError(
+        routeId,
+        `not a single ordered path from ${startPortId} to ${endPortId}`,
       )
     }
 
@@ -326,6 +351,7 @@ const getOrderedRoutePath = (
           topology,
           nextSegment.fromPortId,
           nextSegment.toPortId,
+          routeId,
         ),
     )
     orderedPortIds.push(nextPortId)
@@ -334,7 +360,10 @@ const getOrderedRoutePath = (
   }
 
   if (usedSegmentIndices.size !== routeSegments.length) {
-    throw new Error(`Route ${routeId} contains disconnected solved segments`)
+    throw new SectionRoutePathError(
+      routeId,
+      "contains disconnected solved segments",
+    )
   }
 
   return {
@@ -498,8 +527,9 @@ const createSectionRoutePlans = (
     }
 
     if (maskedRuns.length > 1) {
-      throw new Error(
-        `Route ${routeId} enters the section multiple times; only one contiguous section span is currently supported`,
+      throw new InvalidSectionMaskError(
+        routeId,
+        "enters the section multiple times; only one contiguous section span is currently supported",
       )
     }
 
@@ -511,7 +541,10 @@ const createSectionRoutePlans = (
     )
 
     if (activeEndIndex <= activeStartIndex) {
-      throw new Error(`Route ${routeId} does not have a valid section span`)
+      throw new InvalidSectionMaskError(
+        routeId,
+        "does not have a valid section span",
+      )
     }
 
     for (let portIndex = 1; portIndex <= activeStartIndex; portIndex++) {
@@ -727,8 +760,10 @@ class TinyHyperGraphSectionSearchSolver2 extends TinyHyperGraphSolver2 {
       mutableRegionIndex++
     ) {
       const regionId = this.mutableRegionIds[mutableRegionIndex]!
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCost = getExistingRegionCost(
+        state.regionIntersectionCaches,
+        regionId,
+      )
       mutableRegionCosts[mutableRegionIndex] = regionCost
       mutableMaxRegionCost = Math.max(mutableMaxRegionCost, regionCost)
       mutableTotalRegionCost += regionCost
@@ -822,8 +857,10 @@ class TinyHyperGraphSectionSearchSolver2 extends TinyHyperGraphSolver2 {
     const { state } = this
 
     for (const regionId of this.mutableRegionIds) {
-      const regionCost =
-        state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCost = getExistingRegionCost(
+        state.regionIntersectionCaches,
+        regionId,
+      )
       state.regionCongestionCost[regionId] +=
         regionCost * this.RIP_CONGESTION_REGION_COST_FACTOR
     }
@@ -987,6 +1024,17 @@ export class TinyHyperGraphSectionSolver2 extends BaseSolver {
     }
 
     if (this.sectionSolver.failed) {
+      if (!this.sectionSolver.stats.rejectedIncompleteSectionStateOnTimeout) {
+        this.failed = true
+        this.error = this.sectionSolver.error
+        this.stats = {
+          ...this.stats,
+          unexpectedSectionSearchFailure: true,
+          sectionSearchError: this.sectionSolver.error,
+        }
+        return
+      }
+
       this.optimizedSolver = this.baselineSolver
       this.stats = {
         ...this.stats,

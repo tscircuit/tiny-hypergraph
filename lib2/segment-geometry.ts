@@ -17,6 +17,14 @@ export type SegmentGeometryScratch = {
   entryExitLayerChanges: number
 }
 
+export class SegmentGeometryTopologyError extends Error {
+  readonly _tag = "SegmentGeometryTopologyError"
+
+  constructor(reason: string) {
+    super(`Invalid segment geometry topology: ${reason}`)
+  }
+}
+
 /**
  * Create reusable segment geometry scratch storage.
  *
@@ -29,6 +37,33 @@ export function createSegmentGeometryScratch(): SegmentGeometryScratch {
     layerMask: 0,
     entryExitLayerChanges: 0,
   }
+}
+
+const getPortAngleForRegion = (
+  topology: TinyHyperGraphTopology,
+  regionId: RegionId,
+  portId: PortId,
+): number => {
+  const portRegions = topology.incidentPortRegion[portId]
+
+  if (portRegions[0] === regionId) {
+    return topology.portAngleForRegion1[portId]
+  }
+
+  if (portRegions[1] === regionId) {
+    const angle = topology.portAngleForRegion2?.[portId]
+    if (angle === undefined) {
+      throw new SegmentGeometryTopologyError(
+        `port ${portId} is missing region-2 angle for region ${regionId}`,
+      )
+    }
+
+    return angle
+  }
+
+  throw new SegmentGeometryTopologyError(
+    `port ${portId} is not incident to region ${regionId}`,
+  )
 }
 
 /**
@@ -48,18 +83,8 @@ export function readSegmentGeometry(
   toPortId: PortId,
   scratch: SegmentGeometryScratch,
 ): SegmentGeometryScratch {
-  const fromPortRegions = topology.incidentPortRegion[fromPortId]
-  const toPortRegions = topology.incidentPortRegion[toPortId]
-  const fromAngle =
-    fromPortRegions[0] === regionId || fromPortRegions[1] !== regionId
-      ? topology.portAngleForRegion1[fromPortId]
-      : (topology.portAngleForRegion2?.[fromPortId] ??
-        topology.portAngleForRegion1[fromPortId])
-  const toAngle =
-    toPortRegions[0] === regionId || toPortRegions[1] !== regionId
-      ? topology.portAngleForRegion1[toPortId]
-      : (topology.portAngleForRegion2?.[toPortId] ??
-        topology.portAngleForRegion1[toPortId])
+  const fromAngle = getPortAngleForRegion(topology, regionId, fromPortId)
+  const toAngle = getPortAngleForRegion(topology, regionId, toPortId)
   const fromZ = topology.portZ[fromPortId]
   const toZ = topology.portZ[toPortId]
 

@@ -13,6 +13,7 @@ import {
 import type { RegionId } from "./types"
 import {
   getActiveSectionRouteIds,
+  InvalidSectionMaskError,
   TinyHyperGraphSectionSolver2,
   type TinyHyperGraphSectionSolver2Options,
 } from "./section-solver"
@@ -66,6 +67,14 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolver2Options = {
 const DEFAULT_MAX_HOT_REGIONS = 2
 
 const IMPROVEMENT_EPSILON = 1e-9
+
+class InvalidPortSectionMaskError extends Error {
+  readonly _tag = "InvalidPortSectionMaskError"
+
+  constructor(reason: string) {
+    super(`Invalid port section mask: ${reason}`)
+  }
+}
 
 type RegionCostSolverView = {
   readonly state: Pick<TinyHyperGraphWorkingState, "regionIntersectionCaches">
@@ -136,6 +145,32 @@ const createProblemWithPortSectionMask = (
       ? undefined
       : new Float64Array(problem.portPenalty),
 })
+
+const parsePortSectionMask = (
+  portSectionMask: Int8Array,
+  topology: TinyHyperGraphTopology,
+): Int8Array => {
+  if (!(portSectionMask instanceof Int8Array)) {
+    throw new InvalidPortSectionMaskError("expected Int8Array")
+  }
+
+  if (portSectionMask.length !== topology.portCount) {
+    throw new InvalidPortSectionMaskError(
+      `expected length ${topology.portCount}, got ${portSectionMask.length}`,
+    )
+  }
+
+  for (let portId = 0; portId < portSectionMask.length; portId++) {
+    const value = portSectionMask[portId]
+    if (value !== 0 && value !== 1) {
+      throw new InvalidPortSectionMaskError(
+        `port ${portId} has value ${value}; expected 0 or 1`,
+      )
+    }
+  }
+
+  return new Int8Array(portSectionMask)
+}
 
 const getSectionMaskCandidates = (
   solvedSolver: TinyHyperGraphSolver2,
@@ -280,8 +315,12 @@ const findBestAutomaticSectionMask = (
           winningCandidateFamily = candidate.family
         }
       }
-    } catch {
-      // Skip invalid section masks that split a route into multiple spans.
+    } catch (error) {
+      if (!(error instanceof InvalidSectionMaskError)) {
+        throw error
+      }
+
+      // Skip candidate masks that split a route into multiple section spans.
     }
   }
 
@@ -471,13 +510,15 @@ export class TinyHyperGraphSectionPipelineSolver2 extends BasePipelineSolver<Tin
           return searchResult.portSectionMask
         })()
 
-    this.selectedSectionMask = new Int8Array(portSectionMask)
-    problem.portSectionMask = new Int8Array(portSectionMask)
+    const parsedPortSectionMask = parsePortSectionMask(portSectionMask, topology)
+    this.selectedSectionMask = parsedPortSectionMask
+    problem.portSectionMask = new Int8Array(parsedPortSectionMask)
 
     this.stats = {
       ...this.stats,
-      sectionMaskPortCount: [...portSectionMask].filter((value) => value === 1)
-        .length,
+      sectionMaskPortCount: [...parsedPortSectionMask].filter(
+        (value) => value === 1,
+      ).length,
     }
 
     return [topology, problem, solution, sectionSolverOptions]

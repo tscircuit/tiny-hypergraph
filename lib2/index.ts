@@ -9,13 +9,18 @@ export {
   parseGraph,
 } from "./graph-input"
 export { loadSerializedHyperGraph } from "./graph-load"
-export { convertToSerializedHyperGraph } from "./graph-output"
+export {
+  SerializedGraphOutputInvariantError,
+  convertToSerializedHyperGraph,
+} from "./graph-output"
 export type * from "./domain"
 export type * from "./types"
 export type { Result } from "./prelude"
 export { capture, err, getErrorMessage, ok } from "./prelude"
 export { TinyHyperGraphSectionPipelineSolver2 } from "./section-pipeline"
 export {
+  InvalidSectionMaskError,
+  SectionRoutePathError,
   TinyHyperGraphSectionSolver2,
   getActiveSectionRouteIds,
   type TinyHyperGraphSectionSolver2Options,
@@ -23,6 +28,7 @@ export {
 export type { SolvedGraph } from "./solver"
 export {
   SolveGraphError,
+  SolverInvariantError,
   TinyHyperGraphSolver2,
   createSolver,
   solveGraph,

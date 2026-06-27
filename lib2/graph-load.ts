@@ -6,6 +6,14 @@ import type {
 } from "./domain"
 import { getAvailableZFromMask, getZLayerLabel } from "../lib/layerLabels"
 
+export class SerializedGraphLoadInvariantError extends Error {
+  readonly _tag = "SerializedGraphLoadInvariantError"
+
+  constructor(readonly reason: string) {
+    super(`Invalid serialized graph load invariant: ${reason}`)
+  }
+}
+
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
 ) => {
@@ -68,7 +76,7 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
   )
 
   if (invalidConnection) {
-    throw new Error(
+    throw new SerializedGraphLoadInvariantError(
       `Connection "${invalidConnection.connectionId}" references full-obstacle region`,
     )
   }
@@ -126,7 +134,13 @@ const addSerializedPortIdToMetadata = (
 
 const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
   const bounds = region.d?.bounds
-  if (bounds) {
+  if (
+    bounds &&
+    Number.isFinite(bounds.minX) &&
+    Number.isFinite(bounds.maxX) &&
+    Number.isFinite(bounds.minY) &&
+    Number.isFinite(bounds.maxY)
+  ) {
     return bounds
   }
 
@@ -148,12 +162,9 @@ const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
     }
   }
 
-  return {
-    minX: 0,
-    maxX: 0,
-    minY: 0,
-    maxY: 0,
-  }
+  throw new SerializedGraphLoadInvariantError(
+    `region "${region.regionId}" is missing finite bounds or center/width/height geometry`,
+  )
 }
 
 const getRegionGeometry = (
@@ -194,7 +205,9 @@ const getRegionAvailableZMask = (
   let mask = 0
   for (const z of availableZ) {
     if (!Number.isInteger(z) || z < 0 || z >= 31) {
-      continue
+      throw new SerializedGraphLoadInvariantError(
+        `region "${region.regionId}" has invalid availableZ value ${String(z)}`,
+      )
     }
     mask |= 1 << z
   }
@@ -205,23 +218,51 @@ const getRegionAvailableZMask = (
 const getSerializedPortZ = (
   port: SerializedHyperGraph["ports"][number],
 ): number => {
-  const z = Number(port.d?.z ?? 0)
-  return Number.isFinite(z) ? z : 0
+  const z = Number(port.d?.z)
+  if (!Number.isFinite(z)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite z coordinate`,
+    )
+  }
+
+  return z
 }
 
 const getSerializedPortX = (
   port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.x ?? 0)
+): number => {
+  const x = Number(port.d?.x)
+  if (!Number.isFinite(x)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite x coordinate`,
+    )
+  }
+
+  return x
+}
 
 const getSerializedPortY = (
   port: SerializedHyperGraph["ports"][number],
-): number => Number(port.d?.y ?? 0)
+): number => {
+  const y = Number(port.d?.y)
+  if (!Number.isFinite(y)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite y coordinate`,
+    )
+  }
+
+  return y
+}
 
 const computePortAngle = (
   port: SerializedHyperGraph["ports"][number],
   region: SerializedHyperGraph["regions"][number] | undefined,
 ): number => {
-  if (!region) return 0
+  if (!region) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" cannot compute angle for missing region`,
+    )
+  }
 
   const bounds = getRegionBounds(region)
   const x = getSerializedPortX(port)
@@ -400,7 +441,7 @@ export const loadSerializedHyperGraph = (
     const region2Index = regionIdToIndex.get(port.region2Id)
 
     if (region1Index === undefined || region2Index === undefined) {
-      throw new Error(
+      throw new SerializedGraphLoadInvariantError(
         `Port "${port.portId}" references missing regions "${port.region1Id}" or "${port.region2Id}"`,
       )
     }
@@ -460,7 +501,9 @@ export const loadSerializedHyperGraph = (
   const assignRegionNet = (regionId: string, netIndex: number) => {
     const regionIndex = regionIdToIndex.get(regionId)
     if (regionIndex === undefined) {
-      throw new Error(`Connection references missing region "${regionId}"`)
+      throw new SerializedGraphLoadInvariantError(
+        `Connection references missing region "${regionId}"`,
+      )
     }
 
     regionNetCandidates[regionIndex]!.add(netIndex)
@@ -532,7 +575,7 @@ export const loadSerializedHyperGraph = (
       endPortId !== undefined ? portIdToIndex.get(endPortId) : undefined
 
     if (startPortIndex === undefined || endPortIndex === undefined) {
-      throw new Error(
+      throw new SerializedGraphLoadInvariantError(
         `Connection "${connection.connectionId}" could not be mapped to route endpoints`,
       )
     }
@@ -599,7 +642,9 @@ export const loadSerializedHyperGraph = (
         toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
 
       if (fromPortIndex === undefined || toPortIndex === undefined) {
-        continue
+        throw new SerializedGraphLoadInvariantError(
+          `solved route "${route.connection.connectionId}" references missing segment ports "${String(fromPortId)}" and "${String(toPortId)}"`,
+        )
       }
 
       const serializedRegionId =
@@ -612,7 +657,16 @@ export const loadSerializedHyperGraph = (
       segments.push([fromPortIndex, toPortIndex])
       segmentRegionIds.push(
         serializedRegionId !== undefined
-          ? regionIdToIndex.get(serializedRegionId)
+          ? (() => {
+              const regionIndex = regionIdToIndex.get(serializedRegionId)
+              if (regionIndex === undefined) {
+                throw new SerializedGraphLoadInvariantError(
+                  `solved route "${route.connection.connectionId}" references missing region "${serializedRegionId}"`,
+                )
+              }
+
+              return regionIndex
+            })()
           : undefined,
       )
     }
