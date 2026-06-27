@@ -1,5 +1,5 @@
 import type { GraphicsObject } from "graphics-debug"
-import type { TinyHyperGraphSolver } from "./core"
+import type { TinyHyperGraphSolverView } from "./solver-view"
 import { getZLayerLabel } from "./layerLabels"
 import type { PortId, RouteId } from "./types"
 
@@ -13,7 +13,7 @@ const formatLabel = (...lines: Array<string | undefined>) =>
   lines.filter((line): line is string => Boolean(line)).join("\n")
 
 export const getStaticallyUnroutableRouteIds = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
 ): Set<RouteId> | undefined => {
   const staticallyUnroutableRoutes = solver.getStaticallyUnroutableRoutes()
   if (staticallyUnroutableRoutes.length === 0) {
@@ -27,7 +27,10 @@ export const getStaticallyUnroutableRouteIds = (
   )
 }
 
-const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
+const getPortRenderPoint = (
+  solver: TinyHyperGraphSolverView,
+  portId: PortId,
+) => {
   const layerOffset =
     solver.topology.portZ[portId] * PORT_LAYER_COORDINATE_OFFSET
 
@@ -38,12 +41,12 @@ const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
 }
 
 const getPortVisualizationLayer = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
 ): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
 const getPortIdentifierLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
 ): string => {
   const metadata = solver.topology.portMetadata?.[portId]
@@ -52,11 +55,13 @@ const getPortIdentifierLabel = (
   return `port: ${rawPortId ?? `port-${portId}`}`
 }
 
-const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
-  `z: ${solver.topology.portZ[portId]}`
+const getPortZLabel = (
+  solver: TinyHyperGraphSolverView,
+  portId: PortId,
+): string => `z: ${solver.topology.portZ[portId]}`
 
 const getPortPairZLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   port1Id: PortId,
   port2Id: PortId,
 ): string => {
@@ -67,7 +72,7 @@ const getPortPairZLabel = (
 }
 
 const getRouteEndpointZLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): string =>
   getPortPairZLabel(
@@ -77,12 +82,12 @@ const getRouteEndpointZLabel = (
   )
 
 const getRouteNetLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): string => `net: ${solver.problem.routeNet[routeId]}`
 
 export const visualizeStaticReachabilityFailure = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   for (const staticallyUnroutableRoute of solver.getStaticallyUnroutableRoutes()) {

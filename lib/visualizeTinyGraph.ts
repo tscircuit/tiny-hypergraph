@@ -1,5 +1,5 @@
 import type { GraphicsObject } from "graphics-debug"
-import type { TinyHyperGraphSolver } from "./index"
+import type { TinyHyperGraphSolverView } from "./solver-view"
 import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import type { PortId, RegionId, RouteId } from "./types"
 import {
@@ -53,7 +53,7 @@ const toRgbaString = ({ r, g, b, a }: RgbaColor) =>
   `rgba(${r}, ${g}, ${b}, ${a})`
 
 const getRouteLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): string => {
   const routeMetadata = solver.problem.routeMetadata?.[routeId]
@@ -65,7 +65,7 @@ const getRouteLabel = (
 }
 
 const getRouteColor = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
   alpha = 0.8,
 ): string => {
@@ -83,13 +83,13 @@ const getRouteColor = (
 }
 
 const isBusVisualizationSolver = (
-  solver: TinyHyperGraphSolver,
-): solver is TinyHyperGraphSolver & { centerRouteId: RouteId } =>
+  solver: TinyHyperGraphSolverView,
+): solver is TinyHyperGraphSolverView & { centerRouteId: RouteId } =>
   typeof (solver as { centerRouteId?: RouteId }).centerRouteId === "number"
 
 const shouldShowBusUnassignedPorts = (
-  solver: TinyHyperGraphSolver,
-): solver is TinyHyperGraphSolver & {
+  solver: TinyHyperGraphSolverView,
+): solver is TinyHyperGraphSolverView & {
   centerRouteId: RouteId
   showUnassignedPortsInVisualization: boolean
 } =>
@@ -98,7 +98,7 @@ const shouldShowBusUnassignedPorts = (
     .showUnassignedPortsInVisualization === true
 
 const getRouteOpacity = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): number => {
   if (!isBusVisualizationSolver(solver)) {
@@ -120,17 +120,20 @@ const scaleColorAlpha = (color: string, opacity: number): string => {
 }
 
 const getRenderedRouteColor = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
   alpha = 0.8,
 ) => getRouteColor(solver, routeId, alpha * getRouteOpacity(solver, routeId))
 
 const getRouteNetLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): string => `net: ${solver.problem.routeNet[routeId]}`
 
-const getRegionBounds = (solver: TinyHyperGraphSolver, regionId: RegionId) => {
+const getRegionBounds = (
+  solver: TinyHyperGraphSolverView,
+  regionId: RegionId,
+) => {
   const regionMetadata = solver.topology.regionMetadata?.[regionId]
   const polygon = regionMetadata?.polygon
   if (Array.isArray(polygon) && polygon.length >= 3) {
@@ -168,13 +171,16 @@ const getRegionBounds = (solver: TinyHyperGraphSolver, regionId: RegionId) => {
   }
 }
 
-const getRegionCenter = (solver: TinyHyperGraphSolver, regionId: RegionId) => ({
+const getRegionCenter = (
+  solver: TinyHyperGraphSolverView,
+  regionId: RegionId,
+) => ({
   x: solver.topology.regionCenterX[regionId],
   y: solver.topology.regionCenterY[regionId],
 })
 
 const getRegionVisualizationLayer = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   regionId: RegionId,
 ): string => {
   const regionMetadata = solver.topology.regionMetadata?.[regionId]
@@ -209,7 +215,7 @@ const getRegionVisualizationLayer = (
 }
 
 const getRegionCostLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   regionId: RegionId,
 ): string => {
   const regionCache = solver.state.regionIntersectionCaches[regionId]
@@ -231,7 +237,7 @@ const getRegionCostLabel = (
 }
 
 const getBaseRegionFillColor = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   regionId: RegionId,
 ): RgbaColor => {
   const regionMetadata = solver.topology.regionMetadata?.[regionId]
@@ -256,7 +262,7 @@ const getBaseRegionFillColor = (
 }
 
 const getRegionRectFill = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   regionId: RegionId,
 ): string => {
   const baseFill = getBaseRegionFillColor(solver, regionId)
@@ -268,12 +274,15 @@ const getRegionRectFill = (
   return toRgbaString(mixColor(baseFill, HOT_REGION_FILL, redness))
 }
 
-const getPortPoint = (solver: TinyHyperGraphSolver, portId: PortId) => ({
+const getPortPoint = (solver: TinyHyperGraphSolverView, portId: PortId) => ({
   x: solver.topology.portX[portId],
   y: solver.topology.portY[portId],
 })
 
-const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
+const getPortRenderPoint = (
+  solver: TinyHyperGraphSolverView,
+  portId: PortId,
+) => {
   const portPoint = getPortPoint(solver, portId)
   const layerOffset =
     solver.topology.portZ[portId] * PORT_LAYER_COORDINATE_OFFSET
@@ -287,12 +296,12 @@ const getPortRenderPoint = (solver: TinyHyperGraphSolver, portId: PortId) => {
 const getPortCircleCenter = getPortRenderPoint
 
 const getPortVisualizationLayer = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
 ): string => getZLayerLabel([solver.topology.portZ[portId]]) ?? "z0"
 
 const getPortIdentifierLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
 ): string => {
   const metadata = solver.topology.portMetadata?.[portId]
@@ -302,7 +311,7 @@ const getPortIdentifierLabel = (
 }
 
 const getPortConnectionLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
 ): string => {
   const r1 = solver.topology.incidentPortRegion[portId]?.[0]
@@ -312,7 +321,7 @@ const getPortConnectionLabel = (
 }
 
 const getPortNetLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
   routeId?: RouteId,
 ): string | undefined => {
@@ -348,11 +357,13 @@ const getPortNetLabel = (
     .join(", ")}`
 }
 
-const getPortZLabel = (solver: TinyHyperGraphSolver, portId: PortId): string =>
-  `z: ${solver.topology.portZ[portId]}`
+const getPortZLabel = (
+  solver: TinyHyperGraphSolverView,
+  portId: PortId,
+): string => `z: ${solver.topology.portZ[portId]}`
 
 const getPortPairZLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   port1Id: PortId,
   port2Id: PortId,
 ): string => {
@@ -363,7 +374,7 @@ const getPortPairZLabel = (
 }
 
 const getRouteEndpointZLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
 ): string =>
   getPortPairZLabel(
@@ -373,7 +384,7 @@ const getRouteEndpointZLabel = (
   )
 
 const getPortLabel = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   portId: PortId,
   routeId?: RouteId,
 ): string =>
@@ -384,7 +395,7 @@ const getPortLabel = (
   )
 
 const getHighlightedSectionPortMask = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   options?: TinyHyperGraphVisualizationOptions,
 ) => {
   if (!options?.highlightSectionMask) {
@@ -416,7 +427,7 @@ const getHighlightedSectionPortMask = (
 }
 
 const getSectionRegionIds = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   sectionPortMask: Int8Array,
 ) => {
   const sectionRegionIds = new Set<RegionId>()
@@ -433,7 +444,7 @@ const getSectionRegionIds = (
 }
 
 const getSegmentStyle = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   routeId: RouteId,
   port1Id: PortId,
   port2Id: PortId,
@@ -467,7 +478,7 @@ const getSegmentStyle = (
 }
 
 const pushSolvedRegionSegments = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   for (
@@ -495,7 +506,7 @@ const pushSolvedRegionSegments = (
 }
 
 const pushRoutePortZPoints = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   const seenRoutePorts = new Set<string>()
@@ -531,7 +542,10 @@ const pushRoutePortZPoints = (
   }
 }
 
-const isRouteEndpointPort = (solver: TinyHyperGraphSolver, portId: PortId) => {
+const isRouteEndpointPort = (
+  solver: TinyHyperGraphSolverView,
+  portId: PortId,
+) => {
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
     if (
       solver.problem.routeStartPort[routeId] === portId ||
@@ -545,7 +559,7 @@ const isRouteEndpointPort = (solver: TinyHyperGraphSolver, portId: PortId) => {
 }
 
 const pushUnassignedPortCircles = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   for (let portId = 0; portId < solver.topology.portCount; portId++) {
@@ -578,7 +592,7 @@ const pushUnassignedPortCircles = (
 }
 
 const pushInitialRouteHints = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
@@ -614,7 +628,7 @@ const pushInitialRouteHints = (
 }
 
 const pushRouteEndpoints = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
   routeIds?: Set<RouteId>,
 ) => {
@@ -660,7 +674,7 @@ const pushRouteEndpoints = (
 }
 
 const pushActiveRoute = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   const routeId = solver.state.currentRouteId
@@ -682,7 +696,7 @@ const pushActiveRoute = (
 }
 
 const pushCandidates = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   if (solver.solved) return
@@ -740,7 +754,7 @@ const pushCandidates = (
 }
 
 const pushSectionMaskOverlay = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
   sectionPortMask: Int8Array,
 ) => {
@@ -802,7 +816,7 @@ const pushSectionMaskOverlay = (
 }
 
 const pushNeverSuccessfullyRoutedEndpoints = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   graphics: Required<GraphicsObject>,
 ) => {
   if (!solver.failed) {
@@ -880,7 +894,7 @@ const pushNeverSuccessfullyRoutedEndpoints = (
 }
 
 export const visualizeTinyHyperGraph = (
-  solver: TinyHyperGraphSolver,
+  solver: TinyHyperGraphSolverView,
   options: TinyHyperGraphVisualizationOptions = {},
 ): GraphicsObject => {
   const graphics: Required<GraphicsObject> = {

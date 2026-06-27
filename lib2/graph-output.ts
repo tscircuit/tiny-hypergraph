@@ -1,7 +1,7 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import type { TinyHyperGraphSolverView } from "../solver-view"
-import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
-import type { PortId, RegionId } from "../types"
+import type { TinyHyperGraphSolver2View } from "./solver-view"
+import { getAvailableZFromMask, getZLayerLabel } from "../lib/layerLabels"
+import type { PortId, RegionId } from "./types"
 
 type SerializedConnection = NonNullable<
   SerializedHyperGraph["connections"]
@@ -30,7 +30,7 @@ const normalizePortIdFallback = (value: string) =>
   value.includes("::") ? value.slice(0, value.indexOf("::")) : value
 
 const getSerializedRegionId = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   regionId: RegionId,
 ): string => {
   const metadata = solver.topology.regionMetadata?.[regionId]
@@ -52,7 +52,7 @@ const getSerializedRegionId = (
 }
 
 const getSerializedPortId = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   portId: PortId,
 ): string => {
   const metadata = solver.topology.portMetadata?.[portId]
@@ -70,7 +70,7 @@ const getSerializedPortId = (
 }
 
 const getSerializedRegionData = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   regionId: RegionId,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.regionMetadata?.[regionId])
@@ -110,7 +110,7 @@ const getSerializedRegionData = (
 }
 
 const getSerializedPortData = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   portId: PortId,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.portMetadata?.[portId])
@@ -133,7 +133,7 @@ const getSerializedPortData = (
 }
 
 const getRouteSegmentsByRoute = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
 ): Array<RouteSegment[]> => {
   const routeSegmentsByRoute = Array.from(
     { length: solver.problem.routeCount },
@@ -154,7 +154,7 @@ const getRouteSegmentsByRoute = (
 }
 
 const getOppositeRegionIdForPort = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   portId: PortId,
   traversedRegionId: RegionId,
 ): RegionId => {
@@ -173,7 +173,7 @@ const getOppositeRegionIdForPort = (
 }
 
 const getOrderedRoutePath = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   routeId: number,
   routeSegments: RouteSegment[],
 ): {
@@ -267,7 +267,7 @@ const getOrderedRoutePath = (
 }
 
 const getSerializedConnection = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   routeId: number,
   startRegionId: string,
   endRegionId: string,
@@ -301,7 +301,7 @@ const getSerializedConnection = (
 }
 
 const getSerializedSolvedRoute = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
   routeId: number,
   routeSegments: RouteSegment[],
 ): {
@@ -379,7 +379,7 @@ const getSerializedSolvedRoute = (
 }
 
 export const convertToSerializedHyperGraph = (
-  solver: TinyHyperGraphSolverView,
+  solver: TinyHyperGraphSolver2View,
 ): SerializedHyperGraph => {
   if (!solver.solved || solver.failed) {
     throw new Error(
