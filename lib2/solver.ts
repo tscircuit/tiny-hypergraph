@@ -40,8 +40,20 @@ import {
   parseGraph,
   type ParseGraphError,
 } from "./graph-input"
+import {
+  buildLayeredSearchMap,
+  findLayeredRouteCorridor,
+  type LayeredSearchMap,
+} from "./layered-search-map"
 import { err, ok, type Result } from "./prelude"
 import { MutableRegionCache } from "./region-cache"
+import {
+  ROUTE_SEARCH_ADVANCED,
+  ROUTE_SEARCH_ALL_ROUTES_ROUTED,
+  ROUTE_SEARCH_OUT_OF_CANDIDATES,
+  runRouteSearchStep,
+  type RouteSearchFailure,
+} from "./route-search"
 import {
   createSegmentGeometryScratch,
   readSegmentGeometry,
@@ -178,6 +190,9 @@ export interface TinyHyperGraphSolver2Options {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
+  USE_LAYERED_ROUTE_SEARCH?: boolean
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS?: boolean
 }
 
 export interface TinyHyperGraphSolver2OptionTarget {
@@ -195,6 +210,9 @@ export interface TinyHyperGraphSolver2OptionTarget {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
+  USE_LAYERED_ROUTE_SEARCH?: boolean
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS?: boolean
 }
 
 export const applyTinyHyperGraphSolver2Options = (
@@ -250,6 +268,16 @@ export const applyTinyHyperGraphSolver2Options = (
   if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
     solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
   }
+  if (options.USE_LAYERED_ROUTE_SEARCH !== undefined) {
+    solver.USE_LAYERED_ROUTE_SEARCH = options.USE_LAYERED_ROUTE_SEARCH
+  }
+  if (options.LAYERED_SEARCH_BUCKET_SIZE !== undefined) {
+    solver.LAYERED_SEARCH_BUCKET_SIZE = options.LAYERED_SEARCH_BUCKET_SIZE
+  }
+  if (options.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS !== undefined) {
+    solver.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS =
+      options.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS
+  }
 }
 
 export const getTinyHyperGraphSolver2Options = (
@@ -270,6 +298,10 @@ export const getTinyHyperGraphSolver2Options = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
+  USE_LAYERED_ROUTE_SEARCH: solver.USE_LAYERED_ROUTE_SEARCH,
+  LAYERED_SEARCH_BUCKET_SIZE: solver.LAYERED_SEARCH_BUCKET_SIZE,
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS:
+    solver.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -287,6 +319,8 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
   private readonly segmentGeometryScratch: SegmentGeometryScratch =
     createSegmentGeometryScratch()
   private regionCaches: MutableRegionCache[] = []
+  private layeredSearchMap?: LayeredSearchMap
+  private layeredSearchAllowedFineRegionMask?: Uint8Array
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
@@ -305,6 +339,9 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
+  USE_LAYERED_ROUTE_SEARCH = false
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS = true
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -416,145 +453,128 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
         }
       }
     }
+
+    if (this.USE_LAYERED_ROUTE_SEARCH) {
+      this.layeredSearchMap = buildLayeredSearchMap(this.topology, {
+        bucketSize: this.LAYERED_SEARCH_BUCKET_SIZE,
+      })
+    }
   }
 
   override _step() {
-    const { problem, topology, state } = this
+    const result = runRouteSearchStep({
+      topology: this.topology,
+      problem: this.problem,
+      state: this.state,
+      getHopId: (portId, nextRegionId) => this.getHopId(portId, nextRegionId),
+      getCandidateBestCost: (hopId) => this.getCandidateBestCost(hopId),
+      setCandidateBestCost: (hopId, cost) =>
+        this.setCandidateBestCost(hopId, cost),
+      resetCandidateBestCosts: () => this.resetCandidateBestCosts(),
+      getStartingNextRegionId: (routeId, startingPortId) =>
+        this.getStartingNextRegionId(routeId, startingPortId),
+      isPortReservedForDifferentNet: (portId) =>
+        this.isPortReservedForDifferentNet(portId),
+      isRegionReservedForDifferentNet: (regionId) =>
+        this.isRegionReservedForDifferentNet(regionId),
+      computeG: (currentCandidate, neighborPortId) =>
+        this.computeG(currentCandidate, neighborPortId),
+      computeH: (portId) => this.computeH(portId),
+      onRouteAttempt: (routeId) => {
+        this.routeAttemptCountByRouteId[routeId] += 1
+        this.layeredSearchAllowedFineRegionMask = undefined
+      },
+      prepareRouteSearch: (input) => this.prepareLayeredRouteSearch(input),
+      isRegionAllowedForRouteSearch: (regionId) =>
+        this.isRegionAllowedForRouteSearch(regionId),
+    })
 
-    if (state.currentRouteId === undefined) {
-      if (state.unroutedRoutes.length === 0) {
-        this.onAllRoutesRouted()
-        return
-      }
-
-      state.currentRouteId = state.unroutedRoutes.shift()
-      state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
-      this.routeAttemptCountByRouteId[state.currentRouteId!] += 1
-
-      this.resetCandidateBestCosts()
-      const startingPortId = problem.routeStartPort[state.currentRouteId!]
-      state.candidateQueue.clear()
-      const startingNextRegionId = this.getStartingNextRegionId(
-        state.currentRouteId!,
-        startingPortId,
-      )
-
-      if (startingNextRegionId === undefined) {
-        this.failed = true
-        this.error = `Start port ${startingPortId} has no legal starting region`
-        return
-      }
-
-      this.setCandidateBestCost(
-        this.getHopId(startingPortId, startingNextRegionId),
-        0,
-      )
-      state.candidateQueue.queue({
-        nextRegionId: startingNextRegionId,
-        portId: startingPortId,
-        f: 0,
-        g: 0,
-        h: 0,
-      })
-      state.goalPortId = problem.routeEndPort[state.currentRouteId!]
+    if (result === ROUTE_SEARCH_ALL_ROUTES_ROUTED) {
+      this.onAllRoutesRouted()
+      return
     }
-
-    const currentCandidate = state.candidateQueue.dequeue()
-
-    if (!currentCandidate) {
+    if (result === ROUTE_SEARCH_OUT_OF_CANDIDATES) {
       this.onOutOfCandidates()
       return
     }
-
-    const currentCandidateHopId = this.getHopId(
-      currentCandidate.portId,
-      currentCandidate.nextRegionId,
-    )
-    if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+    if (result === ROUTE_SEARCH_ADVANCED) {
+      return
+    }
+    if ("_tag" in result) {
+      this.onRouteSearchFailure(result)
       return
     }
 
-    if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
+    this.onPathFound(result)
+  }
+
+  protected onRouteSearchFailure(failure: RouteSearchFailure): void {
+    if (
+      failure.reason === "noLegalStartingRegion" ||
+      failure.reason === "coarsePathNotFound"
+    ) {
+      this.failed = true
+      this.error = failure.error
       return
     }
 
-    const neighbors =
-      topology.regionIncidentPorts[currentCandidate.nextRegionId]
-    if (neighbors === undefined) {
-      throw new SolverInvariantError(
-        state.currentRouteId,
-        `region ${currentCandidate.nextRegionId} is missing incident ports`,
-      )
+    throw new SolverInvariantError(this.state.currentRouteId, failure.error)
+  }
+
+  protected prepareLayeredRouteSearch(input: {
+    readonly routeId: RouteId
+    readonly startPortId: PortId
+    readonly startRegionId: RegionId
+    readonly goalPortId: PortId
+  }): RouteSearchFailure | undefined {
+    if (!this.USE_LAYERED_ROUTE_SEARCH) {
+      return undefined
     }
 
-    for (const neighborPortId of neighbors) {
-      const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-      if (neighborPortId === state.goalPortId) {
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-          continue
-        }
-        this.onPathFound(currentCandidate)
-        return
+    const currentRouteNetId = this.state.currentRouteNetId
+    if (currentRouteNetId === undefined) {
+      return {
+        _tag: "failed",
+        reason: "missingCurrentRouteNet",
+        error: "Current route net is missing during layered route search",
       }
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-        continue
-      }
-      if (neighborPortId === currentCandidate.portId) continue
-      if (problem.portSectionMask[neighborPortId] === 0) continue
-
-      const g = this.computeG(currentCandidate, neighborPortId)
-      if (!Number.isFinite(g)) continue
-      const h = this.computeH(neighborPortId)
-      const incidentRegions = topology.incidentPortRegion[neighborPortId]
-
-      if (incidentRegions === undefined) {
-        throw new SolverInvariantError(
-          state.currentRouteId,
-          `port ${neighborPortId} is missing incident regions`,
-        )
-      }
-
-      if (!incidentRegions.includes(currentCandidate.nextRegionId)) {
-        throw new SolverInvariantError(
-          state.currentRouteId,
-          `Port ${neighborPortId} is not incident to current region ${currentCandidate.nextRegionId}`,
-        )
-      }
-
-      const nextRegionId =
-        incidentRegions[0] === currentCandidate.nextRegionId
-          ? incidentRegions[1]
-          : incidentRegions[0]
-
-      if (
-        nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
-      ) {
-        continue
-      }
-
-      const newCandidate = {
-        prevRegionId: currentCandidate.nextRegionId,
-        nextRegionId,
-        portId: neighborPortId,
-        g,
-        h,
-        f: g + h,
-        prevCandidate: currentCandidate,
-      }
-
-      if (neighborPortId === state.goalPortId) {
-        this.onPathFound(newCandidate)
-        return
-      }
-
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (g >= this.getCandidateBestCost(candidateHopId)) continue
-
-      this.setCandidateBestCost(candidateHopId, g)
-      state.candidateQueue.queue(newCandidate)
     }
+
+    const layeredSearchMap =
+      this.layeredSearchMap ??
+      buildLayeredSearchMap(this.topology, {
+        bucketSize: this.LAYERED_SEARCH_BUCKET_SIZE,
+      })
+    this.layeredSearchMap = layeredSearchMap
+
+    const corridor = findLayeredRouteCorridor({
+      layeredMap: layeredSearchMap,
+      topology: this.topology,
+      problem: this.problem,
+      regionCongestionCost: this.state.regionCongestionCost,
+      currentRouteNetId,
+      startRegionId: input.startRegionId,
+      goalPortId: input.goalPortId,
+      distanceToCost: this.DISTANCE_TO_COST,
+      includeAdjacentCoarseRegions:
+        this.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS,
+    })
+
+    if (corridor._tag === "notFound") {
+      return {
+        _tag: "failed",
+        reason: "coarsePathNotFound",
+        error: corridor.error,
+      }
+    }
+
+    this.layeredSearchAllowedFineRegionMask = corridor.allowedFineRegionMask
+    return undefined
+  }
+
+  protected isRegionAllowedForRouteSearch(regionId: RegionId): boolean {
+    const allowedFineRegionMask = this.layeredSearchAllowedFineRegionMask
+    return !allowedFineRegionMask || allowedFineRegionMask[regionId] === 1
   }
 
   resetCandidateBestCosts() {
@@ -815,6 +835,7 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
     this.resetCandidateBestCosts()
     state.goalPortId = -1
     this.regionCaches = this.createRegionCachesFromState()
+    this.layeredSearchAllowedFineRegionMask = undefined
   }
 
   protected getMaxRegionCost() {
@@ -1296,6 +1317,7 @@ export class TinyHyperGraphSolver2 extends BaseSolver {
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
+    this.layeredSearchAllowedFineRegionMask = undefined
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {

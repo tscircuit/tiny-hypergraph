@@ -144,6 +144,7 @@ test("route search reports missing region incident ports as failure", () => {
 
   expect(result).toEqual({
     _tag: "failed",
+    reason: "missingRegionIncidentPorts",
     error: "Region 1 is missing incident ports during route search",
   })
 })

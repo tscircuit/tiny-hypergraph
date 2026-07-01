@@ -15,6 +15,11 @@ import {
   getStaticallyUnroutableRoutes,
   getStaticReachabilityError,
 } from "./static-reachability"
+import {
+  buildLayeredSearchMap,
+  findLayeredRouteCorridor,
+  type LayeredSearchMap,
+} from "../lib2/layered-search-map"
 import type {
   HopId,
   NetId,
@@ -238,6 +243,9 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
+  USE_LAYERED_ROUTE_SEARCH?: boolean
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS?: boolean
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -255,6 +263,9 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
+  USE_LAYERED_ROUTE_SEARCH?: boolean
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS?: boolean
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -310,6 +321,16 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
     solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
   }
+  if (options.USE_LAYERED_ROUTE_SEARCH !== undefined) {
+    solver.USE_LAYERED_ROUTE_SEARCH = options.USE_LAYERED_ROUTE_SEARCH
+  }
+  if (options.LAYERED_SEARCH_BUCKET_SIZE !== undefined) {
+    solver.LAYERED_SEARCH_BUCKET_SIZE = options.LAYERED_SEARCH_BUCKET_SIZE
+  }
+  if (options.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS !== undefined) {
+    solver.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS =
+      options.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -330,6 +351,10 @@ export const getTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
+  USE_LAYERED_ROUTE_SEARCH: solver.USE_LAYERED_ROUTE_SEARCH,
+  LAYERED_SEARCH_BUCKET_SIZE: solver.LAYERED_SEARCH_BUCKET_SIZE,
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS:
+    solver.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -357,6 +382,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     layerMask: 0,
     entryExitLayerChanges: 0,
   }
+  private layeredSearchMap?: LayeredSearchMap
+  private layeredSearchAllowedFineRegionMask?: Uint8Array
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
@@ -375,6 +402,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
+  USE_LAYERED_ROUTE_SEARCH = false
+  LAYERED_SEARCH_BUCKET_SIZE?: number
+  LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS = true
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -485,6 +515,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         }
       }
     }
+
+    if (this.USE_LAYERED_ROUTE_SEARCH) {
+      this.layeredSearchMap = buildLayeredSearchMap(this.topology, {
+        bucketSize: this.LAYERED_SEARCH_BUCKET_SIZE,
+      })
+    }
   }
 
   override _step() {
@@ -499,6 +535,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
       this.routeAttemptCountByRouteId[state.currentRouteId!] += 1
+      this.layeredSearchAllowedFineRegionMask = undefined
 
       this.resetCandidateBestCosts()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
@@ -526,6 +563,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         h: 0,
       })
       state.goalPortId = problem.routeEndPort[state.currentRouteId!]
+
+      if (
+        !this.prepareLayeredRouteSearch(
+          startingNextRegionId,
+          state.goalPortId,
+        )
+      ) {
+        return
+      }
     }
 
     const currentCandidate = state.candidateQueue.dequeue()
@@ -583,6 +629,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
+      if (!this.isRegionAllowedForRouteSearch(nextRegionId)) {
+        continue
+      }
+
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
         nextRegionId,
@@ -604,6 +654,54 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
     }
+  }
+
+  protected prepareLayeredRouteSearch(
+    startRegionId: RegionId,
+    goalPortId: PortId,
+  ): boolean {
+    if (!this.USE_LAYERED_ROUTE_SEARCH) {
+      return true
+    }
+
+    const currentRouteNetId = this.state.currentRouteNetId
+    if (currentRouteNetId === undefined) {
+      throw new Error("Current route net is missing during layered route search")
+    }
+
+    const layeredSearchMap =
+      this.layeredSearchMap ??
+      buildLayeredSearchMap(this.topology, {
+        bucketSize: this.LAYERED_SEARCH_BUCKET_SIZE,
+      })
+    this.layeredSearchMap = layeredSearchMap
+
+    const corridor = findLayeredRouteCorridor({
+      layeredMap: layeredSearchMap,
+      topology: this.topology,
+      problem: this.problem,
+      regionCongestionCost: this.state.regionCongestionCost,
+      currentRouteNetId,
+      startRegionId,
+      goalPortId,
+      distanceToCost: this.DISTANCE_TO_COST,
+      includeAdjacentCoarseRegions:
+        this.LAYERED_SEARCH_INCLUDE_ADJACENT_COARSE_REGIONS,
+    })
+
+    if (corridor._tag === "notFound") {
+      this.failed = true
+      this.error = corridor.error
+      return false
+    }
+
+    this.layeredSearchAllowedFineRegionMask = corridor.allowedFineRegionMask
+    return true
+  }
+
+  protected isRegionAllowedForRouteSearch(regionId: RegionId): boolean {
+    const allowedFineRegionMask = this.layeredSearchAllowedFineRegionMask
+    return !allowedFineRegionMask || allowedFineRegionMask[regionId] === 1
   }
 
   resetCandidateBestCosts() {
@@ -887,6 +985,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+    this.layeredSearchAllowedFineRegionMask = undefined
   }
 
   protected getMaxRegionCost() {
@@ -1359,6 +1458,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
+    this.layeredSearchAllowedFineRegionMask = undefined
   }
 
   computeG(currentCandidate: Candidate, neighborPortId: PortId): number {

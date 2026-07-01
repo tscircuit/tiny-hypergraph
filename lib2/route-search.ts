@@ -15,9 +15,19 @@ export const ROUTE_SEARCH_ADVANCED = "advanced"
 /** Route search status when the current route has no candidates left. */
 export const ROUTE_SEARCH_OUT_OF_CANDIDATES = "outOfCandidates"
 
+/** Route search failure reason. */
+export type RouteSearchFailureReason =
+  | "noLegalStartingRegion"
+  | "coarsePathNotFound"
+  | "missingCurrentRouteNet"
+  | "missingRegionIncidentPorts"
+  | "missingPortIncidentRegions"
+  | "portNotIncidentToCurrentRegion"
+
 /** Route search failure result. */
 export type RouteSearchFailure = {
   readonly _tag: "failed"
+  readonly reason: RouteSearchFailureReason
   readonly error: string
 }
 
@@ -50,6 +60,13 @@ export type RouteSearchRuntime = {
   ) => number
   readonly computeH: (portId: PortId) => number
   readonly onRouteAttempt: (routeId: RouteId) => void
+  readonly prepareRouteSearch?: (input: {
+    readonly routeId: RouteId
+    readonly startPortId: PortId
+    readonly startRegionId: RegionId
+    readonly goalPortId: PortId
+  }) => RouteSearchFailure | undefined
+  readonly isRegionAllowedForRouteSearch?: (regionId: RegionId) => boolean
 }
 
 /**
@@ -82,7 +99,10 @@ export function runRouteSearchStep(
     )
 
     if (startingNextRegionId === undefined) {
-      return failed(`Start port ${startingPortId} has no incident regions`)
+      return failed(
+        "noLegalStartingRegion",
+        `Start port ${startingPortId} has no legal starting region`,
+      )
     }
 
     runtime.setCandidateBestCost(
@@ -97,11 +117,24 @@ export function runRouteSearchStep(
       h: 0,
     })
     state.goalPortId = problem.routeEndPort[nextRouteId]
+
+    const routeSearchFailure = runtime.prepareRouteSearch?.({
+      routeId: nextRouteId,
+      startPortId: startingPortId,
+      startRegionId: startingNextRegionId,
+      goalPortId: state.goalPortId,
+    })
+    if (routeSearchFailure) {
+      return routeSearchFailure
+    }
   }
 
   const currentRouteNetId = state.currentRouteNetId
   if (currentRouteNetId === undefined) {
-    return failed("Current route net is missing during route search")
+    return failed(
+      "missingCurrentRouteNet",
+      "Current route net is missing during route search",
+    )
   }
 
   const currentCandidate = state.candidateQueue.dequeue()
@@ -126,6 +159,7 @@ export function runRouteSearchStep(
   const neighbors = topology.regionIncidentPorts[currentCandidate.nextRegionId]
   if (neighbors === undefined) {
     return failed(
+      "missingRegionIncidentPorts",
       `Region ${currentCandidate.nextRegionId} is missing incident ports during route search`,
     )
   }
@@ -165,12 +199,14 @@ export function runRouteSearchStep(
     const incidentRegions = topology.incidentPortRegion[neighborPortId]
     if (incidentRegions === undefined) {
       return failed(
+        "missingPortIncidentRegions",
         `Port ${neighborPortId} is missing incident regions during route search`,
       )
     }
 
     if (!incidentRegions.includes(currentCandidate.nextRegionId)) {
       return failed(
+        "portNotIncidentToCurrentRegion",
         `Port ${neighborPortId} is not incident to current region ${currentCandidate.nextRegionId}`,
       )
     }
@@ -183,6 +219,13 @@ export function runRouteSearchStep(
     if (
       nextRegionId === undefined ||
       runtime.isRegionReservedForDifferentNet(nextRegionId)
+    ) {
+      continue
+    }
+
+    if (
+      runtime.isRegionAllowedForRouteSearch &&
+      !runtime.isRegionAllowedForRouteSearch(nextRegionId)
     ) {
       continue
     }
@@ -213,7 +256,11 @@ export function runRouteSearchStep(
   return ROUTE_SEARCH_ADVANCED
 }
 
-const failed = (error: string): RouteSearchFailure => ({
+const failed = (
+  reason: RouteSearchFailureReason,
+  error: string,
+): RouteSearchFailure => ({
   _tag: "failed",
+  reason,
   error,
 })
