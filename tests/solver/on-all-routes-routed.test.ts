@@ -159,6 +159,28 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.state.goalPortId).toBe(-1)
 })
 
+test("completed routing can be accepted before rerip when first-complete acceptance is enabled", () => {
+  const solver = createTestSolver({
+    ACCEPT_FIRST_COMPLETE_SOLUTION: true,
+  })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.state.ripCount).toBe(0)
+  expect(solver.stats.acceptedFirstCompleteSolution).toBe(true)
+  expect(solver.stats.bestMaxRegionCost).toBe(0.5)
+  expect(Array.from(solver.state.portAssignment)).toEqual([0, 0, 1, 1])
+})
+
 test("completed routing can be accepted as best solution on timeout", () => {
   const solver = createTestSolver({ MAX_ITERATIONS: 1 })
 
@@ -259,6 +281,15 @@ test("constructor options override snake-case hyperparameters before setup", () 
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
     GREEDY_FINAL_ROUTE_ITERS: 6,
+    ACCEPT_FIRST_COMPLETE_SOLUTION: true,
+    EARLY_GREEDY_COMPLETION: true,
+    GREEDY_COMPLETION_INTERVAL: 12,
+    MAX_GREEDY_COMPLETION_STALLS: 3,
+    MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE: 10,
+    MAX_GREEDY_COMPLETION_MISSES: 2,
+    FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST: true,
+    MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION: 4,
+    MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION: 5,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -269,5 +300,16 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
   expect(solver.GREEDY_FINAL_ROUTE_ITERS).toBe(6)
+  expect(solver.ACCEPT_FIRST_COMPLETE_SOLUTION).toBe(true)
+  expect(solver.EARLY_GREEDY_COMPLETION).toBe(true)
+  expect(solver.GREEDY_COMPLETION_INTERVAL).toBe(12)
+  expect(solver.MAX_GREEDY_COMPLETION_STALLS).toBe(3)
+  expect(
+    solver.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE,
+  ).toBe(10)
+  expect(solver.MAX_GREEDY_COMPLETION_MISSES).toBe(2)
+  expect(solver.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST).toBe(true)
+  expect(solver.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION).toBe(4)
+  expect(solver.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION).toBe(5)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
