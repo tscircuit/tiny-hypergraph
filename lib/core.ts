@@ -238,6 +238,15 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
+  ACCEPT_FIRST_COMPLETE_SOLUTION?: boolean
+  EARLY_GREEDY_COMPLETION?: boolean
+  GREEDY_COMPLETION_INTERVAL?: number
+  MAX_GREEDY_COMPLETION_STALLS?: number
+  MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE?: number
+  MAX_GREEDY_COMPLETION_MISSES?: number
+  FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST?: boolean
+  MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION?: number
+  MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION?: number
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -255,6 +264,15 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
+  ACCEPT_FIRST_COMPLETE_SOLUTION: boolean
+  EARLY_GREEDY_COMPLETION: boolean
+  GREEDY_COMPLETION_INTERVAL: number
+  MAX_GREEDY_COMPLETION_STALLS: number
+  MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE: number
+  MAX_GREEDY_COMPLETION_MISSES: number
+  FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST: boolean
+  MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION: number
+  MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION: number
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -310,6 +328,49 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
     solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
   }
+  if (options.ACCEPT_FIRST_COMPLETE_SOLUTION !== undefined) {
+    solver.ACCEPT_FIRST_COMPLETE_SOLUTION =
+      options.ACCEPT_FIRST_COMPLETE_SOLUTION
+  }
+  if (options.EARLY_GREEDY_COMPLETION !== undefined) {
+    solver.EARLY_GREEDY_COMPLETION = options.EARLY_GREEDY_COMPLETION
+  }
+  if (options.GREEDY_COMPLETION_INTERVAL !== undefined) {
+    solver.GREEDY_COMPLETION_INTERVAL = options.GREEDY_COMPLETION_INTERVAL
+  }
+  if (options.MAX_GREEDY_COMPLETION_STALLS !== undefined) {
+    solver.MAX_GREEDY_COMPLETION_STALLS =
+      options.MAX_GREEDY_COMPLETION_STALLS
+  }
+  if (
+    options.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE !==
+    undefined
+  ) {
+    solver.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE =
+      options.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE
+  }
+  if (options.MAX_GREEDY_COMPLETION_MISSES !== undefined) {
+    solver.MAX_GREEDY_COMPLETION_MISSES =
+      options.MAX_GREEDY_COMPLETION_MISSES
+  }
+  if (
+    options.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST !== undefined
+  ) {
+    solver.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST =
+      options.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST
+  }
+  if (
+    options.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION !== undefined
+  ) {
+    solver.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION =
+      options.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION
+  }
+  if (
+    options.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION !== undefined
+  ) {
+    solver.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION =
+      options.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -330,6 +391,19 @@ export const getTinyHyperGraphSolverOptions = (
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
+  ACCEPT_FIRST_COMPLETE_SOLUTION: solver.ACCEPT_FIRST_COMPLETE_SOLUTION,
+  EARLY_GREEDY_COMPLETION: solver.EARLY_GREEDY_COMPLETION,
+  GREEDY_COMPLETION_INTERVAL: solver.GREEDY_COMPLETION_INTERVAL,
+  MAX_GREEDY_COMPLETION_STALLS: solver.MAX_GREEDY_COMPLETION_STALLS,
+  MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE:
+    solver.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE,
+  MAX_GREEDY_COMPLETION_MISSES: solver.MAX_GREEDY_COMPLETION_MISSES,
+  FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST:
+    solver.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST,
+  MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION:
+    solver.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION,
+  MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION:
+    solver.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION,
 })
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
@@ -347,8 +421,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private _problemSetup?: TinyHyperGraphProblemSetup
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
+  protected routeOutOfCandidatesCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
+  protected greedyCompletionStallCount = 0
+  protected greedyCompletionMissCount = 0
+  protected greedyCompletionAttemptCount = 0
+  protected greedyCompletionSuccessCount = 0
+  private lastGreedyCompletionIteration = 0
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
@@ -375,6 +455,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
+  ACCEPT_FIRST_COMPLETE_SOLUTION = false
+  EARLY_GREEDY_COMPLETION = false
+  GREEDY_COMPLETION_INTERVAL = 100_000
+  MAX_GREEDY_COMPLETION_STALLS = Number.POSITIVE_INFINITY
+  MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE = 0
+  MAX_GREEDY_COMPLETION_MISSES = Number.POSITIVE_INFINITY
+  FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST = false
+  MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION =
+    Number.POSITIVE_INFINITY
+  MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION =
+    Number.POSITIVE_INFINITY
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -407,6 +498,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeOutOfCandidatesCountByRouteId = new Uint32Array(
+      problem.routeCount,
+    )
   }
 
   get problemSetup(): TinyHyperGraphProblemSetup {
@@ -604,6 +698,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
     }
+
+    this.maybeRunScheduledGreedyCompletion()
   }
 
   resetCandidateBestCosts() {
@@ -1053,22 +1149,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return left.totalRegionCost - right.totalRegionCost
   }
 
-  protected captureBestSolvedState(summary: RegionCostSummary) {
+  protected captureBestSolvedState(
+    summary: RegionCostSummary,
+    snapshot?: SolvedStateSnapshot,
+  ): boolean {
     if (
       this.bestSolvedStateSummary &&
       this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) >= 0
     ) {
-      return
+      return false
     }
 
     this.bestSolvedStateSummary = summary
-    this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
-      portAssignment: this.state.portAssignment,
-      regionSegments: this.state.regionSegments,
-      regionIntersectionCaches: this.state.regionIntersectionCaches,
-      regionCongestionCost: this.state.regionCongestionCost,
-      ripCount: this.state.ripCount,
-    })
+    this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot(
+      snapshot ?? {
+        portAssignment: this.state.portAssignment,
+        regionSegments: this.state.regionSegments,
+        regionIntersectionCaches: this.state.regionIntersectionCaches,
+        regionCongestionCost: this.state.regionCongestionCost,
+        ripCount: this.state.ripCount,
+      },
+    )
+    return true
   }
 
   protected restoreBestSolvedState() {
@@ -1138,6 +1240,253 @@ export class TinyHyperGraphSolver extends BaseSolver {
       maxRegionCost,
       totalRegionCost,
     }
+  }
+
+  protected getGreedyCompletionInterval() {
+    return Math.max(0, Math.floor(this.GREEDY_COMPLETION_INTERVAL))
+  }
+
+  protected maybeRunScheduledGreedyCompletion(): boolean {
+    if (!this.EARLY_GREEDY_COMPLETION) {
+      return false
+    }
+
+    const greedyCompletionInterval = this.getGreedyCompletionInterval()
+    if (greedyCompletionInterval === 0) {
+      return false
+    }
+
+    if (
+      this.iterations === this.lastGreedyCompletionIteration ||
+      this.iterations % greedyCompletionInterval !== 0
+    ) {
+      return false
+    }
+
+    this.lastGreedyCompletionIteration = this.iterations
+    return this.tryEarlyGreedyCompletion("interval")
+  }
+
+  protected shouldAcceptAfterGreedyCompletionStall() {
+    return (
+      this.bestSolvedStateSnapshot !== undefined &&
+      this.iterations >=
+        this.MIN_GREEDY_COMPLETION_ITERATIONS_BEFORE_STALL_ACCEPTANCE &&
+      this.greedyCompletionStallCount >=
+        this.MAX_GREEDY_COMPLETION_STALLS
+    )
+  }
+
+  protected acceptBestSolvedState(reason: string) {
+    if (!this.bestSolvedStateSnapshot || !this.bestSolvedStateSummary) {
+      return false
+    }
+
+    this.restoreBestSolvedState()
+    this.stats = {
+      ...this.stats,
+      acceptedBestSolutionEarly: true,
+      acceptedBestSolutionReason: reason,
+      maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+      totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+      bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+      bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+      greedyCompletionAttemptCount: this.greedyCompletionAttemptCount,
+      greedyCompletionSuccessCount: this.greedyCompletionSuccessCount,
+      greedyCompletionStallCount: this.greedyCompletionStallCount,
+      greedyCompletionMissCount: this.greedyCompletionMissCount,
+    }
+    this.solved = true
+    this.failed = false
+    this.error = null
+    return true
+  }
+
+  protected getSnapshotFromSolver(
+    solver: TinyHyperGraphSolver,
+  ): SolvedStateSnapshot {
+    return {
+      portAssignment: solver.state.portAssignment,
+      regionSegments: solver.state.regionSegments,
+      regionIntersectionCaches: solver.state.regionIntersectionCaches,
+      regionCongestionCost: solver.state.regionCongestionCost,
+      ripCount: solver.state.ripCount,
+    }
+  }
+
+  protected captureGreedyCompletionCandidate(
+    reason: "interval" | "out_of_candidates" | "timeout",
+  ): {
+    attempted: boolean
+    found: boolean
+    improved: boolean
+  } {
+    const greedyFinalRouteIters = Math.max(
+      0,
+      Math.floor(this.GREEDY_FINAL_ROUTE_ITERS),
+    )
+    if (greedyFinalRouteIters === 0) {
+      return { attempted: false, found: false, improved: false }
+    }
+
+    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    if (remainingRouteIds.length === 0) {
+      return { attempted: false, found: false, improved: false }
+    }
+
+    const startingSnapshot = cloneSolvedStateSnapshot({
+      portAssignment: this.state.portAssignment,
+      regionSegments: this.state.regionSegments,
+      regionIntersectionCaches: this.state.regionIntersectionCaches,
+      regionCongestionCost: this.state.regionCongestionCost,
+      ripCount: this.state.ripCount,
+    })
+    let bestGreedySummary: RegionCostSummary | undefined
+    let bestGreedySnapshot: SolvedStateSnapshot | undefined
+    let bestGreedyIter = 0
+
+    for (
+      let greedyFinalRouteIter = 0;
+      greedyFinalRouteIter < greedyFinalRouteIters;
+      greedyFinalRouteIter++
+    ) {
+      const routeIds =
+        greedyFinalRouteIter === 0
+          ? remainingRouteIds
+          : shuffle(
+              remainingRouteIds,
+              this.state.ripCount + greedyFinalRouteIter,
+            )
+      const greedySolver = new GreedyFinalRouteSolver(
+        this.topology,
+        this.problem,
+        {
+          ...getTinyHyperGraphSolverOptions(this),
+          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+          ACCEPT_FIRST_COMPLETE_SOLUTION: true,
+          EARLY_GREEDY_COMPLETION: false,
+          GREEDY_FINAL_ROUTE_ITERS: 0,
+          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+          STATIC_REACHABILITY_PRECHECK: false,
+        },
+      )
+
+      this.greedyCompletionAttemptCount += 1
+      this.applySnapshotToGreedyFinalRouteSolver(
+        greedySolver,
+        startingSnapshot,
+        routeIds,
+      )
+      greedySolver.solve()
+
+      if (!greedySolver.solved || greedySolver.failed) {
+        continue
+      }
+
+      this.greedyCompletionSuccessCount += 1
+      const greedySummary = this.summarizeSolvedState(greedySolver)
+
+      if (
+        !bestGreedySummary ||
+        this.compareRegionCostSummaries(greedySummary, bestGreedySummary) < 0
+      ) {
+        bestGreedySummary = greedySummary
+        bestGreedySnapshot = this.getSnapshotFromSolver(greedySolver)
+        bestGreedyIter = greedyFinalRouteIter
+      }
+    }
+
+    if (!bestGreedySummary || !bestGreedySnapshot) {
+      this.stats = {
+        ...this.stats,
+        greedyCompletionAttemptCount: this.greedyCompletionAttemptCount,
+        greedyCompletionSuccessCount: this.greedyCompletionSuccessCount,
+        greedyCompletionLastReason: reason,
+        greedyCompletionLastFound: false,
+        greedyCompletionRemainingRouteCount: remainingRouteIds.length,
+      }
+      return { attempted: true, found: false, improved: false }
+    }
+
+    const improved = this.captureBestSolvedState(
+      bestGreedySummary,
+      bestGreedySnapshot,
+    )
+
+    this.stats = {
+      ...this.stats,
+      greedyCompletionAttemptCount: this.greedyCompletionAttemptCount,
+      greedyCompletionSuccessCount: this.greedyCompletionSuccessCount,
+      greedyCompletionLastReason: reason,
+      greedyCompletionLastFound: true,
+      greedyCompletionLastImproved: improved,
+      greedyCompletionLastIter: bestGreedyIter,
+      greedyCompletionRemainingRouteCount: remainingRouteIds.length,
+      greedyCompletionMaxRegionCost: bestGreedySummary.maxRegionCost,
+      greedyCompletionTotalRegionCost: bestGreedySummary.totalRegionCost,
+      bestMaxRegionCost: this.bestSolvedStateSummary?.maxRegionCost,
+      bestTotalRegionCost: this.bestSolvedStateSummary?.totalRegionCost,
+    }
+
+    return { attempted: true, found: true, improved }
+  }
+
+  protected tryEarlyGreedyCompletion(
+    reason: "interval" | "out_of_candidates",
+  ): boolean {
+    if (!this.EARLY_GREEDY_COMPLETION) {
+      return false
+    }
+    if (this.greedyCompletionMissCount >= this.MAX_GREEDY_COMPLETION_MISSES) {
+      return false
+    }
+
+    const result = this.captureGreedyCompletionCandidate(reason)
+    if (!result.attempted) {
+      return false
+    }
+
+    if (!result.found) {
+      this.greedyCompletionMissCount += 1
+    } else {
+      this.greedyCompletionMissCount = 0
+    }
+
+    if (result.improved) {
+      this.greedyCompletionStallCount = 0
+    } else if (this.bestSolvedStateSnapshot) {
+      this.greedyCompletionStallCount += 1
+    }
+
+    this.stats = {
+      ...this.stats,
+      greedyCompletionStallCount: this.greedyCompletionStallCount,
+      greedyCompletionMissCount: this.greedyCompletionMissCount,
+    }
+
+    if (
+      this.FAIL_AFTER_GREEDY_COMPLETION_MISSES_WITHOUT_BEST &&
+      !this.bestSolvedStateSnapshot &&
+      this.greedyCompletionMissCount >= this.MAX_GREEDY_COMPLETION_MISSES
+    ) {
+      this.failed = true
+      this.error =
+        "Greedy completion repeatedly failed before any complete solution was found"
+      this.stats = {
+        ...this.stats,
+        greedyCompletionMissFailure: true,
+        neverSuccessfullyRoutedRouteCount:
+          this.getNeverSuccessfullyRoutedRoutes().length,
+      }
+      return true
+    }
+
+    if (this.shouldAcceptAfterGreedyCompletionStall()) {
+      return this.acceptBestSolvedState("greedy_completion_stalled")
+    }
+
+    return false
   }
 
   protected tryGreedyFinalRouteAcceptance(): boolean {
@@ -1262,10 +1611,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    this.captureBestSolvedState({
+    const improvedBestSolvedState = this.captureBestSolvedState({
       maxRegionCost,
       totalRegionCost,
     })
+    if (improvedBestSolvedState) {
+      this.greedyCompletionStallCount = 0
+    }
 
     this.stats = {
       ...this.stats,
@@ -1276,6 +1628,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
       bestMaxRegionCost: this.bestSolvedStateSummary?.maxRegionCost,
       bestTotalRegionCost: this.bestSolvedStateSummary?.totalRegionCost,
       ripCount: state.ripCount,
+    }
+
+    if (this.ACCEPT_FIRST_COMPLETE_SOLUTION) {
+      this.stats = {
+        ...this.stats,
+        acceptedFirstCompleteSolution: true,
+      }
+      this.solved = true
+      return
     }
 
     if (
@@ -1309,6 +1670,52 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
+
+    if (currentRouteId !== undefined) {
+      this.routeOutOfCandidatesCountByRouteId[currentRouteId] += 1
+    }
+
+    if (this.tryEarlyGreedyCompletion("out_of_candidates")) {
+      return
+    }
+
+    if (
+      currentRouteId !== undefined &&
+      this.bestSolvedStateSnapshot &&
+      this.routeOutOfCandidatesCountByRouteId[currentRouteId]! >=
+        this.MAX_REPEATED_ROUTE_FAILURES_AFTER_GREEDY_COMPLETION
+    ) {
+      this.stats = {
+        ...this.stats,
+        repeatedRouteFailureRouteId: currentRouteId,
+        repeatedRouteFailureCount:
+          this.routeOutOfCandidatesCountByRouteId[currentRouteId],
+      }
+      if (this.acceptBestSolvedState("repeated_route_failure")) {
+        return
+      }
+    }
+
+    if (
+      currentRouteId !== undefined &&
+      !this.bestSolvedStateSnapshot &&
+      this.greedyCompletionSuccessCount === 0 &&
+      this.routeOutOfCandidatesCountByRouteId[currentRouteId]! >=
+        this.MAX_REPEATED_ROUTE_FAILURES_WITHOUT_GREEDY_COMPLETION
+    ) {
+      this.failed = true
+      this.error = `Route ${currentRouteId} repeatedly exhausted candidates without any complete greedy fallback`
+      this.stats = {
+        ...this.stats,
+        repeatedRouteFailureRouteId: currentRouteId,
+        repeatedRouteFailureCount:
+          this.routeOutOfCandidatesCountByRouteId[currentRouteId],
+        repeatedRouteFailureWithoutGreedyCompletion: true,
+        neverSuccessfullyRoutedRouteCount:
+          this.getNeverSuccessfullyRoutedRoutes().length,
+      }
+      return
+    }
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
