@@ -4,6 +4,7 @@ export * from "./DuplicateCongestedPortSolver"
 export * from "./find-distinct-owner-blocker-path"
 export * from "./indexed-candidate-heap"
 export * from "./poly"
+export * from "./selective-rerip-tiny-hyper-graph-solver"
 export * from "./bus-solver"
 export * from "./region-graph"
 export {
