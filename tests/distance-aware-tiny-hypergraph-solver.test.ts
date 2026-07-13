@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import {
-  CostConsistentTinyHyperGraphSolver,
+  DistanceAwareTinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/index"
@@ -33,7 +33,7 @@ test("queues a costed goal candidate before committing the path", () => {
     routeNet: new Int32Array([0]),
     regionNetId: new Int32Array([-1, -1]),
   }
-  const solver = new CostConsistentTinyHyperGraphSolver(topology, problem, {
+  const solver = new DistanceAwareTinyHyperGraphSolver(topology, problem, {
     DISTANCE_TO_COST: 2,
     STATIC_REACHABILITY_PRECHECK: false,
   })

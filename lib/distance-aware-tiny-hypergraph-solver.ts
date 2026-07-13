@@ -8,7 +8,14 @@ import {
 } from "./core"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
 
-export class CostConsistentTinyHyperGraphSolver extends TinyHyperGraphSolver {
+/**
+ * Adds geometric segment distance to the normal dynamic routing cost.
+ *
+ * Every segment, including the final segment into the goal, uses the same
+ * g-cost calculation. The hop-keyed candidate frontier prevents a dominated
+ * queued hop from being expanded later.
+ */
+export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,

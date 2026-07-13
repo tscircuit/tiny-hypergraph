@@ -1,5 +1,5 @@
 export * from "./core"
-export * from "./cost-consistent-tiny-hypergraph-solver"
+export * from "./distance-aware-tiny-hypergraph-solver"
 export * from "./DuplicateCongestedPortSolver"
 export * from "./find-distinct-owner-blocker-path"
 export * from "./indexed-candidate-heap"

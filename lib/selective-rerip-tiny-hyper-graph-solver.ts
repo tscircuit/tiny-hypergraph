@@ -4,7 +4,7 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import { CostConsistentTinyHyperGraphSolver } from "./cost-consistent-tiny-hypergraph-solver"
+import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import {
   findDistinctOwnerBlockerPath,
   type DistinctOwnerBlockerSearchResult,
@@ -106,7 +106,7 @@ export function selectOwnerRouteIdsToRip(params: {
  * full rerip with a minimal, explicit rerip when the exhausted route has a
  * known set of committed blockers.
  */
-export class SelectiveReripTinyHyperGraphSolver extends CostConsistentTinyHyperGraphSolver {
+export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
     Map<RouteId, number>
