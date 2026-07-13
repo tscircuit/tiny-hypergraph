@@ -83,6 +83,30 @@ const createInitialSelectiveReripStats =
     lastAlternateSearchExpandedLabelCount: 0,
   })
 
+export function orderConnectionsByNetCardinality<TConnection>(
+  connections: readonly TConnection[],
+  getNetId: (connection: TConnection) => string | number,
+): TConnection[] {
+  const connectionCountByNetId = new Map<string | number, number>()
+  for (const connection of connections) {
+    const netId = getNetId(connection)
+    connectionCountByNetId.set(
+      netId,
+      (connectionCountByNetId.get(netId) ?? 0) + 1,
+    )
+  }
+
+  return connections
+    .map((connection, index) => ({ connection, index }))
+    .sort(
+      (left, right) =>
+        (connectionCountByNetId.get(getNetId(right.connection)) ?? 0) -
+          (connectionCountByNetId.get(getNetId(left.connection)) ?? 0) ||
+        left.index - right.index,
+    )
+    .map(({ connection }) => connection)
+}
+
 export function selectOwnerRouteIdsToRip(params: {
   failedRouteId: RouteId
   directOwnerRouteIds: readonly RouteId[]
