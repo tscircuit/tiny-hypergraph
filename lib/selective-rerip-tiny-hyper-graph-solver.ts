@@ -83,18 +83,28 @@ const createInitialSelectiveReripStats =
     lastAlternateSearchExpandedLabelCount: 0,
   })
 
-const orderRouteIdsByNetCardinality = (routeNet: Int32Array): RouteId[] => {
-  const routeCountByNetId = new Map<number, number>()
-  for (const netId of routeNet) {
-    routeCountByNetId.set(netId, (routeCountByNetId.get(netId) ?? 0) + 1)
+export function orderConnectionsByNetCardinality<TConnection>(
+  connections: readonly TConnection[],
+  getNetId: (connection: TConnection) => string | number,
+): TConnection[] {
+  const connectionCountByNetId = new Map<string | number, number>()
+  for (const connection of connections) {
+    const netId = getNetId(connection)
+    connectionCountByNetId.set(
+      netId,
+      (connectionCountByNetId.get(netId) ?? 0) + 1,
+    )
   }
 
-  return Array.from(routeNet, (_, routeId) => routeId).sort(
-    (leftRouteId, rightRouteId) =>
-      (routeCountByNetId.get(routeNet[rightRouteId]!) ?? 0) -
-        (routeCountByNetId.get(routeNet[leftRouteId]!) ?? 0) ||
-      leftRouteId - rightRouteId,
-  )
+  return connections
+    .map((connection, index) => ({ connection, index }))
+    .sort(
+      (left, right) =>
+        (connectionCountByNetId.get(getNetId(right.connection)) ?? 0) -
+          (connectionCountByNetId.get(getNetId(left.connection)) ?? 0) ||
+        left.index - right.index,
+    )
+    .map(({ connection }) => connection)
 }
 
 export function selectOwnerRouteIdsToRip(params: {
@@ -136,7 +146,6 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
     options?: TinyHyperGraphSolverOptions,
   ) {
     super(topology, problem, options)
-    this.state.unroutedRoutes = orderRouteIdsByNetCardinality(problem.routeNet)
   }
 
   getSelectiveReripStats(): SelectiveReripTinyHyperGraphStats {
