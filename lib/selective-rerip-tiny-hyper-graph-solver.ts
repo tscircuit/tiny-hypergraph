@@ -125,6 +125,22 @@ export function selectOwnerRouteIdsToRip(params: {
   return rippedRouteIds
 }
 
+export function orderRoutesAfterSelectiveRerip(params: {
+  failedRouteId: RouteId
+  pendingRouteIds: readonly RouteId[]
+  rippedRouteIds: ReadonlySet<RouteId>
+}): RouteId[] {
+  const pendingRouteIds = params.pendingRouteIds.filter(
+    (routeId) =>
+      routeId !== params.failedRouteId && !params.rippedRouteIds.has(routeId),
+  )
+  const rippedRouteIds = [...params.rippedRouteIds].filter(
+    (routeId) => routeId !== params.failedRouteId,
+  )
+
+  return [params.failedRouteId, ...pendingRouteIds, ...rippedRouteIds]
+}
+
 /**
  * Keeps the normal tiny-hypergraph route acceptance policy while replacing a
  * full rerip with a minimal, explicit rerip when the exhausted route has a
@@ -245,10 +261,6 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
     )
-    const remainingRouteIds = this.state.unroutedRoutes.filter(
-      (routeId) => routeId !== failedRouteId && !rippedRouteIds.has(routeId),
-    )
-
     if (
       this.selectiveReripCongestionUpdateCount <
       MAX_SELECTIVE_RERIP_CONGESTION_UPDATES
@@ -260,11 +272,11 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
     this.state.ripCount += 1
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
-    this.state.unroutedRoutes = [
+    this.state.unroutedRoutes = orderRoutesAfterSelectiveRerip({
       failedRouteId,
-      ...rippedRouteIds,
-      ...remainingRouteIds,
-    ]
+      pendingRouteIds: this.state.unroutedRoutes,
+      rippedRouteIds,
+    })
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
