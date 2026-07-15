@@ -633,10 +633,6 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
 
-  protected override shouldRetainParetoAlternatives(): boolean {
-    return false
-  }
-
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
