@@ -1,15 +1,17 @@
-import {
-  candidateQualityDominatesOrEquals,
-  compareCandidatesByQuality,
-  getCandidateQuality,
-  type Candidate,
-} from "./core"
+import type { Candidate } from "./core"
 
 /**
- * Candidate queue that retains the nondominated quality frontier for each hop.
+ * Candidate queue keyed by the directed hop represented by a candidate.
+ *
+ * Pareto alternatives are retained by TinyHyperGraphSolver. The active search
+ * queue deliberately keeps one lowest-risk entry per hop so queue operations
+ * stay O(log n) and an expanded graph state is not reopened by a quality-only
+ * alternative.
  */
 export class IndexedCandidateHeap {
   private items: Candidate[] = []
+  private indexByHopId = new Map<number, number>()
+  private closedHopIds = new Set<number>()
 
   constructor(private readonly regionCount: number) {}
 
@@ -23,44 +25,31 @@ export class IndexedCandidateHeap {
 
   clear(): void {
     this.items.length = 0
-  }
-
-  removeWhere(predicate: (candidate: Candidate) => boolean): void {
-    this.items = this.items.filter((candidate) => !predicate(candidate))
-    this.heapify()
+    this.indexByHopId.clear()
+    this.closedHopIds.clear()
   }
 
   queue(candidate: Candidate): void {
     const hopId = this.getHopId(candidate)
-    const quality = getCandidateQuality(candidate)
-    if (
-      this.items.some(
-        (existingCandidate) =>
-          this.getHopId(existingCandidate) === hopId &&
-          candidateQualityDominatesOrEquals(
-            getCandidateQuality(existingCandidate),
-            quality,
-          ),
-      )
-    ) {
-      return
-    }
+    if (this.closedHopIds.has(hopId)) return
 
-    const retainedItems = this.items.filter(
-      (existingCandidate) =>
-        this.getHopId(existingCandidate) !== hopId ||
-        !candidateQualityDominatesOrEquals(
-          quality,
-          getCandidateQuality(existingCandidate),
-        ),
-    )
-    if (retainedItems.length !== this.items.length) {
-      this.items = retainedItems
-      this.heapify()
+    const existingIndex = this.indexByHopId.get(hopId)
+    if (existingIndex !== undefined) {
+      const existingCandidate = this.items[existingIndex]!
+      if (candidate.g >= existingCandidate.g) return
+
+      this.items[existingIndex] = candidate
+      if (candidate.f <= existingCandidate.f) {
+        this.siftUp(existingIndex)
+      } else {
+        this.siftDown(existingIndex)
+      }
+      return
     }
 
     const index = this.items.length
     this.items.push(candidate)
+    this.indexByHopId.set(hopId, index)
     this.siftUp(index)
   }
 
@@ -68,9 +57,14 @@ export class IndexedCandidateHeap {
     const bestCandidate = this.items[0]
     if (!bestCandidate) return undefined
 
+    const bestHopId = this.getHopId(bestCandidate)
+    this.closedHopIds.add(bestHopId)
+    this.indexByHopId.delete(bestHopId)
+
     const lastCandidate = this.items.pop()!
     if (this.items.length > 0) {
       this.items[0] = lastCandidate
+      this.indexByHopId.set(this.getHopId(lastCandidate), 0)
       this.siftDown(0)
     }
     return bestCandidate
@@ -84,26 +78,15 @@ export class IndexedCandidateHeap {
     const leftCandidate = this.items[leftIndex]!
     this.items[leftIndex] = this.items[rightIndex]!
     this.items[rightIndex] = leftCandidate
-  }
-
-  private heapify(): void {
-    for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
-      this.siftDown(index)
-    }
+    this.indexByHopId.set(this.getHopId(this.items[leftIndex]!), leftIndex)
+    this.indexByHopId.set(this.getHopId(this.items[rightIndex]!), rightIndex)
   }
 
   private siftUp(startIndex: number): void {
     let index = startIndex
     while (index > 0) {
       const parentIndex = (index - 1) >> 1
-      if (
-        compareCandidatesByQuality(
-          this.items[parentIndex]!,
-          this.items[index]!,
-        ) <= 0
-      ) {
-        return
-      }
+      if (this.items[parentIndex]!.f <= this.items[index]!.f) return
       this.swap(index, parentIndex)
       index = parentIndex
     }
@@ -118,20 +101,10 @@ export class IndexedCandidateHeap {
       const rightChildIndex = leftChildIndex + 1
       const smallestChildIndex =
         rightChildIndex < this.items.length &&
-        compareCandidatesByQuality(
-          this.items[rightChildIndex]!,
-          this.items[leftChildIndex]!,
-        ) < 0
+        this.items[rightChildIndex]!.f < this.items[leftChildIndex]!.f
           ? rightChildIndex
           : leftChildIndex
-      if (
-        compareCandidatesByQuality(
-          this.items[index]!,
-          this.items[smallestChildIndex]!,
-        ) <= 0
-      ) {
-        return
-      }
+      if (this.items[index]!.f <= this.items[smallestChildIndex]!.f) return
       this.swap(index, smallestChildIndex)
       index = smallestChildIndex
     }

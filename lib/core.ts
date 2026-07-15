@@ -278,8 +278,6 @@ export interface Candidate {
   estimatedRemainingViaCount?: number
   regionRiskCost?: number
   routeLengthCost?: number
-  deferredParetoAlternative?: boolean
-  paretoCandidateExpanded?: boolean
 }
 
 export interface CandidateQuality {
@@ -310,7 +308,6 @@ export interface TinyHyperGraphWorkingState {
   candidateBestCostGenerationByHopId: Uint32Array | Map<HopId, number>
   candidateBestCostGeneration: number
   candidateParetoFrontierByHopId: Map<HopId, Candidate[]>
-  staleCandidateDequeueCount: number
 
   goalPortId: PortId
   goalPortIds: Set<PortId>
@@ -456,6 +453,14 @@ export const compareCandidateQualities = (
   left.regionRiskCost - right.regionRiskCost ||
   left.routeLengthCost - right.routeLengthCost
 
+const compareCandidateQualitiesByRisk = (
+  left: CandidateQuality,
+  right: CandidateQuality,
+): number =>
+  left.regionRiskCost - right.regionRiskCost ||
+  left.estimatedViaCount - right.estimatedViaCount ||
+  left.routeLengthCost - right.routeLengthCost
+
 export const candidateQualityDominatesOrEquals = (
   left: CandidateQuality,
   right: CandidateQuality,
@@ -475,36 +480,53 @@ export const candidateQualityDominatesOrEquals = (
   )
 }
 
-const retainRepresentativeCandidateQualities = (
-  qualities: CandidateQuality[],
-): CandidateQuality[] => {
-  if (qualities.length <= MAX_CANDIDATE_QUALITIES_PER_HOP) return qualities
+const retainRepresentativeCandidates = (
+  candidates: Candidate[],
+): Candidate[] => {
+  let byFewestVias = candidates[0]!
+  let byLowestRisk = candidates[0]!
+  let byBalancedSearchCost = candidates[0]!
 
-  const byFewestVias = [...qualities].sort(compareCandidateQualities)[0]!
-  const byLowestRisk = [...qualities].sort(
-    (left, right) =>
-      left.regionRiskCost - right.regionRiskCost ||
-      left.estimatedViaCount - right.estimatedViaCount ||
-      left.routeLengthCost - right.routeLengthCost,
-  )[0]!
-  const byBalancedSearchCost = [...qualities].sort(
-    (left, right) =>
-      left.regionRiskCost +
-        left.routeLengthCost +
-        left.estimatedViaCount * VIA_SEARCH_COST -
-        (right.regionRiskCost +
-          right.routeLengthCost +
-          right.estimatedViaCount * VIA_SEARCH_COST) ||
-      compareCandidateQualities(left, right),
-  )[0]!
+  for (let index = 1; index < candidates.length; index++) {
+    const candidate = candidates[index]!
+    const quality = getCandidateQuality(candidate)
+    const fewestViaQuality = getCandidateQuality(byFewestVias)
+    const lowestRiskQuality = getCandidateQuality(byLowestRisk)
+    const balancedQuality = getCandidateQuality(byBalancedSearchCost)
 
-  const retained = [byFewestVias, byLowestRisk, byBalancedSearchCost]
-  for (const quality of qualities) {
-    if (retained.length >= MAX_CANDIDATE_QUALITIES_PER_HOP) break
-    if (!retained.includes(quality)) retained.push(quality)
+    if (compareCandidateQualities(quality, fewestViaQuality) < 0) {
+      byFewestVias = candidate
+    }
+    if (compareCandidateQualitiesByRisk(quality, lowestRiskQuality) < 0) {
+      byLowestRisk = candidate
+    }
+
+    const candidateBalancedCost =
+      quality.regionRiskCost +
+      quality.routeLengthCost +
+      quality.estimatedViaCount * VIA_SEARCH_COST
+    const retainedBalancedCost =
+      balancedQuality.regionRiskCost +
+      balancedQuality.routeLengthCost +
+      balancedQuality.estimatedViaCount * VIA_SEARCH_COST
+    if (
+      candidateBalancedCost < retainedBalancedCost ||
+      (candidateBalancedCost === retainedBalancedCost &&
+        compareCandidateQualities(quality, balancedQuality) < 0)
+    ) {
+      byBalancedSearchCost = candidate
+    }
   }
 
-  return [...new Set(retained)]
+  const retained: Candidate[] = []
+  for (const candidate of [
+    byFewestVias,
+    byLowestRisk,
+    byBalancedSearchCost,
+  ]) {
+    if (!retained.includes(candidate)) retained.push(candidate)
+  }
+  return retained
 }
 
 export const compareCandidatesByQuality = (
@@ -586,7 +608,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         : new Uint32Array(topology.portCount * topology.regionCount),
       candidateBestCostGeneration: 1,
       candidateParetoFrontierByHopId: new Map(),
-      staleCandidateDequeueCount: 0,
       goalPortId: -1,
       goalPortIds: new Set(),
       ripCount: 0,
@@ -688,7 +709,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.resetCandidateBestCosts()
       state.candidateQueue.clear()
-      state.staleCandidateDequeueCount = 0
       const startingPortIds = getRouteStartPortOptions(
         problem,
         state.currentRouteId!,
@@ -721,13 +741,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
           startingPortId,
           startingNextRegionId,
         )
-        if (!this.retainCandidateQuality(startingHopId, startingCandidate)) {
-          continue
+        this.retainCandidateQuality(startingHopId, startingCandidate)
+        if (
+          this.queueCandidateIfSearchCostImproves(
+            startingHopId,
+            startingCandidate,
+          )
+        ) {
+          queuedStartingCandidateCount += 1
         }
-
-        this.setCandidateBestCost(startingHopId, 0)
-        this.queueRetainedCandidate(startingCandidate)
-        queuedStartingCandidateCount += 1
       }
 
       if (queuedStartingCandidateCount === 0) {
@@ -737,8 +759,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    const currentCandidate =
-      state.candidateQueue.dequeue() ?? this.dequeueDeferredParetoCandidate()
+    const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
       this.onOutOfCandidates()
@@ -750,40 +771,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentCandidate.nextRegionId,
     )
     if (
-      !this.isCandidateQualityRetained(
-        currentCandidateHopId,
-        currentCandidate,
-      )
+      getCandidateQuality(currentCandidate).regionRiskCost >
+      this.getCandidateBestCost(currentCandidateHopId)
     ) {
-      state.staleCandidateDequeueCount += 1
-      if (state.staleCandidateDequeueCount >= 1024) {
-        state.candidateQueue.removeWhere((queuedCandidate) => {
-          const queuedHopId = this.getHopId(
-            queuedCandidate.portId,
-            queuedCandidate.nextRegionId,
-          )
-          return !this.isCandidateQualityRetained(
-            queuedHopId,
-            queuedCandidate,
-          )
-        })
-        state.staleCandidateDequeueCount = 0
-      }
       return
     }
-
-    const primaryCandidate = this.getPrimaryCandidateForHop(
-      currentCandidateHopId,
-    )
-    if (
-      primaryCandidate !== currentCandidate &&
-      !currentCandidate.deferredParetoAlternative
-    ) {
-      currentCandidate.deferredParetoAlternative = true
-      return
-    }
-
-    currentCandidate.paretoCandidateExpanded = true
 
     if (state.goalPortIds.has(currentCandidate.portId)) {
       state.goalPortId = currentCandidate.portId
@@ -846,7 +838,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (isGoalPort) {
         if (
           !bestGoalCandidate ||
-          compareCandidatesByQuality(newCandidate, bestGoalCandidate) < 0
+          compareCandidateQualities(
+            getCandidateQuality(newCandidate),
+            getCandidateQuality(bestGoalCandidate),
+          ) < 0
         ) {
           bestGoalCandidate = newCandidate
         }
@@ -854,16 +849,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
 
       const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (!this.retainCandidateQuality(candidateHopId, newCandidate)) continue
-
-      this.setCandidateBestCost(
-        candidateHopId,
-        Math.min(
-          quality.regionRiskCost,
-          this.getCandidateBestCost(candidateHopId),
-        ),
-      )
-      this.queueRetainedCandidate(newCandidate)
+      this.retainCandidateQuality(candidateHopId, newCandidate)
+      this.queueCandidateIfSearchCostImproves(candidateHopId, newCandidate)
     }
 
     if (bestGoalCandidate) {
@@ -885,7 +872,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ) {
         return false
       }
-      candidate.deferredParetoAlternative = false
       this.state.candidateParetoFrontierByHopId.set(hopId, [candidate])
       return true
     }
@@ -901,37 +887,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const nondominatedCandidates = frontier
-      .filter(
-        (existingCandidate) =>
-          !candidateQualityDominatesOrEquals(
-            quality,
-            getCandidateQuality(existingCandidate),
-          ),
-      )
-      .concat(candidate)
-    let retainedCandidates = nondominatedCandidates
-    if (nondominatedCandidates.length > MAX_CANDIDATE_QUALITIES_PER_HOP) {
-      const retainedFrontier = retainRepresentativeCandidateQualities(
-        nondominatedCandidates.map(getCandidateQuality),
-      )
-      retainedCandidates = nondominatedCandidates.filter(
-        (retainedCandidate) =>
-          retainedFrontier.some(
-            (retainedQuality) =>
-              compareCandidateQualities(
-                retainedQuality,
-                getCandidateQuality(retainedCandidate),
-              ) === 0,
-          ),
-      )
+    let writeIndex = 0
+    for (const existingCandidate of frontier) {
+      if (
+        candidateQualityDominatesOrEquals(
+          quality,
+          getCandidateQuality(existingCandidate),
+        )
+      ) {
+        continue
+      }
+      frontier[writeIndex] = existingCandidate
+      writeIndex += 1
     }
-    this.state.candidateParetoFrontierByHopId.set(hopId, retainedCandidates)
+    frontier.length = writeIndex
+    frontier.push(candidate)
 
-    const primaryCandidate = retainedCandidates.reduce((best, current) =>
-      compareCandidatesByQuality(current, best) < 0 ? current : best,
-    )
-    candidate.deferredParetoAlternative = candidate !== primaryCandidate
+    const retainedCandidates =
+      frontier.length > MAX_CANDIDATE_QUALITIES_PER_HOP
+        ? retainRepresentativeCandidates(frontier)
+        : frontier
+    this.state.candidateParetoFrontierByHopId.set(hopId, retainedCandidates)
     return retainedCandidates.includes(candidate)
   }
 
@@ -939,52 +915,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return true
   }
 
-  getPrimaryCandidateForHop(hopId: HopId): Candidate | undefined {
-    const frontier = this.state.candidateParetoFrontierByHopId.get(hopId)
-    return frontier?.reduce((best, current) =>
-      compareCandidatesByQuality(current, best) < 0 ? current : best,
-    )
-  }
+  /**
+   * The Pareto frontier records route quality, but the active A* queue keeps a
+   * single strict risk label per hop. Mixing the two makes equal-risk
+   * via/length improvements repeatedly re-expand the same graph state.
+   */
+  queueCandidateIfSearchCostImproves(
+    hopId: HopId,
+    candidate: Candidate,
+  ): boolean {
+    const searchCost = getCandidateQuality(candidate).regionRiskCost
+    if (searchCost >= this.getCandidateBestCost(hopId)) return false
 
-  queueRetainedCandidate(candidate: Candidate): void {
-    if (candidate.deferredParetoAlternative) return
+    this.setCandidateBestCost(hopId, searchCost)
     this.state.candidateQueue.queue(candidate)
-  }
-
-  dequeueDeferredParetoCandidate(): Candidate | undefined {
-    let bestCandidate: Candidate | undefined
-    for (const frontier of this.state.candidateParetoFrontierByHopId.values()) {
-      for (const candidate of frontier) {
-        if (
-          candidate.paretoCandidateExpanded ||
-          (!candidate.deferredParetoAlternative &&
-            candidate ===
-              this.getPrimaryCandidateForHop(
-                this.getHopId(candidate.portId, candidate.nextRegionId),
-              ))
-        ) {
-          continue
-        }
-        if (
-          !bestCandidate ||
-          compareCandidatesByQuality(candidate, bestCandidate) < 0
-        ) {
-          bestCandidate = candidate
-        }
-      }
-    }
-    return bestCandidate
-  }
-
-  isCandidateQualityRetained(hopId: HopId, candidate: Candidate): boolean {
-    const quality = getCandidateQuality(candidate)
-    return (this.state.candidateParetoFrontierByHopId.get(hopId) ?? []).some(
-      (existingCandidate) =>
-        compareCandidateQualities(
-          getCandidateQuality(existingCandidate),
-          quality,
-        ) === 0,
-    )
+    return true
   }
 
   resetCandidateBestCosts() {
