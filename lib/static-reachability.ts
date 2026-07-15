@@ -21,6 +21,8 @@ export interface StaticallyUnroutableRouteSummary {
   connectionId: string
   startPortId: PortId
   endPortId: PortId
+  startPortIds: PortId[]
+  endPortIds: PortId[]
   startRegionId?: string
   endRegionId?: string
   pointIds: string[]
@@ -47,6 +49,26 @@ interface StaticReachabilityContext {
     startingPortId: PortId,
   ) => RegionId | undefined
   getRouteSummary: (routeId: RouteId) => StaticallyUnroutableRouteSummary
+}
+
+const getRouteEndpointOptions = (
+  problem: TinyHyperGraphProblem,
+  routeId: RouteId,
+  endpoint: "start" | "end",
+): PortId[] => {
+  const configuredOptions =
+    endpoint === "start"
+      ? problem.routeStartPortOptions?.[routeId]
+      : problem.routeEndPortOptions?.[routeId]
+  if (configuredOptions && configuredOptions.length > 0) {
+    return [...new Set(configuredOptions)]
+  }
+
+  return [
+    endpoint === "start"
+      ? problem.routeStartPort[routeId]!
+      : problem.routeEndPort[routeId]!,
+  ]
 }
 
 const getRouteMetadataFromProblem = (
@@ -110,27 +132,27 @@ const hasStaticReachabilityPath = (
   const { topology, problem, problemSetup, portAssignment, maxPrecheckHops } =
     context
   const routeNetId = problem.routeNet[routeId]!
-  const startPortId = problem.routeStartPort[routeId]!
-  const goalPortId = problem.routeEndPort[routeId]!
+  const startPortIds = getRouteEndpointOptions(problem, routeId, "start")
+  const goalPortIds = new Set(
+    getRouteEndpointOptions(problem, routeId, "end"),
+  )
 
-  if (startPortId === goalPortId) {
+  if (startPortIds.some((startPortId) => goalPortIds.has(startPortId))) {
     return true
   }
 
-  const startRegionId = context.getStartingNextRegionId(routeId, startPortId)
-  if (startRegionId === undefined) {
-    return false
-  }
+  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = []
+  const seenHops = new Set<number>()
+  for (const startPortId of startPortIds) {
+    const startRegionId = context.getStartingNextRegionId(routeId, startPortId)
+    if (startRegionId === undefined) continue
 
-  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
-    {
-      portId: startPortId,
-      nextRegionId: startRegionId,
-    },
-  ]
-  const seenHops = new Set<number>([
-    startPortId * topology.regionCount + startRegionId,
-  ])
+    const hopId = startPortId * topology.regionCount + startRegionId
+    if (seenHops.has(hopId)) continue
+    seenHops.add(hopId)
+    queue.push({ portId: startPortId, nextRegionId: startRegionId })
+  }
+  if (queue.length === 0) return false
 
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
     const currentCandidate = queue[queueIndex]!
@@ -159,7 +181,7 @@ const hasStaticReachabilityPath = (
       ) {
         continue
       }
-      if (neighborPortId === goalPortId) {
+      if (goalPortIds.has(neighborPortId)) {
         if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
           continue
         }
@@ -223,6 +245,8 @@ export const createStaticallyUnroutableRouteSummary = ({
       getDefaultRouteConnectionId(problem, routeId),
     startPortId: problem.routeStartPort[routeId]!,
     endPortId: problem.routeEndPort[routeId]!,
+    startPortIds: getRouteEndpointOptions(problem, routeId, "start"),
+    endPortIds: getRouteEndpointOptions(problem, routeId, "end"),
     startRegionId:
       typeof routeMetadata?.startRegionId === "string"
         ? routeMetadata.startRegionId

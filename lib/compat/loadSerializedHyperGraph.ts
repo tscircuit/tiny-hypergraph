@@ -624,6 +624,8 @@ export const loadSerializedHyperGraph = (
   const solution: TinyHyperGraphSolution = {
     solvedRoutePathSegments,
     solvedRoutePathRegionIds,
+    solvedRouteStartPort: new Int32Array(routeStartPort),
+    solvedRouteEndPort: new Int32Array(routeEndPort),
   }
 
   return { topology, problem, solution }

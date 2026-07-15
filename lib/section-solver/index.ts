@@ -2,6 +2,7 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import {
   applyTinyHyperGraphSolverOptions,
+  compareRegionCostSummaries,
   createEmptyRegionIntersectionCache,
   getTinyHyperGraphSolverOptions,
   type RegionCostSummary,
@@ -11,7 +12,10 @@ import {
   type TinyHyperGraphTopology,
   type TinyHyperGraphSolverOptions,
 } from "../core"
-import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
+import {
+  computeEstimatedViaCount,
+  DEFAULT_MIN_VIA_PAD_DIAMETER,
+} from "../computeRegionCost"
 import { shuffle } from "../shuffle"
 import type {
   PortId,
@@ -23,6 +27,8 @@ import { visualizeTinyGraph } from "../visualizeTinyGraph"
 
 interface SolvedStateSnapshot {
   portAssignment: Int32Array
+  solvedRouteStartPort: Int32Array
+  solvedRouteEndPort: Int32Array
   regionSegments: Array<[RouteId, PortId, PortId][]>
   regionIntersectionCaches: RegionIntersectionCache[]
 }
@@ -117,6 +123,8 @@ const cloneSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,
 ): SolvedStateSnapshot => ({
   portAssignment: new Int32Array(snapshot.portAssignment),
+  solvedRouteStartPort: new Int32Array(snapshot.solvedRouteStartPort),
+  solvedRouteEndPort: new Int32Array(snapshot.solvedRouteEndPort),
   regionSegments: cloneRegionSegments(snapshot.regionSegments),
   regionIntersectionCaches: snapshot.regionIntersectionCaches.map(
     cloneRegionIntersectionCache,
@@ -129,6 +137,8 @@ const restoreSolvedStateSnapshot = (
 ) => {
   const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
   solver.state.portAssignment = clonedSnapshot.portAssignment
+  solver.state.solvedRouteStartPort = clonedSnapshot.solvedRouteStartPort
+  solver.state.solvedRouteEndPort = clonedSnapshot.solvedRouteEndPort
   solver.state.regionSegments = clonedSnapshot.regionSegments
   solver.state.regionIntersectionCaches =
     clonedSnapshot.regionIntersectionCaches
@@ -137,6 +147,7 @@ const restoreSolvedStateSnapshot = (
 const summarizeRegionIntersectionCaches = (
   regionIntersectionCaches: ArrayLike<RegionIntersectionCache>,
 ): RegionCostSummary => {
+  let estimatedViaCount = 0
   let maxRegionCost = 0
   let totalRegionCost = 0
 
@@ -147,11 +158,18 @@ const summarizeRegionIntersectionCaches = (
   ) {
     const regionCost =
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCache = regionIntersectionCaches[regionId]
+    estimatedViaCount += computeEstimatedViaCount(
+      regionCache?.existingSameLayerIntersections ?? 0,
+      regionCache?.existingCrossingLayerIntersections ?? 0,
+      regionCache?.existingEntryExitLayerChanges ?? 0,
+    )
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
 
   return {
+    estimatedViaCount,
     maxRegionCost,
     totalRegionCost,
   }
@@ -161,17 +179,25 @@ const summarizeRegionIntersectionCachesForRegionIds = (
   regionIntersectionCaches: ArrayLike<RegionIntersectionCache>,
   regionIds: RegionId[],
 ): RegionCostSummary => {
+  let estimatedViaCount = 0
   let maxRegionCost = 0
   let totalRegionCost = 0
 
   for (const regionId of regionIds) {
     const regionCost =
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCache = regionIntersectionCaches[regionId]
+    estimatedViaCount += computeEstimatedViaCount(
+      regionCache?.existingSameLayerIntersections ?? 0,
+      regionCache?.existingCrossingLayerIntersections ?? 0,
+      regionCache?.existingEntryExitLayerChanges ?? 0,
+    )
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
 
   return {
+    estimatedViaCount,
     maxRegionCost,
     totalRegionCost,
   }
@@ -182,6 +208,7 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
   excludedRegionIds: RegionId[],
 ): RegionCostSummary => {
   const excludedRegionIdSet = new Set(excludedRegionIds)
+  let estimatedViaCount = 0
   let maxRegionCost = 0
   let totalRegionCost = 0
 
@@ -196,25 +223,21 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
 
     const regionCost =
       regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+    const regionCache = regionIntersectionCaches[regionId]
+    estimatedViaCount += computeEstimatedViaCount(
+      regionCache?.existingSameLayerIntersections ?? 0,
+      regionCache?.existingCrossingLayerIntersections ?? 0,
+      regionCache?.existingEntryExitLayerChanges ?? 0,
+    )
     maxRegionCost = Math.max(maxRegionCost, regionCost)
     totalRegionCost += regionCost
   }
 
   return {
+    estimatedViaCount,
     maxRegionCost,
     totalRegionCost,
   }
-}
-
-const compareRegionCostSummaries = (
-  left: RegionCostSummary,
-  right: RegionCostSummary,
-) => {
-  if (left.maxRegionCost !== right.maxRegionCost) {
-    return left.maxRegionCost - right.maxRegionCost
-  }
-
-  return left.totalRegionCost - right.totalRegionCost
 }
 
 const getSharedRegionIdForPorts = (
@@ -247,8 +270,10 @@ const getOrderedRoutePath = (
   const routeSegments = solution.solvedRoutePathSegments[routeId] ?? []
   const routeSegmentRegionIds =
     solution.solvedRoutePathRegionIds?.[routeId] ?? []
-  const startPortId = problem.routeStartPort[routeId]
-  const endPortId = problem.routeEndPort[routeId]
+  const startPortId =
+    solution.solvedRouteStartPort?.[routeId] ?? problem.routeStartPort[routeId]
+  const endPortId =
+    solution.solvedRouteEndPort?.[routeId] ?? problem.routeEndPort[routeId]
 
   if (routeSegments.length === 0) {
     if (startPortId === endPortId) {
@@ -348,6 +373,8 @@ const applyRouteSegmentsToSolver = (
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
 ) => {
   solver.state.portAssignment.fill(-1)
+  solver.state.solvedRouteStartPort.set(solver.problem.routeStartPort)
+  solver.state.solvedRouteEndPort.set(solver.problem.routeEndPort)
   solver.state.regionSegments = Array.from(
     { length: solver.topology.regionCount },
     () => [],
@@ -362,6 +389,7 @@ const applyRouteSegmentsToSolver = (
   solver.state.candidateQueue.clear()
   solver.resetCandidateBestCosts()
   solver.state.goalPortId = -1
+  solver.state.goalPortIds.clear()
   solver.state.ripCount = 0
   solver.state.regionCongestionCost.fill(0)
 
@@ -425,12 +453,19 @@ const createSolvedSolverFromSolution = (
     }
   }
 
-  return createSolvedSolverFromRegionSegments(
+  const solver = createSolvedSolverFromRegionSegments(
     topology,
     problem,
     routeSegmentsByRegion,
     options,
   )
+  if (solution.solvedRouteStartPort) {
+    solver.state.solvedRouteStartPort.set(solution.solvedRouteStartPort)
+  }
+  if (solution.solvedRouteEndPort) {
+    solver.state.solvedRouteEndPort.set(solution.solvedRouteEndPort)
+  }
+  return solver
 }
 
 const createSectionRoutePlans = (
@@ -598,6 +633,10 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = Number.POSITIVE_INFINITY
 
+  protected override shouldRetainParetoAlternatives(): boolean {
+    return false
+  }
+
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
@@ -614,6 +653,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.applyFixedSegments()
     this.fixedSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
+      solvedRouteStartPort: this.state.solvedRouteStartPort,
+      solvedRouteEndPort: this.state.solvedRouteEndPort,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
     })
@@ -653,6 +694,8 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.bestSummary = summary
     this.bestSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
+      solvedRouteStartPort: this.state.solvedRouteStartPort,
+      solvedRouteEndPort: this.state.solvedRouteEndPort,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
     })
@@ -670,6 +713,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+    this.state.goalPortIds.clear()
   }
 
   override getStartingNextRegionId(
@@ -705,6 +749,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+    this.state.goalPortIds.clear()
   }
 
   override onAllRoutesRouted() {
@@ -718,6 +763,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
     const regionIdsOverCostThreshold: RegionId[] = []
     const mutableRegionCosts = new Float64Array(this.mutableRegionIds.length)
+    let mutableEstimatedViaCount = 0
     let mutableMaxRegionCost = 0
     let mutableTotalRegionCost = 0
 
@@ -729,6 +775,12 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       const regionId = this.mutableRegionIds[mutableRegionIndex]!
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
+      const regionCache = state.regionIntersectionCaches[regionId]
+      mutableEstimatedViaCount += computeEstimatedViaCount(
+        regionCache?.existingSameLayerIntersections ?? 0,
+        regionCache?.existingCrossingLayerIntersections ?? 0,
+        regionCache?.existingEntryExitLayerChanges ?? 0,
+      )
       mutableRegionCosts[mutableRegionIndex] = regionCost
       mutableMaxRegionCost = Math.max(mutableMaxRegionCost, regionCost)
       mutableTotalRegionCost += regionCost
@@ -744,12 +796,17 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     )
     const totalRegionCost =
       this.immutableRegionSummary.totalRegionCost + mutableTotalRegionCost
+    const estimatedViaCount =
+      this.immutableRegionSummary.estimatedViaCount +
+      mutableEstimatedViaCount
 
     this.captureBestState({
+      estimatedViaCount,
       maxRegionCost,
       totalRegionCost,
     })
     const bestSummary = this.bestSummary ?? {
+      estimatedViaCount,
       maxRegionCost,
       totalRegionCost,
     }
@@ -777,10 +834,12 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       activeRouteCount: this.activeRouteIds.length,
       currentRipThreshold,
       hotRegionCount: regionIdsOverCostThreshold.length,
+      estimatedViaCount,
       maxRegionCost,
       totalRegionCost,
       bestMaxRegionCost: bestSummary.maxRegionCost,
       bestTotalRegionCost: bestSummary.totalRegionCost,
+      bestEstimatedViaCount: bestSummary.estimatedViaCount,
       ripCount: state.ripCount,
     }
 
@@ -853,6 +912,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+    this.state.goalPortIds.clear()
     this.stats = {
       ...this.stats,
       acceptedFixedSectionStateOnTimeout: true,

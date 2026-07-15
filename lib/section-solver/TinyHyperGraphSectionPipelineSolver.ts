@@ -3,12 +3,17 @@ import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
+  RegionCostSummary,
   TinyHyperGraphProblem,
   TinyHyperGraphSolution,
   TinyHyperGraphSolverOptions,
   TinyHyperGraphTopology,
 } from "../core"
-import { TinyHyperGraphSolver } from "../core"
+import {
+  compareRegionCostSummaries,
+  TinyHyperGraphSolver,
+} from "../core"
+import { computeEstimatedViaCount } from "../computeRegionCost"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -30,6 +35,10 @@ type AutomaticSectionSearchResult = {
   portSectionMask: Int8Array
   baselineMaxRegionCost: number
   finalMaxRegionCost: number
+  baselineEstimatedViaCount: number
+  finalEstimatedViaCount: number
+  baselineTotalRegionCost: number
+  finalTotalRegionCost: number
   generatedCandidateCount: number
   candidateCount: number
   duplicateCandidateCount: number
@@ -61,16 +70,32 @@ const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolverOptions = {
 
 const DEFAULT_MAX_HOT_REGIONS = 2
 
-const IMPROVEMENT_EPSILON = 1e-9
+const getRegionCostSummary = (
+  solver: TinyHyperGraphSolver,
+): RegionCostSummary => {
+  let estimatedViaCount = 0
+  let maxRegionCost = 0
+  let totalRegionCost = 0
 
-const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
-  solver.state.regionIntersectionCaches.reduce(
-    (maxRegionCost, regionIntersectionCache) =>
-      Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
-    0,
-  )
+  for (const regionCache of solver.state.regionIntersectionCaches) {
+    estimatedViaCount += computeEstimatedViaCount(
+      regionCache.existingSameLayerIntersections,
+      regionCache.existingCrossingLayerIntersections,
+      regionCache.existingEntryExitLayerChanges,
+    )
+    maxRegionCost = Math.max(maxRegionCost, regionCache.existingRegionCost)
+    totalRegionCost += regionCache.existingRegionCost
+  }
 
-const getSerializedOutputMaxRegionCost = (
+  return { estimatedViaCount, maxRegionCost, totalRegionCost }
+}
+
+const isRegionCostSummaryBetter = (
+  candidate: RegionCostSummary,
+  current: RegionCostSummary,
+): boolean => compareRegionCostSummaries(candidate, current) < 0
+
+const getSerializedOutputRegionCostSummary = (
   serializedHyperGraph: SerializedHyperGraph,
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions,
 ) => {
@@ -82,7 +107,7 @@ const getSerializedOutputMaxRegionCost = (
     sectionSolverOptions,
   )
 
-  return getMaxRegionCost(replayedSolver.baselineSolver)
+  return getRegionCostSummary(replayedSolver.baselineSolver)
 }
 
 const createPortSectionMaskForRegionIds = (
@@ -121,6 +146,12 @@ const createProblemWithPortSectionMask = (
   routeMetadata: problem.routeMetadata,
   routeStartPort: new Int32Array(problem.routeStartPort),
   routeEndPort: new Int32Array(problem.routeEndPort),
+  routeStartPortOptions: problem.routeStartPortOptions?.map((portIds) => [
+    ...portIds,
+  ]),
+  routeEndPortOptions: problem.routeEndPortOptions?.map((portIds) => [
+    ...portIds,
+  ]),
   routeNet: new Int32Array(problem.routeNet),
   regionNetId: new Int32Array(problem.regionNetId),
   portPenalty:
@@ -168,12 +199,12 @@ const findBestAutomaticSectionMask = (
     solution,
     sectionSolverOptions,
   )
-  const baselineMaxRegionCost = getMaxRegionCost(
+  const baselineSummary = getRegionCostSummary(
     baselineSectionSolver.baselineSolver,
   )
   const baselineEvaluationMs = performance.now() - baselineEvaluationStartTime
 
-  let bestFinalMaxRegionCost = baselineMaxRegionCost
+  let bestFinalSummary = baselineSummary
   let bestPortSectionMask = new Int8Array(topology.portCount)
   let winningCandidateLabel: string | undefined
   let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
@@ -248,25 +279,19 @@ const findBestAutomaticSectionMask = (
         continue
       }
 
-      const finalMaxRegionCost = Number(
-        sectionSolver.stats.finalMaxRegionCost ??
-          getMaxRegionCost(sectionSolver.getSolvedSolver()),
-      )
+      const finalSummary = getRegionCostSummary(sectionSolver.getSolvedSolver())
 
-      if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
+      if (isRegionCostSummaryBetter(finalSummary, bestFinalSummary)) {
         const candidateReplayScoreStartTime = performance.now()
-        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
+        const replayedFinalSummary = getSerializedOutputRegionCostSummary(
           sectionSolver.getOutput(),
           sectionSolverOptions,
         )
         candidateReplayScoreMs +=
           performance.now() - candidateReplayScoreStartTime
 
-        if (
-          replayedFinalMaxRegionCost <
-          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
-        ) {
-          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
+        if (isRegionCostSummaryBetter(replayedFinalSummary, bestFinalSummary)) {
+          bestFinalSummary = replayedFinalSummary
           bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
           winningCandidateLabel = candidate.label
           winningCandidateFamily = candidate.family
@@ -279,8 +304,12 @@ const findBestAutomaticSectionMask = (
 
   return {
     portSectionMask: bestPortSectionMask,
-    baselineMaxRegionCost,
-    finalMaxRegionCost: bestFinalMaxRegionCost,
+    baselineMaxRegionCost: baselineSummary.maxRegionCost,
+    finalMaxRegionCost: bestFinalSummary.maxRegionCost,
+    baselineEstimatedViaCount: baselineSummary.estimatedViaCount,
+    finalEstimatedViaCount: bestFinalSummary.estimatedViaCount,
+    baselineTotalRegionCost: baselineSummary.totalRegionCost,
+    finalTotalRegionCost: bestFinalSummary.totalRegionCost,
     generatedCandidateCount,
     candidateCount,
     duplicateCandidateCount,
@@ -440,6 +469,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
             sectionSearchBaselineMaxRegionCost:
               searchResult.baselineMaxRegionCost,
             sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+            sectionSearchBaselineEstimatedViaCount:
+              searchResult.baselineEstimatedViaCount,
+            sectionSearchFinalEstimatedViaCount:
+              searchResult.finalEstimatedViaCount,
+            sectionSearchBaselineTotalRegionCost:
+              searchResult.baselineTotalRegionCost,
+            sectionSearchFinalTotalRegionCost:
+              searchResult.finalTotalRegionCost,
             sectionSearchDelta:
               searchResult.baselineMaxRegionCost -
               searchResult.finalMaxRegionCost,

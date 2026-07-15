@@ -1,16 +1,15 @@
-import type { Candidate } from "./core"
+import {
+  candidateQualityDominatesOrEquals,
+  compareCandidatesByQuality,
+  getCandidateQuality,
+  type Candidate,
+} from "./core"
 
 /**
- * Candidate queue keyed by the directed hop represented by a candidate.
- *
- * A queued hop has at most one entry. A lower-cost candidate replaces the
- * existing entry in place, and a dequeued hop is closed until the queue is
- * cleared for the next route search.
+ * Candidate queue that retains the nondominated quality frontier for each hop.
  */
 export class IndexedCandidateHeap {
   private items: Candidate[] = []
-  private indexByHopId = new Map<number, number>()
-  private closedHopIds = new Set<number>()
 
   constructor(private readonly regionCount: number) {}
 
@@ -24,31 +23,44 @@ export class IndexedCandidateHeap {
 
   clear(): void {
     this.items.length = 0
-    this.indexByHopId.clear()
-    this.closedHopIds.clear()
+  }
+
+  removeWhere(predicate: (candidate: Candidate) => boolean): void {
+    this.items = this.items.filter((candidate) => !predicate(candidate))
+    this.heapify()
   }
 
   queue(candidate: Candidate): void {
     const hopId = this.getHopId(candidate)
-    if (this.closedHopIds.has(hopId)) return
-
-    const existingIndex = this.indexByHopId.get(hopId)
-    if (existingIndex !== undefined) {
-      const existingCandidate = this.items[existingIndex]!
-      if (candidate.g >= existingCandidate.g) return
-
-      this.items[existingIndex] = candidate
-      if (candidate.f <= existingCandidate.f) {
-        this.siftUp(existingIndex)
-      } else {
-        this.siftDown(existingIndex)
-      }
+    const quality = getCandidateQuality(candidate)
+    if (
+      this.items.some(
+        (existingCandidate) =>
+          this.getHopId(existingCandidate) === hopId &&
+          candidateQualityDominatesOrEquals(
+            getCandidateQuality(existingCandidate),
+            quality,
+          ),
+      )
+    ) {
       return
+    }
+
+    const retainedItems = this.items.filter(
+      (existingCandidate) =>
+        this.getHopId(existingCandidate) !== hopId ||
+        !candidateQualityDominatesOrEquals(
+          quality,
+          getCandidateQuality(existingCandidate),
+        ),
+    )
+    if (retainedItems.length !== this.items.length) {
+      this.items = retainedItems
+      this.heapify()
     }
 
     const index = this.items.length
     this.items.push(candidate)
-    this.indexByHopId.set(hopId, index)
     this.siftUp(index)
   }
 
@@ -56,14 +68,9 @@ export class IndexedCandidateHeap {
     const bestCandidate = this.items[0]
     if (!bestCandidate) return undefined
 
-    const bestHopId = this.getHopId(bestCandidate)
-    this.closedHopIds.add(bestHopId)
-    this.indexByHopId.delete(bestHopId)
-
     const lastCandidate = this.items.pop()!
     if (this.items.length > 0) {
       this.items[0] = lastCandidate
-      this.indexByHopId.set(this.getHopId(lastCandidate), 0)
       this.siftDown(0)
     }
     return bestCandidate
@@ -77,15 +84,26 @@ export class IndexedCandidateHeap {
     const leftCandidate = this.items[leftIndex]!
     this.items[leftIndex] = this.items[rightIndex]!
     this.items[rightIndex] = leftCandidate
-    this.indexByHopId.set(this.getHopId(this.items[leftIndex]!), leftIndex)
-    this.indexByHopId.set(this.getHopId(this.items[rightIndex]!), rightIndex)
+  }
+
+  private heapify(): void {
+    for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
+      this.siftDown(index)
+    }
   }
 
   private siftUp(startIndex: number): void {
     let index = startIndex
     while (index > 0) {
       const parentIndex = (index - 1) >> 1
-      if (this.items[parentIndex]!.f <= this.items[index]!.f) return
+      if (
+        compareCandidatesByQuality(
+          this.items[parentIndex]!,
+          this.items[index]!,
+        ) <= 0
+      ) {
+        return
+      }
       this.swap(index, parentIndex)
       index = parentIndex
     }
@@ -100,10 +118,20 @@ export class IndexedCandidateHeap {
       const rightChildIndex = leftChildIndex + 1
       const smallestChildIndex =
         rightChildIndex < this.items.length &&
-        this.items[rightChildIndex]!.f < this.items[leftChildIndex]!.f
+        compareCandidatesByQuality(
+          this.items[rightChildIndex]!,
+          this.items[leftChildIndex]!,
+        ) < 0
           ? rightChildIndex
           : leftChildIndex
-      if (this.items[index]!.f <= this.items[smallestChildIndex]!.f) return
+      if (
+        compareCandidatesByQuality(
+          this.items[index]!,
+          this.items[smallestChildIndex]!,
+        ) <= 0
+      ) {
+        return
+      }
       this.swap(index, smallestChildIndex)
       index = smallestChildIndex
     }

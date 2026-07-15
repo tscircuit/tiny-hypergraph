@@ -8,6 +8,7 @@ export * from "./selective-rerip-tiny-hyper-graph-solver"
 export * from "./bus-solver"
 export * from "./region-graph"
 export {
+  computeEstimatedViaCount,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
   TRACE_VIA_MARGIN,
 } from "./computeRegionCost"

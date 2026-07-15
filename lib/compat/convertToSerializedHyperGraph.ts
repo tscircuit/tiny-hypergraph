@@ -184,8 +184,8 @@ const getOrderedRoutePath = (
     throw new Error(`Route ${routeId} has no solved segments`)
   }
 
-  const startPortId = solver.problem.routeStartPort[routeId]
-  const endPortId = solver.problem.routeEndPort[routeId]
+  const startPortId = solver.state.solvedRouteStartPort[routeId]
+  const endPortId = solver.state.solvedRouteEndPort[routeId]
   const segmentsByPort = new Map<
     PortId,
     Array<RouteSegment & { segmentIndex: number }>

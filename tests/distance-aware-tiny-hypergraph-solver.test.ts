@@ -1,12 +1,22 @@
 import { expect, test } from "bun:test"
 import {
+  type Candidate,
   DistanceAwareTinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/index"
 import { IndexedCandidateHeap } from "lib/indexed-candidate-heap"
 
-test("queues a costed goal candidate before committing the path", () => {
+class CapturingDistanceAwareSolver extends DistanceAwareTinyHyperGraphSolver {
+  acceptedGoalCost?: number
+
+  override onPathFound(finalCandidate: Candidate): void {
+    this.acceptedGoalCost = finalCandidate.g
+    super.onPathFound(finalCandidate)
+  }
+}
+
+test("costs the final goal segment before committing the path", () => {
   const topology: TinyHyperGraphTopology = {
     portCount: 2,
     regionCount: 2,
@@ -33,7 +43,7 @@ test("queues a costed goal candidate before committing the path", () => {
     routeNet: new Int32Array([0]),
     regionNetId: new Int32Array([-1, -1]),
   }
-  const solver = new DistanceAwareTinyHyperGraphSolver(topology, problem, {
+  const solver = new CapturingDistanceAwareSolver(topology, problem, {
     DISTANCE_TO_COST: 2,
     STATIC_REACHABILITY_PRECHECK: false,
   })
@@ -41,13 +51,7 @@ test("queues a costed goal candidate before committing the path", () => {
   solver.step()
 
   expect(solver.state.candidateQueue).toBeInstanceOf(IndexedCandidateHeap)
-  const queuedGoal = solver.state.candidateQueue.toArray()[0]
-  expect(queuedGoal?.portId).toBe(1)
-  expect(queuedGoal?.g).toBeGreaterThanOrEqual(20)
-  expect(solver.state.currentRouteId).toBe(0)
-
-  solver.step()
-
   expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
+  expect(solver.acceptedGoalCost).toBeGreaterThanOrEqual(20)
   expect(solver.state.currentRouteId).toBeUndefined()
 })

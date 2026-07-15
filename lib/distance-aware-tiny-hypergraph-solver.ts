@@ -31,44 +31,20 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     ) as unknown as TinyHyperGraphWorkingState["candidateQueue"]
   }
 
-  override computeG(
+  protected override computeCandidateRegionRiskCost(
     currentCandidate: Candidate,
     neighborPortId: number,
+    regionRiskIncrement: number,
+    routeLengthIncrement: number,
   ): number {
-    const baseCost = super.computeG(currentCandidate, neighborPortId)
-    if (!Number.isFinite(baseCost)) return baseCost
-
-    const dx =
-      this.topology.portX[currentCandidate.portId]! -
-      this.topology.portX[neighborPortId]!
-    const dy =
-      this.topology.portY[currentCandidate.portId]! -
-      this.topology.portY[neighborPortId]!
-    return baseCost + Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+    return (
+      super.computeCandidateRegionRiskCost(
+        currentCandidate,
+        neighborPortId,
+        regionRiskIncrement,
+        routeLengthIncrement,
+      ) + routeLengthIncrement
+    )
   }
 
-  override onPathFound(finalCandidate: Candidate): void {
-    const goalPortId = this.state.goalPortId
-    if (finalCandidate.portId === goalPortId) {
-      super.onPathFound(finalCandidate)
-      return
-    }
-
-    const g = this.computeG(finalCandidate, goalPortId)
-    if (!Number.isFinite(g)) return
-
-    const goalHopId = this.getHopId(goalPortId, finalCandidate.nextRegionId)
-    if (g >= this.getCandidateBestCost(goalHopId)) return
-
-    this.setCandidateBestCost(goalHopId, g)
-    this.state.candidateQueue.queue({
-      prevRegionId: finalCandidate.nextRegionId,
-      nextRegionId: finalCandidate.nextRegionId,
-      portId: goalPortId,
-      g,
-      h: 0,
-      f: g,
-      prevCandidate: finalCandidate,
-    })
-  }
 }

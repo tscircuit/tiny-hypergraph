@@ -16,6 +16,20 @@ export class MinHeap<T> {
     this.items.length = 0
   }
 
+  removeWhere(predicate: (item: T) => boolean): void {
+    let writeIndex = 0
+    for (const item of this.items) {
+      if (predicate(item)) continue
+      this.items[writeIndex] = item
+      writeIndex += 1
+    }
+    this.items.length = writeIndex
+
+    for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
+      this.siftDown(index)
+    }
+  }
+
   queue(item: T) {
     this.items.push(item)
     this.siftUp(this.items.length - 1)

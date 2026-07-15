@@ -7,6 +7,15 @@ export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
   regionAvailableZMask > 0 &&
   (regionAvailableZMask & (regionAvailableZMask - 1)) === 0
 
+export const computeEstimatedViaCount = (
+  numSameLayerIntersections: number,
+  numCrossLayerIntersections: number,
+  numEntryExitChanges: number,
+) =>
+  numSameLayerIntersections * 2 +
+  numCrossLayerIntersections +
+  numEntryExitChanges
+
 export const computeRegionCost = (
   regionWidth: number,
   regionHeight: number,
@@ -39,10 +48,11 @@ export const computeRegionCostForArea = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
 ) => {
-  const estViasRequired =
-    numSameLayerIntersections * 2 +
-    numCrossLayerIntersections * 1 +
-    numEntryExitChanges * 1
+  const estViasRequired = computeEstimatedViaCount(
+    numSameLayerIntersections,
+    numCrossLayerIntersections,
+    numEntryExitChanges,
+  )
   const viaSizeWithMargin = minViaPadDiameter + TRACE_VIA_MARGIN
   const viaSizeWithMarginSq = viaSizeWithMargin ** 2
 

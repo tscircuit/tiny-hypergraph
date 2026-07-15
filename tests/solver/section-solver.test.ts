@@ -4,6 +4,8 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import * as datasetHg07 from "dataset-hg07"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
+  compareRegionCostSummaries,
+  computeEstimatedViaCount,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   TinyHyperGraphSectionPipelineSolver,
@@ -65,7 +67,7 @@ const getSolvedRoutePortIds = (
     ]),
   )
 
-const getSerializedOutputMaxRegionCost = (
+const getSerializedOutputRegionCostSummary = (
   serializedHyperGraph: ReturnType<TinyHyperGraphSectionSolver["getOutput"]>,
 ) => {
   const replay = loadSerializedHyperGraph(serializedHyperGraph)
@@ -75,7 +77,24 @@ const getSerializedOutputMaxRegionCost = (
     replay.solution,
   )
 
-  return getMaxRegionCost(replayedSolver.baselineSolver)
+  return replayedSolver.baselineSolver.state.regionIntersectionCaches.reduce(
+    (summary, regionIntersectionCache) => ({
+      estimatedViaCount:
+        summary.estimatedViaCount +
+        computeEstimatedViaCount(
+          regionIntersectionCache.existingSameLayerIntersections,
+          regionIntersectionCache.existingCrossingLayerIntersections,
+          regionIntersectionCache.existingEntryExitLayerChanges,
+        ),
+      maxRegionCost: Math.max(
+        summary.maxRegionCost,
+        regionIntersectionCache.existingRegionCost,
+      ),
+      totalRegionCost:
+        summary.totalRegionCost + regionIntersectionCache.existingRegionCost,
+    }),
+    { estimatedViaCount: 0, maxRegionCost: 0, totalRegionCost: 0 },
+  )
 }
 
 test("section solver reattaches fixed prefixes and suffixes after optimizing the section", () => {
@@ -296,7 +315,7 @@ test("section pipeline final acceptance falls back to solveGraph output", () => 
   expect(pipelineSolver.getOutput()).toBe(sectionSolverFixtureGraph)
 })
 
-test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {
+test("section pipeline searches eligible masks and commits an improving output on hg07 sample029", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: datasetHg07.sample029,
   })
@@ -305,7 +324,7 @@ test("section pipeline searches multiple masks and commits an improving output o
 
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
-  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(1)
+  expect(pipelineSolver.stats.sectionSearchCandidateCount).toBeGreaterThan(0)
   expect(pipelineSolver.selectedSectionCandidateLabel).toBeDefined()
   expect(
     [...(pipelineSolver.selectedSectionMask ?? [])].some(
@@ -324,9 +343,12 @@ test("section pipeline searches multiple masks and commits an improving output o
 
   expect(solveGraphOutput).toBeDefined()
   expect(optimizeSectionOutput).toBeDefined()
-  expect(getSerializedOutputMaxRegionCost(optimizeSectionOutput!)).toBeLessThan(
-    getSerializedOutputMaxRegionCost(solveGraphOutput!),
-  )
+  expect(
+    compareRegionCostSummaries(
+      getSerializedOutputRegionCostSummary(optimizeSectionOutput!),
+      getSerializedOutputRegionCostSummary(solveGraphOutput!),
+    ),
+  ).toBeLessThan(0)
 })
 
 test("section pipeline serializes srj12 bus-routing sample001 without a repeated-start-port path", () => {

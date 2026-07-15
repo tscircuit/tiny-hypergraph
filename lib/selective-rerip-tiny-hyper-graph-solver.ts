@@ -280,6 +280,7 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+    this.state.goalPortIds.clear()
 
     this.selectiveReripStats.selectiveRipCount += 1
     this.selectiveReripStats.selectivelyRippedRouteCount += rippedRouteIds.size
