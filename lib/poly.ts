@@ -676,6 +676,18 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     )
   }
 
+  protected override getTraceDensityRegionDimension(
+    regionId: RegionId,
+  ): number {
+    const width =
+      this.topology.regionBoundsMaxX[regionId] -
+      this.topology.regionBoundsMinX[regionId]
+    const height =
+      this.topology.regionBoundsMaxY[regionId] -
+      this.topology.regionBoundsMinY[regionId]
+    return Math.min(width, height)
+  }
+
   override visualize(): GraphicsObject {
     return visualizePolyHyperGraph(this)
   }
