@@ -19,7 +19,7 @@ const createSingleRegionTopology = (): TinyHyperGraphTopology => ({
   regionCount: 1,
   regionIncidentPorts: [[0, 1, 2, 3, 4, 5, 6, 7]],
   incidentPortRegion: Array.from({ length: 8 }, () => [0]),
-  regionWidth: new Float64Array([1]),
+  regionWidth: new Float64Array([0.1]),
   regionHeight: new Float64Array([2]),
   regionCenterX: new Float64Array([0]),
   regionCenterY: new Float64Array([0]),
@@ -51,7 +51,7 @@ test("trace density counts distinct nets only on shared layers", () => {
     { nextRegionId: 0, portId: 6, f: 0, g: 0, h: 0 },
     7,
   )
-  expect(candidateCost).toBeCloseTo(0.04)
+  expect(candidateCost).toBeCloseTo(4)
 
   solver.appendSegmentToRegionCache(0, 6, 7)
   expect(
@@ -68,7 +68,7 @@ test("trace density prefers wider regions for an additional net", () => {
       [4, 5, 6, 7],
     ],
     incidentPortRegion: [[0], [0], [0], [0], [1], [1], [1], [1]],
-    regionWidth: new Float64Array([0.5, 2]),
+    regionWidth: new Float64Array([0.2, 2]),
     regionHeight: new Float64Array([3, 3]),
     regionCenterX: new Float64Array(2),
     regionCenterY: new Float64Array(2),
@@ -99,7 +99,7 @@ test("trace density prefers wider regions for an additional net", () => {
     7,
   )
 
-  expect(narrowRegionCost).toBeCloseTo(0.36)
+  expect(narrowRegionCost).toBeCloseTo(2.25)
   expect(wideRegionCost).toBeCloseTo(0.0225)
   expect(narrowRegionCost).toBeGreaterThan(wideRegionCost)
 })

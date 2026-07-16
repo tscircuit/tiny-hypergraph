@@ -25,6 +25,8 @@ export interface DynamicAnglePairArrays {
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  distinctNetCountByLayer: Uint32Array
+  maxDistinctNetCount: number
   existingSameLayerIntersections: Integer
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer

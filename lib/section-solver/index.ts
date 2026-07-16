@@ -107,6 +107,10 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  distinctNetCountByLayer: new Uint32Array(
+    regionIntersectionCache.distinctNetCountByLayer,
+  ),
+  maxDistinctNetCount: regionIntersectionCache.maxDistinctNetCount,
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:

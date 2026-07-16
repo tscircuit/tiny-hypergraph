@@ -31,14 +31,18 @@ export const countNewIntersectionsWithValues = (
   newGreaterAngle: number,
   newLayerMask: number,
   entryExitLayerChanges: number,
-): [number, number, number] => {
+): [number, number, number, number] => {
   const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
 
   let sameLayerIntersectionCount = 0
   let crossingLayerIntersectionCount = 0
+  let sameNetLayerMask = 0
 
   for (let i = 0; i < netIds.length; i++) {
-    if (newNet === netIds[i]) continue
+    if (newNet === netIds[i]) {
+      sameNetLayerMask |= newLayerMask & layerMasks[i]
+      continue
+    }
 
     const lesserAngleIsInsideInterval =
       newLesserAngle < lesserAngles[i] && lesserAngles[i] < newGreaterAngle
@@ -58,6 +62,7 @@ export const countNewIntersectionsWithValues = (
     sameLayerIntersectionCount,
     crossingLayerIntersectionCount,
     entryExitLayerChanges,
+    sameNetLayerMask,
   ]
 }
 
@@ -66,14 +71,16 @@ export const countNewIntersections = (
   newPair: DynamicAnglePair,
 ): [number, number, number] => {
   const [newNet, newLesserAngle, newZ1, newGreaterAngle, newZ2] = newPair
-  return countNewIntersectionsWithValues(
-    existingPairs,
-    newNet,
-    newLesserAngle,
-    newGreaterAngle,
-    (1 << newZ1) | (1 << newZ2),
-    newZ1 !== newZ2 ? 1 : 0,
-  )
+  const [sameLayerIntersections, crossLayerIntersections, layerChanges] =
+    countNewIntersectionsWithValues(
+      existingPairs,
+      newNet,
+      newLesserAngle,
+      newGreaterAngle,
+      (1 << newZ1) | (1 << newZ2),
+      newZ1 !== newZ2 ? 1 : 0,
+    )
+  return [sameLayerIntersections, crossLayerIntersections, layerChanges]
 }
 
 export const countIntersectionsFromAnglePairsDynamic = countNewIntersections
