@@ -9,6 +9,7 @@ import {
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
+import { SparseCandidateBestCostTable } from "./sparse-candidate-best-cost-table"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
   createStaticallyUnroutableRouteSummary,
@@ -345,6 +346,7 @@ interface SegmentGeometryScratch {
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private readonly sparseCandidateBestCostTable?: SparseCandidateBestCostTable
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -383,6 +385,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     super()
     applyTinyHyperGraphSolverOptions(this, options)
+    if (this.USE_SPARSE_CANDIDATE_STORAGE) {
+      let incidentHopCount = 0
+      for (const incidentRegions of topology.incidentPortRegion) {
+        incidentHopCount += incidentRegions.length
+      }
+      this.sparseCandidateBestCostTable = new SparseCandidateBestCostTable(
+        incidentHopCount,
+        (hopId) => {
+          this.assertValidIncidentHopId(hopId)
+        },
+      )
+    }
     this.state = {
       portAssignment: new Int32Array(topology.portCount).fill(-1),
       regionSegments: Array.from({ length: topology.regionCount }, () => []),
@@ -395,10 +409,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       unroutedRoutes: range(problem.routeCount),
       candidateQueue: new MinHeap([], compareCandidatesByF),
       candidateBestCostByHopId: this.USE_SPARSE_CANDIDATE_STORAGE
-        ? new Map()
+        ? new Float64Array(0)
         : new Float64Array(topology.portCount * topology.regionCount),
       candidateBestCostGenerationByHopId: this.USE_SPARSE_CANDIDATE_STORAGE
-        ? new Map()
+        ? new Uint32Array(0)
         : new Uint32Array(topology.portCount * topology.regionCount),
       candidateBestCostGeneration: 1,
       goalPortId: -1,
@@ -608,6 +622,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   resetCandidateBestCosts() {
     const { state } = this
+    if (this.sparseCandidateBestCostTable) {
+      this.sparseCandidateBestCostTable.reset()
+      return
+    }
 
     if (state.candidateBestCostGeneration === 0xffffffff) {
       if (state.candidateBestCostByHopId instanceof Map) {
@@ -626,6 +644,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   getCandidateBestCost(hopId: HopId) {
+    if (this.sparseCandidateBestCostTable) {
+      return this.sparseCandidateBestCostTable.get(hopId)
+    }
+
     const { state } = this
     const bestCostGeneration = state.candidateBestCostGenerationByHopId
 
@@ -639,8 +661,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   setCandidateBestCost(hopId: HopId, bestCost: number) {
-    const { state } = this
+    if (this.sparseCandidateBestCostTable) {
+      this.sparseCandidateBestCostTable.set(hopId, bestCost)
+      return
+    }
 
+    const { state } = this
     if (state.candidateBestCostGenerationByHopId instanceof Map) {
       state.candidateBestCostGenerationByHopId.set(
         hopId,
@@ -660,6 +686,26 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   getHopId(portId: PortId, nextRegionId: RegionId): HopId {
     return portId * this.topology.regionCount + nextRegionId
+  }
+
+  private assertValidIncidentHopId(hopId: HopId): void {
+    const portId = Math.floor(hopId / this.topology.regionCount)
+    const regionId = hopId - portId * this.topology.regionCount
+    if (
+      portId >= this.topology.portCount ||
+      regionId >= this.topology.regionCount ||
+      !this.topology.incidentPortRegion[portId]?.includes(regionId)
+    ) {
+      throw new Error(
+        "Sparse candidate best-cost table received non-incident hop " +
+          hopId +
+          " (port " +
+          portId +
+          ", region " +
+          regionId +
+          ")",
+      )
+    }
   }
 
   getStartingNextRegionId(
