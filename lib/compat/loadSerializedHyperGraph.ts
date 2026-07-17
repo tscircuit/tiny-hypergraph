@@ -26,10 +26,6 @@ const isFullObstacleRegion = (
     return false
   }
 
-  if (region.d?._containsTarget !== true) {
-    return true
-  }
-
   const netId = getSerializedRegionNetId(region)
   return netId === undefined || netId === -1
 }
