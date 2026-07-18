@@ -1,0 +1,684 @@
+import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import type {
+  TinyHyperGraphProblem,
+  TinyHyperGraphSolution,
+  TinyHyperGraphTopology,
+} from "./domain"
+import { getAvailableZFromMask, getZLayerLabel } from "../lib/layerLabels"
+
+export class SerializedGraphLoadInvariantError extends Error {
+  readonly _tag = "SerializedGraphLoadInvariantError"
+
+  constructor(readonly reason: string) {
+    super(`Invalid serialized graph load invariant: ${reason}`)
+  }
+}
+
+const getSerializedRegionNetId = (
+  region: SerializedHyperGraph["regions"][number],
+) => {
+  const netId =
+    typeof region.d?.netId === "number"
+      ? region.d.netId
+      : typeof region.d?.NetId === "number"
+        ? region.d.NetId
+        : undefined
+
+  return Number.isFinite(netId) ? netId : undefined
+}
+
+const isFullObstacleRegion = (
+  region: SerializedHyperGraph["regions"][number],
+) => {
+  if (region.d?._containsObstacle !== true) {
+    return false
+  }
+
+  if (region.d?._containsTarget !== true) {
+    return true
+  }
+
+  const netId = getSerializedRegionNetId(region)
+  return netId === undefined || netId === -1
+}
+
+const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+  const connectedRegionIds = new Set<string>()
+  for (const connection of serializedHyperGraph.connections ?? []) {
+    connectedRegionIds.add(connection.startRegionId)
+    connectedRegionIds.add(connection.endRegionId)
+  }
+
+  const removedRegionIds = new Set(
+    serializedHyperGraph.regions
+      .filter(
+        (region) =>
+          isFullObstacleRegion(region) &&
+          !connectedRegionIds.has(region.regionId),
+      )
+      .map((region) => region.regionId),
+  )
+
+  if (removedRegionIds.size === 0) {
+    return serializedHyperGraph
+  }
+
+  const filteredPorts = serializedHyperGraph.ports.filter(
+    (port) =>
+      !removedRegionIds.has(port.region1Id) &&
+      !removedRegionIds.has(port.region2Id),
+  )
+
+  const invalidConnection = (serializedHyperGraph.connections ?? []).find(
+    (connection) =>
+      removedRegionIds.has(connection.startRegionId) ||
+      removedRegionIds.has(connection.endRegionId),
+  )
+
+  if (invalidConnection) {
+    throw new SerializedGraphLoadInvariantError(
+      `Connection "${invalidConnection.connectionId}" references full-obstacle region`,
+    )
+  }
+
+  return {
+    ...serializedHyperGraph,
+    regions: serializedHyperGraph.regions.filter(
+      (region) => !removedRegionIds.has(region.regionId),
+    ),
+    ports: filteredPorts,
+  }
+}
+
+const addSerializedRegionIdToMetadata = (
+  region: SerializedHyperGraph["regions"][number],
+  layer: string,
+) => {
+  const metadata =
+    region.d && typeof region.d === "object" && !Array.isArray(region.d)
+      ? { ...region.d }
+      : { value: region.d }
+
+  metadata.layer = layer
+
+  Object.defineProperty(metadata, "serializedRegionId", {
+    value: region.regionId,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+
+  return metadata
+}
+
+const addSerializedPortIdToMetadata = (
+  port: SerializedHyperGraph["ports"][number],
+  layer: string,
+) => {
+  const metadata =
+    port.d && typeof port.d === "object" && !Array.isArray(port.d)
+      ? { ...port.d }
+      : { value: port.d }
+
+  metadata.layer = layer
+
+  Object.defineProperty(metadata, "serializedPortId", {
+    value: port.portId,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  })
+
+  return metadata
+}
+
+const getRegionBounds = (region: SerializedHyperGraph["regions"][number]) => {
+  const bounds = region.d?.bounds
+  if (
+    bounds &&
+    Number.isFinite(bounds.minX) &&
+    Number.isFinite(bounds.maxX) &&
+    Number.isFinite(bounds.minY) &&
+    Number.isFinite(bounds.maxY)
+  ) {
+    return bounds
+  }
+
+  const center = region.d?.center
+  const width = region.d?.width
+  const height = region.d?.height
+  if (
+    center &&
+    typeof center.x === "number" &&
+    typeof center.y === "number" &&
+    typeof width === "number" &&
+    typeof height === "number"
+  ) {
+    return {
+      minX: center.x - width / 2,
+      maxX: center.x + width / 2,
+      minY: center.y - height / 2,
+      maxY: center.y + height / 2,
+    }
+  }
+
+  throw new SerializedGraphLoadInvariantError(
+    `region "${region.regionId}" is missing finite bounds or center/width/height geometry`,
+  )
+}
+
+const getRegionGeometry = (
+  region: SerializedHyperGraph["regions"][number],
+): { centerX: number; centerY: number; width: number; height: number } => {
+  const bounds = getRegionBounds(region)
+  const width =
+    typeof region.d?.width === "number"
+      ? region.d.width
+      : bounds.maxX - bounds.minX
+  const height =
+    typeof region.d?.height === "number"
+      ? region.d.height
+      : bounds.maxY - bounds.minY
+
+  return {
+    centerX:
+      typeof region.d?.center?.x === "number"
+        ? region.d.center.x
+        : (bounds.minX + bounds.maxX) / 2,
+    centerY:
+      typeof region.d?.center?.y === "number"
+        ? region.d.center.y
+        : (bounds.minY + bounds.maxY) / 2,
+    width,
+    height,
+  }
+}
+
+const getRegionAvailableZMask = (
+  region: SerializedHyperGraph["regions"][number],
+): number => {
+  const availableZ = region.d?.availableZ
+  if (!Array.isArray(availableZ)) {
+    return 0
+  }
+
+  let mask = 0
+  for (const z of availableZ) {
+    if (!Number.isInteger(z) || z < 0 || z >= 31) {
+      throw new SerializedGraphLoadInvariantError(
+        `region "${region.regionId}" has invalid availableZ value ${String(z)}`,
+      )
+    }
+    mask |= 1 << z
+  }
+
+  return mask
+}
+
+const getSerializedPortZ = (
+  port: SerializedHyperGraph["ports"][number],
+): number => {
+  const z = Number(port.d?.z)
+  if (!Number.isFinite(z)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite z coordinate`,
+    )
+  }
+
+  return z
+}
+
+const getSerializedPortX = (
+  port: SerializedHyperGraph["ports"][number],
+): number => {
+  const x = Number(port.d?.x)
+  if (!Number.isFinite(x)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite x coordinate`,
+    )
+  }
+
+  return x
+}
+
+const getSerializedPortY = (
+  port: SerializedHyperGraph["ports"][number],
+): number => {
+  const y = Number(port.d?.y)
+  if (!Number.isFinite(y)) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" is missing a finite y coordinate`,
+    )
+  }
+
+  return y
+}
+
+const computePortAngle = (
+  port: SerializedHyperGraph["ports"][number],
+  region: SerializedHyperGraph["regions"][number] | undefined,
+): number => {
+  if (!region) {
+    throw new SerializedGraphLoadInvariantError(
+      `port "${port.portId}" cannot compute angle for missing region`,
+    )
+  }
+
+  const bounds = getRegionBounds(region)
+  const x = getSerializedPortX(port)
+  const y = getSerializedPortY(port)
+  const withinXBounds = bounds.minX <= x && x <= bounds.maxX
+  const withinYBounds = bounds.minY <= y && y <= bounds.maxY
+
+  // Prefer the side whose outward half-plane actually contains the port.
+  // This keeps ports above/below a region from being misclassified onto a
+  // nearby vertical edge when they sit close to a corner.
+  if (withinYBounds && x >= bounds.maxX) {
+    const safeHeight = Math.max(bounds.maxY - bounds.minY, 1e-9)
+    const t = (y - bounds.minY) / safeHeight
+    return Math.round(t * 9000)
+  }
+
+  if (withinXBounds && y >= bounds.maxY) {
+    const safeWidth = Math.max(bounds.maxX - bounds.minX, 1e-9)
+    const t = (bounds.maxX - x) / safeWidth
+    return 9000 + Math.round(t * 9000)
+  }
+
+  if (withinYBounds && x <= bounds.minX) {
+    const safeHeight = Math.max(bounds.maxY - bounds.minY, 1e-9)
+    const t = (bounds.maxY - y) / safeHeight
+    return 18000 + Math.round(t * 9000)
+  }
+
+  if (withinXBounds && y <= bounds.minY) {
+    const safeWidth = Math.max(bounds.maxX - bounds.minX, 1e-9)
+    const t = (x - bounds.minX) / safeWidth
+    return 27000 + Math.round(t * 9000)
+  }
+
+  const distLeft = Math.abs(x - bounds.minX)
+  const distRight = Math.abs(x - bounds.maxX)
+  const distBottom = Math.abs(y - bounds.minY)
+  const distTop = Math.abs(y - bounds.maxY)
+  const minDist = Math.min(distLeft, distRight, distBottom, distTop)
+
+  const safeWidth = Math.max(bounds.maxX - bounds.minX, 1e-9)
+  const safeHeight = Math.max(bounds.maxY - bounds.minY, 1e-9)
+
+  if (minDist === distRight) {
+    const t = (y - bounds.minY) / safeHeight
+    return Math.round(t * 9000)
+  }
+
+  if (minDist === distTop) {
+    const t = (bounds.maxX - x) / safeWidth
+    return 9000 + Math.round(t * 9000)
+  }
+
+  if (minDist === distLeft) {
+    const t = (bounds.maxY - y) / safeHeight
+    return 18000 + Math.round(t * 9000)
+  }
+
+  const t = (x - bounds.minX) / safeWidth
+  return 27000 + Math.round(t * 9000)
+}
+
+const getCentermostPortIdForRegion = (
+  region: SerializedHyperGraph["regions"][number] | undefined,
+  portById: Map<string, SerializedHyperGraph["ports"][number]>,
+): string | undefined => {
+  if (!region) return undefined
+
+  const sortedPortIds = [...region.pointIds].sort((a, b) => {
+    const portA = portById.get(a)
+    const portB = portById.get(b)
+    const distA = Number(
+      portA?.d?.distToCentermostPortOnZ ?? Number.POSITIVE_INFINITY,
+    )
+    const distB = Number(
+      portB?.d?.distToCentermostPortOnZ ?? Number.POSITIVE_INFINITY,
+    )
+
+    if (distA !== distB) return distA - distB
+
+    const zA = Number(portA?.d?.z ?? 0)
+    const zB = Number(portB?.d?.z ?? 0)
+    if (zA !== zB) return zA - zB
+
+    return a.localeCompare(b)
+  })
+
+  return sortedPortIds[0]
+}
+
+const getSharedPortIdsForConnection = (
+  serializedHyperGraph: SerializedHyperGraph,
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+): string[] =>
+  serializedHyperGraph.ports
+    .filter(
+      (port) =>
+        (port.region1Id === connection.startRegionId &&
+          port.region2Id === connection.endRegionId) ||
+        (port.region2Id === connection.startRegionId &&
+          port.region1Id === connection.endRegionId),
+    )
+    .map((port) => port.portId)
+
+export const loadSerializedHyperGraph = (
+  serializedHyperGraph: SerializedHyperGraph,
+): {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  solution: TinyHyperGraphSolution
+} => {
+  const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
+  const regionIdToIndex = new Map<string, number>()
+  const portIdToIndex = new Map<string, number>()
+  const portById = new Map<string, SerializedHyperGraph["ports"][number]>()
+  const solvedRouteByConnectionId = new Map(
+    (filteredHyperGraph.solvedRoutes ?? []).map((route) => [
+      route.connection.connectionId,
+      route,
+    ]),
+  )
+
+  filteredHyperGraph.regions.forEach((region, regionIndex) => {
+    regionIdToIndex.set(region.regionId, regionIndex)
+  })
+
+  filteredHyperGraph.ports.forEach((port, portIndex) => {
+    portIdToIndex.set(port.portId, portIndex)
+    portById.set(port.portId, port)
+  })
+
+  const regionCount = filteredHyperGraph.regions.length
+  const portCount = filteredHyperGraph.ports.length
+
+  const regionIncidentPorts = filteredHyperGraph.regions.map((region) =>
+    region.pointIds
+      .map((portId) => portIdToIndex.get(portId))
+      .filter((portIndex): portIndex is number => portIndex !== undefined),
+  )
+
+  const incidentPortRegion = Array.from(
+    { length: portCount },
+    () => [] as number[],
+  )
+  const regionWidth = new Float64Array(regionCount)
+  const regionHeight = new Float64Array(regionCount)
+  const regionCenterX = new Float64Array(regionCount)
+  const regionCenterY = new Float64Array(regionCount)
+  const regionAvailableZMask = new Int32Array(regionCount)
+  const regionNetId = new Int32Array(regionCount).fill(-1)
+  const hasSerializedRegionNetId = new Int8Array(regionCount)
+
+  filteredHyperGraph.regions.forEach((region, regionIndex) => {
+    const geometry = getRegionGeometry(region)
+    regionWidth[regionIndex] = geometry.width
+    regionHeight[regionIndex] = geometry.height
+    regionCenterX[regionIndex] = geometry.centerX
+    regionCenterY[regionIndex] = geometry.centerY
+    regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
+
+    const serializedRegionNetId = getSerializedRegionNetId(region)
+    if (serializedRegionNetId !== undefined) {
+      regionNetId[regionIndex] = serializedRegionNetId
+      hasSerializedRegionNetId[regionIndex] = 1
+    }
+  })
+
+  const portAngleForRegion1 = new Int32Array(portCount)
+  const portAngleForRegion2 = new Int32Array(portCount)
+  const portX = new Float64Array(portCount)
+  const portY = new Float64Array(portCount)
+  const portZ = new Int32Array(portCount)
+
+  filteredHyperGraph.ports.forEach((port, portIndex) => {
+    const region1Index = regionIdToIndex.get(port.region1Id)
+    const region2Index = regionIdToIndex.get(port.region2Id)
+
+    if (region1Index === undefined || region2Index === undefined) {
+      throw new SerializedGraphLoadInvariantError(
+        `Port "${port.portId}" references missing regions "${port.region1Id}" or "${port.region2Id}"`,
+      )
+    }
+
+    incidentPortRegion[portIndex] = [region1Index, region2Index]
+    portX[portIndex] = getSerializedPortX(port)
+    portY[portIndex] = getSerializedPortY(port)
+    portZ[portIndex] = getSerializedPortZ(port)
+    portAngleForRegion1[portIndex] = computePortAngle(
+      port,
+      filteredHyperGraph.regions[region1Index],
+    )
+    portAngleForRegion2[portIndex] = computePortAngle(
+      port,
+      filteredHyperGraph.regions[region2Index],
+    )
+  })
+
+  const getRegionLayer = (regionIndex: number): string =>
+    getZLayerLabel(getAvailableZFromMask(regionAvailableZMask[regionIndex])) ??
+    getZLayerLabel(
+      (regionIncidentPorts[regionIndex] ?? []).map(
+        (portIndex) => portZ[portIndex],
+      ),
+    ) ??
+    "z0"
+
+  const regionMetadata = filteredHyperGraph.regions.map((region, regionIndex) =>
+    addSerializedRegionIdToMetadata(region, getRegionLayer(regionIndex)),
+  )
+  const portMetadata = filteredHyperGraph.ports.map((port, portIndex) =>
+    addSerializedPortIdToMetadata(
+      port,
+      getZLayerLabel([portZ[portIndex]]) ?? "z0",
+    ),
+  )
+
+  const connections = filteredHyperGraph.connections ?? []
+  const netIdToIndex = new Map<string, number>()
+  let nextNetIndex = 0
+  const getNetIndex = (connection: (typeof connections)[number]) => {
+    const netId =
+      connection.mutuallyConnectedNetworkId ?? connection.connectionId
+    let netIndex = netIdToIndex.get(netId)
+    if (netIndex === undefined) {
+      netIndex = nextNetIndex++
+      netIdToIndex.set(netId, netIndex)
+    }
+    return netIndex
+  }
+
+  const regionNetCandidates = Array.from(
+    { length: regionCount },
+    () => new Set<number>(),
+  )
+
+  const assignRegionNet = (regionId: string, netIndex: number) => {
+    const regionIndex = regionIdToIndex.get(regionId)
+    if (regionIndex === undefined) {
+      throw new SerializedGraphLoadInvariantError(
+        `Connection references missing region "${regionId}"`,
+      )
+    }
+
+    regionNetCandidates[regionIndex]!.add(netIndex)
+  }
+
+  connections.forEach((connection) => {
+    const netIndex = getNetIndex(connection)
+    assignRegionNet(connection.startRegionId, netIndex)
+    assignRegionNet(connection.endRegionId, netIndex)
+  })
+
+  regionNetCandidates.forEach((candidateNetIndexes, regionIndex) => {
+    if (hasSerializedRegionNetId[regionIndex] === 1) {
+      return
+    }
+
+    if (candidateNetIndexes.size === 1) {
+      regionNetId[regionIndex] = [...candidateNetIndexes][0]!
+    }
+  })
+
+  const routableConnections = connections
+    .map((connection) => {
+      const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
+      const sharedPortIds = getSharedPortIdsForConnection(
+        filteredHyperGraph,
+        connection,
+      )
+
+      return {
+        connection,
+        solvedRoute,
+        sharedPortIds,
+      }
+    })
+    .filter(
+      ({ solvedRoute, sharedPortIds }) =>
+        sharedPortIds.length === 0 || (solvedRoute?.path.length ?? 0) > 1,
+    )
+
+  const routeCount = routableConnections.length
+  const portSectionMask = new Int8Array(portCount).fill(1)
+  const routeStartPort = new Int32Array(routeCount)
+  const routeEndPort = new Int32Array(routeCount)
+  const routeNet = new Int32Array(routeCount)
+
+  routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
+    const fallbackStartPortId = getCentermostPortIdForRegion(
+      filteredHyperGraph.regions.find(
+        (region) => region.regionId === connection.startRegionId,
+      ),
+      portById,
+    )
+    const fallbackEndPortId = getCentermostPortIdForRegion(
+      filteredHyperGraph.regions.find(
+        (region) => region.regionId === connection.endRegionId,
+      ),
+      portById,
+    )
+
+    const startPortId = solvedRoute?.path[0]?.portId ?? fallbackStartPortId
+    const endPortId =
+      solvedRoute?.path[solvedRoute.path.length - 1]?.portId ??
+      fallbackEndPortId
+
+    const startPortIndex =
+      startPortId !== undefined ? portIdToIndex.get(startPortId) : undefined
+    const endPortIndex =
+      endPortId !== undefined ? portIdToIndex.get(endPortId) : undefined
+
+    if (startPortIndex === undefined || endPortIndex === undefined) {
+      throw new SerializedGraphLoadInvariantError(
+        `Connection "${connection.connectionId}" could not be mapped to route endpoints`,
+      )
+    }
+
+    routeStartPort[routeIndex] = startPortIndex
+    routeEndPort[routeIndex] = endPortIndex
+
+    routeNet[routeIndex] = getNetIndex(connection)
+  })
+
+  const topology: TinyHyperGraphTopology = {
+    portCount,
+    regionCount,
+    regionIncidentPorts,
+    incidentPortRegion,
+    regionWidth,
+    regionHeight,
+    regionCenterX,
+    regionCenterY,
+    regionAvailableZMask,
+    regionMetadata,
+    portAngleForRegion1,
+    portAngleForRegion2,
+    portX,
+    portY,
+    portZ,
+    portMetadata,
+  }
+
+  const problem: TinyHyperGraphProblem = {
+    routeCount,
+    portSectionMask,
+    routeMetadata: routableConnections.map(({ connection }) => connection),
+    routeStartPort,
+    routeEndPort,
+    routeNet,
+    regionNetId,
+  }
+
+  const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =
+    []
+  const solvedRoutePathRegionIds: NonNullable<
+    TinyHyperGraphSolution["solvedRoutePathRegionIds"]
+  > = []
+
+  for (const { solvedRoute: route } of routableConnections) {
+    if (!route) {
+      solvedRoutePathSegments.push([])
+      solvedRoutePathRegionIds.push([])
+      continue
+    }
+
+    const segments: Array<[number, number]> = []
+    const segmentRegionIds: Array<number | undefined> = []
+
+    for (let i = 1; i < route.path.length; i++) {
+      const fromCandidate = route.path[i - 1]
+      const toCandidate = route.path[i]
+      const fromPortId = fromCandidate?.portId
+      const toPortId = toCandidate?.portId
+      const fromPortIndex =
+        fromPortId !== undefined ? portIdToIndex.get(fromPortId) : undefined
+      const toPortIndex =
+        toPortId !== undefined ? portIdToIndex.get(toPortId) : undefined
+
+      if (fromPortIndex === undefined || toPortIndex === undefined) {
+        throw new SerializedGraphLoadInvariantError(
+          `solved route "${route.connection.connectionId}" references missing segment ports "${String(fromPortId)}" and "${String(toPortId)}"`,
+        )
+      }
+
+      const serializedRegionId =
+        typeof fromCandidate?.nextRegionId === "string"
+          ? fromCandidate.nextRegionId
+          : typeof toCandidate?.lastRegionId === "string"
+            ? toCandidate.lastRegionId
+            : undefined
+
+      segments.push([fromPortIndex, toPortIndex])
+      segmentRegionIds.push(
+        serializedRegionId !== undefined
+          ? (() => {
+              const regionIndex = regionIdToIndex.get(serializedRegionId)
+              if (regionIndex === undefined) {
+                throw new SerializedGraphLoadInvariantError(
+                  `solved route "${route.connection.connectionId}" references missing region "${serializedRegionId}"`,
+                )
+              }
+
+              return regionIndex
+            })()
+          : undefined,
+      )
+    }
+
+    solvedRoutePathSegments.push(segments)
+    solvedRoutePathRegionIds.push(segmentRegionIds)
+  }
+
+  const solution: TinyHyperGraphSolution = {
+    solvedRoutePathSegments,
+    solvedRoutePathRegionIds,
+  }
+
+  return { topology, problem, solution }
+}
