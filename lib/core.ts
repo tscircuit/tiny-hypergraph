@@ -7,6 +7,7 @@ import {
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
+  DEFAULT_TRACE_DENSITY_COST_FACTOR,
   isKnownSingleLayerMask,
 } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
@@ -238,6 +239,8 @@ export interface TinyHyperGraphSolverOptions {
   minTraceWidth?: number
   /** Minimum trace-to-trace clearance in millimeters. Defaults to 0.1mm. */
   minTraceClearance?: number
+  /** Multiplier applied to the trace-density routing cost. Defaults to 1. */
+  TRACE_DENSITY_COST_FACTOR?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -257,6 +260,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   minTraceWidth: number
   minTraceClearance: number
+  TRACE_DENSITY_COST_FACTOR: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -288,6 +292,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.minTraceClearance !== undefined) {
     solver.minTraceClearance = options.minTraceClearance
+  }
+  if (options.TRACE_DENSITY_COST_FACTOR !== undefined) {
+    solver.TRACE_DENSITY_COST_FACTOR = options.TRACE_DENSITY_COST_FACTOR
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
@@ -339,6 +346,7 @@ export const getTinyHyperGraphSolverOptions = (
   minViaPadDiameter: solver.minViaPadDiameter,
   minTraceWidth: solver.minTraceWidth,
   minTraceClearance: solver.minTraceClearance,
+  TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -384,6 +392,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE
+  TRACE_DENSITY_COST_FACTOR = DEFAULT_TRACE_DENSITY_COST_FACTOR
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -784,6 +793,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       prospectiveMaxDistinctNetCount,
       this.minTraceWidth,
       this.minTraceClearance,
+      this.TRACE_DENSITY_COST_FACTOR,
     )
   }
 
@@ -909,6 +919,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           maxDistinctNetCount,
           this.minTraceWidth,
           this.minTraceClearance,
+          this.TRACE_DENSITY_COST_FACTOR,
         ),
     }
   }

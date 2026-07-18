@@ -103,3 +103,26 @@ test("trace density prefers wider regions for an additional net", () => {
   expect(wideRegionCost).toBeCloseTo(0.0225)
   expect(narrowRegionCost).toBeGreaterThan(wideRegionCost)
 })
+
+test("trace density cost factor scales prospective and cached costs", () => {
+  const solver = new TinyHyperGraphSolver(
+    createSingleRegionTopology(),
+    createProblem(8),
+    { TRACE_DENSITY_COST_FACTOR: 0.1 },
+  )
+
+  solver.state.currentRouteNetId = 0
+  solver.appendSegmentToRegionCache(0, 0, 1)
+
+  solver.state.currentRouteNetId = 1
+  const candidateCost = solver.computeG(
+    { nextRegionId: 0, portId: 2, f: 0, g: 0, h: 0 },
+    3,
+  )
+  expect(candidateCost).toBeCloseTo(0.4)
+
+  solver.appendSegmentToRegionCache(0, 2, 3)
+  expect(
+    solver.state.regionIntersectionCaches[0].existingRegionCost,
+  ).toBeCloseTo(candidateCost)
+})

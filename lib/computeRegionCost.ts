@@ -1,6 +1,7 @@
 export const DEFAULT_MIN_VIA_PAD_DIAMETER = 0.3
 export const DEFAULT_MIN_TRACE_WIDTH = 0.1
 export const DEFAULT_MIN_TRACE_CLEARANCE = 0.1
+export const DEFAULT_TRACE_DENSITY_COST_FACTOR = 1
 export const TRACE_VIA_MARGIN = 0.15
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
 
@@ -9,12 +10,16 @@ export const computeTraceDensityCost = (
   distinctNetCount: number,
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH,
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE,
+  traceDensityCostFactor = DEFAULT_TRACE_DENSITY_COST_FACTOR,
 ): number => {
   const additionalDistinctNets = Math.max(0, distinctNetCount - 1)
   if (additionalDistinctNets === 0) return 0
 
   const tracePitch = minTraceWidth + minTraceClearance
-  return ((additionalDistinctNets * tracePitch) / shortRegionDimension) ** 2
+  return (
+    ((additionalDistinctNets * tracePitch) / shortRegionDimension) ** 2 *
+    traceDensityCostFactor
+  )
 }
 
 export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>

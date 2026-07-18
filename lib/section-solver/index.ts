@@ -15,6 +15,7 @@ import {
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
+  DEFAULT_TRACE_DENSITY_COST_FACTOR,
 } from "../computeRegionCost"
 import { shuffle } from "../shuffle"
 import type {
@@ -891,6 +892,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE
+  TRACE_DENSITY_COST_FACTOR = DEFAULT_TRACE_DENSITY_COST_FACTOR
   VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05
