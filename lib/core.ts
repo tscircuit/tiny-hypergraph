@@ -1531,7 +1531,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.computeProspectiveTraceDensityCostForRegion(
         nextRegionId,
         regionCache,
-        segmentGeometry.layerMask,
+        layerMask,
         sameNetLayerMask,
       ) -
       regionCache.existingRegionCost
