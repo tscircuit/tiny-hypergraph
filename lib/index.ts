@@ -8,11 +8,10 @@ export * from "./selective-rerip-tiny-hyper-graph-solver"
 export * from "./bus-solver"
 export * from "./region-graph"
 export {
-  computeTraceDensityCost,
+  computeTracePitch,
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
-  DEFAULT_TRACE_DENSITY_COST_FACTOR,
   TRACE_VIA_MARGIN,
 } from "./computeRegionCost"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"

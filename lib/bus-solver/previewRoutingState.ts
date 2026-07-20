@@ -58,8 +58,6 @@ export const snapshotPreviewRoutingState = (
     lesserAngles: new Int32Array(cache.lesserAngles),
     greaterAngles: new Int32Array(cache.greaterAngles),
     layerMasks: new Int32Array(cache.layerMasks),
-    distinctNetCountByLayer: new Uint32Array(cache.distinctNetCountByLayer),
-    maxDistinctNetCount: cache.maxDistinctNetCount,
     existingCrossingLayerIntersections:
       cache.existingCrossingLayerIntersections,
     existingSameLayerIntersections: cache.existingSameLayerIntersections,
@@ -83,8 +81,6 @@ export const restorePreviewRoutingState = (
       lesserAngles: new Int32Array(cache.lesserAngles),
       greaterAngles: new Int32Array(cache.greaterAngles),
       layerMasks: new Int32Array(cache.layerMasks),
-      distinctNetCountByLayer: new Uint32Array(cache.distinctNetCountByLayer),
-      maxDistinctNetCount: cache.maxDistinctNetCount,
       existingCrossingLayerIntersections:
         cache.existingCrossingLayerIntersections,
       existingSameLayerIntersections: cache.existingSameLayerIntersections,

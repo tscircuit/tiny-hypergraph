@@ -2,12 +2,11 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
-  computeTraceDensityCost,
   computeRegionCost,
+  computeTracePitch,
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
-  DEFAULT_TRACE_DENSITY_COST_FACTOR,
   isKnownSingleLayerMask,
 } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
@@ -40,8 +39,6 @@ export const createEmptyRegionIntersectionCache =
     lesserAngles: new Int32Array(0),
     greaterAngles: new Int32Array(0),
     layerMasks: new Int32Array(0),
-    distinctNetCountByLayer: new Uint32Array(32),
-    maxDistinctNetCount: 0,
     existingCrossingLayerIntersections: 0,
     existingSameLayerIntersections: 0,
     existingEntryExitLayerChanges: 0,
@@ -66,10 +63,6 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
-  distinctNetCountByLayer: new Uint32Array(
-    regionIntersectionCache.distinctNetCountByLayer,
-  ),
-  maxDistinctNetCount: regionIntersectionCache.maxDistinctNetCount,
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -241,8 +234,6 @@ export interface TinyHyperGraphSolverOptions {
   minTraceWidth?: number
   /** Minimum trace-to-trace clearance in millimeters. Defaults to 0.1mm. */
   minTraceClearance?: number
-  /** Multiplier applied to the trace-density routing cost. Defaults to 1. */
-  TRACE_DENSITY_COST_FACTOR?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -262,7 +253,6 @@ export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   minTraceWidth: number
   minTraceClearance: number
-  TRACE_DENSITY_COST_FACTOR: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -294,9 +284,6 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.minTraceClearance !== undefined) {
     solver.minTraceClearance = options.minTraceClearance
-  }
-  if (options.TRACE_DENSITY_COST_FACTOR !== undefined) {
-    solver.TRACE_DENSITY_COST_FACTOR = options.TRACE_DENSITY_COST_FACTOR
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
@@ -348,7 +335,6 @@ export const getTinyHyperGraphSolverOptions = (
   minViaPadDiameter: solver.minViaPadDiameter,
   minTraceWidth: solver.minTraceWidth,
   minTraceClearance: solver.minTraceClearance,
-  TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -394,7 +380,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE
-  TRACE_DENSITY_COST_FACTOR = DEFAULT_TRACE_DENSITY_COST_FACTOR
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -767,40 +752,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
-  protected getTraceDensityRegionDimension(regionId: RegionId): number {
-    return Math.min(
-      this.topology.regionWidth[regionId],
-      this.topology.regionHeight[regionId],
-    )
-  }
-
-  protected computeProspectiveTraceDensityCostForRegion(
-    regionId: RegionId,
-    regionCache: RegionIntersectionCache,
-    prospectiveLayerMask: number,
-    sameNetLayerMask: number,
-  ): number {
-    const shortRegionDimension = this.getTraceDensityRegionDimension(regionId)
-    let prospectiveMaxDistinctNetCount = regionCache.maxDistinctNetCount
-    for (let layerId = 0; layerId < 32; layerId++) {
-      const layerBit = 1 << layerId
-      if ((prospectiveLayerMask & layerBit) === 0) continue
-
-      const prospectiveDistinctNetCount =
-        regionCache.distinctNetCountByLayer[layerId] +
-        ((sameNetLayerMask & layerBit) === 0 ? 1 : 0)
-      prospectiveMaxDistinctNetCount = Math.max(
-        prospectiveMaxDistinctNetCount,
-        prospectiveDistinctNetCount,
-      )
-    }
-    return computeTraceDensityCost(
-      shortRegionDimension,
-      prospectiveMaxDistinctNetCount,
-      this.minTraceWidth,
-      this.minTraceClearance,
-      this.TRACE_DENSITY_COST_FACTOR,
-    )
+  /** Returns the configured center-to-center routed trace pitch, in mm. */
+  getTracePitch(): number {
+    return computeTracePitch(this.minTraceWidth, this.minTraceClearance)
   }
 
   populateSegmentGeometryScratch(
@@ -850,7 +804,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newSameLayerIntersections,
       newCrossLayerIntersections,
       newEntryExitLayerChanges,
-      sameNetLayerMask,
     ] = countNewIntersectionsWithValues(
       regionCache,
       state.currentRouteNetId!,
@@ -885,48 +838,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const existingEntryExitLayerChanges =
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
     const existingSegmentCount = lesserAngles.length
-    const distinctNetCountByLayer = new Uint32Array(
-      regionCache.distinctNetCountByLayer,
-    )
-    let maxDistinctNetCount = regionCache.maxDistinctNetCount
-    for (let layerId = 0; layerId < 32; layerId++) {
-      const layerBit = 1 << layerId
-      if (
-        (segmentGeometry.layerMask & layerBit) === 0 ||
-        (sameNetLayerMask & layerBit) !== 0
-      ) {
-        continue
-      }
-      const distinctNetCount = ++distinctNetCountByLayer[layerId]
-      maxDistinctNetCount = Math.max(maxDistinctNetCount, distinctNetCount)
-    }
 
     state.regionIntersectionCaches[regionId] = {
       netIds,
       lesserAngles,
       greaterAngles,
       layerMasks,
-      distinctNetCountByLayer,
-      maxDistinctNetCount,
       existingSameLayerIntersections,
       existingCrossingLayerIntersections,
       existingEntryExitLayerChanges,
       existingSegmentCount,
-      existingRegionCost:
-        this.computeRegionCostForRegion(
-          regionId,
-          existingSameLayerIntersections,
-          existingCrossingLayerIntersections,
-          existingEntryExitLayerChanges,
-          existingSegmentCount,
-        ) +
-        computeTraceDensityCost(
-          this.getTraceDensityRegionDimension(regionId),
-          maxDistinctNetCount,
-          this.minTraceWidth,
-          this.minTraceClearance,
-          this.TRACE_DENSITY_COST_FACTOR,
-        ),
+      existingRegionCost: this.computeRegionCostForRegion(
+        regionId,
+        existingSameLayerIntersections,
+        existingCrossingLayerIntersections,
+        existingEntryExitLayerChanges,
+        existingSegmentCount,
+      ),
     }
   }
 
@@ -1502,7 +1430,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newSameLayerIntersections,
       newCrossLayerIntersections,
       newEntryExitLayerChanges,
-      sameNetLayerMask,
     ] = countNewIntersectionsWithValues(
       regionCache,
       state.currentRouteNetId!,
@@ -1527,14 +1454,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
-      ) +
-      this.computeProspectiveTraceDensityCostForRegion(
-        nextRegionId,
-        regionCache,
-        layerMask,
-        sameNetLayerMask,
-      ) -
-      regionCache.existingRegionCost
+      ) - regionCache.existingRegionCost
 
     return (
       currentCandidate.g +
