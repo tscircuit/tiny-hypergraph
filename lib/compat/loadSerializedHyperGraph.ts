@@ -308,20 +308,6 @@ const getCentermostPortIdForRegion = (
   return sortedPortIds[0]
 }
 
-const getSharedPortIdsForConnection = (
-  serializedHyperGraph: SerializedHyperGraph,
-  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
-): string[] =>
-  serializedHyperGraph.ports
-    .filter(
-      (port) =>
-        (port.region1Id === connection.startRegionId &&
-          port.region2Id === connection.endRegionId) ||
-        (port.region2Id === connection.startRegionId &&
-          port.region1Id === connection.endRegionId),
-    )
-    .map((port) => port.portId)
-
 export const loadSerializedHyperGraph = (
   serializedHyperGraph: SerializedHyperGraph,
 ): {
@@ -331,8 +317,10 @@ export const loadSerializedHyperGraph = (
 } => {
   const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
   const regionIdToIndex = new Map<string, number>()
+  const regionById = new Map<string, SerializedHyperGraph["regions"][number]>()
   const portIdToIndex = new Map<string, number>()
   const portById = new Map<string, SerializedHyperGraph["ports"][number]>()
+  const portIdsByRegionPair = new Map<string, string[]>()
   const solvedRouteByConnectionId = new Map(
     (filteredHyperGraph.solvedRoutes ?? []).map((route) => [
       route.connection.connectionId,
@@ -342,11 +330,23 @@ export const loadSerializedHyperGraph = (
 
   filteredHyperGraph.regions.forEach((region, regionIndex) => {
     regionIdToIndex.set(region.regionId, regionIndex)
+    regionById.set(region.regionId, region)
   })
 
   filteredHyperGraph.ports.forEach((port, portIndex) => {
     portIdToIndex.set(port.portId, portIndex)
     portById.set(port.portId, port)
+    const lesserRegionId =
+      port.region1Id < port.region2Id ? port.region1Id : port.region2Id
+    const greaterRegionId =
+      port.region1Id < port.region2Id ? port.region2Id : port.region1Id
+    const regionPairKey = `${lesserRegionId}\0${greaterRegionId}`
+    const portIds = portIdsByRegionPair.get(regionPairKey)
+    if (portIds) {
+      portIds.push(port.portId)
+    } else {
+      portIdsByRegionPair.set(regionPairKey, [port.portId])
+    }
   })
 
   const regionCount = filteredHyperGraph.regions.length
@@ -481,10 +481,16 @@ export const loadSerializedHyperGraph = (
   const routableConnections = connections
     .map((connection) => {
       const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
-      const sharedPortIds = getSharedPortIdsForConnection(
-        filteredHyperGraph,
-        connection,
-      )
+      const lesserRegionId =
+        connection.startRegionId < connection.endRegionId
+          ? connection.startRegionId
+          : connection.endRegionId
+      const greaterRegionId =
+        connection.startRegionId < connection.endRegionId
+          ? connection.endRegionId
+          : connection.startRegionId
+      const sharedPortIds =
+        portIdsByRegionPair.get(`${lesserRegionId}\0${greaterRegionId}`) ?? []
 
       return {
         connection,
@@ -505,15 +511,11 @@ export const loadSerializedHyperGraph = (
 
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
     const fallbackStartPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.startRegionId,
-      ),
+      regionById.get(connection.startRegionId),
       portById,
     )
     const fallbackEndPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.endRegionId,
-      ),
+      regionById.get(connection.endRegionId),
       portById,
     )
 
