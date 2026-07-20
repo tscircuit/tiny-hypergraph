@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test"
-import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import type {
+  SerializedGraphPort,
+  SerializedGraphRegion,
+  SerializedHyperGraph,
+} from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { DuplicateCongestedPortSolver, TinyHyperGraphSolver } from "lib/index"
 
@@ -10,7 +14,7 @@ const createRegion = (
   width: number,
   height: number,
   pointIds: string[],
-): SerializedHyperGraph["regions"][number] => ({
+): SerializedGraphRegion => ({
   regionId,
   pointIds,
   d: {
@@ -26,7 +30,7 @@ const createPort = (
   region2Id: string,
   x: number,
   y: number,
-): SerializedHyperGraph["ports"][number] => ({
+): SerializedGraphPort => ({
   portId,
   region1Id,
   region2Id,
@@ -197,4 +201,54 @@ test("duplicate congested port solver duplicates independently reused ports in l
       )
       .every((region) => region.pointIds.includes("shared-choke::dup1")),
   ).toBe(true)
+})
+
+test("duplicate congested port solver exposes queued route solving progress", () => {
+  const solver = new DuplicateCongestedPortSolver(
+    createDuplicatePortFixture(),
+    {
+      duplicatePortProximity: 0.2,
+    },
+  )
+
+  solver.step()
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(false)
+  expect(solver.activeSubSolver).not.toBeNull()
+  expect(solver.stats.duplicateCongestedPortRouteCount).toBe(2)
+  expect(solver.stats.duplicateCongestedPortRoutesSolved).toBe(0)
+
+  solver.solve()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.activeSubSolver).toBeNull()
+  expect(solver.stats.duplicateCongestedPortRoutesSolved).toBe(2)
+  expect(solver.report.duplicatedPorts).toContainEqual({
+    sourcePortId: "shared-choke",
+    duplicatePortIds: ["shared-choke::dup1"],
+    useCount: 2,
+  })
+})
+
+test("duplicate congested port solver reports setup errors", () => {
+  const solver = new DuplicateCongestedPortSolver({
+    regions: [createRegion("start", 0, 0, 2, 2, ["missing-port"])],
+    ports: [createPort("missing-port", "start", "missing-end-region", 1, 0)],
+    connections: [
+      {
+        connectionId: "connection-a",
+        startRegionId: "start",
+        endRegionId: "missing-end-region",
+        mutuallyConnectedNetworkId: "net-a",
+      },
+    ],
+  })
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.failed).toBe(true)
+  expect(solver.error).toBeString()
+  expect(solver.error).toContain("missing-end-region")
 })
