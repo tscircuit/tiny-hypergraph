@@ -25,6 +25,8 @@ export interface DynamicAnglePairArrays {
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  traceLengthByLayer: Float64Array
+  longestTraceLengthByLayer: Float64Array
   existingSameLayerIntersections: Integer
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer

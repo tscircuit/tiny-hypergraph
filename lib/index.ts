@@ -8,7 +8,7 @@ export * from "./selective-rerip-tiny-hyper-graph-solver"
 export * from "./bus-solver"
 export * from "./region-graph"
 export {
-  computeTracePitch,
+  computeTraceOccupancyCost,
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,

@@ -107,6 +107,12 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  traceLengthByLayer: new Float64Array(
+    regionIntersectionCache.traceLengthByLayer,
+  ),
+  longestTraceLengthByLayer: new Float64Array(
+    regionIntersectionCache.longestTraceLengthByLayer,
+  ),
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -400,6 +406,7 @@ const createSolvedSolverFromRegionSegments = (
 ) => {
   const solver = new TinyHyperGraphSolver(topology, problem, options)
   applyRouteSegmentsToSolver(solver, routeSegmentsByRegion)
+  solver.activateTraceOccupancyCost()
   return solver
 }
 
@@ -887,6 +894,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE
+  USE_TRACE_OCCUPANCY_COST = true
   VERBOSE = false
 
   RIP_THRESHOLD_START = 0.05

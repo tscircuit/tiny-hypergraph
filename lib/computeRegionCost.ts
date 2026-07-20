@@ -1,16 +1,37 @@
 export const DEFAULT_MIN_VIA_PAD_DIAMETER = 0.3
-/** Default minimum routed trace width, in millimeters. */
 export const DEFAULT_MIN_TRACE_WIDTH = 0.1
-/** Default minimum trace-to-trace clearance, in millimeters. */
 export const DEFAULT_MIN_TRACE_CLEARANCE = 0.1
 export const TRACE_VIA_MARGIN = 0.15
+const traceWidth = 0.1
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
 
-/** Derives center-to-center trace pitch from width and clearance, in mm. */
-export const computeTracePitch = (
+/**
+ * Estimates per-layer copper occupancy as swept trace area divided by region
+ * area. This cost is used only by post-solution optimization, where a complete
+ * baseline can always be restored, so utilization can remain physically
+ * meaningful without weakening initial-route completeness.
+ */
+export const computeTraceOccupancyCost = (
+  regionArea: number,
+  traceLengthByLayer: ArrayLike<number>,
+  longestTraceLengthByLayer: ArrayLike<number>,
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH,
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE,
-): number => minTraceWidth + minTraceClearance
+): number => {
+  let maxSharedTraceLength = 0
+  for (let layerId = 0; layerId < traceLengthByLayer.length; layerId++) {
+    const sharedTraceLength = Math.max(
+      0,
+      (traceLengthByLayer[layerId] ?? 0) -
+        (longestTraceLengthByLayer[layerId] ?? 0),
+    )
+    maxSharedTraceLength = Math.max(maxSharedTraceLength, sharedTraceLength)
+  }
+
+  const tracePitch = minTraceWidth + minTraceClearance
+  const sharedTraceArea = maxSharedTraceLength * tracePitch
+  return (sharedTraceArea / regionArea) ** 2
+}
 
 export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
   regionAvailableZMask > 0 &&

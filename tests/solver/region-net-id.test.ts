@@ -13,6 +13,8 @@ const createRegionCache = (
   lesserAngles: new Int32Array(0),
   greaterAngles: new Int32Array(0),
   layerMasks: new Int32Array(0),
+  traceLengthByLayer: new Float64Array(32),
+  longestTraceLengthByLayer: new Float64Array(32),
   existingCrossingLayerIntersections: 0,
   existingSameLayerIntersections: 0,
   existingEntryExitLayerChanges: 0,

@@ -65,6 +65,7 @@ interface SegmentGeometryScratch {
   greaterAngle: number
   layerMask: number
   entryExitLayerChanges: number
+  length: number
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -620,6 +621,7 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     greaterAngle: 0,
     layerMask: 0,
     entryExitLayerChanges: 0,
+    length: 0,
   }
 
   constructor(
@@ -654,6 +656,10 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     scratch.greaterAngle = position1 < position2 ? position2 : position1
     scratch.layerMask = (1 << z1) | (1 << z2)
     scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.length = Math.hypot(
+      topology.portX[port2Id] - topology.portX[port1Id],
+      topology.portY[port2Id] - topology.portY[port1Id],
+    )
 
     return scratch
   }
@@ -674,6 +680,10 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
     )
+  }
+
+  protected override getRegionArea(regionId: RegionId): number {
+    return this.topology.regionArea[regionId]
   }
 
   override visualize(): GraphicsObject {

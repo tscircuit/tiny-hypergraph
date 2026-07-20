@@ -2,8 +2,8 @@ import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
+  computeTraceOccupancyCost,
   computeRegionCost,
-  computeTracePitch,
   DEFAULT_MIN_TRACE_CLEARANCE,
   DEFAULT_MIN_TRACE_WIDTH,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
@@ -33,12 +33,37 @@ export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
 
+const addSegmentLengthByLayer = (
+  traceLengthByLayer: Float64Array,
+  longestTraceLengthByLayer: Float64Array,
+  layerMask: number,
+  segmentLength: number,
+) => {
+  let layerCount = 0
+  for (let layerId = 0; layerId < 32; layerId++) {
+    if ((layerMask & (1 << layerId)) !== 0) layerCount += 1
+  }
+  if (layerCount === 0) return
+
+  const lengthOnLayer = segmentLength / layerCount
+  for (let layerId = 0; layerId < 32; layerId++) {
+    if ((layerMask & (1 << layerId)) === 0) continue
+    traceLengthByLayer[layerId] += lengthOnLayer
+    longestTraceLengthByLayer[layerId] = Math.max(
+      longestTraceLengthByLayer[layerId],
+      lengthOnLayer,
+    )
+  }
+}
+
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
     netIds: new Int32Array(0),
     lesserAngles: new Int32Array(0),
     greaterAngles: new Int32Array(0),
     layerMasks: new Int32Array(0),
+    traceLengthByLayer: new Float64Array(32),
+    longestTraceLengthByLayer: new Float64Array(32),
     existingCrossingLayerIntersections: 0,
     existingSameLayerIntersections: 0,
     existingEntryExitLayerChanges: 0,
@@ -63,6 +88,12 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  traceLengthByLayer: new Float64Array(
+    regionIntersectionCache.traceLengthByLayer,
+  ),
+  longestTraceLengthByLayer: new Float64Array(
+    regionIntersectionCache.longestTraceLengthByLayer,
+  ),
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -234,6 +265,8 @@ export interface TinyHyperGraphSolverOptions {
   minTraceWidth?: number
   /** Minimum trace-to-trace clearance in millimeters. Defaults to 0.1mm. */
   minTraceClearance?: number
+  /** Enables physical trace-occupancy scoring during solution optimization. */
+  USE_TRACE_OCCUPANCY_COST?: boolean
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -253,6 +286,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   minTraceWidth: number
   minTraceClearance: number
+  USE_TRACE_OCCUPANCY_COST: boolean
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -284,6 +318,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.minTraceClearance !== undefined) {
     solver.minTraceClearance = options.minTraceClearance
+  }
+  if (options.USE_TRACE_OCCUPANCY_COST !== undefined) {
+    solver.USE_TRACE_OCCUPANCY_COST = options.USE_TRACE_OCCUPANCY_COST
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
@@ -335,6 +372,7 @@ export const getTinyHyperGraphSolverOptions = (
   minViaPadDiameter: solver.minViaPadDiameter,
   minTraceWidth: solver.minTraceWidth,
   minTraceClearance: solver.minTraceClearance,
+  USE_TRACE_OCCUPANCY_COST: solver.USE_TRACE_OCCUPANCY_COST,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -359,6 +397,7 @@ interface SegmentGeometryScratch {
   greaterAngle: number
   layerMask: number
   entryExitLayerChanges: number
+  length: number
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -375,11 +414,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     greaterAngle: 0,
     layerMask: 0,
     entryExitLayerChanges: 0,
+    length: 0,
   }
+  private traceLengthByLayerScratch = new Float64Array(32)
+  private longestTraceLengthByLayerScratch = new Float64Array(32)
+  private traceOccupancyCostActive = false
+
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
   minTraceWidth = DEFAULT_MIN_TRACE_WIDTH
   minTraceClearance = DEFAULT_MIN_TRACE_CLEARANCE
+  USE_TRACE_OCCUPANCY_COST = true
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -752,9 +797,52 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
-  /** Returns the configured center-to-center routed trace pitch, in mm. */
-  getTracePitch(): number {
-    return computeTracePitch(this.minTraceWidth, this.minTraceClearance)
+  protected getRegionArea(regionId: RegionId): number {
+    return (
+      this.topology.regionWidth[regionId] * this.topology.regionHeight[regionId]
+    )
+  }
+
+  protected computeTraceOccupancyCostForRegion(
+    regionId: RegionId,
+    traceLengthByLayer: ArrayLike<number>,
+    longestTraceLengthByLayer: ArrayLike<number>,
+  ): number {
+    if (!this.USE_TRACE_OCCUPANCY_COST || !this.traceOccupancyCostActive) {
+      return 0
+    }
+    return computeTraceOccupancyCost(
+      this.getRegionArea(regionId),
+      traceLengthByLayer,
+      longestTraceLengthByLayer,
+      this.minTraceWidth,
+      this.minTraceClearance,
+    )
+  }
+
+  protected computeProspectiveTraceOccupancyCostForRegion(
+    regionId: RegionId,
+    regionCache: RegionIntersectionCache,
+    segmentGeometry: SegmentGeometryScratch,
+  ): number {
+    if (!this.USE_TRACE_OCCUPANCY_COST || !this.traceOccupancyCostActive) {
+      return 0
+    }
+    this.traceLengthByLayerScratch.set(regionCache.traceLengthByLayer)
+    this.longestTraceLengthByLayerScratch.set(
+      regionCache.longestTraceLengthByLayer,
+    )
+    addSegmentLengthByLayer(
+      this.traceLengthByLayerScratch,
+      this.longestTraceLengthByLayerScratch,
+      segmentGeometry.layerMask,
+      segmentGeometry.length,
+    )
+    return this.computeTraceOccupancyCostForRegion(
+      regionId,
+      this.traceLengthByLayerScratch,
+      this.longestTraceLengthByLayerScratch,
+    )
   }
 
   populateSegmentGeometryScratch(
@@ -784,6 +872,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     scratch.greaterAngle = angle1 < angle2 ? angle2 : angle1
     scratch.layerMask = (1 << z1) | (1 << z2)
     scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.length = Math.hypot(
+      topology.portX[port2Id] - topology.portX[port1Id],
+      topology.portY[port2Id] - topology.portY[port1Id],
+    )
 
     return scratch
   }
@@ -838,23 +930,45 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const existingEntryExitLayerChanges =
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
     const existingSegmentCount = lesserAngles.length
+    const traceLengthByLayer = this.USE_TRACE_OCCUPANCY_COST
+      ? new Float64Array(regionCache.traceLengthByLayer)
+      : regionCache.traceLengthByLayer
+    const longestTraceLengthByLayer = this.USE_TRACE_OCCUPANCY_COST
+      ? new Float64Array(regionCache.longestTraceLengthByLayer)
+      : regionCache.longestTraceLengthByLayer
+    if (this.USE_TRACE_OCCUPANCY_COST) {
+      addSegmentLengthByLayer(
+        traceLengthByLayer,
+        longestTraceLengthByLayer,
+        segmentGeometry.layerMask,
+        segmentGeometry.length,
+      )
+    }
 
     state.regionIntersectionCaches[regionId] = {
       netIds,
       lesserAngles,
       greaterAngles,
       layerMasks,
+      traceLengthByLayer,
+      longestTraceLengthByLayer,
       existingSameLayerIntersections,
       existingCrossingLayerIntersections,
       existingEntryExitLayerChanges,
       existingSegmentCount,
-      existingRegionCost: this.computeRegionCostForRegion(
-        regionId,
-        existingSameLayerIntersections,
-        existingCrossingLayerIntersections,
-        existingEntryExitLayerChanges,
-        existingSegmentCount,
-      ),
+      existingRegionCost:
+        this.computeRegionCostForRegion(
+          regionId,
+          existingSameLayerIntersections,
+          existingCrossingLayerIntersections,
+          existingEntryExitLayerChanges,
+          existingSegmentCount,
+        ) +
+        this.computeTraceOccupancyCostForRegion(
+          regionId,
+          traceLengthByLayer,
+          longestTraceLengthByLayer,
+        ),
     }
   }
 
@@ -1266,6 +1380,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   onAllRoutesRouted() {
     const { topology, state } = this
+    this.activateTraceOccupancyCost()
     const ripThresholdProgress =
       this.RIP_THRESHOLD_RAMP_ATTEMPTS <= 0
         ? 1
@@ -1332,6 +1447,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
       hotRegionCount: regionIdsOverCostThreshold.length,
       currentRipThreshold,
     })
+  }
+
+  activateTraceOccupancyCost() {
+    if (!this.USE_TRACE_OCCUPANCY_COST || this.traceOccupancyCostActive) return
+    this.traceOccupancyCostActive = true
+
+    for (let regionId = 0; regionId < this.topology.regionCount; regionId++) {
+      const regionCache = this.state.regionIntersectionCaches[regionId]
+      if (!regionCache) continue
+      regionCache.existingRegionCost += this.computeTraceOccupancyCostForRegion(
+        regionId,
+        regionCache.traceLengthByLayer,
+        regionCache.longestTraceLengthByLayer,
+      )
+    }
   }
 
   onOutOfCandidates() {
@@ -1425,6 +1555,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const neighborPortZ = topology.portZ[neighborPortId]
     const layerMask = (1 << currentPortZ) | (1 << neighborPortZ)
     const entryExitLayerChanges = currentPortZ !== neighborPortZ ? 1 : 0
+    const segmentLength = this.traceOccupancyCostActive
+      ? Math.hypot(
+          topology.portX[neighborPortId] - topology.portX[currentPortId],
+          topology.portY[neighborPortId] - topology.portY[currentPortId],
+        )
+      : 0
 
     const [
       newSameLayerIntersections,
@@ -1454,7 +1590,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
           newCrossLayerIntersections,
         regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
         regionCache.existingSegmentCount + 1,
-      ) - regionCache.existingRegionCost
+      ) +
+      this.computeProspectiveTraceOccupancyCostForRegion(
+        nextRegionId,
+        regionCache,
+        {
+          lesserAngle,
+          greaterAngle,
+          layerMask,
+          entryExitLayerChanges,
+          length: segmentLength,
+        },
+      ) -
+      regionCache.existingRegionCost
 
     return (
       currentCandidate.g +
