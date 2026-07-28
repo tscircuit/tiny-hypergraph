@@ -1,0 +1,574 @@
+import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
+import type { GraphicsObject } from "graphics-debug"
+import { loadSerializedHyperGraph } from "./graph-load"
+import {
+  TinyHyperGraphSolver2,
+  type TinyHyperGraphProblem,
+  type TinyHyperGraphSolution,
+  type TinyHyperGraphTopology,
+  type TinyHyperGraphSolver2Options,
+  type TinyHyperGraphWorkingState,
+} from "./solver"
+import type { RegionId } from "./types"
+import {
+  getActiveSectionRouteIds,
+  InvalidSectionMaskError,
+  TinyHyperGraphSectionSolver2,
+  type TinyHyperGraphSectionSolver2Options,
+} from "./section-solver"
+import {
+  createSectionMaskCandidatesForHotRegions,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  type TinyHyperGraphSectionCandidateFamily,
+  type TinyHyperGraphSectionMaskCandidate,
+} from "./section-candidate-families"
+
+export {
+  ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  OPT_IN_DEEP_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+  type TinyHyperGraphSectionCandidateFamily,
+} from "./section-candidate-families"
+
+type AutomaticSectionSearchResult = {
+  portSectionMask: Int8Array
+  baselineMaxRegionCost: number
+  finalMaxRegionCost: number
+  generatedCandidateCount: number
+  candidateCount: number
+  duplicateCandidateCount: number
+  totalMs: number
+  baselineEvaluationMs: number
+  candidateEligibilityMs: number
+  candidateInitMs: number
+  candidateSolveMs: number
+  candidateReplayScoreMs: number
+  winningCandidateLabel?: string
+  winningCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+}
+
+const DEFAULT_SOLVE_GRAPH_OPTIONS: TinyHyperGraphSolver2Options = {
+  RIP_THRESHOLD_RAMP_ATTEMPTS: 5,
+}
+
+const DEFAULT_SECTION_SOLVER_MAX_ITERATIONS = 50_000
+const DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS = 200_000
+
+const DEFAULT_SECTION_SOLVER_OPTIONS: TinyHyperGraphSectionSolver2Options = {
+  DISTANCE_TO_COST: 0.05,
+  RIP_THRESHOLD_RAMP_ATTEMPTS: 16,
+  RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
+  MAX_ITERATIONS: DEFAULT_SECTION_SOLVER_MAX_ITERATIONS,
+  MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT: 6,
+  EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST: Number.POSITIVE_INFINITY,
+}
+
+const DEFAULT_MAX_HOT_REGIONS = 2
+
+const IMPROVEMENT_EPSILON = 1e-9
+
+class InvalidPortSectionMaskError extends Error {
+  readonly _tag = "InvalidPortSectionMaskError"
+
+  constructor(reason: string) {
+    super(`Invalid port section mask: ${reason}`)
+  }
+}
+
+type RegionCostSolverView = {
+  readonly state: Pick<TinyHyperGraphWorkingState, "regionIntersectionCaches">
+}
+
+const getMaxRegionCost = (solver: RegionCostSolverView) =>
+  solver.state.regionIntersectionCaches.reduce(
+    (maxRegionCost, regionIntersectionCache) =>
+      Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
+    0,
+  )
+
+const getSerializedOutputMaxRegionCost = (
+  serializedHyperGraph: SerializedHyperGraph,
+  sectionSolverOptions?: TinyHyperGraphSectionSolver2Options,
+) => {
+  const replay = loadSerializedHyperGraph(serializedHyperGraph)
+  const replayedSolver = new TinyHyperGraphSectionSolver2(
+    replay.topology,
+    replay.problem,
+    replay.solution,
+    sectionSolverOptions,
+  )
+
+  return getMaxRegionCost(replayedSolver.baselineSolver)
+}
+
+const createPortSectionMaskForRegionIds = (
+  topology: TinyHyperGraphTopology,
+  regionIds: RegionId[],
+  portSelectionRule:
+    | "touches-selected-region"
+    | "all-incident-regions-selected",
+) => {
+  const selectedRegionIds = new Set(regionIds)
+
+  return Int8Array.from({ length: topology.portCount }, (_, portId) => {
+    const incidentRegionIds = topology.incidentPortRegion[portId] ?? []
+
+    if (portSelectionRule === "touches-selected-region") {
+      return incidentRegionIds.some((regionId) =>
+        selectedRegionIds.has(regionId),
+      )
+        ? 1
+        : 0
+    }
+
+    return incidentRegionIds.length > 0 &&
+      incidentRegionIds.every((regionId) => selectedRegionIds.has(regionId))
+      ? 1
+      : 0
+  })
+}
+
+const createProblemWithPortSectionMask = (
+  problem: TinyHyperGraphProblem,
+  portSectionMask: Int8Array,
+): TinyHyperGraphProblem => ({
+  routeCount: problem.routeCount,
+  portSectionMask,
+  routeMetadata: problem.routeMetadata,
+  routeStartPort: new Int32Array(problem.routeStartPort),
+  routeEndPort: new Int32Array(problem.routeEndPort),
+  routeNet: new Int32Array(problem.routeNet),
+  regionNetId: new Int32Array(problem.regionNetId),
+  portPenalty:
+    problem.portPenalty === undefined
+      ? undefined
+      : new Float64Array(problem.portPenalty),
+})
+
+const parsePortSectionMask = (
+  portSectionMask: Int8Array,
+  topology: TinyHyperGraphTopology,
+): Int8Array => {
+  if (!(portSectionMask instanceof Int8Array)) {
+    throw new InvalidPortSectionMaskError("expected Int8Array")
+  }
+
+  if (portSectionMask.length !== topology.portCount) {
+    throw new InvalidPortSectionMaskError(
+      `expected length ${topology.portCount}, got ${portSectionMask.length}`,
+    )
+  }
+
+  for (let portId = 0; portId < portSectionMask.length; portId++) {
+    const value = portSectionMask[portId]
+    if (value !== 0 && value !== 1) {
+      throw new InvalidPortSectionMaskError(
+        `port ${portId} has value ${value}; expected 0 or 1`,
+      )
+    }
+  }
+
+  return new Int8Array(portSectionMask)
+}
+
+const getSectionMaskCandidates = (
+  solvedSolver: TinyHyperGraphSolver2,
+  topology: TinyHyperGraphTopology,
+  maxHotRegions: number,
+  candidateFamilies: TinyHyperGraphSectionCandidateFamily[],
+): TinyHyperGraphSectionMaskCandidate[] => {
+  const hotRegionIds = solvedSolver.state.regionIntersectionCaches
+    .map((regionIntersectionCache, regionId) => ({
+      regionId,
+      regionCost: regionIntersectionCache.existingRegionCost,
+    }))
+    .filter(({ regionCost }) => regionCost > 0)
+    .sort((left, right) => right.regionCost - left.regionCost)
+    .slice(0, maxHotRegions)
+    .map(({ regionId }) => regionId)
+
+  return createSectionMaskCandidatesForHotRegions(
+    topology,
+    hotRegionIds,
+    candidateFamilies,
+  )
+}
+
+const findBestAutomaticSectionMask = (
+  solvedSolver: TinyHyperGraphSolver2,
+  topology: TinyHyperGraphTopology,
+  problem: TinyHyperGraphProblem,
+  solution: TinyHyperGraphSolution,
+  searchConfig: TinyHyperGraphSectionPipelineSearchConfig | undefined,
+  sectionSolverOptions: TinyHyperGraphSectionSolver2Options,
+): AutomaticSectionSearchResult => {
+  const searchStartTime = performance.now()
+  const baselineEvaluationStartTime = performance.now()
+  const baselineSectionSolver = new TinyHyperGraphSectionSolver2(
+    topology,
+    problem,
+    solution,
+    sectionSolverOptions,
+  )
+  const baselineMaxRegionCost = getMaxRegionCost(
+    baselineSectionSolver.baselineSolver,
+  )
+  const baselineEvaluationMs = performance.now() - baselineEvaluationStartTime
+
+  let bestFinalMaxRegionCost = baselineMaxRegionCost
+  let bestPortSectionMask = new Int8Array(topology.portCount)
+  let winningCandidateLabel: string | undefined
+  let winningCandidateFamily: TinyHyperGraphSectionCandidateFamily | undefined
+  let generatedCandidateCount = 0
+  let candidateCount = 0
+  let duplicateCandidateCount = 0
+  let candidateEligibilityMs = 0
+  let candidateInitMs = 0
+  let candidateSolveMs = 0
+  let candidateReplayScoreMs = 0
+  const seenPortSectionMasks = new Set<string>()
+  const maxHotRegions =
+    searchConfig?.maxHotRegions ??
+    sectionSolverOptions.MAX_HOT_REGIONS ??
+    DEFAULT_MAX_HOT_REGIONS
+
+  for (const candidate of getSectionMaskCandidates(
+    solvedSolver,
+    topology,
+    maxHotRegions,
+    searchConfig?.candidateFamilies ?? [
+      ...DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
+    ],
+  )) {
+    const candidateProblem = createProblemWithPortSectionMask(
+      problem,
+      createPortSectionMaskForRegionIds(
+        topology,
+        candidate.regionIds,
+        candidate.portSelectionRule,
+      ),
+    )
+    generatedCandidateCount += 1
+    const portSectionMaskKey = candidateProblem.portSectionMask.join(",")
+
+    if (seenPortSectionMasks.has(portSectionMaskKey)) {
+      duplicateCandidateCount += 1
+      continue
+    }
+
+    seenPortSectionMasks.add(portSectionMaskKey)
+
+    try {
+      const eligibilityStartTime = performance.now()
+      const activeRouteIds = getActiveSectionRouteIds(
+        topology,
+        candidateProblem,
+        solution,
+      )
+      candidateEligibilityMs += performance.now() - eligibilityStartTime
+
+      if (activeRouteIds.length === 0) {
+        continue
+      }
+
+      candidateCount += 1
+
+      const candidateInitStartTime = performance.now()
+      const sectionSolver = new TinyHyperGraphSectionSolver2(
+        topology,
+        candidateProblem,
+        solution,
+        sectionSolverOptions,
+      )
+      candidateInitMs += performance.now() - candidateInitStartTime
+
+      const candidateSolveStartTime = performance.now()
+      sectionSolver.solve()
+      candidateSolveMs += performance.now() - candidateSolveStartTime
+
+      if (sectionSolver.failed || !sectionSolver.solved) {
+        continue
+      }
+
+      const finalMaxRegionCost = Number(
+        sectionSolver.stats.finalMaxRegionCost ??
+          getMaxRegionCost(sectionSolver.getSolvedSolver()),
+      )
+
+      if (finalMaxRegionCost < bestFinalMaxRegionCost - IMPROVEMENT_EPSILON) {
+        const candidateReplayScoreStartTime = performance.now()
+        const replayedFinalMaxRegionCost = getSerializedOutputMaxRegionCost(
+          sectionSolver.getOutput(),
+          sectionSolverOptions,
+        )
+        candidateReplayScoreMs +=
+          performance.now() - candidateReplayScoreStartTime
+
+        if (
+          replayedFinalMaxRegionCost <
+          bestFinalMaxRegionCost - IMPROVEMENT_EPSILON
+        ) {
+          bestFinalMaxRegionCost = replayedFinalMaxRegionCost
+          bestPortSectionMask = new Int8Array(candidateProblem.portSectionMask)
+          winningCandidateLabel = candidate.label
+          winningCandidateFamily = candidate.family
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidSectionMaskError)) {
+        throw error
+      }
+
+      // Skip candidate masks that split a route into multiple section spans.
+    }
+  }
+
+  return {
+    portSectionMask: bestPortSectionMask,
+    baselineMaxRegionCost,
+    finalMaxRegionCost: bestFinalMaxRegionCost,
+    generatedCandidateCount,
+    candidateCount,
+    duplicateCandidateCount,
+    totalMs: performance.now() - searchStartTime,
+    baselineEvaluationMs,
+    candidateEligibilityMs,
+    candidateInitMs,
+    candidateSolveMs,
+    candidateReplayScoreMs,
+    winningCandidateLabel,
+    winningCandidateFamily,
+  }
+}
+
+export interface TinyHyperGraphSectionMaskContext {
+  serializedHyperGraph: SerializedHyperGraph
+  solvedSerializedHyperGraph: SerializedHyperGraph
+  solvedSolver: TinyHyperGraphSolver2
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  solution: TinyHyperGraphSolution
+}
+
+export interface TinyHyperGraphSectionPipelineSearchConfig {
+  maxHotRegions?: number
+  candidateFamilies?: TinyHyperGraphSectionCandidateFamily[]
+}
+
+export interface TinyHyperGraphSectionPipelineInput {
+  serializedHyperGraph: SerializedHyperGraph
+  minViaPadDiameter?: number
+  createSectionMask?: (context: TinyHyperGraphSectionMaskContext) => Int8Array
+  solveGraphOptions?: TinyHyperGraphSolver2Options
+  sectionSolverOptions?: TinyHyperGraphSectionSolver2Options
+  sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
+}
+
+export class TinyHyperGraphSectionPipelineSolver2 extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
+  initialVisualizationSolver?: TinyHyperGraphSolver2
+  selectedSectionMask?: Int8Array
+  selectedSectionCandidateLabel?: string
+  selectedSectionCandidateFamily?: TinyHyperGraphSectionCandidateFamily
+
+  constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
+    super(inputProblem)
+    this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+  }
+
+  loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
+    topology: TinyHyperGraphTopology
+    problem: TinyHyperGraphProblem
+    solution: TinyHyperGraphSolution
+  } {
+    return loadSerializedHyperGraph(serializedHyperGraph)
+  }
+
+  getSolveGraphOptions(): TinyHyperGraphSolver2Options {
+    return {
+      ...DEFAULT_SOLVE_GRAPH_OPTIONS,
+      ...(this.inputProblem.minViaPadDiameter === undefined
+        ? {}
+        : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.inputProblem.solveGraphOptions,
+    }
+  }
+
+  getSectionSolverOptions(): TinyHyperGraphSectionSolver2Options {
+    return {
+      ...DEFAULT_SECTION_SOLVER_OPTIONS,
+      ...(this.inputProblem.minViaPadDiameter === undefined
+        ? {}
+        : { minViaPadDiameter: this.inputProblem.minViaPadDiameter }),
+      ...this.inputProblem.sectionSolverOptions,
+    }
+  }
+
+  override pipelineDef: PipelineStep<any>[] = [
+    {
+      solverName: "solveGraph",
+      solverClass: TinyHyperGraphSolver2,
+      getConstructorParams: (
+        instance: TinyHyperGraphSectionPipelineSolver2,
+      ) => {
+        const { topology, problem } = instance.loadHyperGraph(
+          instance.inputProblem.serializedHyperGraph,
+        )
+
+        return [
+          topology,
+          problem,
+          instance.getSolveGraphOptions(),
+        ] as ConstructorParameters<typeof TinyHyperGraphSolver2>
+      },
+    },
+    {
+      solverName: "optimizeSection",
+      solverClass: TinyHyperGraphSectionSolver2,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver2) =>
+        instance.getSectionStageParams(),
+    },
+  ]
+
+  getSectionStageParams(): [
+    TinyHyperGraphTopology,
+    TinyHyperGraphProblem,
+    TinyHyperGraphSolution,
+    TinyHyperGraphSectionSolver2Options,
+  ] {
+    const solvedSerializedHyperGraph =
+      this.getStageOutput<SerializedHyperGraph>("solveGraph")
+
+    if (!solvedSerializedHyperGraph) {
+      throw new Error(
+        "solveGraph did not produce a solved serialized hypergraph",
+      )
+    }
+
+    const solvedSolver = this.getSolver<TinyHyperGraphSolver2>("solveGraph")
+
+    if (!solvedSolver) {
+      throw new Error("solveGraph solver is unavailable")
+    }
+
+    const sectionSolverOptions = this.getSectionSolverOptions()
+    const { topology, problem, solution } = this.loadHyperGraph(
+      solvedSerializedHyperGraph,
+    )
+
+    const portSectionMask = this.inputProblem.createSectionMask
+      ? this.inputProblem.createSectionMask({
+          serializedHyperGraph: this.inputProblem.serializedHyperGraph,
+          solvedSerializedHyperGraph,
+          solvedSolver,
+          topology,
+          problem,
+          solution,
+        })
+      : (() => {
+          const searchResult = findBestAutomaticSectionMask(
+            solvedSolver,
+            topology,
+            problem,
+            solution,
+            this.inputProblem.sectionSearchConfig,
+            sectionSolverOptions,
+          )
+
+          this.selectedSectionCandidateLabel =
+            searchResult.winningCandidateLabel
+          this.selectedSectionCandidateFamily =
+            searchResult.winningCandidateFamily
+          this.stats = {
+            ...this.stats,
+            sectionSearchGeneratedCandidateCount:
+              searchResult.generatedCandidateCount,
+            sectionSearchCandidateCount: searchResult.candidateCount,
+            sectionSearchDuplicateCandidateCount:
+              searchResult.duplicateCandidateCount,
+            sectionSearchBaselineMaxRegionCost:
+              searchResult.baselineMaxRegionCost,
+            sectionSearchFinalMaxRegionCost: searchResult.finalMaxRegionCost,
+            sectionSearchDelta:
+              searchResult.baselineMaxRegionCost -
+              searchResult.finalMaxRegionCost,
+            selectedSectionCandidateLabel:
+              searchResult.winningCandidateLabel ?? null,
+            selectedSectionCandidateFamily:
+              searchResult.winningCandidateFamily ?? null,
+            sectionSearchMs: searchResult.totalMs,
+            sectionSearchBaselineEvaluationMs:
+              searchResult.baselineEvaluationMs,
+            sectionSearchCandidateEligibilityMs:
+              searchResult.candidateEligibilityMs,
+            sectionSearchCandidateInitMs: searchResult.candidateInitMs,
+            sectionSearchCandidateSolveMs: searchResult.candidateSolveMs,
+            sectionSearchCandidateReplayScoreMs:
+              searchResult.candidateReplayScoreMs,
+          }
+
+          return searchResult.portSectionMask
+        })()
+
+    const parsedPortSectionMask = parsePortSectionMask(portSectionMask, topology)
+    this.selectedSectionMask = parsedPortSectionMask
+    problem.portSectionMask = new Int8Array(parsedPortSectionMask)
+
+    this.stats = {
+      ...this.stats,
+      sectionMaskPortCount: [...parsedPortSectionMask].filter(
+        (value) => value === 1,
+      ).length,
+    }
+
+    return [topology, problem, solution, sectionSolverOptions]
+  }
+
+  getInitialVisualizationSolver() {
+    if (!this.initialVisualizationSolver) {
+      const { topology, problem } = this.loadHyperGraph(
+        this.inputProblem.serializedHyperGraph,
+      )
+      this.initialVisualizationSolver = new TinyHyperGraphSolver2(
+        topology,
+        problem,
+        this.getSolveGraphOptions(),
+      )
+    }
+
+    return this.initialVisualizationSolver
+  }
+
+  override initialVisualize() {
+    return this.getInitialVisualizationSolver().visualize()
+  }
+
+  override visualize(): GraphicsObject {
+    if (this.iterations === 0) {
+      return this.initialVisualize() ?? super.visualize()
+    }
+
+    return super.visualize()
+  }
+
+  override getOutput() {
+    return (
+      this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
+      this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
+      null
+    )
+  }
+
+  override tryFinalAcceptance() {
+    if (this.getStageOutput<SerializedHyperGraph>("solveGraph")) {
+      this.stats = {
+        ...this.stats,
+        acceptedSolveGraphOutputOnSectionPipelineTimeout: true,
+      }
+      this.activeSubSolver = undefined
+      this.solved = true
+      this.failed = false
+      this.error = null
+    }
+  }
+}

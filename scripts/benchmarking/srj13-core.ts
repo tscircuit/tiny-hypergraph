@@ -8,6 +8,8 @@ import {
   type TinyHyperGraphSolverOptions,
 } from "../../lib/index"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
+import { loadSerializedHyperGraph as loadSerializedHyperGraph2 } from "../../lib2/graph-load"
+import { TinyHyperGraphSolver2 } from "../../lib2/index"
 
 type Srj13BenchmarkSample = {
   sampleName: string
@@ -28,6 +30,8 @@ type BenchmarkResult = {
   error: string | null
 }
 
+type SolverVariant = "core" | "lib2"
+
 const HELP_TEXT = `Usage: ./benchmark-srj13.sh [options]
 
 Run the SRJ13 tiny-hypergraph benchmark against TinyHyperGraphSolver directly.
@@ -37,12 +41,14 @@ Options:
   --limit N              Run the first N samples from the dataset.
   --sample NUM           Run a specific sample by number or name (e.g. 2, 02, example-02).
   --max-iterations N     Override the core solver iteration cap. Defaults to 1000000.
+  --solver NAME          Solver variant: core or lib2. Defaults to core.
   --strict               Exit non-zero if any sample fails.
   --help                 Show this help text.
 
 Examples:
   ./benchmark-srj13.sh
   ./benchmark-srj13.sh --limit 3
+  ./benchmark-srj13.sh --limit 3 --solver lib2
   ./benchmark-srj13.sh --sample example-02
   ./benchmark-srj13.sh --max-iterations 250000
 `
@@ -81,6 +87,7 @@ const parseArgs = () => {
   let limit: number | null = null
   let sampleName: string | null = null
   let maxIterations = 1_000_000
+  let solverVariant: SolverVariant = "core"
   let strict = false
 
   for (let index = 0; index < process.argv.length; index += 1) {
@@ -119,6 +126,17 @@ const parseArgs = () => {
       continue
     }
 
+    if (arg === "--solver") {
+      const rawValue = process.argv[index + 1]
+      if (rawValue !== "core" && rawValue !== "lib2") {
+        usageError(`Invalid --solver value: ${rawValue ?? "<missing>"}`)
+      }
+
+      solverVariant = rawValue === "core" ? "core" : "lib2"
+      index += 1
+      continue
+    }
+
     if (index >= 2 && arg.startsWith("-")) {
       usageError(`Unknown option: ${arg}`)
     }
@@ -128,7 +146,7 @@ const parseArgs = () => {
     usageError("Use either --limit or --sample, not both")
   }
 
-  return { limit, sampleName, maxIterations, strict }
+  return { limit, sampleName, maxIterations, solverVariant, strict }
 }
 
 const formatSeconds = (durationMs: number) =>
@@ -221,12 +239,18 @@ const getSolverOptions = (
 const runSample = (
   sample: Srj13BenchmarkSample,
   maxIterations: number,
+  solverVariant: SolverVariant,
 ): BenchmarkResult => {
   const startTime = performance.now()
   const benchmarkCase = sample.tinyHypergraphBenchmark
   const serializedHyperGraph = normalizeSerializedHyperGraph(benchmarkCase)
-  const { topology, problem } = loadSerializedHyperGraph(serializedHyperGraph)
-  const solver = new TinyHyperGraphSolver(
+  const { topology, problem } =
+    solverVariant === "lib2"
+      ? loadSerializedHyperGraph2(serializedHyperGraph)
+      : loadSerializedHyperGraph(serializedHyperGraph)
+  const Solver =
+    solverVariant === "lib2" ? TinyHyperGraphSolver2 : TinyHyperGraphSolver
+  const solver = new Solver(
     topology,
     problem,
     getSolverOptions(benchmarkCase, maxIterations),
@@ -276,17 +300,18 @@ const runSample = (
 }
 
 const main = () => {
-  const { limit, sampleName, maxIterations, strict } = parseArgs()
+  const { limit, sampleName, maxIterations, solverVariant, strict } =
+    parseArgs()
   const allSamples = srj13Samples as Srj13BenchmarkSample[]
   const selectedSamples = getSelectedSamples(allSamples, limit, sampleName)
   const results: BenchmarkResult[] = []
 
   console.log(
-    `dataset=srj13 solver=core samples=${selectedSamples.length}/${allSamples.length} maxIterations=${maxIterations}`,
+    `dataset=srj13 solver=${solverVariant} samples=${selectedSamples.length}/${allSamples.length} maxIterations=${maxIterations}`,
   )
 
   for (const sample of selectedSamples) {
-    const result = runSample(sample, maxIterations)
+    const result = runSample(sample, maxIterations, solverVariant)
     results.push(result)
 
     console.log(

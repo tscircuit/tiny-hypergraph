@@ -9,6 +9,7 @@ import { availableParallelism } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
+import { loadSerializedHyperGraph as loadSerializedHyperGraph2 } from "../../lib2/graph-load"
 import {
   ALL_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
   DEFAULT_TINY_HYPERGRAPH_SECTION_CANDIDATE_FAMILIES,
@@ -20,6 +21,10 @@ import {
   type TinyHyperGraphSolver,
   loadSerializedHyperGraphAsPoly,
 } from "../../lib/index"
+import {
+  TinyHyperGraphSectionPipelineSolver2,
+  TinyHyperGraphSectionSolver2,
+} from "../../lib2/index"
 
 type DatasetModule = Record<string, unknown> & {
   manifest: {
@@ -81,7 +86,7 @@ type BenchmarkReport = {
   samples: BenchmarkSampleResult[]
 }
 
-type SolverVariant = "core" | "poly"
+type SolverVariant = "core" | "lib2" | "poly"
 type DatasetKey = "hg07" | "srj18"
 
 const IMPROVEMENT_EPSILON = 1e-9
@@ -94,7 +99,7 @@ Options:
   --dataset NAME  Dataset to run: hg07 or 18/srj18. Defaults to hg07.
   --limit N       Run the first N samples from the dataset.
   --sample NUM    Run a specific sample by number or name (e.g. 2, 002, sample002).
-  --solver NAME   Solver variant: core or poly. Defaults to core.
+  --solver NAME   Solver variant: core, lib2, or poly. Defaults to core.
   --concurrency N Benchmark concurrency value, or "auto". Defaults to BENCHMARK_CONCURRENCY or CPU count.
   --families LIST Override candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
@@ -276,11 +281,12 @@ const parseArgs = () => {
 
     if (arg === "--solver") {
       const rawValue = process.argv[index + 1]
-      if (rawValue !== "core" && rawValue !== "poly") {
+      if (rawValue !== "core" && rawValue !== "lib2" && rawValue !== "poly") {
         usageError(`Invalid --solver value: ${rawValue ?? "<missing>"}`)
       }
 
-      solverVariant = rawValue as SolverVariant
+      solverVariant =
+        rawValue === "core" ? "core" : rawValue === "lib2" ? "lib2" : "poly"
       index += 1
       continue
     }
@@ -464,8 +470,14 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
   ].join("\n")}\n`
 }
 
-const getMaxRegionCost = (solver: TinyHyperGraphSolver) =>
-  solver.state.regionIntersectionCaches.reduce(
+const getMaxRegionCost = (solver: {
+  state: {
+    regionIntersectionCaches: ArrayLike<{
+      existingRegionCost: number
+    }>
+  }
+}) =>
+  Array.from(solver.state.regionIntersectionCaches).reduce(
     (maxRegionCost, regionIntersectionCache) =>
       Math.max(maxRegionCost, regionIntersectionCache.existingRegionCost),
     0,
@@ -478,12 +490,13 @@ const getSerializedOutputMaxRegionCost = (
   const { topology, problem, solution } =
     solverVariant === "poly"
       ? loadSerializedHyperGraphAsPoly(serializedHyperGraph)
+      : solverVariant === "lib2"
+        ? loadSerializedHyperGraph2(serializedHyperGraph)
       : loadSerializedHyperGraph(serializedHyperGraph)
-  const replaySolver = new TinyHyperGraphSectionSolver(
-    topology,
-    problem,
-    solution,
-  )
+  const replaySolver =
+    solverVariant === "lib2"
+      ? new TinyHyperGraphSectionSolver2(topology, problem, solution)
+      : new TinyHyperGraphSectionSolver(topology, problem, solution)
 
   return getMaxRegionCost(replaySolver.baselineSolver)
 }
@@ -641,10 +654,13 @@ const getSelectedSamples = (
 const toAbsoluteResultPath = (cwd: string, targetPath: string) =>
   path.resolve(cwd, targetPath)
 
+type SnapshotPipelineSolver = {
+  initialVisualize(): GraphicsObject | null
+  visualize(): GraphicsObject
+}
+
 const getSnapshotPng = async (
-  pipelineSolver:
-    | TinyHyperGraphSectionPipelineSolver
-    | PolyHyperGraphSectionPipelineSolver,
+  pipelineSolver: SnapshotPipelineSolver,
 ): Promise<Uint8Array> => {
   const graphics = stackGraphicsHorizontally(
     [
@@ -688,7 +704,9 @@ const main = async () => {
   const PipelineSolver =
     solverVariant === "poly"
       ? PolyHyperGraphSectionPipelineSolver
-      : TinyHyperGraphSectionPipelineSolver
+      : solverVariant === "lib2"
+        ? TinyHyperGraphSectionPipelineSolver2
+        : TinyHyperGraphSectionPipelineSolver
 
   console.log(
     `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency}`,

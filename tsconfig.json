@@ -10,7 +10,8 @@
     "types": ["bun-types"],
 
     "paths": {
-      "lib/*": ["./lib/*"]
+      "lib/*": ["./lib/*"],
+      "lib2/*": ["./lib2/*"]
     },
 
     // Bundler mode
@@ -35,6 +36,7 @@
   "include": [
     "cosmos.decorator.tsx",
     "lib/**/*.ts",
+    "lib2/**/*.ts",
     "pages/**/*.tsx",
     "scripts/**/*.ts",
     "tests/**/*.ts",
