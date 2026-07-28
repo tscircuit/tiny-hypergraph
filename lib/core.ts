@@ -606,10 +606,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
-      const g = this.computeG(currentCandidate, neighborPortId)
-      if (!Number.isFinite(g)) continue
-      const h = this.computeH(neighborPortId)
-
       const nextRegionId =
         topology.incidentPortRegion[neighborPortId][0] ===
         currentCandidate.nextRegionId
@@ -623,6 +619,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
+      const g = this.computeG(currentCandidate, neighborPortId)
+      if (!Number.isFinite(g)) continue
+
+      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      if (g >= this.getCandidateBestCost(candidateHopId)) continue
+
+      const h = this.computeH(neighborPortId)
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
         nextRegionId,
@@ -637,9 +640,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         this.onPathFound(newCandidate)
         return
       }
-
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (g >= this.getCandidateBestCost(candidateHopId)) continue
 
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
