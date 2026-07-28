@@ -593,6 +593,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   baselineBeatRipCount?: number
   previousBestMaxRegionCost = Number.POSITIVE_INFINITY
   ripsSinceBestMaxRegionCostImprovement = 0
+  private prioritizeRouteIdForNextRip?: RouteId
 
   MAX_RIPS = Number.POSITIVE_INFINITY
   MAX_RIPS_WITHOUT_MAX_REGION_COST_IMPROVEMENT = Number.POSITIVE_INFINITY
@@ -672,6 +673,27 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     this.state.goalPortId = -1
   }
 
+  getNextActiveRouteOrder(): RouteId[] {
+    const shuffledRouteIds = shuffle(
+      [...this.activeRouteIds],
+      this.state.ripCount,
+    )
+    const prioritizedRouteId = this.prioritizeRouteIdForNextRip
+    this.prioritizeRouteIdForNextRip = undefined
+
+    if (
+      prioritizedRouteId === undefined ||
+      !this.activeRouteIds.includes(prioritizedRouteId)
+    ) {
+      return shuffledRouteIds
+    }
+
+    return [
+      prioritizedRouteId,
+      ...shuffledRouteIds.filter((routeId) => routeId !== prioritizedRouteId),
+    ]
+  }
+
   override getStartingNextRegionId(
     routeId: RouteId,
     startingPortId: PortId,
@@ -687,10 +709,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   override resetRoutingStateForRerip() {
     if (!this.fixedSnapshot) {
       super.resetRoutingStateForRerip()
-      this.state.unroutedRoutes = shuffle(
-        [...this.activeRouteIds],
-        this.state.ripCount,
-      )
+      this.state.unroutedRoutes = this.getNextActiveRouteOrder()
       this.applyFixedSegments()
       return
     }
@@ -698,10 +717,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     restoreSolvedStateSnapshot(this, this.fixedSnapshot)
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
-    this.state.unroutedRoutes = shuffle(
-      [...this.activeRouteIds],
-      this.state.ripCount,
-    )
+    this.state.unroutedRoutes = this.getNextActiveRouteOrder()
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
@@ -820,6 +836,26 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   override onOutOfCandidates() {
     const { state } = this
+    const currentRouteId = state.currentRouteId
+    const failedOnFirstActiveRoute =
+      currentRouteId !== undefined &&
+      state.unroutedRoutes.length === this.activeRouteIds.length - 1
+
+    if (failedOnFirstActiveRoute) {
+      this.stats = {
+        ...this.stats,
+        activeRouteCount: this.activeRouteIds.length,
+        sectionSearchRejectedInfeasibleFirstRoute: true,
+        sectionSearchInfeasibleRouteId: currentRouteId,
+        ripCount: state.ripCount,
+      }
+      this.error = `Route ${currentRouteId} has no legal path through the section from the fixed routing state`
+      this.failed = true
+      return
+    }
+    if (currentRouteId !== undefined) {
+      this.prioritizeRouteIdForNextRip = currentRouteId
+    }
 
     for (const regionId of this.mutableRegionIds) {
       const regionCost =
@@ -1010,6 +1046,21 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     }
 
     if (!this.sectionSolver.solved) {
+      return
+    }
+
+    if (this.sectionSolver.stats.acceptedFixedSectionStateOnTimeout) {
+      this.optimizedSolver = this.baselineSolver
+      this.stats = {
+        ...this.stats,
+        initialMaxRegionCost: this.baselineSummary.maxRegionCost,
+        initialTotalRegionCost: this.baselineSummary.totalRegionCost,
+        finalMaxRegionCost: this.baselineSummary.maxRegionCost,
+        finalTotalRegionCost: this.baselineSummary.totalRegionCost,
+        optimized: false,
+        sectionSearchTimeoutFallbackToBaseline: true,
+      }
+      this.solved = true
       return
     }
 

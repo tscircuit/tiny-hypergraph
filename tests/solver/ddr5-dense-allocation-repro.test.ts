@@ -4,6 +4,10 @@ import {
   getSinglePortPointPathingSolverParams,
   type SerializedHyperGraphPortPointPathingSolverInput,
 } from "lib/compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
+import {
+  DEFAULT_SPARSE_CANDIDATE_STORAGE_HOP_THRESHOLD,
+  TinyHyperGraphSolver,
+} from "lib/core"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import { ddr5Pipeline7PortPointPathingInput } from "tiny-hypergraph-repros"
 
@@ -140,7 +144,7 @@ const addConnectionTerminalPorts = (
   }
 }
 
-test("repro: DDR5 pipeline7 port-point-pathing input implies multi-GB dense hop state", () => {
+test("repro: DDR5 pipeline7 port-point-pathing input uses sparse hop state", () => {
   const input = getSinglePortPointPathingSolverParams(
     ddr5Pipeline7PortPointPathingInput as SerializedHyperGraphPortPointPathingSolverInput,
   )
@@ -176,7 +180,18 @@ test("repro: DDR5 pipeline7 port-point-pathing input implies multi-GB dense hop 
   expect(topology.regionCount).toBeGreaterThan(12_000)
   expect(topology.portCount).toBeGreaterThan(27_000)
   expect(denseHopBytes).toBeGreaterThan(4_000_000_000)
+  expect(denseHopCount).toBeGreaterThan(
+    DEFAULT_SPARSE_CANDIDATE_STORAGE_HOP_THRESHOLD,
+  )
 
-  // Do not construct TinyHyperGraphSolver in this repro: current construction
-  // attempts to allocate dense hop state at this size, which is the crash.
+  const solver = new TinyHyperGraphSolver(topology, problem)
+
+  expect(solver.USE_SPARSE_CANDIDATE_STORAGE).toBe(true)
+  expect(solver.state.candidateBestCostByHopId).toBeInstanceOf(Map)
+  expect(solver.state.candidateBestCostGenerationByHopId).toBeInstanceOf(Map)
+  expect(solver.stats).toMatchObject({
+    autoSparseCandidateStorage: true,
+    candidateStorageHopCount: denseHopCount,
+    candidateStorageMode: "sparse",
+  })
 })
