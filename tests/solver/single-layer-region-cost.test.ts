@@ -45,11 +45,20 @@ const createProblem = (): TinyHyperGraphProblem => ({
   regionNetId: new Int32Array(2).fill(-1),
 })
 
-const getCrossingCost = (regionAvailableZMask: number, portZ: number) => {
+const getCrossingCost = (
+  regionAvailableZMask: number,
+  portZ: number,
+  hasInitialSolution = true,
+) => {
   const solver = new TinyHyperGraphSolver(
     createTopology(regionAvailableZMask, portZ),
     createProblem(),
   )
+
+  if (hasInitialSolution) {
+    solver.state.unroutedRoutes = []
+    solver.onAllRoutesRouted()
+  }
 
   solver.state.currentRouteNetId = 0
   solver.appendSegmentToRegionCache(0, 0, 2)
@@ -66,6 +75,10 @@ const getCrossingCost = (regionAvailableZMask: number, portZ: number) => {
     3,
   )
 }
+
+test("initial solution routing ignores same-layer crossing costs", () => {
+  expect(getCrossingCost(1 << 0, 0, false)).toBe(0)
+})
 
 test("same-layer crossings in known single-layer regions are rejected as candidates", () => {
   const topLayerCrossingCost = getCrossingCost(1 << 0, 0)
