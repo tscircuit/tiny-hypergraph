@@ -103,6 +103,16 @@ const cloneRegionIntersectionCache = (
   lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
   greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
   layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  port1Ids: new Int32Array(
+    regionIntersectionCache.port1Ids ?? new Int32Array(0),
+  ),
+  port2Ids: new Int32Array(
+    regionIntersectionCache.port2Ids ?? new Int32Array(0),
+  ),
+  x1: new Float64Array(regionIntersectionCache.x1 ?? new Float64Array(0)),
+  y1: new Float64Array(regionIntersectionCache.y1 ?? new Float64Array(0)),
+  x2: new Float64Array(regionIntersectionCache.x2 ?? new Float64Array(0)),
+  y2: new Float64Array(regionIntersectionCache.y2 ?? new Float64Array(0)),
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:
@@ -897,6 +907,7 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
+  REQUIRE_ZERO_INTERSECTIONS = false
 
   constructor(
     public topology: TinyHyperGraphTopology,

@@ -51,3 +51,49 @@ test("queues a costed goal candidate before committing the path", () => {
   expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
   expect(solver.state.currentRouteId).toBeUndefined()
 })
+
+test("timeout fallback does not accept a crossing final hop in a single-layer region", () => {
+  const topology: TinyHyperGraphTopology = {
+    portCount: 4,
+    regionCount: 2,
+    regionIncidentPorts: [[0, 1, 2, 3], []],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 1],
+      [0, 1],
+      [0, 1],
+    ],
+    regionWidth: new Float64Array([10, 10]),
+    regionHeight: new Float64Array([10, 10]),
+    regionCenterX: new Float64Array(2),
+    regionCenterY: new Float64Array(2),
+    regionAvailableZMask: new Int32Array([1 << 0, 0]),
+    portAngleForRegion1: new Int32Array([0, 9000, 18000, 27000]),
+    portAngleForRegion2: new Int32Array(4),
+    portX: new Float64Array([1, 0, -1, 0]),
+    portY: new Float64Array([0, 1, 0, -1]),
+    portZ: new Int32Array(4),
+  }
+  const problem: TinyHyperGraphProblem = {
+    routeCount: 2,
+    portSectionMask: new Int8Array(4).fill(1),
+    routeStartPort: new Int32Array([0, 1]),
+    routeEndPort: new Int32Array([2, 3]),
+    routeNet: new Int32Array([0, 1]),
+    regionNetId: new Int32Array([-1, -1]),
+  }
+  const solver = new DistanceAwareTinyHyperGraphSolver(topology, problem, {
+    ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
+    GREEDY_FINAL_ROUTE_ITERS: 1,
+    MAX_ITERATIONS: 2,
+    STATIC_REACHABILITY_PRECHECK: false,
+  })
+
+  solver.solve()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).not.toBe(true)
+  expect(
+    solver.state.regionIntersectionCaches[0]?.existingSameLayerIntersections,
+  ).toBe(0)
+})

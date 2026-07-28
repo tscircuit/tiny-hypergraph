@@ -10,13 +10,14 @@ import type { RegionIntersectionCache } from "lib/types"
 
 const createRegionCache = (
   existingRegionCost: number,
+  existingSameLayerIntersections = 0,
 ): RegionIntersectionCache => ({
   netIds: new Int32Array(0),
   lesserAngles: new Int32Array(0),
   greaterAngles: new Int32Array(0),
   layerMasks: new Int32Array(0),
   existingCrossingLayerIntersections: 0,
-  existingSameLayerIntersections: 0,
+  existingSameLayerIntersections,
   existingEntryExitLayerChanges: 0,
   existingRegionCost,
   existingSegmentCount: 0,
@@ -157,6 +158,38 @@ test("completed routing rerips when a region exceeds the current threshold", () 
   expect(solver.state.currentRouteNetId).toBeUndefined()
   expect(solver.state.candidateQueue.toArray()).toEqual([])
   expect(solver.state.goalPortId).toBe(-1)
+})
+
+test("zero-intersection mode ignores non-intersection region cost", () => {
+  const solver = createTestSolver({ REQUIRE_ZERO_INTERSECTIONS: true })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.5)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.1)
+
+  solver.step()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.state.ripCount).toBe(0)
+})
+
+test("zero-intersection mode rerips every real intersection", () => {
+  const solver = createTestSolver({ REQUIRE_ZERO_INTERSECTIONS: true })
+
+  solver.state.unroutedRoutes = []
+  solver.state.portAssignment.set([0, 0, 1, 1])
+  solver.state.regionSegments[0] = [[0, 0, 1]]
+  solver.state.regionSegments[1] = [[1, 2, 3]]
+  solver.state.regionIntersectionCaches[0] = createRegionCache(0.01, 1)
+  solver.state.regionIntersectionCaches[1] = createRegionCache(0.01)
+
+  solver.step()
+
+  expect(solver.solved).toBe(false)
+  expect(solver.state.ripCount).toBe(1)
 })
 
 test("completed routing can be accepted as best solution on timeout", () => {

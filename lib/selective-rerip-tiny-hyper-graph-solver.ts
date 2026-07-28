@@ -1,4 +1,5 @@
 import {
+  type Candidate,
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
@@ -63,7 +64,24 @@ export type SelectiveReripTinyHyperGraphStats = {
   lastRippedRouteIds: RouteId[]
   lastRelaxedSearchExpandedLabelCount: number
   lastAlternateSearchExpandedLabelCount: number
+  bestPartialRoutedRouteCount?: number
+  bestPartialIntersectionCount?: number
+  restoredBestPartialSolutionOnTimeout?: boolean
 }
+
+type PartialStateSnapshot = {
+  portAssignment: Int32Array
+  regionSegments: Array<[RouteId, PortId, PortId][]>
+  regionIntersectionCaches: ReturnType<
+    typeof createEmptyRegionIntersectionCache
+  >[]
+  regionCongestionCost: Float64Array
+  ripCount: number
+}
+
+const clonePartialStateSnapshot = (
+  snapshot: PartialStateSnapshot,
+): PartialStateSnapshot => structuredClone(snapshot)
 
 const createInitialSelectiveReripStats =
   (): SelectiveReripTinyHyperGraphStats => ({
@@ -155,13 +173,22 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
   private selectiveReripCongestionUpdateCount = 0
+  private readonly restoreBestPartialSolutionOnTimeout: boolean
+  private bestPartialStateSnapshot: PartialStateSnapshot | undefined
+  private bestPartialRoutedRouteIds = new Set<RouteId>()
+  private bestPartialIntersectionCount = Number.POSITIVE_INFINITY
 
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
-    options?: TinyHyperGraphSolverOptions,
+    options?: TinyHyperGraphSolverOptions & {
+      RESTORE_BEST_PARTIAL_SOLUTION_ON_TIMEOUT?: boolean
+    },
   ) {
     super(topology, problem, options)
+    this.restoreBestPartialSolutionOnTimeout =
+      options?.RESTORE_BEST_PARTIAL_SOLUTION_ON_TIMEOUT ?? false
+    this.captureBestPartialState()
   }
 
   getSelectiveReripStats(): SelectiveReripTinyHyperGraphStats {
@@ -186,6 +213,7 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
   }
 
   override onOutOfCandidates(): void {
+    this.captureBestPartialState()
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
@@ -296,6 +324,216 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
     this.selectiveReripStats.lastAlternateSearchExpandedLabelCount =
       alternatePath?.expandedLabelCount ?? 0
     this.publishSelectiveReripStats()
+  }
+
+  override onPathFound(finalCandidate: Candidate): void {
+    super.onPathFound(finalCandidate)
+    this.captureBestPartialState()
+  }
+
+  override onAllRoutesRouted(): void {
+    if (!this.REQUIRE_ZERO_INTERSECTIONS) {
+      super.onAllRoutesRouted()
+      return
+    }
+
+    const crossingRoutePairs: Array<[RouteId, RouteId]> = []
+    const seenPairs = new Set<string>()
+    const routesCrossingFixedSegments = new Set<RouteId>()
+    const fixedSegmentsByRegion = new Map<
+      RegionId,
+      NonNullable<TinyHyperGraphProblem["fixedRegionSegments"]>
+    >()
+    for (const fixedSegment of this.problem.fixedRegionSegments ?? []) {
+      const regionSegments =
+        fixedSegmentsByRegion.get(fixedSegment.regionId) ?? []
+      regionSegments.push(fixedSegment)
+      fixedSegmentsByRegion.set(fixedSegment.regionId, regionSegments)
+    }
+    for (
+      let regionId = 0;
+      regionId < this.state.regionSegments.length;
+      regionId++
+    ) {
+      const segments = this.state.regionSegments[regionId]!
+      for (const [routeId, fromPortId, toPortId] of segments) {
+        for (const fixedSegment of fixedSegmentsByRegion.get(regionId) ?? []) {
+          if (
+            this.problem.routeNet[routeId] === fixedSegment.netId ||
+            !this.segmentIntersectsCoordinates(
+              fromPortId,
+              toPortId,
+              fixedSegment.x1,
+              fixedSegment.y1,
+              fixedSegment.x2,
+              fixedSegment.y2,
+            )
+          ) {
+            continue
+          }
+          routesCrossingFixedSegments.add(routeId)
+        }
+      }
+      for (let firstIndex = 0; firstIndex < segments.length; firstIndex++) {
+        const [firstRouteId, firstFromPortId, firstToPortId] =
+          segments[firstIndex]!
+        for (
+          let secondIndex = firstIndex + 1;
+          secondIndex < segments.length;
+          secondIndex++
+        ) {
+          const [secondRouteId, secondFromPortId, secondToPortId] =
+            segments[secondIndex]!
+          if (
+            this.problem.routeNet[firstRouteId] ===
+              this.problem.routeNet[secondRouteId] ||
+            !this.segmentsGeometricallyIntersect(
+              firstFromPortId,
+              firstToPortId,
+              secondFromPortId,
+              secondToPortId,
+            )
+          ) {
+            continue
+          }
+          const lesserRouteId = Math.min(firstRouteId, secondRouteId)
+          const greaterRouteId = Math.max(firstRouteId, secondRouteId)
+          const pairKey = `${lesserRouteId}:${greaterRouteId}`
+          if (seenPairs.has(pairKey)) continue
+          seenPairs.add(pairKey)
+          crossingRoutePairs.push([lesserRouteId, greaterRouteId])
+        }
+      }
+    }
+
+    if (
+      crossingRoutePairs.length === 0 &&
+      routesCrossingFixedSegments.size === 0
+    ) {
+      super.onAllRoutesRouted()
+      return
+    }
+
+    const remainingPairs = new Set(
+      crossingRoutePairs.map((_, pairIndex) => pairIndex),
+    )
+    const rippedRouteIds = new Set<RouteId>(routesCrossingFixedSegments)
+    while (remainingPairs.size > 0) {
+      const routeConflictCounts = new Map<RouteId, number>()
+      for (const pairIndex of remainingPairs) {
+        const [firstRouteId, secondRouteId] = crossingRoutePairs[pairIndex]!
+        routeConflictCounts.set(
+          firstRouteId,
+          (routeConflictCounts.get(firstRouteId) ?? 0) + 1,
+        )
+        routeConflictCounts.set(
+          secondRouteId,
+          (routeConflictCounts.get(secondRouteId) ?? 0) + 1,
+        )
+      }
+      const routeIdToRip = [...routeConflictCounts].sort(
+        ([leftRouteId, leftCount], [rightRouteId, rightCount]) =>
+          rightCount - leftCount || leftRouteId - rightRouteId,
+      )[0]![0]
+      rippedRouteIds.add(routeIdToRip)
+      for (const pairIndex of remainingPairs) {
+        if (crossingRoutePairs[pairIndex]!.includes(routeIdToRip)) {
+          remainingPairs.delete(pairIndex)
+        }
+      }
+    }
+
+    this.addCongestionCostForSelectiveRerip()
+    this.rebuildCommittedState(rippedRouteIds)
+    this.state.ripCount += 1
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = [...rippedRouteIds]
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.selectiveReripStats.selectiveRipCount += 1
+    this.selectiveReripStats.selectivelyRippedRouteCount += rippedRouteIds.size
+    this.selectiveReripStats.lastRippedRouteIds = [...rippedRouteIds]
+    this.stats = {
+      ...this.stats,
+      zeroIntersectionCrossingPairCount: crossingRoutePairs.length,
+      zeroIntersectionFixedSegmentRouteCount: routesCrossingFixedSegments.size,
+      zeroIntersectionReripRouteCount: rippedRouteIds.size,
+      ripCount: this.state.ripCount,
+    }
+    this.publishSelectiveReripStats()
+  }
+
+  override tryFinalAcceptance(): void {
+    super.tryFinalAcceptance()
+    if (
+      this.solved ||
+      !this.restoreBestPartialSolutionOnTimeout ||
+      !this.bestPartialStateSnapshot
+    ) {
+      return
+    }
+
+    const snapshot = clonePartialStateSnapshot(this.bestPartialStateSnapshot)
+    this.state.portAssignment = snapshot.portAssignment
+    this.state.regionSegments = snapshot.regionSegments
+    this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
+    this.state.regionCongestionCost = snapshot.regionCongestionCost
+    this.state.ripCount = snapshot.ripCount
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = Array.from(
+      { length: this.problem.routeCount },
+      (_, routeId) => routeId,
+    ).filter((routeId) => !this.bestPartialRoutedRouteIds.has(routeId))
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.selectiveReripStats.bestPartialRoutedRouteCount =
+      this.bestPartialRoutedRouteIds.size
+    this.selectiveReripStats.bestPartialIntersectionCount =
+      this.bestPartialIntersectionCount
+    this.selectiveReripStats.restoredBestPartialSolutionOnTimeout = true
+    this.publishSelectiveReripStats()
+  }
+
+  private captureBestPartialState(): void {
+    if (!this.restoreBestPartialSolutionOnTimeout) return
+
+    const routedRouteIds = new Set<RouteId>()
+    for (const regionSegments of this.state.regionSegments) {
+      for (const [routeId] of regionSegments) routedRouteIds.add(routeId)
+    }
+    const intersectionCount = this.state.regionIntersectionCaches.reduce(
+      (total, cache) =>
+        total +
+        cache.existingSameLayerIntersections +
+        cache.existingCrossingLayerIntersections,
+      0,
+    )
+    const isNotBetter = this.REQUIRE_ZERO_INTERSECTIONS
+      ? intersectionCount > this.bestPartialIntersectionCount ||
+        (intersectionCount === this.bestPartialIntersectionCount &&
+          routedRouteIds.size < this.bestPartialRoutedRouteIds.size)
+      : routedRouteIds.size < this.bestPartialRoutedRouteIds.size ||
+        (routedRouteIds.size === this.bestPartialRoutedRouteIds.size &&
+          intersectionCount >= this.bestPartialIntersectionCount)
+    if (isNotBetter) {
+      return
+    }
+
+    this.bestPartialRoutedRouteIds = routedRouteIds
+    this.bestPartialIntersectionCount = intersectionCount
+    this.bestPartialStateSnapshot = clonePartialStateSnapshot({
+      portAssignment: this.state.portAssignment,
+      regionSegments: this.state.regionSegments,
+      regionIntersectionCaches: this.state.regionIntersectionCaches,
+      regionCongestionCost: this.state.regionCongestionCost,
+      ripCount: this.state.ripCount,
+    })
+    this.selectiveReripStats.bestPartialRoutedRouteCount = routedRouteIds.size
+    this.selectiveReripStats.bestPartialIntersectionCount = intersectionCount
   }
 
   private addCongestionCostForSelectiveRerip(): void {
@@ -553,22 +791,108 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
       ),
     }
     if ((first.layerMask & second.layerMask) === 0) return false
-    if (
-      first.lesserAngle === second.lesserAngle ||
-      first.lesserAngle === second.greaterAngle ||
-      first.greaterAngle === second.lesserAngle ||
-      first.greaterAngle === second.greaterAngle
-    ) {
-      return false
-    }
+    return this.segmentsGeometricallyIntersect(
+      firstFromPortId,
+      firstToPortId,
+      secondFromPortId,
+      secondToPortId,
+    )
+  }
 
-    const secondLesserInsideFirst =
-      first.lesserAngle < second.lesserAngle &&
-      second.lesserAngle < first.greaterAngle
-    const secondGreaterInsideFirst =
-      first.lesserAngle < second.greaterAngle &&
-      second.greaterAngle < first.greaterAngle
-    return secondLesserInsideFirst !== secondGreaterInsideFirst
+  private segmentsGeometricallyIntersect(
+    firstFromPortId: PortId,
+    firstToPortId: PortId,
+    secondFromPortId: PortId,
+    secondToPortId: PortId,
+  ): boolean {
+    const { portX, portY } = this.topology
+    return this.coordinatesGeometricallyIntersect(
+      portX[firstFromPortId]!,
+      portY[firstFromPortId]!,
+      portX[firstToPortId]!,
+      portY[firstToPortId]!,
+      portX[secondFromPortId]!,
+      portY[secondFromPortId]!,
+      portX[secondToPortId]!,
+      portY[secondToPortId]!,
+    )
+  }
+
+  private segmentIntersectsCoordinates(
+    fromPortId: PortId,
+    toPortId: PortId,
+    secondX1: number,
+    secondY1: number,
+    secondX2: number,
+    secondY2: number,
+  ): boolean {
+    const { portX, portY } = this.topology
+    return this.coordinatesGeometricallyIntersect(
+      portX[fromPortId]!,
+      portY[fromPortId]!,
+      portX[toPortId]!,
+      portY[toPortId]!,
+      secondX1,
+      secondY1,
+      secondX2,
+      secondY2,
+    )
+  }
+
+  private coordinatesGeometricallyIntersect(
+    firstX1: number,
+    firstY1: number,
+    firstX2: number,
+    firstY2: number,
+    secondX1: number,
+    secondY1: number,
+    secondX2: number,
+    secondY2: number,
+  ): boolean {
+    const orientation = (
+      firstX: number,
+      firstY: number,
+      secondX: number,
+      secondY: number,
+      thirdX: number,
+      thirdY: number,
+    ) =>
+      (secondX - firstX) * (thirdY - firstY) -
+      (secondY - firstY) * (thirdX - firstX)
+
+    const firstSideA = orientation(
+      firstX1,
+      firstY1,
+      firstX2,
+      firstY2,
+      secondX1,
+      secondY1,
+    )
+    const firstSideB = orientation(
+      firstX1,
+      firstY1,
+      firstX2,
+      firstY2,
+      secondX2,
+      secondY2,
+    )
+    const secondSideA = orientation(
+      secondX1,
+      secondY1,
+      secondX2,
+      secondY2,
+      firstX1,
+      firstY1,
+    )
+    const secondSideB = orientation(
+      secondX1,
+      secondY1,
+      secondX2,
+      secondY2,
+      firstX2,
+      firstY2,
+    )
+    return firstSideA * firstSideB < 0 && secondSideA * secondSideB < 0
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
@@ -580,6 +904,7 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
       { length: this.topology.regionCount },
       () => createEmptyRegionIntersectionCache(),
     )
+    this.appendFixedRegionSegmentsToCaches()
 
     for (
       let regionId = 0;

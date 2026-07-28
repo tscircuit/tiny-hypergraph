@@ -1459,6 +1459,12 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
       regionCache.lesserAngles = EMPTY_PREVIEW_INT32_ARRAY
       regionCache.greaterAngles = EMPTY_PREVIEW_INT32_ARRAY
       regionCache.layerMasks = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.port1Ids = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.port2Ids = EMPTY_PREVIEW_INT32_ARRAY
+      regionCache.x1 = new Float64Array(0)
+      regionCache.y1 = new Float64Array(0)
+      regionCache.x2 = new Float64Array(0)
+      regionCache.y2 = new Float64Array(0)
       regionCache.existingCrossingLayerIntersections = 0
       regionCache.existingSameLayerIntersections = 0
       regionCache.existingEntryExitLayerChanges = 0

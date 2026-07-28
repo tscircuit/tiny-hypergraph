@@ -25,6 +25,12 @@ export interface DynamicAnglePairArrays {
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  port1Ids?: Int32Array
+  port2Ids?: Int32Array
+  x1?: Float64Array
+  y1?: Float64Array
+  x2?: Float64Array
+  y2?: Float64Array
   existingSameLayerIntersections: Integer
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer
