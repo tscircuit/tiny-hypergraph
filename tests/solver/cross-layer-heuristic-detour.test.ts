@@ -11,13 +11,17 @@ import {
 } from "lib/index"
 
 const DISTRACTOR_COUNT = 8
+const INTERMEDIATE_LAYER_DISTRACTOR_COUNT = 16
 const START_TERMINAL_REGION = 0
 const TOP_HUB_REGION = 1
 const FIRST_DISTRACTOR_REGION = 2
 const FIRST_CORRIDOR_REGION = FIRST_DISTRACTOR_REGION + DISTRACTOR_COUNT
 const SECOND_CORRIDOR_REGION = FIRST_CORRIDOR_REGION + 1
 const VIA_REGION = SECOND_CORRIDOR_REGION + 1
-const FOURTH_CORRIDOR_REGION = VIA_REGION + 1
+const FIRST_INTERMEDIATE_LAYER_DISTRACTOR_REGION = VIA_REGION + 1
+const FOURTH_CORRIDOR_REGION =
+  FIRST_INTERMEDIATE_LAYER_DISTRACTOR_REGION +
+  INTERMEDIATE_LAYER_DISTRACTOR_COUNT
 const FIFTH_CORRIDOR_REGION = FOURTH_CORRIDOR_REGION + 1
 const BOTTOM_HUB_REGION = FIFTH_CORRIDOR_REGION + 1
 const GOAL_TERMINAL_REGION = BOTTOM_HUB_REGION + 1
@@ -28,7 +32,10 @@ const FIRST_DISTRACTOR_PORT = 2
 const FIRST_CORRIDOR_PORT = FIRST_DISTRACTOR_PORT + DISTRACTOR_COUNT
 const SECOND_CORRIDOR_PORT = FIRST_CORRIDOR_PORT + 1
 const VIA_ENTRY_PORT = SECOND_CORRIDOR_PORT + 1
-const VIA_EXIT_PORT = VIA_ENTRY_PORT + 1
+const FIRST_INTERMEDIATE_LAYER_DISTRACTOR_PORT = VIA_ENTRY_PORT + 1
+const VIA_EXIT_PORT =
+  FIRST_INTERMEDIATE_LAYER_DISTRACTOR_PORT +
+  INTERMEDIATE_LAYER_DISTRACTOR_COUNT
 const FOURTH_CORRIDOR_PORT = VIA_EXIT_PORT + 1
 const FIFTH_CORRIDOR_PORT = FOURTH_CORRIDOR_PORT + 1
 
@@ -108,7 +115,7 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
       region2Id: GOAL_TERMINAL_REGION,
       x: -0.5,
       y: 0,
-      z: 1,
+      z: 5,
     },
     topologyDraft,
   )
@@ -160,6 +167,21 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
     },
     topologyDraft,
   )
+
+  for (let index = 0; index < INTERMEDIATE_LAYER_DISTRACTOR_COUNT; index++) {
+    connectCrossLayerDetourPort(
+      {
+        portId: FIRST_INTERMEDIATE_LAYER_DISTRACTOR_PORT + index,
+        region1Id: VIA_REGION,
+        region2Id: FIRST_INTERMEDIATE_LAYER_DISTRACTOR_REGION + index,
+        x: 2.4,
+        y: -0.6 + index * 0.08,
+        z: 1 + (index % 4),
+      },
+      topologyDraft,
+    )
+  }
+
   connectCrossLayerDetourPort(
     {
       portId: VIA_EXIT_PORT,
@@ -167,7 +189,7 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
       region2Id: FOURTH_CORRIDOR_REGION,
       x: 2.5,
       y: 0,
-      z: 1,
+      z: 5,
     },
     topologyDraft,
   )
@@ -178,7 +200,7 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
       region2Id: FIFTH_CORRIDOR_REGION,
       x: 1.6,
       y: 0,
-      z: 1,
+      z: 5,
     },
     topologyDraft,
   )
@@ -189,7 +211,7 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
       region2Id: BOTTOM_HUB_REGION,
       x: 0.8,
       y: 0,
-      z: 1,
+      z: 5,
     },
     topologyDraft,
   )
@@ -218,15 +240,26 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
   regionCenterX[VIA_REGION] = 2.5
   regionWidth[VIA_REGION] = 1
   regionHeight[VIA_REGION] = 1
-  regionAvailableZMask[VIA_REGION] = 3
+  regionAvailableZMask[VIA_REGION] = 63
+
+  for (let index = 0; index < INTERMEDIATE_LAYER_DISTRACTOR_COUNT; index++) {
+    const regionId = FIRST_INTERMEDIATE_LAYER_DISTRACTOR_REGION + index
+    const z = 1 + (index % 4)
+    regionCenterX[regionId] = 2.5
+    regionCenterY[regionId] = -0.6 + index * 0.08
+    regionWidth[regionId] = 0.2
+    regionHeight[regionId] = 0.06
+    regionAvailableZMask[regionId] = 1 << z
+  }
+
   regionCenterX[FOURTH_CORRIDOR_REGION] = 2.05
   regionCenterX[FIFTH_CORRIDOR_REGION] = 1.2
   regionCenterX[BOTTOM_HUB_REGION] = 0.25
   regionCenterX[GOAL_TERMINAL_REGION] = -1
-  regionAvailableZMask[FOURTH_CORRIDOR_REGION] = 2
-  regionAvailableZMask[FIFTH_CORRIDOR_REGION] = 2
-  regionAvailableZMask[BOTTOM_HUB_REGION] = 2
-  regionAvailableZMask[GOAL_TERMINAL_REGION] = 2
+  regionAvailableZMask[FOURTH_CORRIDOR_REGION] = 32
+  regionAvailableZMask[FIFTH_CORRIDOR_REGION] = 32
+  regionAvailableZMask[BOTTOM_HUB_REGION] = 32
+  regionAvailableZMask[GOAL_TERMINAL_REGION] = 32
 
   return {
     portCount,
@@ -250,17 +283,17 @@ const createCrossLayerDetourTopology = (): TinyHyperGraphTopology => {
           : `region ${regionId}`,
       availableZ:
         regionId === VIA_REGION
-          ? [0, 1]
-          : regionAvailableZMask[regionId] === 2
-            ? [1]
-            : [0],
+          ? [0, 1, 2, 3, 4, 5]
+          : Array.from({ length: 6 }, (_, z) => z).filter(
+              (z) => (regionAvailableZMask[regionId]! & (1 << z)) !== 0,
+            ),
     })),
     portMetadata: Array.from({ length: portCount }, (_, portId) => ({
       name:
         portId === START_PORT
           ? "start z0"
           : portId === GOAL_PORT
-            ? "goal z1"
+            ? "goal z5"
             : `port ${portId}`,
     })),
   }
