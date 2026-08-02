@@ -31,6 +31,7 @@ export interface DuplicatedPortSummary {
 }
 
 export interface DuplicateCongestedPortSolverReport {
+  /** Number of distinct electrical nets using each port. */
   portUseCounts: Record<string, number>
   duplicatedPorts: DuplicatedPortSummary[]
 }
@@ -455,7 +456,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
-    const portUseCounts = new Map<string, number>()
+    const portNetIds = new Map<string, Set<number>>()
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
@@ -476,14 +477,17 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
         const serializedPortId = getSerializedPortId(topology, portId)
-        portUseCounts.set(
-          serializedPortId,
-          (portUseCounts.get(serializedPortId) ?? 0) + 1,
-        )
+        const netIds = portNetIds.get(serializedPortId) ?? new Set<number>()
+        netIds.add(problem.routeNet[routeId]!)
+        portNetIds.set(serializedPortId, netIds)
       }
     }
 
-    return portUseCounts
+    return new Map(
+      [...portNetIds].map(
+        ([portId, netIds]) => [portId, netIds.size] as const,
+      ),
+    )
   }
 
   private duplicateCongestedPorts(
