@@ -16,6 +16,10 @@ export const DUPLICATE_PORT_PROXIMITY = 0.05
 
 export interface DuplicateCongestedPortSolverOptions {
   duplicatePortProximity?: number
+  /** Minimum center-to-center distance between physical lanes on a boundary. */
+  minimumDuplicatePortSpacing?: number
+  /** Physical lane width used to keep lane centers inside the shared boundary. */
+  duplicatePortWidth?: number
   routeSolveOptions?: TinyHyperGraphSolverOptions
 }
 
@@ -23,6 +27,7 @@ export interface DuplicatedPortSummary {
   sourcePortId: string
   duplicatePortIds: string[]
   useCount: number
+  availableLaneCount?: number
 }
 
 export interface DuplicateCongestedPortSolverReport {
@@ -75,7 +80,131 @@ const getBoundaryKey = (
   port: Pick<SerializedPort, "region1Id" | "region2Id">,
 ) => [port.region1Id, port.region2Id].sort().join("\u0000")
 
+const getPhysicalBoundaryKey = (port: SerializedPort) =>
+  `${getBoundaryKey(port)}\u0000z${getNumber(port.d?.z)}`
+
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
+
+type BoundaryAxis = "x" | "y"
+
+interface BoundaryInterval {
+  axis: BoundaryAxis
+  fixedCoordinate: number
+  min: number
+  max: number
+}
+
+const getSharedBoundaryInterval = (
+  port: SerializedPort,
+  regionById: Map<string, SerializedRegion>,
+): BoundaryInterval | undefined => {
+  const region1Bounds = getRegionBounds(regionById.get(port.region1Id))
+  const region2Bounds = getRegionBounds(regionById.get(port.region2Id))
+  const point = getPortPoint(port)
+
+  const minY = Math.max(region1Bounds.minY, region2Bounds.minY)
+  const maxY = Math.min(region1Bounds.maxY, region2Bounds.maxY)
+  const sharesVerticalBoundary =
+    (region1Bounds.maxX <= region2Bounds.minX + EPSILON &&
+      point.x >= region1Bounds.maxX - EPSILON &&
+      point.x <= region2Bounds.minX + EPSILON) ||
+    (region2Bounds.maxX <= region1Bounds.minX + EPSILON &&
+      point.x >= region2Bounds.maxX - EPSILON &&
+      point.x <= region1Bounds.minX + EPSILON)
+  if (
+    sharesVerticalBoundary &&
+    maxY - minY > EPSILON &&
+    point.y >= minY - EPSILON &&
+    point.y <= maxY + EPSILON
+  ) {
+    return { axis: "y", fixedCoordinate: point.x, min: minY, max: maxY }
+  }
+
+  const minX = Math.max(region1Bounds.minX, region2Bounds.minX)
+  const maxX = Math.min(region1Bounds.maxX, region2Bounds.maxX)
+  const sharesHorizontalBoundary =
+    (region1Bounds.maxY <= region2Bounds.minY + EPSILON &&
+      point.y >= region1Bounds.maxY - EPSILON &&
+      point.y <= region2Bounds.minY + EPSILON) ||
+    (region2Bounds.maxY <= region1Bounds.minY + EPSILON &&
+      point.y >= region2Bounds.maxY - EPSILON &&
+      point.y <= region1Bounds.minY + EPSILON)
+  if (
+    sharesHorizontalBoundary &&
+    maxX - minX > EPSILON &&
+    point.x >= minX - EPSILON &&
+    point.x <= maxX + EPSILON
+  ) {
+    return { axis: "x", fixedCoordinate: point.y, min: minX, max: maxX }
+  }
+
+  return undefined
+}
+
+const getCoordinateOnBoundary = (port: SerializedPort, axis: BoundaryAxis) =>
+  axis === "x" ? getPortPoint(port).x : getPortPoint(port).y
+
+const getPhysicalLanePoints = ({
+  sourcePort,
+  portsOnBoundary,
+  regionById,
+  requestedLaneCount,
+  minimumSpacing,
+  laneWidth,
+}: {
+  sourcePort: SerializedPort
+  portsOnBoundary: SerializedPort[]
+  regionById: Map<string, SerializedRegion>
+  requestedLaneCount: number
+  minimumSpacing: number
+  laneWidth: number
+}): Point[] | undefined => {
+  const boundary = getSharedBoundaryInterval(sourcePort, regionById)
+  if (!boundary) return undefined
+
+  const sourceCoordinate = getCoordinateOnBoundary(sourcePort, boundary.axis)
+  const otherCoordinates = portsOnBoundary
+    .filter((port) => port.portId !== sourcePort.portId)
+    .map((port) => getCoordinateOnBoundary(port, boundary.axis))
+    .filter((coordinate) => Math.abs(coordinate - sourceCoordinate) > EPSILON)
+    .sort((a, b) => a - b)
+  const previousCoordinate = otherCoordinates.findLast(
+    (coordinate) => coordinate < sourceCoordinate,
+  )
+  const nextCoordinate = otherCoordinates.find(
+    (coordinate) => coordinate > sourceCoordinate,
+  )
+  const usableMin = Math.max(
+    boundary.min + laneWidth / 2,
+    previousCoordinate === undefined
+      ? boundary.min + laneWidth / 2
+      : previousCoordinate + minimumSpacing,
+  )
+  const usableMax = Math.min(
+    boundary.max - laneWidth / 2,
+    nextCoordinate === undefined
+      ? boundary.max - laneWidth / 2
+      : nextCoordinate - minimumSpacing,
+  )
+  if (usableMax < usableMin - EPSILON) return []
+
+  const availableLaneCount =
+    Math.floor((usableMax - usableMin + EPSILON) / minimumSpacing) + 1
+  const laneCount = Math.min(requestedLaneCount, availableLaneCount)
+  const occupiedLength = (laneCount - 1) * minimumSpacing
+  const centeredStart = sourceCoordinate - occupiedLength / 2
+  const start = Math.min(
+    Math.max(centeredStart, usableMin),
+    usableMax - occupiedLength,
+  )
+
+  return Array.from({ length: laneCount }, (_, index) => {
+    const coordinate = start + index * minimumSpacing
+    return boundary.axis === "x"
+      ? { x: coordinate, y: boundary.fixedCoordinate }
+      : { x: boundary.fixedCoordinate, y: coordinate }
+  })
+}
 
 const normalize = (point: Point): Point | undefined => {
   const length = Math.hypot(point.x, point.y)
@@ -364,6 +493,20 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     if (!(duplicatePortProximity > 0)) {
       throw new Error("duplicatePortProximity must be greater than zero")
     }
+    const minimumDuplicatePortSpacing =
+      this.options.minimumDuplicatePortSpacing
+    const duplicatePortWidth = this.options.duplicatePortWidth ?? 0
+    if (
+      minimumDuplicatePortSpacing !== undefined &&
+      !(minimumDuplicatePortSpacing > 0)
+    ) {
+      throw new Error("minimumDuplicatePortSpacing must be greater than zero")
+    }
+    if (minimumDuplicatePortSpacing !== undefined && !(duplicatePortWidth > 0)) {
+      throw new Error(
+        "duplicatePortWidth must be greater than zero when physical spacing is enabled",
+      )
+    }
 
     const { solvedRoutes: _solvedRoutes, ...restHyperGraph } =
       this.serializedHyperGraph
@@ -386,6 +529,13 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const sourcePortById = new Map(
       ports.map((port) => [port.portId, port] as const),
     )
+    const portsByBoundary = new Map<string, SerializedPort[]>()
+    for (const port of ports) {
+      const boundaryKey = getPhysicalBoundaryKey(port)
+      const boundaryPorts = portsByBoundary.get(boundaryKey) ?? []
+      boundaryPorts.push(port)
+      portsByBoundary.set(boundaryKey, boundaryPorts)
+    }
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
 
@@ -397,7 +547,27 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       const sourcePort = sourcePortById.get(sourcePortId)
       if (!sourcePort) continue
 
-      const duplicateCount = useCount - 1
+      const physicalLanePoints =
+        minimumDuplicatePortSpacing === undefined
+          ? undefined
+          : getPhysicalLanePoints({
+              sourcePort,
+              portsOnBoundary:
+                portsByBoundary.get(getPhysicalBoundaryKey(sourcePort)) ?? [],
+              regionById,
+              requestedLaneCount: useCount,
+              minimumSpacing: minimumDuplicatePortSpacing,
+              laneWidth: duplicatePortWidth,
+            })
+      const availableLaneCount = physicalLanePoints?.length
+      const capacityIsInsufficient =
+        availableLaneCount !== undefined && availableLaneCount < useCount
+      const capacityLimitedLanePoints = capacityIsInsufficient
+        ? physicalLanePoints
+        : undefined
+      const duplicateCount = capacityIsInsufficient
+        ? Math.max(0, availableLaneCount - 1)
+        : useCount - 1
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
         this.serializedHyperGraph.ports,
@@ -408,6 +578,12 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
+      if (capacityLimitedLanePoints?.[0]) {
+        const sourcePortData = toObjectRecord(sourcePort.d)
+        sourcePortData.x = capacityLimitedLanePoints[0].x
+        sourcePortData.y = capacityLimitedLanePoints[0].y
+        sourcePort.d = sourcePortData
+      }
       const duplicatePortIds: string[] = []
 
       for (
@@ -422,15 +598,24 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         )
         const offset =
           (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
+        const duplicatePoint = capacityLimitedLanePoints?.[duplicateIndex] ?? {
+          x: sourcePoint.x + duplicateDirection.x * offset,
+          y: sourcePoint.y + duplicateDirection.y * offset,
+        }
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
-        duplicatedPortData.x = sourcePoint.x + duplicateDirection.x * offset
-        duplicatedPortData.y = sourcePoint.y + duplicateDirection.y * offset
+        duplicatedPortData.x = duplicatePoint.x
+        duplicatedPortData.y = duplicatePoint.y
         duplicatedPortData.duplicatedFromPortId = sourcePortId
         duplicatedPortData.duplicateIndex = duplicateIndex
         duplicatedPortData.duplicatePortUseCount = useCount
         duplicatedPortData.duplicatePortProximity = duplicatePortProximity
+        if (capacityIsInsufficient) {
+          duplicatedPortData.minimumDuplicatePortSpacing =
+            minimumDuplicatePortSpacing
+          duplicatedPortData.duplicatePortWidth = duplicatePortWidth
+        }
         duplicatedPortData.repairReason = "congested-port"
 
         ports.push({
@@ -455,6 +640,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         sourcePortId,
         duplicatePortIds,
         useCount,
+        ...(availableLaneCount === undefined ? {} : { availableLaneCount }),
       })
     }
 
