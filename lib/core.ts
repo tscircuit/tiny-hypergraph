@@ -578,6 +578,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.resetCandidateBestCosts()
       const startingPortId = problem.routeStartPort[state.currentRouteId!]
+      const endingPortId = problem.routeEndPort[state.currentRouteId!]
+
+      if (topology.portZ[startingPortId] !== topology.portZ[endingPortId]) {
+        this.problemSetup.directedHopCountToEndByRoute[state.currentRouteId!] =
+          createDirectedRouteHopHeuristic({
+            topology,
+            problem,
+            portEndpointReservationNetId:
+              this.problemSetup.portEndpointReservationNetId,
+            portAssignment: state.portAssignment,
+            routeId: state.currentRouteId!,
+          })
+      }
+
       state.candidateQueue.clear()
       const startingNextRegionId = this.getStartingNextRegionId(
         state.currentRouteId!,
@@ -669,6 +683,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
 
       const h = this.computeH(neighborPortId, nextRegionId)
+      if (!Number.isFinite(h)) continue
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,

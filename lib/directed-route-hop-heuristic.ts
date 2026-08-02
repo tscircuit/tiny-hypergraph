@@ -7,6 +7,7 @@ interface CreateDirectedRouteHopHeuristicContext {
   topology: TinyHyperGraphTopology
   problem: TinyHyperGraphProblem
   portEndpointReservationNetId: Int32Array
+  portAssignment?: Int32Array
   routeId: RouteId
 }
 
@@ -33,10 +34,14 @@ const isRegionAvailableToNet = (
 const isPortAvailableToNet = (
   problem: TinyHyperGraphProblem,
   portEndpointReservationNetId: Int32Array,
+  portAssignment: Int32Array | undefined,
   routeNetId: NetId,
   portId: PortId,
 ) => {
   if (problem.portSectionMask[portId] === 0) return false
+
+  const assignedNetId = portAssignment?.[portId] ?? -1
+  if (assignedNetId !== -1 && assignedNetId !== routeNetId) return false
 
   const reservedNetId = portEndpointReservationNetId[portId] ?? -1
   return reservedNetId === -1 || reservedNetId === routeNetId
@@ -51,6 +56,7 @@ export const createDirectedRouteHopHeuristic = ({
   topology,
   problem,
   portEndpointReservationNetId,
+  portAssignment,
   routeId,
 }: CreateDirectedRouteHopHeuristicContext): Int32Array => {
   const hopCountToGoal = new Int32Array(topology.portCount * 2).fill(
@@ -96,6 +102,7 @@ export const createDirectedRouteHopHeuristic = ({
       !isPortAvailableToNet(
         problem,
         portEndpointReservationNetId,
+        portAssignment,
         routeNetId,
         exitPortId,
       )
