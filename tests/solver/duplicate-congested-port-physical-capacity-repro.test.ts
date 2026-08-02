@@ -149,9 +149,7 @@ test("visualizes the physical capacity of a real sample 4 opening", () => {
 
   const svg = getSvgFromGraphicsObject(
     stackGraphicsVertically([graphics], {
-      titles: [
-        `Sample 4 opening: ${lanes.length} lanes / 2 physical capacity`,
-      ],
+      titles: [`Sample 4 opening: ${lanes.length} lanes / 2 physical capacity`],
     }),
   )
   expect(svg).toMatchSvgSnapshot(import.meta.path)
