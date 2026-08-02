@@ -562,9 +562,6 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       const availableLaneCount = physicalLanePoints?.length
       const capacityIsInsufficient =
         availableLaneCount !== undefined && availableLaneCount < useCount
-      const capacityLimitedLanePoints = capacityIsInsufficient
-        ? physicalLanePoints
-        : undefined
       const duplicateCount = capacityIsInsufficient
         ? Math.max(0, availableLaneCount - 1)
         : useCount - 1
@@ -578,10 +575,14 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
-      if (capacityLimitedLanePoints?.[0]) {
+      if (physicalLanePoints?.[0]) {
         const sourcePortData = toObjectRecord(sourcePort.d)
-        sourcePortData.x = capacityLimitedLanePoints[0].x
-        sourcePortData.y = capacityLimitedLanePoints[0].y
+        if (!capacityIsInsufficient) {
+          sourcePortData.routingCostX = sourcePoint.x
+          sourcePortData.routingCostY = sourcePoint.y
+        }
+        sourcePortData.x = physicalLanePoints[0].x
+        sourcePortData.y = physicalLanePoints[0].y
         sourcePort.d = sourcePortData
       }
       const duplicatePortIds: string[] = []
@@ -598,15 +599,21 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         )
         const offset =
           (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
-        const duplicatePoint = capacityLimitedLanePoints?.[duplicateIndex] ?? {
+        const legacyDuplicatePoint = {
           x: sourcePoint.x + duplicateDirection.x * offset,
           y: sourcePoint.y + duplicateDirection.y * offset,
         }
+        const duplicatePoint =
+          physicalLanePoints?.[duplicateIndex] ?? legacyDuplicatePoint
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
         duplicatedPortData.x = duplicatePoint.x
         duplicatedPortData.y = duplicatePoint.y
+        if (physicalLanePoints && !capacityIsInsufficient) {
+          duplicatedPortData.routingCostX = legacyDuplicatePoint.x
+          duplicatedPortData.routingCostY = legacyDuplicatePoint.y
+        }
         duplicatedPortData.duplicatedFromPortId = sourcePortId
         duplicatedPortData.duplicateIndex = duplicateIndex
         duplicatedPortData.duplicatePortUseCount = useCount

@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { DuplicateCongestedPortSolver } from "lib/index"
+import {
+  DuplicateCongestedPortSolver,
+  loadSerializedHyperGraph,
+} from "lib/index"
 
 const createRegion = (
   regionId: string,
@@ -70,15 +73,35 @@ const createFixture = (): SerializedHyperGraph => ({
   ],
 })
 
-test("preserves legacy duplicate placement when the boundary has enough capacity", () => {
-  const legacySolver = new DuplicateCongestedPortSolver(createFixture())
-  const capacityAwareSolver = new DuplicateCongestedPortSolver(createFixture(), {
+test("uses physical duplicate placement when the boundary has enough capacity", () => {
+  const solver = new DuplicateCongestedPortSolver(createFixture(), {
     minimumDuplicatePortSpacing: 0.2,
     duplicatePortWidth: 0.1,
   })
 
-  legacySolver.solve()
-  capacityAwareSolver.solve()
+  solver.solve()
 
-  expect(capacityAwareSolver.getOutput()).toEqual(legacySolver.getOutput())
+  const lanePorts = solver
+    .getOutput()
+    .ports.filter(
+      (port) =>
+        port.portId === "shared" || port.d?.duplicatedFromPortId === "shared",
+    )
+  expect(lanePorts).toHaveLength(2)
+  expect(
+    Math.abs(Number(lanePorts[0]!.d?.y) - Number(lanePorts[1]!.d?.y)),
+  ).toBeCloseTo(0.2)
+
+  const { topology } = loadSerializedHyperGraph(solver.getOutput())
+  const lanePortIndexes = lanePorts.map((lanePort) =>
+    topology.portMetadata?.findIndex(
+      (metadata) => metadata.serializedPortId === lanePort.portId,
+    ),
+  )
+  expect(
+    Math.abs(
+      topology.portRoutingCostY![lanePortIndexes[0]!]! -
+        topology.portRoutingCostY![lanePortIndexes[1]!]!,
+    ),
+  ).toBeCloseTo(0.025)
 })

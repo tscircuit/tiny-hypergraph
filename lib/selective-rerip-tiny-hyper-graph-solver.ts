@@ -429,10 +429,10 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
       hops.push({
         state: { portId: neighborPortId, nextRegionId },
         distance: Math.hypot(
-          this.topology.portX[state.portId]! -
-            this.topology.portX[neighborPortId]!,
-          this.topology.portY[state.portId]! -
-            this.topology.portY[neighborPortId]!,
+          this.getPortRoutingCostX(state.portId) -
+            this.getPortRoutingCostX(neighborPortId),
+          this.getPortRoutingCostY(state.portId) -
+            this.getPortRoutingCostY(neighborPortId),
         ),
         owners,
         data: { resources },

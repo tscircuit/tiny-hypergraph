@@ -39,11 +39,11 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     if (!Number.isFinite(baseCost)) return baseCost
 
     const dx =
-      this.topology.portX[currentCandidate.portId]! -
-      this.topology.portX[neighborPortId]!
+      this.getPortRoutingCostX(currentCandidate.portId) -
+      this.getPortRoutingCostX(neighborPortId)
     const dy =
-      this.topology.portY[currentCandidate.portId]! -
-      this.topology.portY[neighborPortId]!
+      this.getPortRoutingCostY(currentCandidate.portId) -
+      this.getPortRoutingCostY(neighborPortId)
     return baseCost + Math.hypot(dx, dy) * this.DISTANCE_TO_COST
   }
 

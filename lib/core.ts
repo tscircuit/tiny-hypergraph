@@ -115,6 +115,15 @@ export interface TinyHyperGraphTopology {
   portAngleForRegion1: Int32Array
   /** portAngleForRegion2[portId] = CCW angle of the port on incidentPortRegion[portId][1] */
   portAngleForRegion2?: Int32Array
+  /**
+   * Optional virtual coordinates used only by routing distance costs.
+   *
+   * Physical port coordinates still define boundary order and serialized
+   * output. These arrays let topology repair move a port to a legal physical
+   * lane without also changing the solver's existing distance preference.
+   */
+  portRoutingCostX?: Float64Array
+  portRoutingCostY?: Float64Array
   portX: Float64Array
   portY: Float64Array
   portZ: Int32Array
@@ -452,8 +461,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const portHCostToEndOfRoute = this.USE_LAZY_ROUTE_HEURISTIC
       ? undefined
       : new Float64Array(topology.portCount * problem.routeCount)
-    const portX = topology.portX as unknown as ArrayLike<number>
-    const portY = topology.portY as unknown as ArrayLike<number>
+    const portX = (topology.portRoutingCostX ??
+      topology.portX) as unknown as ArrayLike<number>
+    const portY = (topology.portRoutingCostY ??
+      topology.portY) as unknown as ArrayLike<number>
     const portEndpointNetIds = Array.from(
       { length: topology.portCount },
       () => new Set<NetId>(),
@@ -1518,10 +1529,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const endPortId = this.problem.routeEndPort[this.state.currentRouteId!]
     const dx =
-      this.topology.portX[neighborPortId] - this.topology.portX[endPortId]
+      this.getPortRoutingCostX(neighborPortId) -
+      this.getPortRoutingCostX(endPortId)
     const dy =
-      this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
+      this.getPortRoutingCostY(neighborPortId) -
+      this.getPortRoutingCostY(endPortId)
     return Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+  }
+
+  protected getPortRoutingCostX(portId: PortId): number {
+    return (
+      this.topology.portRoutingCostX?.[portId] ?? this.topology.portX[portId]
+    )
+  }
+
+  protected getPortRoutingCostY(portId: PortId): number {
+    return (
+      this.topology.portRoutingCostY?.[portId] ?? this.topology.portY[portId]
+    )
   }
 
   override visualize(): GraphicsObject {
