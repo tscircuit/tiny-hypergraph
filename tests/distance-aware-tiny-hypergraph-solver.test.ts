@@ -1,12 +1,31 @@
 import { expect, test } from "bun:test"
 import {
+  type Candidate,
   DistanceAwareTinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/index"
 import { IndexedCandidateHeap } from "lib/indexed-candidate-heap"
 
-test("queues a costed goal candidate before committing the path", () => {
+class ObservedDistanceAwareTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
+  computedHops: Array<{ fromPortId: number; toPortId: number; cost: number }> =
+    []
+
+  override computeG(
+    currentCandidate: Candidate,
+    neighborPortId: number,
+  ): number {
+    const cost = super.computeG(currentCandidate, neighborPortId)
+    this.computedHops.push({
+      fromPortId: currentCandidate.portId,
+      toPortId: neighborPortId,
+      cost,
+    })
+    return cost
+  }
+}
+
+test("costs the final goal hop before committing the path", () => {
   const topology: TinyHyperGraphTopology = {
     portCount: 2,
     regionCount: 2,
@@ -33,21 +52,22 @@ test("queues a costed goal candidate before committing the path", () => {
     routeNet: new Int32Array([0]),
     regionNetId: new Int32Array([-1, -1]),
   }
-  const solver = new DistanceAwareTinyHyperGraphSolver(topology, problem, {
-    DISTANCE_TO_COST: 2,
-    STATIC_REACHABILITY_PRECHECK: false,
-  })
+  const solver = new ObservedDistanceAwareTinyHyperGraphSolver(
+    topology,
+    problem,
+    {
+      DISTANCE_TO_COST: 2,
+      STATIC_REACHABILITY_PRECHECK: false,
+    },
+  )
 
   solver.step()
 
   expect(solver.state.candidateQueue).toBeInstanceOf(IndexedCandidateHeap)
-  const queuedGoal = solver.state.candidateQueue.toArray()[0]
-  expect(queuedGoal?.portId).toBe(1)
-  expect(queuedGoal?.g).toBeGreaterThanOrEqual(20)
-  expect(solver.state.currentRouteId).toBe(0)
-
-  solver.step()
-
+  const finalHop = solver.computedHops.find(
+    ({ fromPortId, toPortId }) => fromPortId === 0 && toPortId === 1,
+  )
+  expect(finalHop?.cost).toBeGreaterThanOrEqual(20)
   expect(solver.state.regionSegments[0]).toEqual([[0, 0, 1]])
   expect(solver.state.currentRouteId).toBeUndefined()
 })

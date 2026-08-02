@@ -46,29 +46,4 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
       this.getPortRoutingCostY(neighborPortId)
     return baseCost + Math.hypot(dx, dy) * this.DISTANCE_TO_COST
   }
-
-  override onPathFound(finalCandidate: Candidate): void {
-    const goalPortId = this.state.goalPortId
-    if (finalCandidate.portId === goalPortId) {
-      super.onPathFound(finalCandidate)
-      return
-    }
-
-    const g = this.computeG(finalCandidate, goalPortId)
-    if (!Number.isFinite(g)) return
-
-    const goalHopId = this.getHopId(goalPortId, finalCandidate.nextRegionId)
-    if (g >= this.getCandidateBestCost(goalHopId)) return
-
-    this.setCandidateBestCost(goalHopId, g)
-    this.state.candidateQueue.queue({
-      prevRegionId: finalCandidate.nextRegionId,
-      nextRegionId: finalCandidate.nextRegionId,
-      portId: goalPortId,
-      g,
-      h: 0,
-      f: g,
-      prevCandidate: finalCandidate,
-    })
-  }
 }
