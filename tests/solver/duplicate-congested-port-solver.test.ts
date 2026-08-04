@@ -198,3 +198,19 @@ test("duplicate congested port solver duplicates independently reused ports in l
       .every((region) => region.pointIds.includes("shared-choke::dup1")),
   ).toBe(true)
 })
+
+test("duplicate congested port solver shares a port between routes on the same net", () => {
+  const fixture = createDuplicatePortFixture()
+  fixture.connections![1]!.mutuallyConnectedNetworkId = "net-a"
+  const solver = new DuplicateCongestedPortSolver(fixture)
+
+  solver.solve()
+
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.report.portUseCounts["shared-choke"]).toBe(1)
+  expect(solver.report.duplicatedPorts).not.toContainEqual(
+    expect.objectContaining({ sourcePortId: "shared-choke" }),
+  )
+  expect(solver.getOutput().ports).toHaveLength(fixture.ports.length)
+})

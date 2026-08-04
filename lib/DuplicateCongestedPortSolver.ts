@@ -326,7 +326,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
-    const portUseCounts = new Map<string, number>()
+    const portNetIds = new Map<string, Set<number>>()
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
@@ -347,14 +347,21 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
         const serializedPortId = getSerializedPortId(topology, portId)
-        portUseCounts.set(
-          serializedPortId,
-          (portUseCounts.get(serializedPortId) ?? 0) + 1,
-        )
+        let netIds = portNetIds.get(serializedPortId)
+        if (!netIds) {
+          netIds = new Set()
+          portNetIds.set(serializedPortId, netIds)
+        }
+        netIds.add(problem.routeNet[routeId]!)
       }
     }
 
-    return portUseCounts
+    return new Map(
+      [...portNetIds].map(([serializedPortId, netIds]) => [
+        serializedPortId,
+        netIds.size,
+      ]),
+    )
   }
 
   private duplicateCongestedPorts(
