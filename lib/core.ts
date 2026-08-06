@@ -119,6 +119,19 @@ export interface TinyHyperGraphTopology {
   portY: Float64Array
   portZ: Int32Array
 
+  /**
+   * Numeric physical portal-group metadata. Ports without a replaceable
+   * physical portal group contain -1.
+   */
+  portPhysicalGroupId?: Int32Array
+  physicalPortalGroupCount?: number
+  /**
+   * Flat lookup indexed by physicalGroupId * physicalGroupLayerCount + z.
+   * Missing group/layer copies contain -1.
+   */
+  physicalGroupPortIdByZ?: Int32Array
+  physicalGroupLayerCount?: number
+
   portMetadata?: any[]
 }
 
@@ -153,6 +166,12 @@ export interface TinyHyperGraphProblem {
    * state and may be ripped and rerouted by the normal solver machinery.
    */
   initialAssignments?: TinyHyperGraphInitialAssignment[]
+
+  /**
+   * Routes whose serialized initial assignments or other fixed topology must
+   * not be changed by fixed-topology portal-layer refinement.
+   */
+  portalLayerRefinementLockedRouteMask?: Int8Array
 }
 
 export interface TinyHyperGraphProblemSetup {

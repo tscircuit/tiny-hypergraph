@@ -9,6 +9,10 @@ import type {
   TinyHyperGraphTopology,
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
+import {
+  FixedTopologyPortalLayerRefinementSolver,
+  type FixedTopologyPortalLayerRefinementSolverOptions,
+} from "../fixed-topology-portal-layer-refinement-solver"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -127,6 +131,10 @@ const createProblemWithPortSectionMask = (
     problem.portPenalty === undefined
       ? undefined
       : new Float64Array(problem.portPenalty),
+  portalLayerRefinementLockedRouteMask:
+    problem.portalLayerRefinementLockedRouteMask === undefined
+      ? undefined
+      : new Int8Array(problem.portalLayerRefinementLockedRouteMask),
 })
 
 const getSectionMaskCandidates = (
@@ -379,6 +387,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
     },
+    {
+      solverName: "refinePortalLayers",
+      solverClass: FixedTopologyPortalLayerRefinementSolver,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
+        instance.getPortalLayerRefinementStageParams(),
+    },
   ]
 
   getSectionStageParams(): [
@@ -473,6 +487,34 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return [topology, problem, solution, sectionSolverOptions]
   }
 
+  getPortalLayerRefinementStageParams(): [
+    TinyHyperGraphTopology,
+    TinyHyperGraphProblem,
+    TinyHyperGraphSolution,
+    FixedTopologyPortalLayerRefinementSolverOptions,
+  ] {
+    const optimizedSerializedHyperGraph =
+      this.getStageOutput<SerializedHyperGraph>("optimizeSection")
+
+    if (!optimizedSerializedHyperGraph) {
+      throw new Error(
+        "optimizeSection did not produce a solved serialized hypergraph",
+      )
+    }
+
+    const { topology, problem, solution } = this.loadHyperGraph(
+      optimizedSerializedHyperGraph,
+    )
+    return [
+      topology,
+      problem,
+      solution,
+      {
+        minViaPadDiameter: this.inputProblem.minViaPadDiameter,
+      },
+    ]
+  }
+
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = this.loadHyperGraph(
@@ -502,22 +544,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override getOutput() {
     return (
-      this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
-      this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
-      null
+      this.getStageOutput<SerializedHyperGraph>("refinePortalLayers") ?? null
     )
-  }
-
-  override tryFinalAcceptance() {
-    if (this.getStageOutput<SerializedHyperGraph>("solveGraph")) {
-      this.stats = {
-        ...this.stats,
-        acceptedSolveGraphOutputOnSectionPipelineTimeout: true,
-      }
-      this.activeSubSolver = undefined
-      this.solved = true
-      this.failed = false
-      this.error = null
-    }
   }
 }

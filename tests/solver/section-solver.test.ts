@@ -275,7 +275,7 @@ test("section pipeline uses bounded default iteration limits", () => {
   expect(pipelineSolver.getSectionSolverOptions().MAX_ITERATIONS).toBe(50_000)
 })
 
-test("section pipeline final acceptance falls back to solveGraph output", () => {
+test("section pipeline does not skip unfinished optimization and refinement stages", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: sectionSolverFixtureGraph,
   })
@@ -288,12 +288,9 @@ test("section pipeline final acceptance falls back to solveGraph output", () => 
 
   pipelineSolver.tryFinalAcceptance()
 
-  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.solved).toBe(false)
   expect(pipelineSolver.failed).toBe(false)
-  expect(
-    pipelineSolver.stats.acceptedSolveGraphOutputOnSectionPipelineTimeout,
-  ).toBe(true)
-  expect(pipelineSolver.getOutput()).toBe(sectionSolverFixtureGraph)
+  expect(pipelineSolver.getOutput()).toBeNull()
 })
 
 test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {

@@ -93,7 +93,15 @@ const createDuplicatePortFixture = (): SerializedHyperGraph => ({
   ports: [
     createPort("a-start-port", "a-start", "left", -3, 0),
     createPort("b-start-port", "b-start", "left", -3, -0.2),
-    createPort("shared-choke", "left", "right", 0, 0),
+    {
+      ...createPort("shared-choke", "left", "right", 0, 0),
+      d: {
+        x: 0,
+        y: 0,
+        z: 0,
+        physicalPortGroupId: "shared-choke-physical",
+      },
+    },
     createPort("shared-neighbor", "left", "right", 0, 4),
     createPort("a-end-port", "right", "a-end", 3, 0),
     createPort("b-end-port", "right", "b-end", 3, -0.2),
@@ -186,6 +194,9 @@ test("duplicate congested port solver duplicates independently reused ports in l
 
   expect(duplicatePort.d?.duplicatedFromPortId).toBe("shared-choke")
   expect(duplicatePort.d?.duplicateIndex).toBe(1)
+  expect(duplicatePort.d?.physicalPortGroupId).toBe(
+    "shared-choke-physical::source-shared-choke::duplicate-1",
+  )
   expect(duplicateDistance).toBeGreaterThan(0)
   expect(duplicateDistance).toBeLessThanOrEqual(duplicatePortProximity)
   expect(Math.abs(crossProduct)).toBeLessThan(1e-9)

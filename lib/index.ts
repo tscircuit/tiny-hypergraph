@@ -8,9 +8,12 @@ export * from "./selective-rerip-tiny-hyper-graph-solver"
 export * from "./bus-solver"
 export * from "./region-graph"
 export {
+  computeEstimatedViaDemand,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
   TRACE_VIA_MARGIN,
 } from "./computeRegionCost"
+export * from "./types"
+export * from "./fixed-topology-portal-layer-refinement-solver"
 export { convertPortPointPathingSolverInputToSerializedHyperGraph } from "./compat/convertPortPointPathingSolverInputToSerializedHyperGraph"
 export { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 export {

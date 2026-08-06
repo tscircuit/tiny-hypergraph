@@ -299,13 +299,17 @@ const getSerializedConnection = (
       ? routeMetadata.mutuallyConnectedNetworkId
       : undefined
 
+  const portalLayerRefinementLocked =
+    solver.problem.portalLayerRefinementLockedRouteMask?.[routeId] === 1
+
   return {
     connectionId: metadataConnectionId,
     startRegionId: metadataStartRegionId ?? startRegionId,
     endRegionId: metadataEndRegionId ?? endRegionId,
     mutuallyConnectedNetworkId:
       metadataNetworkId ?? `net-${solver.problem.routeNet[routeId]}`,
-  }
+    ...(portalLayerRefinementLocked && { portalLayerRefinementLocked: true }),
+  } as SerializedConnection
 }
 
 const getSerializedSolvedRoute = (

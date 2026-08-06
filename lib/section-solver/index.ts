@@ -555,6 +555,10 @@ const createSectionRoutePlans = (
         problem.portPenalty === undefined
           ? undefined
           : new Float64Array(problem.portPenalty),
+      portalLayerRefinementLockedRouteMask:
+        problem.portalLayerRefinementLockedRouteMask === undefined
+          ? undefined
+          : new Int8Array(problem.portalLayerRefinementLockedRouteMask),
     },
     routePlans,
     activeRouteIds,

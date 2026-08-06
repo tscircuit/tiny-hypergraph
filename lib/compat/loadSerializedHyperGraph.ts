@@ -213,6 +213,27 @@ const getSerializedPortY = (
   port: SerializedHyperGraph["ports"][number],
 ): number => Number(port.d?.y ?? 0)
 
+const getSerializedPhysicalPortGroupId = (
+  port: SerializedHyperGraph["ports"][number],
+): string | undefined => {
+  const physicalPortGroupId = port.d?.physicalPortGroupId
+  return typeof physicalPortGroupId === "string" &&
+    physicalPortGroupId.length > 0
+    ? physicalPortGroupId
+    : undefined
+}
+
+const getConnectionPortalLayerRefinementLock = (
+  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
+): boolean | undefined => {
+  const value = (
+    connection as typeof connection & {
+      portalLayerRefinementLocked?: unknown
+    }
+  ).portalLayerRefinementLocked
+  return typeof value === "boolean" ? value : undefined
+}
+
 const computePortAngle = (
   port: SerializedHyperGraph["ports"][number],
   region: SerializedHyperGraph["regions"][number] | undefined,
@@ -390,6 +411,27 @@ export const loadSerializedHyperGraph = (
   const portX = new Float64Array(portCount)
   const portY = new Float64Array(portCount)
   const portZ = new Int32Array(portCount)
+  const physicalGroupIds = [
+    ...new Set(
+      filteredHyperGraph.ports
+        .map(getSerializedPhysicalPortGroupId)
+        .filter((groupId): groupId is string => groupId !== undefined),
+    ),
+  ].sort()
+  const physicalGroupIdToIndex = new Map(
+    physicalGroupIds.map((groupId, groupIndex) => [groupId, groupIndex]),
+  )
+  const portPhysicalGroupId = new Int32Array(portCount).fill(-1)
+  const physicalGroupLayerCount = Math.max(
+    1,
+    ...filteredHyperGraph.ports.map((port) => getSerializedPortZ(port) + 1),
+  )
+  const physicalGroupPortIdByZ = new Int32Array(
+    physicalGroupIds.length * physicalGroupLayerCount,
+  ).fill(-1)
+  const physicalGroupX = new Float64Array(physicalGroupIds.length)
+  const physicalGroupY = new Float64Array(physicalGroupIds.length)
+  const physicalGroupHasCoordinates = new Int8Array(physicalGroupIds.length)
 
   filteredHyperGraph.ports.forEach((port, portIndex) => {
     const region1Index = regionIdToIndex.get(port.region1Id)
@@ -405,6 +447,40 @@ export const loadSerializedHyperGraph = (
     portX[portIndex] = getSerializedPortX(port)
     portY[portIndex] = getSerializedPortY(port)
     portZ[portIndex] = getSerializedPortZ(port)
+    const serializedPhysicalGroupId = getSerializedPhysicalPortGroupId(port)
+    if (serializedPhysicalGroupId !== undefined) {
+      const physicalGroupId = physicalGroupIdToIndex.get(
+        serializedPhysicalGroupId,
+      )
+      if (physicalGroupId === undefined) {
+        throw new Error(
+          `Port "${port.portId}" references an unknown physical portal group`,
+        )
+      }
+      const lookupIndex =
+        physicalGroupId * physicalGroupLayerCount + portZ[portIndex]
+      if (physicalGroupPortIdByZ[lookupIndex] !== -1) {
+        throw new Error(
+          `Physical portal group "${serializedPhysicalGroupId}" has multiple z${portZ[portIndex]} copies`,
+        )
+      }
+      if (physicalGroupHasCoordinates[physicalGroupId] === 1) {
+        if (
+          Math.abs(physicalGroupX[physicalGroupId] - portX[portIndex]) > 1e-9 ||
+          Math.abs(physicalGroupY[physicalGroupId] - portY[portIndex]) > 1e-9
+        ) {
+          throw new Error(
+            `Physical portal group "${serializedPhysicalGroupId}" contains different XY positions`,
+          )
+        }
+      } else {
+        physicalGroupX[physicalGroupId] = portX[portIndex]
+        physicalGroupY[physicalGroupId] = portY[portIndex]
+        physicalGroupHasCoordinates[physicalGroupId] = 1
+      }
+      portPhysicalGroupId[portIndex] = physicalGroupId
+      physicalGroupPortIdByZ[lookupIndex] = portIndex
+    }
     portAngleForRegion1[portIndex] = computePortAngle(
       port,
       filteredHyperGraph.regions[region1Index],
@@ -561,6 +637,10 @@ export const loadSerializedHyperGraph = (
     portX,
     portY,
     portZ,
+    portPhysicalGroupId,
+    physicalPortalGroupCount: physicalGroupIds.length,
+    physicalGroupPortIdByZ,
+    physicalGroupLayerCount,
     portMetadata,
   }
 
@@ -597,6 +677,21 @@ export const loadSerializedHyperGraph = (
         }
       }),
   )
+  const initiallyAssignedRouteIds = new Set(
+    initialAssignments.map((assignment) => assignment.routeId),
+  )
+  const portalLayerRefinementLockedRouteMask = Int8Array.from(
+    routableConnections,
+    ({ connection, solvedRoute }, routeId) => {
+      const explicitLock = getConnectionPortalLayerRefinementLock(connection)
+      return explicitLock === true ||
+        (explicitLock === undefined &&
+          solvedRoute === undefined &&
+          initiallyAssignedRouteIds.has(routeId))
+        ? 1
+        : 0
+    },
+  )
 
   const problem: TinyHyperGraphProblem = {
     routeCount,
@@ -607,6 +702,7 @@ export const loadSerializedHyperGraph = (
     routeNet,
     regionNetId,
     ...(initialAssignments.length > 0 && { initialAssignments }),
+    portalLayerRefinementLockedRouteMask,
   }
 
   const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =

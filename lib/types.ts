@@ -4,6 +4,7 @@ export type Integer = number
 export type RouteId = number
 export type NetId = number
 export type HopId = number
+export type PhysicalPortGroupId = number
 
 /** SegmentIds are computed via port1Id * portCount + port2Id */
 export type SegmentId = number
@@ -30,6 +31,36 @@ export interface RegionIntersectionCache extends DynamicAnglePairArrays {
   existingEntryExitLayerChanges: Integer
   existingRegionCost: number
   existingSegmentCount: number
+}
+
+export interface PortalLayerChange {
+  routeId: RouteId
+  physicalPortGroupId: PhysicalPortGroupId
+  fromPortId: PortId
+  toPortId: PortId
+  fromZ: number
+  toZ: number
+}
+
+export interface FixedTopologyPortalLayerRefinementStats {
+  physicalPortalGroupCount: number
+  eligibleRouteCount: number
+  routesConsidered: number
+  routesImproved: number
+  predictedViaDemandBefore: number
+  predictedViaDemandAfter: number
+  entryExitLayerChangesBefore: number
+  entryExitLayerChangesAfter: number
+  candidateCount: number
+  acceptedCandidateCount: number
+  touchedRegionCount: number
+  rejectedForRegionCostCount: number
+  rejectedForIntersectionRegressionCount: number
+  rejectedForPortConflictCount: number
+  rejectedForLockedAssignmentCount: number
+  rejectedForNoViaDemandImprovementCount: number
+  rejectedForNoEntryExitImprovementCount: number
+  portalLayerRefinementMs: number
 }
 
 export type SameLayerIntersectionCount = number
