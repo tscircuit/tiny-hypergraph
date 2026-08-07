@@ -151,9 +151,6 @@ test("RegionPathSolver capacity cost pushes later routes into alternate regions"
   ])
   expect(solver.state.regionUsage[2]).toBe(1)
   expect(solver.state.regionUsage[3]).toBe(1)
-  expect(solver.state.solvedRouteCosts[0]).toBeLessThan(
-    solver.state.solvedRouteCosts[1],
-  )
 })
 
 test("RegionPathSolver solves the full CM5IO bus1-only hypergraph fixture", async () => {

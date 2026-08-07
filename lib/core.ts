@@ -12,6 +12,7 @@ import {
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
+import { RegionPathSolver } from "./region-graph/region-path-solver"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
@@ -247,6 +248,7 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
+  USE_REGION_PATH_CORRIDORS?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
@@ -264,6 +266,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
+  USE_REGION_PATH_CORRIDORS?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
@@ -303,6 +306,9 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.USE_LAZY_ROUTE_HEURISTIC !== undefined) {
     solver.USE_LAZY_ROUTE_HEURISTIC = options.USE_LAZY_ROUTE_HEURISTIC
   }
+  if (options.USE_REGION_PATH_CORRIDORS !== undefined) {
+    solver.USE_REGION_PATH_CORRIDORS = options.USE_REGION_PATH_CORRIDORS
+  }
   if (options.USE_SPARSE_CANDIDATE_STORAGE !== undefined) {
     solver.USE_SPARSE_CANDIDATE_STORAGE = options.USE_SPARSE_CANDIDATE_STORAGE
   }
@@ -338,6 +344,7 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
+  USE_REGION_PATH_CORRIDORS: solver.USE_REGION_PATH_CORRIDORS,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
@@ -366,6 +373,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
+  private preferredRegionCorridorByRoute: Array<ReadonlySet<RegionId>> = []
+  private expandedRegionCorridorByRoute: Array<ReadonlySet<RegionId>> = []
+  private wideRegionCorridorByRoute: Array<ReadonlySet<RegionId>> = []
+  private routeSearchScope: Uint8Array
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
     lesserAngle: 0,
@@ -383,6 +394,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
   USE_LAZY_ROUTE_HEURISTIC = false
+  USE_REGION_PATH_CORRIDORS = false
   USE_SPARSE_CANDIDATE_STORAGE = false
 
   override MAX_ITERATIONS = 1e6
@@ -423,6 +435,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeSearchScope = new Uint8Array(problem.routeCount)
     const initialAssignmentStats = applyInitialAssignments({
       topology,
       problem,
@@ -437,6 +450,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         ...initialAssignmentStats,
       }
     }
+    this.computePreferredRegionCorridors()
   }
 
   get problemSetup(): TinyHyperGraphProblemSetup {
@@ -593,6 +607,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (
+        this.USE_REGION_PATH_CORRIDORS &&
+        !this.isPortAllowedByPreferredRegionCorridor(
+          currentCandidate.nextRegionId,
+          neighborPortId,
+        )
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
@@ -1340,6 +1363,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   onOutOfCandidates() {
+    if (
+      this.USE_REGION_PATH_CORRIDORS &&
+      this.retryCurrentRouteWithGlobalSearch()
+    ) {
+      return
+    }
+
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
@@ -1368,6 +1398,127 @@ export class TinyHyperGraphSolver extends BaseSolver {
             connectionId: this.getRouteConnectionId(currentRouteId),
           }),
     })
+  }
+
+  protected retryCurrentRouteWithGlobalSearch(): boolean {
+    const routeId = this.state.currentRouteId
+    if (
+      routeId === undefined ||
+      !this.preferredRegionCorridorByRoute[routeId]?.size
+    ) {
+      return false
+    }
+
+    const currentScope = this.routeSearchScope[routeId] ?? 0
+    if (currentScope >= 3) return false
+
+    const nextScope = currentScope + 1
+    this.routeSearchScope[routeId] = nextScope
+    this.state.unroutedRoutes.unshift(routeId)
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+    this.stats = {
+      ...this.stats,
+      regionPathExpandedCorridorRouteCount: this.routeSearchScope.filter(
+        (scope) => scope >= 1,
+      ).length,
+      regionPathWideCorridorRouteCount: this.routeSearchScope.filter(
+        (scope) => scope >= 2,
+      ).length,
+      regionPathGlobalFallbackRouteCount: this.routeSearchScope.filter(
+        (scope) => scope >= 3,
+      ).length,
+    }
+    return true
+  }
+
+  private computePreferredRegionCorridors(): void {
+    if (!this.USE_REGION_PATH_CORRIDORS) return
+
+    const maxNegotiationPasses = 4
+    const regionPathSolver = new RegionPathSolver(this.topology, this.problem, {
+      MAX_ITERATIONS: Math.max(
+        1_000_000,
+        this.problem.routeCount * 3_000 * (maxNegotiationPasses + 1),
+      ),
+      MAX_NEGOTIATION_PASSES: maxNegotiationPasses,
+      SKIP_UNROUTABLE_ROUTES: true,
+      USE_TOPOLOGY_CAPACITY: true,
+    })
+    regionPathSolver.solve()
+
+    this.preferredRegionCorridorByRoute =
+      regionPathSolver.state.solvedRouteRegionIds.map(
+        (regionIds) => new Set<RegionId>(regionIds),
+      )
+    this.expandedRegionCorridorByRoute =
+      regionPathSolver.state.solvedRouteRegionIds.map((regionIds) => {
+        const expandedCorridor = new Set<RegionId>(regionIds)
+        for (const regionId of regionIds) {
+          for (const edge of regionPathSolver.regionGraph.incidentEdges[
+            regionId
+          ] ?? []) {
+            expandedCorridor.add(edge.regionIdA)
+            expandedCorridor.add(edge.regionIdB)
+          }
+        }
+        return expandedCorridor
+      })
+    this.wideRegionCorridorByRoute = this.expandedRegionCorridorByRoute.map(
+      (expandedCorridor) => {
+        const wideCorridor = new Set<RegionId>(expandedCorridor)
+        for (const regionId of expandedCorridor) {
+          for (const edge of regionPathSolver.regionGraph.incidentEdges[
+            regionId
+          ] ?? []) {
+            wideCorridor.add(edge.regionIdA)
+            wideCorridor.add(edge.regionIdB)
+          }
+        }
+        return wideCorridor
+      },
+    )
+    this.stats = {
+      ...this.stats,
+      regionPathCorridorRouteCount:
+        this.preferredRegionCorridorByRoute.filter(
+          (regionIds) => regionIds.size > 0,
+        ).length,
+      regionPathPlanningIterations: regionPathSolver.iterations,
+      regionPathPlanningSolved: regionPathSolver.solved,
+    }
+  }
+
+  protected isPortAllowedByPreferredRegionCorridor(
+    currentRegionId: RegionId,
+    portId: PortId,
+    searchScopeOverride?: number,
+  ): boolean {
+    const routeId = this.state.currentRouteId
+    const searchScope =
+      searchScopeOverride ??
+      (routeId === undefined
+        ? Number.POSITIVE_INFINITY
+        : this.routeSearchScope[routeId])
+    if (routeId === undefined || searchScope >= 3) {
+      return true
+    }
+
+    const corridor = [
+      this.preferredRegionCorridorByRoute,
+      this.expandedRegionCorridorByRoute,
+      this.wideRegionCorridorByRoute,
+    ][searchScope]?.[routeId]
+    if (!corridor?.size || !corridor.has(currentRegionId)) return true
+    if (portId === this.state.goalPortId) return true
+
+    const nextRegionId = (this.topology.incidentPortRegion[portId] ?? []).find(
+      (regionId) => regionId !== currentRegionId,
+    )
+    return nextRegionId !== undefined && corridor.has(nextRegionId)
   }
 
   onPathFound(finalCandidate: Candidate) {

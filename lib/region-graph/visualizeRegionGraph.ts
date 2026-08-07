@@ -165,7 +165,7 @@ const getRegionFill = (
   regionId: RegionId,
 ) => {
   const regionUsage = usage.regionUsage[regionId]
-  const capacity = solver.regionGraph.regionCapacity[regionId]
+  const capacity = solver.getRegionCapacity(regionId)
   const utilization = clamp01(regionUsage / capacity)
   const red = Math.round(216 + (239 - 216) * utilization)
   const green = Math.round(240 - 112 * utilization)
@@ -181,7 +181,7 @@ const getRegionLabel = (
   regionId: RegionId,
 ) => {
   const regionUsage = usage.regionUsage[regionId]
-  const capacity = solver.regionGraph.regionCapacity[regionId]
+  const capacity = solver.getRegionCapacity(regionId)
   const utilization = regionUsage / capacity
   const reservedNetId = solver.regionProblem.regionNetId[regionId]
   const assignedRoutes = solver.state.regionAssignedRoutes[regionId]
@@ -265,7 +265,7 @@ const pushSmallGraphRegionLabels = (
       {
         x: center.x,
         y: center.y,
-        text: `${usage.regionUsage[regionId]}/${solver.regionGraph.regionCapacity[regionId]} nets`,
+        text: `${usage.regionUsage[regionId]}/${solver.getRegionCapacity(regionId)} nets`,
         fontSize: 0.11,
         color: "rgb(15, 23, 42)",
         anchorSide: "center",
