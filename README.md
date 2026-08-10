@@ -55,6 +55,37 @@ existing ports and contribute to region congestion immediately, but remain
 eligible for the normal rip-and-reroute process. They do not create regions or
 otherwise change the hypergraph topology.
 
+### Outside-in partial reripping
+
+`SelectiveReripTinyHyperGraphSolver` preserves the unaffected prefix and
+suffix of each route that crosses a hot region. Only a bounded window around
+the route's hottest affected segment is reopened. The reopened span is searched
+from both retained ends, with a hard geometric travel limit on each frontier;
+if the frontiers cannot meet within that limit, the span safely falls back to
+the regular one-ended search.
+
+The behavior can be tuned through `TinyHyperGraphSolverOptions`:
+
+```ts
+const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
+  PARTIAL_RIP_ENABLED: true,
+  PARTIAL_RIP_MAX_DISTANCE: 12,
+  PARTIAL_RIP_QUALITY_MAX_DISTANCE: 24,
+  PARTIAL_RIP_MAX_ATTEMPTS: 10,
+  OUTSIDE_IN_ROUTING: true,
+  OUTSIDE_IN_MAX_DISTANCE: 24,
+})
+```
+
+Set `PARTIAL_RIP_ENABLED` or `OUTSIDE_IN_ROUTING` to `false` to use the legacy
+whole-route or one-ended behavior respectively. The solver exposes aggregate
+partial-rip, retained-segment, frontier-expansion, distance-prune, and fallback
+counts through `solver.stats`. When the first completed solution is already
+within 1.5 times the configured final rip threshold, the solver uses the
+quality-recovery distance (twice the normal distance when unspecified) for the
+entire partial-rip run; this gives low-cost solutions enough room to remove a
+last hotspot without slowing heavily congested cases.
+
 ### Export a solved solver back to `SerializedHyperGraph`
 
 `solver.getOutput()` now returns a `SerializedHyperGraph` for a solved

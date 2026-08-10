@@ -4,7 +4,7 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
+import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import {
   findDistinctOwnerBlockerPath,
   type DistinctOwnerBlockerSearchResult,
@@ -146,7 +146,7 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * full rerip with a minimal, explicit rerip when the exhausted route has a
  * known set of committed blockers.
  */
-export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
+export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
     Map<RouteId, number>
@@ -258,6 +258,7 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
       directOwnerRouteIds,
       alternateOwnerRouteIds,
     })
+    this.clearPartialRipPlans(rippedRouteIds)
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
     )
@@ -322,8 +323,8 @@ export class SelectiveReripTinyHyperGraphSolver extends DistanceAwareTinyHyperGr
       )
     }
 
-    const startPortId = this.problem.routeStartPort[routeId]!
-    const goalPortId = this.problem.routeEndPort[routeId]!
+    const startPortId = this.getRouteStartPortId(routeId)
+    const goalPortId = this.getRouteEndPortId(routeId)
     const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
     if (startRegionId === undefined) {
       throw new Error(

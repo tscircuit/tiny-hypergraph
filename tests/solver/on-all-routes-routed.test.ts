@@ -259,6 +259,12 @@ test("constructor options override snake-case hyperparameters before setup", () 
     MAX_ITERATIONS: 1234,
     ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
     GREEDY_FINAL_ROUTE_ITERS: 6,
+    PARTIAL_RIP_ENABLED: true,
+    PARTIAL_RIP_MAX_DISTANCE: 9,
+    PARTIAL_RIP_QUALITY_MAX_DISTANCE: 16,
+    PARTIAL_RIP_MAX_ATTEMPTS: 3,
+    OUTSIDE_IN_ROUTING: true,
+    OUTSIDE_IN_MAX_DISTANCE: 18,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -269,5 +275,11 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.MAX_ITERATIONS).toBe(1234)
   expect(solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT).toBe(false)
   expect(solver.GREEDY_FINAL_ROUTE_ITERS).toBe(6)
+  expect(solver.PARTIAL_RIP_ENABLED).toBe(true)
+  expect(solver.PARTIAL_RIP_MAX_DISTANCE).toBe(9)
+  expect(solver.PARTIAL_RIP_QUALITY_MAX_DISTANCE).toBe(16)
+  expect(solver.PARTIAL_RIP_MAX_ATTEMPTS).toBe(3)
+  expect(solver.OUTSIDE_IN_ROUTING).toBe(true)
+  expect(solver.OUTSIDE_IN_MAX_DISTANCE).toBe(18)
   expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
 })
