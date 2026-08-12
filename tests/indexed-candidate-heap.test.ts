@@ -39,3 +39,24 @@ test("keeps the lowest-cost queued directed hop and closes dequeued hops", () =>
   heap.queue(secondHop)
   expect(heap.toArray()).toEqual([secondHop])
 })
+
+test("keeps hop indexes correct across multi-level replacement sifts", () => {
+  const heap = new IndexedCandidateHeap(10)
+  for (let portId = 0; portId < 9; portId++) {
+    heap.queue(
+      candidate({
+        portId,
+        nextRegionId: 0,
+        g: portId + 1,
+        f: portId + 1,
+      }),
+    )
+  }
+
+  heap.queue(candidate({ portId: 0, nextRegionId: 0, g: 0, f: 20 }))
+  heap.queue(candidate({ portId: 8, nextRegionId: 0, g: 0, f: 0 }))
+
+  const dequeuedCosts: number[] = []
+  while (heap.length > 0) dequeuedCosts.push(heap.dequeue()!.f)
+  expect(dequeuedCosts).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 20])
+})

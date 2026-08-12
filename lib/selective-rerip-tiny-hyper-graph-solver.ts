@@ -375,7 +375,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     data: RelaxedSearchHopData
   }> {
     const { state, goalPortId, routeNetId } = params
-    if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
+    const currentRouteNetId = this.state.currentRouteNetId!
+    const regionNetId = this.problem.regionNetId
+    if (
+      regionNetId[state.nextRegionId] !== -1 &&
+      regionNetId[state.nextRegionId] !== currentRouteNetId
+    ) {
+      return []
+    }
+    const portEndpointReservationNetId =
+      this.problemSetup.portEndpointReservationNetId
 
     const hops: Array<{
       state: RelaxedSearchState
@@ -387,7 +396,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       state.nextRegionId
     ] ?? []) {
       if (neighborPortId === state.portId) continue
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      const reservedNetId = portEndpointReservationNetId[neighborPortId]!
+      if (
+        reservedNetId === -2 ||
+        (reservedNetId !== -1 && reservedNetId !== currentRouteNetId)
+      ) {
+        continue
+      }
       if (
         neighborPortId !== goalPortId &&
         this.problem.portSectionMask[neighborPortId] === 0
@@ -402,16 +417,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         routeNetId,
         portOwners: params.portOwners,
       })
-      const owners = [
-        ...new Set(resources.flatMap((resource) => resource.owners)),
-      ]
-      if (
-        owners.some((ownerRouteId) =>
-          params.forbiddenOwnerRouteIds.has(ownerRouteId),
-        )
-      ) {
-        continue
+      const distinctOwners = new Set<RouteId>()
+      for (const resource of resources) {
+        for (const ownerRouteId of resource.owners) {
+          distinctOwners.add(ownerRouteId)
+        }
       }
+      const owners = [...distinctOwners]
+      let hasForbiddenOwner = false
+      for (const ownerRouteId of owners) {
+        if (params.forbiddenOwnerRouteIds.has(ownerRouteId)) {
+          hasForbiddenOwner = true
+          break
+        }
+      }
+      if (hasForbiddenOwner) continue
 
       let nextRegionId = state.nextRegionId
       if (neighborPortId !== goalPortId) {
@@ -421,20 +441,22 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           firstRegionId === state.nextRegionId ? secondRegionId : firstRegionId
         if (
           nextRegionId === undefined ||
-          this.isRegionReservedForDifferentNet(nextRegionId)
+          (regionNetId[nextRegionId] !== -1 &&
+            regionNetId[nextRegionId] !== currentRouteNetId)
         ) {
           continue
         }
       }
 
+      const dx =
+        this.topology.portX[state.portId]! -
+        this.topology.portX[neighborPortId]!
+      const dy =
+        this.topology.portY[state.portId]! -
+        this.topology.portY[neighborPortId]!
       hops.push({
         state: { portId: neighborPortId, nextRegionId },
-        distance: Math.hypot(
-          this.topology.portX[state.portId]! -
-            this.topology.portX[neighborPortId]!,
-          this.topology.portY[state.portId]! -
-            this.topology.portY[neighborPortId]!,
-        ),
+        distance: Math.sqrt(dx * dx + dy * dy),
         owners,
         data: { resources },
       })
@@ -453,11 +475,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      const owners = [
-        ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
-      ].filter(
-        (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
-      )
+      const owners: RouteId[] = []
+      for (const routeId of params.portOwners.get(params.toPortId) ?? []) {
+        if (this.problem.routeNet[routeId] !== params.routeNetId) {
+          owners.push(routeId)
+        }
+      }
       if (owners.length === 0) {
         throw new Error(
           `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
@@ -488,11 +511,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const ownersByPort = new Map<PortId, Set<RouteId>>()
     for (const segments of this.state.regionSegments) {
       for (const [routeId, fromPortId, toPortId] of segments) {
-        for (const portId of [fromPortId, toPortId]) {
-          const owners = ownersByPort.get(portId) ?? new Set<RouteId>()
-          owners.add(routeId)
-          ownersByPort.set(portId, owners)
-        }
+        const fromPortOwners = ownersByPort.get(fromPortId)
+        if (fromPortOwners) fromPortOwners.add(routeId)
+        else ownersByPort.set(fromPortId, new Set([routeId]))
+
+        const toPortOwners = ownersByPort.get(toPortId)
+        if (toPortOwners) toPortOwners.add(routeId)
+        else ownersByPort.set(toPortId, new Set([routeId]))
       }
     }
 
@@ -539,36 +564,35 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     secondFromPortId: PortId,
     secondToPortId: PortId,
   ): boolean {
-    const first = {
-      ...this.populateSegmentGeometryScratch(
-        regionId,
-        firstFromPortId,
-        firstToPortId,
-      ),
-    }
-    const second = {
-      ...this.populateSegmentGeometryScratch(
-        regionId,
-        secondFromPortId,
-        secondToPortId,
-      ),
-    }
-    if ((first.layerMask & second.layerMask) === 0) return false
+    const first = this.populateSegmentGeometryScratch(
+      regionId,
+      firstFromPortId,
+      firstToPortId,
+    )
+    const firstLesserAngle = first.lesserAngle
+    const firstGreaterAngle = first.greaterAngle
+    const firstLayerMask = first.layerMask
+    const second = this.populateSegmentGeometryScratch(
+      regionId,
+      secondFromPortId,
+      secondToPortId,
+    )
+    if ((firstLayerMask & second.layerMask) === 0) return false
     if (
-      first.lesserAngle === second.lesserAngle ||
-      first.lesserAngle === second.greaterAngle ||
-      first.greaterAngle === second.lesserAngle ||
-      first.greaterAngle === second.greaterAngle
+      firstLesserAngle === second.lesserAngle ||
+      firstLesserAngle === second.greaterAngle ||
+      firstGreaterAngle === second.lesserAngle ||
+      firstGreaterAngle === second.greaterAngle
     ) {
       return false
     }
 
     const secondLesserInsideFirst =
-      first.lesserAngle < second.lesserAngle &&
-      second.lesserAngle < first.greaterAngle
+      firstLesserAngle < second.lesserAngle &&
+      second.lesserAngle < firstGreaterAngle
     const secondGreaterInsideFirst =
-      first.lesserAngle < second.greaterAngle &&
-      second.greaterAngle < first.greaterAngle
+      firstLesserAngle < second.greaterAngle &&
+      second.greaterAngle < firstGreaterAngle
     return secondLesserInsideFirst !== secondGreaterInsideFirst
   }
 

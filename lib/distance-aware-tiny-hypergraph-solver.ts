@@ -22,6 +22,7 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super(topology, problem, options)
+    this.includeSegmentDistanceInG = true
   }
 
   override _setup(): void {
@@ -29,22 +30,6 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     this.state.candidateQueue = new IndexedCandidateHeap(
       this.topology.regionCount,
     ) as unknown as TinyHyperGraphWorkingState["candidateQueue"]
-  }
-
-  override computeG(
-    currentCandidate: Candidate,
-    neighborPortId: number,
-  ): number {
-    const baseCost = super.computeG(currentCandidate, neighborPortId)
-    if (!Number.isFinite(baseCost)) return baseCost
-
-    const dx =
-      this.topology.portX[currentCandidate.portId]! -
-      this.topology.portX[neighborPortId]!
-    const dy =
-      this.topology.portY[currentCandidate.portId]! -
-      this.topology.portY[neighborPortId]!
-    return baseCost + Math.hypot(dx, dy) * this.DISTANCE_TO_COST
   }
 
   override onPathFound(finalCandidate: Candidate): void {

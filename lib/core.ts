@@ -211,6 +211,15 @@ export interface Candidate {
   h: number
 }
 
+export interface TinyHyperGraphCandidateQueue {
+  readonly length: number
+  toArray(): Candidate[]
+  clear(): void
+  queue(candidate: Candidate): void
+  dequeue(): Candidate | undefined
+  isClosedHop?(portId: PortId, nextRegionId: RegionId): boolean
+}
+
 export interface TinyHyperGraphWorkingState {
   // portAssignment[portId] = NetId, -1 means unassigned
   portAssignment: Int32Array
@@ -226,7 +235,7 @@ export interface TinyHyperGraphWorkingState {
 
   unroutedRoutes: RouteId[]
 
-  candidateQueue: MinHeap<Candidate>
+  candidateQueue: TinyHyperGraphCandidateQueue
   candidateBestCostByHopId: Float64Array | Map<HopId, number>
   candidateBestCostGenerationByHopId: Uint32Array | Map<HopId, number>
   candidateBestCostGeneration: number
@@ -470,6 +479,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
+  protected includeSegmentDistanceInG = false
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
@@ -603,7 +613,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           const dx = portX[portId] - endX
           const dy = portY[portId] - endY
           portHCostToEndOfRoute[portId * problem.routeCount + routeId] =
-            Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+            Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
         }
       }
     }
@@ -701,45 +711,85 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
+    const currentRouteNetId = state.currentRouteNetId!
+    const portEndpointReservationNetId =
+      this.problemSetup.portEndpointReservationNetId
+    const regionNetId = problem.regionNetId
+    const currentRegionReservedNetId =
+      regionNetId[currentCandidate.nextRegionId]
+    if (
+      currentRegionReservedNetId !== -1 &&
+      currentRegionReservedNetId !== currentRouteNetId
+    ) {
       return
     }
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    const currentPortAngle = this.getPortAngleForRegion(
+      currentCandidate.portId,
+      currentCandidate.nextRegionId,
+    )
 
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      const reservedNetId = portEndpointReservationNetId[neighborPortId]!
+      if (
+        reservedNetId === -2 ||
+        (reservedNetId !== -1 && reservedNetId !== currentRouteNetId)
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (assignedNetId !== -1 && assignedNetId !== currentRouteNetId) {
           continue
         }
         this.onPathFound(currentCandidate)
         return
       }
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+      if (assignedNetId !== -1 && assignedNetId !== currentRouteNetId) {
         continue
       }
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
-      const g = this.computeG(currentCandidate, neighborPortId)
-      if (!Number.isFinite(g)) continue
-      const h = this.computeH(neighborPortId)
-
+      const neighborIncidentRegions =
+        topology.incidentPortRegion[neighborPortId]
       const nextRegionId =
-        topology.incidentPortRegion[neighborPortId][0] ===
-        currentCandidate.nextRegionId
-          ? topology.incidentPortRegion[neighborPortId][1]
-          : topology.incidentPortRegion[neighborPortId][0]
+        neighborIncidentRegions[0] === currentCandidate.nextRegionId
+          ? neighborIncidentRegions[1]
+          : neighborIncidentRegions[0]
 
       if (
         nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
+        (regionNetId[nextRegionId] !== -1 &&
+          regionNetId[nextRegionId] !== currentRouteNetId)
       ) {
         continue
       }
+      if (
+        state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId) ===
+        true
+      ) {
+        continue
+      }
+
+      const useNeighborAngleForRegion1 =
+        neighborIncidentRegions[0] === currentCandidate.nextRegionId ||
+        neighborIncidentRegions[1] !== currentCandidate.nextRegionId
+      const neighborPortAngle = useNeighborAngleForRegion1
+        ? topology.portAngleForRegion1[neighborPortId]
+        : (topology.portAngleForRegion2?.[neighborPortId] ??
+          topology.portAngleForRegion1[neighborPortId])
+
+      const g = this.computeG(
+        currentCandidate,
+        neighborPortId,
+        currentPortAngle,
+        neighborPortAngle,
+      )
+      if (!Number.isFinite(g)) continue
+      const h = this.computeH(neighborPortId)
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -867,6 +917,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
+  }
+
+  protected getPortAngleForRegion(portId: PortId, regionId: RegionId): number {
+    const incidentRegions = this.topology.incidentPortRegion[portId]
+    return incidentRegions[0] === regionId || incidentRegions[1] !== regionId
+      ? this.topology.portAngleForRegion1[portId]
+      : (this.topology.portAngleForRegion2?.[portId] ??
+          this.topology.portAngleForRegion1[portId])
   }
 
   protected computeRegionCostForRegion(
@@ -1525,29 +1583,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteId = undefined
   }
 
-  computeG(currentCandidate: Candidate, neighborPortId: PortId): number {
+  computeG(
+    currentCandidate: Candidate,
+    neighborPortId: PortId,
+    cachedCurrentPortAngle?: number,
+    cachedNeighborPortAngle?: number,
+    cachedSegmentDistance?: number,
+  ): number {
     const { state, topology } = this
 
     const nextRegionId = currentCandidate.nextRegionId
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
     const currentPortId = currentCandidate.portId
-    const currentPortIncidentRegions =
-      topology.incidentPortRegion[currentPortId]
-    const neighborPortIncidentRegions =
-      topology.incidentPortRegion[neighborPortId]
     const currentPortAngle =
-      currentPortIncidentRegions[0] === nextRegionId ||
-      currentPortIncidentRegions[1] !== nextRegionId
-        ? topology.portAngleForRegion1[currentPortId]
-        : (topology.portAngleForRegion2?.[currentPortId] ??
-          topology.portAngleForRegion1[currentPortId])
+      cachedCurrentPortAngle ??
+      this.getPortAngleForRegion(currentPortId, nextRegionId)
     const neighborPortAngle =
-      neighborPortIncidentRegions[0] === nextRegionId ||
-      neighborPortIncidentRegions[1] !== nextRegionId
-        ? topology.portAngleForRegion1[neighborPortId]
-        : (topology.portAngleForRegion2?.[neighborPortId] ??
-          topology.portAngleForRegion1[neighborPortId])
+      cachedNeighborPortAngle ??
+      this.getPortAngleForRegion(neighborPortId, nextRegionId)
     const lesserAngle =
       currentPortAngle < neighborPortAngle
         ? currentPortAngle
@@ -1591,12 +1645,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
         regionCache.existingSegmentCount + 1,
       ) - regionCache.existingRegionCost
 
-    return (
+    const g =
       currentCandidate.g +
       newRegionCost +
       state.regionCongestionCost[nextRegionId] +
       (this.problem.portPenalty?.[neighborPortId] ?? 0)
-    )
+
+    if (!this.includeSegmentDistanceInG) return g
+
+    let segmentDistance = cachedSegmentDistance
+    if (segmentDistance === undefined) {
+      const dx =
+        topology.portX[currentPortId]! - topology.portX[neighborPortId]!
+      const dy =
+        topology.portY[currentPortId]! - topology.portY[neighborPortId]!
+      segmentDistance = Math.sqrt(dx * dx + dy * dy)
+    }
+    return g + segmentDistance * this.DISTANCE_TO_COST
   }
 
   override tryFinalAcceptance() {
@@ -1651,7 +1716,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.portX[neighborPortId] - this.topology.portX[endPortId]
     const dy =
       this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
-    return Math.hypot(dx, dy) * this.DISTANCE_TO_COST
+    return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
   }
 
   override visualize(): GraphicsObject {
