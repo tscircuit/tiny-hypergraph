@@ -18,7 +18,7 @@ const repro = fixture as unknown as {
 
 const REPRO_TIMEOUT_MS = 30_000
 
-test.failing(
+test(
   "repro: unused port triggers a repeated selective rerip cycle",
   () => {
     const { topology, problem } = loadSerializedHyperGraph(

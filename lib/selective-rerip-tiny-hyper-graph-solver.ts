@@ -50,7 +50,11 @@ export type SelectiveReripTinyHyperGraphStats = {
   selectiveRipCount: number
   selectivelyRippedRouteCount: number
   globalReripCount: number
-  globalReripReason?: "no_path" | "expansion_limit" | "no_blocker_path"
+  globalReripReason?:
+    | "no_path"
+    | "expansion_limit"
+    | "no_blocker_path"
+    | "failed_owner_cycle"
   alternateBlockerSearchCount: number
   alternateOwnerCount: number
   failedOwnerPairCount: number
@@ -217,6 +221,26 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     for (const ownerRouteId of directOwnerRouteIds) {
       const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
       if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
+    }
+    if (
+      directOwnerRouteIds.some((ownerRouteId) =>
+        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
+      )
+    ) {
+      this.selectiveReripStats.globalReripCount += 1
+      this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
+      this.selectiveReripStats.lastFailedRouteId = failedRouteId
+      this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
+      this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
+      this.selectiveReripStats.lastAlternateOwnerRouteIds = []
+      this.selectiveReripStats.lastRippedRouteIds = []
+      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
+        directPath.expandedLabelCount
+      this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
+      this.failedOwnerPairCounts.clear()
+      super.onOutOfCandidates()
+      this.publishSelectiveReripStats()
+      return
     }
 
     let alternatePath:
@@ -618,6 +642,24 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     ownerCounts.set(ownerRouteId, count)
     this.failedOwnerPairCounts.set(failedRouteId, ownerCounts)
     return count
+  }
+
+  private hasFailedOwnerPath(
+    fromRouteId: RouteId,
+    targetRouteId: RouteId,
+  ): boolean {
+    const pendingRouteIds = [fromRouteId]
+    const visitedRouteIds = new Set<RouteId>()
+    while (pendingRouteIds.length > 0) {
+      const routeId = pendingRouteIds.pop()!
+      if (routeId === targetRouteId) return true
+      if (visitedRouteIds.has(routeId)) continue
+      visitedRouteIds.add(routeId)
+      pendingRouteIds.push(
+        ...(this.failedOwnerPairCounts.get(routeId)?.keys() ?? []),
+      )
+    }
+    return false
   }
 
   private publishSelectiveReripStats(): void {
