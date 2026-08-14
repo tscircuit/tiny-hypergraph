@@ -1,0 +1,25 @@
+sample=sample014
+circuitId=018
+status=failed
+duration=0.001s
+
+error=
+Error: Connection "source_trace_69" could not be mapped to route endpoints
+    at <anonymous> (/home/ohmx/Documents/tiny-hypergraph/lib/compat/loadSerializedHyperGraph.ts:454:17)
+    at forEach (native:1:11)
+    at loadSerializedHyperGraph (/home/ohmx/Documents/tiny-hypergraph/lib/compat/loadSerializedHyperGraph.ts:429:23)
+    at getConstructorParams (/home/ohmx/Documents/tiny-hypergraph/lib/section-solver/TinyHyperGraphSectionPipelineSolver.ts:495:39)
+    at _step (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:151:48)
+    at step (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:34:12)
+    at solve (/home/ohmx/Documents/tiny-hypergraph/node_modules/@tscircuit/solver-utils/dist/index.js:68:12)
+    at <anonymous> (/home/ohmx/Documents/tiny-hypergraph/scripts/benchmarking/benchmark.ts:295:22)
+
+snapshotError=
+Error: Connection "source_trace_69" could not be mapped to route endpoints
+    at <anonymous> (/home/ohmx/Documents/tiny-hypergraph/lib/compat/loadSerializedHyperGraph.ts:454:17)
+    at forEach (native:1:11)
+    at loadSerializedHyperGraph (/home/ohmx/Documents/tiny-hypergraph/lib/compat/loadSerializedHyperGraph.ts:429:23)
+    at getInitialVisualizationSolver (/home/ohmx/Documents/tiny-hypergraph/lib/section-solver/TinyHyperGraphSectionPipelineSolver.ts:629:37)
+    at initialVisualize (/home/ohmx/Documents/tiny-hypergraph/lib/section-solver/TinyHyperGraphSectionPipelineSolver.ts:642:17)
+    at getSnapshotPng (/home/ohmx/Documents/tiny-hypergraph/scripts/benchmarking/benchmark.ts:256:22)
+    at <anonymous> (/home/ohmx/Documents/tiny-hypergraph/scripts/benchmarking/benchmark.ts:379:27)
