@@ -27,6 +27,81 @@ if (!solver.solved || solver.failed) {
 const solvedGraph = solver.getOutput()
 ```
 
+### Optimize region costs after solving
+
+`UnravelTinyHyperGraphSolver` accepts a completed solver and monotonically
+reduces its maximum region cost. On a maximum-cost plateau, a mutation must be a
+Pareto improvement across total region cost, segment concentration, and the
+downstream detailed-router crossing-risk metrics. It alternates complete
+boundary-port untwist descents (atomic swaps and three-port cycles) with
+graph-wide route replacement until neither neighborhood can improve the solved
+graph. At a one-route local optimum, it also evaluates two-route ejection
+chains drawn from measured blocked-port and replacement-corridor dependencies.
+This allows a route to move only after the route obstructing its better path is
+removed, without enumerating every route pair.
+
+Each route replacement uses the core A* marginal region-cost objective once.
+An admissible route-removal lower bound orders and prunes the graph-wide search.
+Valid paths found during a sweep are carried through later boundary swaps,
+ownership-validated, and fully rescored before reuse; a final fresh A* sweep is
+still required before reporting a local optimum. Replacement states use
+copy-on-write region storage: only removed and newly traversed corridors rebuild
+their cost and physical-risk geometry, while the exact objective is aggregated
+over the whole graph. The default optimization is not route-, sample-, density-,
+or mutation-count gated. Resource caps and a per-route detour ceiling remain
+explicit opt-in options, and the original solution remains a safe fallback.
+
+```ts
+import {
+  TinyHyperGraphSolver,
+  UnravelTinyHyperGraphSolver,
+} from "lib"
+
+const solver = new TinyHyperGraphSolver(topology, problem)
+solver.solve()
+
+if (!solver.solved || solver.failed) {
+  throw new Error(solver.error ?? "Solver did not finish successfully")
+}
+
+const optimizer = new UnravelTinyHyperGraphSolver(solver)
+optimizer.solve()
+
+const optimizedGraph = optimizer.getOutput()
+```
+
+The section pipeline runs this as its final `optimizeRegionCosts` stage. Useful
+statistics include `initialMaxRegionCost`, `finalMaxRegionCost`,
+`acceptedSwapMutationCount`, `acceptedCycleMutationCount`,
+`acceptedRerouteMutationCount`, `acceptedPairRerouteMutationCount`,
+`evaluatedMutationCount`, `rerouteSearchCount`,
+`rerouteSearchIterationCount`, and `reusedRerouteCandidateCount`. Set
+`MAX_REROUTE_SEGMENT_INCREASE` to opt into a per-route detour ceiling, or
+`MAX_MUTATIONS: 0` to retain the solved input without running post-solve
+mutations. Run `PROFILE_UNRAVEL=1 ./benchmark.sh` to print the complete initial
+and final objective summaries plus search counters for each benchmark sample.
+Integrations whose downstream router uses tuned capacity-node
+failure estimates can set
+`REGION_COST_MODEL: "routing-risk"`; that model distinguishes same-layer and
+transition-pair crossings and ignores crossings between independent fixed
+layers.
+
+Integrations optimizing the amount of physical search handed to a detailed
+router can set `REGION_COST_MODEL: "routing-complexity"`. This model keeps one
+owner per electrical net, scores every segment (including region re-entry),
+treats a crossing between a layer transition and a fixed-layer chord as
+blocking via-placement work, and ignores fixed chords on disjoint layers. It
+uses the area- and segment-density-aware cost so crowded interactions rank
+ahead of topologically similar sparse ones. If `TRACE_DENSITY_COST_FACTOR` is
+enabled, physical trace footprint is used as a cost floor without
+double-counting density already represented by intersection load. Cross-layer
+boundary swaps preserve each affected route's transition count, so they can
+relocate a via locally without silently changing a long-range layer assignment.
+The optimizer's secondary risk objective mirrors the detailed router more
+exactly: it groups split tiny routes by `simpleRouteConnection.name`, uses the
+first two distinct physical points as that connection's region chord, and
+excludes shared endpoints.
+
 Existing routing can be preloaded through the standard region assignments:
 
 ```ts

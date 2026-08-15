@@ -591,6 +591,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         regionId
       ]!) {
         const routeNetId = this.problem.routeNet[routeId]!
+        this.state.currentRouteId = routeId
         this.state.currentRouteNetId = routeNetId
         for (const portId of [fromPortId, toPortId]) {
           const assignedNetId = this.state.portAssignment[portId]!
@@ -604,6 +605,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
       }
     }
+    this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
   }
 

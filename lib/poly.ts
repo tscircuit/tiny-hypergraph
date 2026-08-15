@@ -7,6 +7,7 @@ import { TinyHyperGraphSolver } from "./core"
 import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import { TinyHyperGraphSectionSolver } from "./section-solver"
 import { TinyHyperGraphSectionPipelineSolver } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
+import { UnravelTinyHyperGraphSolver } from "./unravel-tiny-hypergraph-solver"
 import type {
   Candidate,
   TinyHyperGraphProblem,
@@ -1091,6 +1092,12 @@ export class PolyHyperGraphSectionPipelineSolver extends TinyHyperGraphSectionPi
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: PolyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
+    },
+    {
+      solverName: "optimizeRegionCosts",
+      solverClass: UnravelTinyHyperGraphSolver,
+      getConstructorParams: (instance: PolyHyperGraphSectionPipelineSolver) =>
+        instance.getUnravelStageParams(),
     },
   ]
 

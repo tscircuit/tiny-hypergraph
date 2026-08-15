@@ -24,6 +24,7 @@ interface InitialAssignmentProblem {
 interface InitialAssignmentState {
   portAssignment: Int32Array
   regionSegments: Array<[RouteId, PortId, PortId][]>
+  currentRouteId: RouteId | undefined
   currentRouteNetId: NetId | undefined
   unroutedRoutes: RouteId[]
 }
@@ -160,11 +161,13 @@ export const applyInitialAssignments = ({
       state.portAssignment[portId] = routeNetId
     }
 
+    state.currentRouteId = routeId
     state.currentRouteNetId = routeNetId
     state.regionSegments[regionId]!.push([routeId, fromPortId, toPortId])
     appendSegmentToRegionCache(regionId, fromPortId, toPortId)
   }
 
+  state.currentRouteId = undefined
   state.currentRouteNetId = undefined
   state.unroutedRoutes = state.unroutedRoutes.filter(
     (routeId) => !initiallyRoutedRouteIds.has(routeId),

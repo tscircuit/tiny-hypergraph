@@ -369,6 +369,7 @@ const applyRouteSegmentsToSolver = (
     for (const [routeId, fromPortId, toPortId] of routeSegmentsByRegion[
       regionId
     ] ?? []) {
+      solver.state.currentRouteId = routeId
       solver.state.currentRouteNetId = solver.problem.routeNet[routeId]
       solver.state.regionSegments[regionId]!.push([
         routeId,
@@ -626,6 +627,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
         fromPortId,
         toPortId,
       } of routePlan.fixedSegments) {
+        this.state.currentRouteId = routePlan.routeId
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,

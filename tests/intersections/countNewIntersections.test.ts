@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
 import {
+  classifyIntersectionLayerMasks,
   countNewIntersections,
   createDynamicAnglePairArrays,
 } from "lib/countNewIntersections"
@@ -95,4 +96,76 @@ test("countNewIntersections matches the incremental delta from the full counter"
       ],
     })
   }
+})
+
+test("routing-risk classification matches downstream crossing categories", () => {
+  const z0 = 1 << 0
+  const z1 = 1 << 1
+  const transition = z0 | z1
+
+  expect(classifyIntersectionLayerMasks(z0, z0, "routing-risk")).toBe(
+    "same-layer",
+  )
+  expect(
+    classifyIntersectionLayerMasks(transition, transition, "routing-risk"),
+  ).toBe("transition-pair")
+  expect(classifyIntersectionLayerMasks(z0, z1, "routing-risk")).toBeUndefined()
+  expect(
+    classifyIntersectionLayerMasks(transition, z0, "routing-risk"),
+  ).toBeUndefined()
+})
+
+test("routing-complexity classifies detailed-router blocking interactions", () => {
+  const z0 = 1 << 0
+  const z1 = 1 << 1
+  const transition = z0 | z1
+
+  expect(classifyIntersectionLayerMasks(z0, z0, "routing-complexity")).toBe(
+    "same-layer",
+  )
+  expect(
+    classifyIntersectionLayerMasks(
+      transition,
+      transition,
+      "routing-complexity",
+    ),
+  ).toBe("transition-pair")
+  expect(
+    classifyIntersectionLayerMasks(transition, z0, "routing-complexity"),
+  ).toBe("same-layer")
+  expect(
+    classifyIntersectionLayerMasks(z0, z1, "routing-complexity"),
+  ).toBeUndefined()
+})
+
+test("routing-risk counts crossing routes on the same electrical net", () => {
+  const existingPairs = createDynamicAnglePairArrays([[7, 0, 0, 2, 0]])
+  const crossingRouteWithDistinctOwner: DynamicAnglePair = [8, 1, 0, 3, 0]
+  const crossingRouteWithSameOwner: DynamicAnglePair = [7, 1, 0, 3, 0]
+
+  expect(
+    countNewIntersections(
+      existingPairs,
+      crossingRouteWithDistinctOwner,
+      "routing-risk",
+    ),
+  ).toEqual([1, 0, 0])
+  expect(
+    countNewIntersections(
+      existingPairs,
+      crossingRouteWithSameOwner,
+      "routing-risk",
+    ),
+  ).toEqual([0, 0, 0])
+})
+
+test("routing-risk ignores shared endpoints and repeated route segments", () => {
+  const existingPairs = createDynamicAnglePairArrays([[3, 0, 0, 2, 0]])
+
+  expect(
+    countNewIntersections(existingPairs, [4, 0, 0, 3, 0], "routing-risk"),
+  ).toEqual([0, 0, 0])
+  expect(
+    countNewIntersections(existingPairs, [3, 1, 0, 3, 1], "routing-risk"),
+  ).toEqual([0, 0, 0])
 })
