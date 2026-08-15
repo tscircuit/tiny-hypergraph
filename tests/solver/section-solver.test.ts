@@ -296,6 +296,29 @@ test("section pipeline final acceptance falls back to solveGraph output", () => 
   expect(pipelineSolver.getOutput()).toBe(sectionSolverFixtureGraph)
 })
 
+test("section pipeline can optimize the solved graph when section search is omitted", () => {
+  const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
+    serializedHyperGraph: sectionSolverFixtureGraph,
+    unravelSolverOptions: { MAX_MUTATIONS: 0 },
+  })
+  pipelineSolver.pipelineDef = pipelineSolver.pipelineDef.filter(
+    ({ solverName }) => solverName !== "optimizeSection",
+  )
+
+  pipelineSolver.solve()
+
+  const solveGraphSolver =
+    pipelineSolver.getSolver<TinyHyperGraphSolver>("solveGraph")
+  const regionCostOptimizer = pipelineSolver.getSolver<TinyHyperGraphSolver>(
+    "optimizeRegionCosts",
+  )
+  expect(pipelineSolver.solved).toBe(true)
+  expect(pipelineSolver.failed).toBe(false)
+  expect(solveGraphSolver?.solved).toBe(true)
+  expect(regionCostOptimizer?.solved).toBe(true)
+  expect(pipelineSolver.getOutput()).toBeDefined()
+})
+
 test("section pipeline searches multiple masks and commits an improving output on hg07 sample029", () => {
   const pipelineSolver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: datasetHg07.sample029,
@@ -321,11 +344,20 @@ test("section pipeline searches multiple masks and commits an improving output o
     pipelineSolver.getStageOutput<
       ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
     >("optimizeSection")
+  const optimizeRegionCostsOutput = pipelineSolver.getStageOutput<
+    ReturnType<TinyHyperGraphSectionSolver["getOutput"]>
+  >("optimizeRegionCosts")
 
   expect(solveGraphOutput).toBeDefined()
   expect(optimizeSectionOutput).toBeDefined()
+  expect(optimizeRegionCostsOutput).toBeDefined()
   expect(getSerializedOutputMaxRegionCost(optimizeSectionOutput!)).toBeLessThan(
     getSerializedOutputMaxRegionCost(solveGraphOutput!),
+  )
+  expect(
+    getSerializedOutputMaxRegionCost(optimizeRegionCostsOutput!),
+  ).toBeLessThanOrEqual(
+    getSerializedOutputMaxRegionCost(optimizeSectionOutput!),
   )
 })
 
@@ -385,12 +417,16 @@ test("section pipeline applies top-level minViaPadDiameter to both stages", () =
     pipelineSolver.getSolver<TinyHyperGraphSolver>("solveGraph")
   const sectionSolver =
     pipelineSolver.getSolver<TinyHyperGraphSectionSolver>("optimizeSection")
+  const regionCostOptimizer = pipelineSolver.getSolver<TinyHyperGraphSolver>(
+    "optimizeRegionCosts",
+  )
 
   expect(pipelineSolver.solved).toBe(true)
   expect(pipelineSolver.failed).toBe(false)
   expect(solveGraphSolver?.minViaPadDiameter).toBe(0.25)
   expect(sectionSolver?.minViaPadDiameter).toBe(0.25)
   expect(sectionSolver?.baselineSolver.minViaPadDiameter).toBe(0.25)
+  expect(regionCostOptimizer?.minViaPadDiameter).toBe(0.25)
 })
 
 test("section pipeline only uses threehop and fourhop families when explicitly enabled", () => {

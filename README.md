@@ -27,6 +27,71 @@ if (!solver.solved || solver.failed) {
 const solvedGraph = solver.getOutput()
 ```
 
+### Optimize region costs after solving
+
+`UnravelTinyHyperGraphSolver` accepts a completed solver and monotonically
+reduces its maximum region cost. On a maximum-cost plateau, a mutation must be a
+Pareto improvement across total region cost, segment concentration, and the
+downstream detailed-router crossing-risk metrics. It alternates complete
+boundary-port untwist descents (atomic swaps and three-port cycles) with
+graph-wide route replacement until neither neighborhood can improve the solved
+graph. At a one-route local optimum, it also evaluates two-route ejection
+chains drawn from measured blocked-port and replacement-corridor dependencies.
+This allows a route to move only after the route obstructing its better path is
+removed, without enumerating every route pair.
+
+Each route replacement uses the core A* marginal region-cost objective and an
+equal-weight congestion scalarization that exposes minimax improvements hidden
+by an additive path score. Every completed path is still selected by the exact
+whole-graph objective. An admissible route-removal lower bound orders and
+prunes the graph-wide search.
+Valid paths found during a sweep are carried through later boundary swaps,
+ownership-validated, and fully rescored before reuse; a final fresh A* sweep is
+still required before reporting a local optimum. Replacement states use
+copy-on-write region storage: only removed and newly traversed corridors rebuild
+their cost and physical-risk geometry, while the exact objective is aggregated
+over the whole graph. The default optimization is not route-, sample-, density-,
+or mutation-count gated. Resource caps and a per-route detour ceiling remain
+explicit opt-in options, and the original solution remains a safe fallback.
+
+```ts
+import {
+  TinyHyperGraphSolver,
+  UnravelTinyHyperGraphSolver,
+} from "lib"
+
+const solver = new TinyHyperGraphSolver(topology, problem)
+solver.solve()
+
+if (!solver.solved || solver.failed) {
+  throw new Error(solver.error ?? "Solver did not finish successfully")
+}
+
+const optimizer = new UnravelTinyHyperGraphSolver(solver)
+optimizer.solve()
+
+const optimizedGraph = optimizer.getOutput()
+```
+
+The section pipeline runs this as its final `optimizeRegionCosts` stage. Useful
+statistics include `initialMaxRegionCost`, `finalMaxRegionCost`,
+`acceptedSwapMutationCount`, `acceptedCycleMutationCount`,
+`acceptedRerouteMutationCount`, `acceptedPairRerouteMutationCount`,
+`evaluatedMutationCount`, `rerouteSearchCount`,
+`rerouteSearchIterationCount`, and `reusedRerouteCandidateCount`. Set
+`MAX_REROUTE_SEGMENT_INCREASE` to opt into a per-route detour ceiling, or
+`MAX_MUTATIONS: 0` to retain the solved input without running post-solve
+mutations. Run `PROFILE_UNRAVEL=1 ./benchmark.sh` to print the complete initial
+and final objective summaries plus search counters for each benchmark sample.
+
+Boundary swaps stay on the same copper layer so a local untwist cannot
+silently move a long trace onto a pad's layer.
+Cross-layer boundary swaps preserve each affected route's transition count, so
+they can relocate a via locally without changing a long-range layer assignment.
+The optimizer's secondary risk objective groups split tiny routes by
+`simpleRouteConnection.name`, uses the first two distinct physical points as
+that connection's region chord, and excludes shared endpoints.
+
 Existing routing can be preloaded through the standard region assignments:
 
 ```ts

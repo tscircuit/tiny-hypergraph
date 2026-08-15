@@ -117,6 +117,7 @@ type BenchmarkSampleResult = {
   solveGraphMs: number
   sectionSearchMs: number
   optimizeSectionMs: number
+  optimizeRegionCostsMs: number
   selectedCandidateLabel: string | null
   selectedCandidateFamily: string | null
   error: string | null
@@ -150,6 +151,13 @@ type BenchmarkReport = {
     avgBaselineMaxRegionCost: number
     avgFinalMaxRegionCost: number
     avgMaxRegionDelta: number
+    p50BaselineMaxRegionCost: number
+    p50FinalMaxRegionCost: number
+    p50MaxRegionCostReductionRate: string
+    p95BaselineMaxRegionCost: number
+    p95FinalMaxRegionCost: number
+    p95MaxRegionCostReductionRate: string
+    regionCostReductionTargetMet: boolean
     avgCandidateCount: number
     avgGeneratedCandidateCount: number
     avgDuplicateCandidateCount: number
@@ -159,6 +167,7 @@ type BenchmarkReport = {
     avgSolveGraphMs: number
     avgSectionSearchMs: number
     avgOptimizeSectionMs: number
+    avgOptimizeRegionCostsMs: number
     avgDurationMs: number
     p50DurationMs: number
     p95DurationMs: number
@@ -170,6 +179,7 @@ type SolverVariant = "core" | "poly"
 type DatasetKey = "hg07" | "srj18"
 
 const IMPROVEMENT_EPSILON = 1e-9
+const REGION_COST_REDUCTION_TARGET = 0.5
 
 const HELP_TEXT = `Usage: ./benchmark.sh [options]
 
@@ -207,7 +217,7 @@ Summary metrics:
   - improved rate
   - zero-final-max-region-cost rate
   - total / avg / P50 / P95 completion time and per-stage timing
-  - avg baseline/final max region cost and avg delta
+  - avg/P50/P95 baseline and final max region cost, including reduction rates
   - iterations, route hops/rips, and generated/attempted/duplicate candidates
 `
 
@@ -422,6 +432,16 @@ const formatMetric = (value: number | null, digits = 3) =>
 const formatPercent = (numerator: number, denominator: number) =>
   `${((numerator / Math.max(denominator, 1)) * 100).toFixed(1)}%`
 
+const getReductionRate = (baseline: number, final: number) =>
+  baseline <= IMPROVEMENT_EPSILON
+    ? final <= IMPROVEMENT_EPSILON
+      ? 1
+      : 0
+    : (baseline - final) / baseline
+
+const formatReductionRate = (baseline: number, final: number) =>
+  `${(getReductionRate(baseline, final) * 100).toFixed(1)}%`
+
 const formatDuration = (durationMs: number) =>
   `${(durationMs / 1000).toFixed(3)}s`
 
@@ -504,6 +524,26 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
       report.summary.avgFinalMaxRegionCost.toFixed(3),
     ],
     ["Avg max region delta", report.summary.avgMaxRegionDelta.toFixed(3)],
+    [
+      "P50 baseline/final max region cost",
+      `${report.summary.p50BaselineMaxRegionCost.toFixed(3)} / ${report.summary.p50FinalMaxRegionCost.toFixed(3)}`,
+    ],
+    [
+      "P50 max region cost reduction",
+      report.summary.p50MaxRegionCostReductionRate,
+    ],
+    [
+      "P95 baseline/final max region cost",
+      `${report.summary.p95BaselineMaxRegionCost.toFixed(3)} / ${report.summary.p95FinalMaxRegionCost.toFixed(3)}`,
+    ],
+    [
+      "P95 max region cost reduction",
+      report.summary.p95MaxRegionCostReductionRate,
+    ],
+    [
+      "P50/P95 50% region cost target",
+      report.summary.regionCostReductionTargetMet ? "met" : "not met",
+    ],
     ["Avg candidate count", report.summary.avgCandidateCount.toFixed(3)],
     [
       "Avg generated candidate count",
@@ -524,6 +564,10 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     [
       "Avg optimizeSection time",
       formatDuration(report.summary.avgOptimizeSectionMs),
+    ],
+    [
+      "Avg optimizeRegionCosts time",
+      formatDuration(report.summary.avgOptimizeRegionCostsMs),
     ],
     ["Avg duration", formatDuration(report.summary.avgDurationMs)],
     ["P50 duration", formatDuration(report.summary.p50DurationMs)],
@@ -1058,22 +1102,30 @@ const main = async () => {
         pipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
       const optimizeSectionOutput =
         pipelineSolver.getStageOutput<SerializedHyperGraph>("optimizeSection")
+      const optimizeRegionCostsOutput =
+        pipelineSolver.getStageOutput<SerializedHyperGraph>(
+          "optimizeRegionCosts",
+        )
 
-      if (!solveGraphOutput || !optimizeSectionOutput) {
-        throw new Error("pipeline did not produce both stage outputs")
+      if (
+        !solveGraphOutput ||
+        !optimizeSectionOutput ||
+        !optimizeRegionCostsOutput
+      ) {
+        throw new Error("pipeline did not produce all stage outputs")
       }
 
       assertAllConnectionsSolved(
-        optimizeSectionOutput,
+        optimizeRegionCostsOutput,
         `${sampleMeta.sampleName} optimized output`,
       )
 
       const baselineMaxRegionCost = getSerializedOutputMaxRegionCost(
-        solveGraphOutput,
+        optimizeSectionOutput,
         solverVariant,
       )
       const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
-        optimizeSectionOutput,
+        optimizeRegionCostsOutput,
         solverVariant,
       )
       const delta = baselineMaxRegionCost - finalMaxRegionCost
@@ -1094,7 +1146,26 @@ const main = async () => {
       const optimizeSectionMs = Number(
         stageStats.optimizeSection?.timeSpent ?? 0,
       )
-      const finalRouteMetrics = getRouteMetrics(optimizeSectionOutput)
+      const optimizeRegionCostsMs = Number(
+        stageStats.optimizeRegionCosts?.timeSpent ?? 0,
+      )
+      const finalRouteMetrics = getRouteMetrics(optimizeRegionCostsOutput)
+
+      if (process.env.PROFILE_UNRAVEL === "1") {
+        const optimizer = pipelineSolver.getSolver(
+          "optimizeRegionCosts",
+        ) as TinyHyperGraphSolver & {
+          initialSummary?: Record<string, number>
+          currentSummary?: Record<string, number>
+        }
+        console.log(
+          `unravel-profile ${sampleMeta.sampleName} ${JSON.stringify({
+            initialSummary: optimizer.initialSummary,
+            currentSummary: optimizer.currentSummary,
+            stats: optimizer.stats,
+          })}`,
+        )
+      }
 
       const result: BenchmarkSampleResult = {
         sampleName: sampleMeta.sampleName,
@@ -1121,6 +1192,7 @@ const main = async () => {
         solveGraphMs,
         sectionSearchMs,
         optimizeSectionMs,
+        optimizeRegionCostsMs,
         selectedCandidateLabel:
           pipelineSolver.selectedSectionCandidateLabel ?? null,
         selectedCandidateFamily:
@@ -1222,6 +1294,7 @@ const main = async () => {
         solveGraphMs: 0,
         sectionSearchMs: 0,
         optimizeSectionMs: 0,
+        optimizeRegionCostsMs: 0,
         selectedCandidateLabel: null,
         selectedCandidateFamily: null,
         error: errorMessage,
@@ -1304,6 +1377,9 @@ const main = async () => {
   const optimizeSectionTimes = successfulResults.map(
     (result) => result.optimizeSectionMs,
   )
+  const optimizeRegionCostsTimes = successfulResults.map(
+    (result) => result.optimizeRegionCostsMs,
+  )
   const successCount = successfulResults.length
   const improvedCount = successfulResults.filter(
     (result) => result.optimized,
@@ -1311,6 +1387,18 @@ const main = async () => {
   const zeroFinalCostCount = successfulResults.filter(
     (result) => result.zeroFinalCost,
   ).length
+  const p50BaselineMaxRegionCost = percentile(baselineCosts, 50)
+  const p50FinalMaxRegionCost = percentile(finalCosts, 50)
+  const p95BaselineMaxRegionCost = percentile(baselineCosts, 95)
+  const p95FinalMaxRegionCost = percentile(finalCosts, 95)
+  const p50MaxRegionCostReductionRate = getReductionRate(
+    p50BaselineMaxRegionCost,
+    p50FinalMaxRegionCost,
+  )
+  const p95MaxRegionCostReductionRate = getReductionRate(
+    p95BaselineMaxRegionCost,
+    p95FinalMaxRegionCost,
+  )
 
   const report: BenchmarkReport = {
     version: 1,
@@ -1338,6 +1426,21 @@ const main = async () => {
       avgBaselineMaxRegionCost: average(baselineCosts),
       avgFinalMaxRegionCost: average(finalCosts),
       avgMaxRegionDelta: average(deltas),
+      p50BaselineMaxRegionCost,
+      p50FinalMaxRegionCost,
+      p50MaxRegionCostReductionRate: formatReductionRate(
+        p50BaselineMaxRegionCost,
+        p50FinalMaxRegionCost,
+      ),
+      p95BaselineMaxRegionCost,
+      p95FinalMaxRegionCost,
+      p95MaxRegionCostReductionRate: formatReductionRate(
+        p95BaselineMaxRegionCost,
+        p95FinalMaxRegionCost,
+      ),
+      regionCostReductionTargetMet:
+        p50MaxRegionCostReductionRate >= REGION_COST_REDUCTION_TARGET &&
+        p95MaxRegionCostReductionRate >= REGION_COST_REDUCTION_TARGET,
       avgCandidateCount: average(candidateCounts),
       avgGeneratedCandidateCount: average(generatedCandidateCounts),
       avgDuplicateCandidateCount: average(duplicateCandidateCounts),
@@ -1347,6 +1450,7 @@ const main = async () => {
       avgSolveGraphMs: average(solveGraphTimes),
       avgSectionSearchMs: average(sectionSearchTimes),
       avgOptimizeSectionMs: average(optimizeSectionTimes),
+      avgOptimizeRegionCostsMs: average(optimizeRegionCostsTimes),
       avgDurationMs: average(durations),
       p50DurationMs: percentile(durations, 50),
       p95DurationMs: percentile(durations, 95),
