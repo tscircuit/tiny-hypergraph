@@ -193,7 +193,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
 
-    const directPath = this.findRelaxedBlockerPath()
+    const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
     if (!directPath.found || directPath.owners.size === 0) {
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = !directPath.found
@@ -228,7 +228,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       | undefined
     if (repeatedOwnerRouteIds.length > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
-      alternatePath = this.findRelaxedBlockerPath(
+      alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
         new Set(repeatedOwnerRouteIds),
       )
       if (!alternatePath.found) {
@@ -348,6 +348,33 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         }),
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
     })
+  }
+
+  protected findRelaxedBlockerPathPreferringPreservedRoutes(
+    forbiddenOwnerRouteIds: ReadonlySet<RouteId> = new Set<RouteId>(),
+  ): DistinctOwnerBlockerSearchResult<
+    RelaxedSearchState,
+    RouteId,
+    RelaxedSearchHopData
+  > {
+    const preferredPreservedRouteIds =
+      this.getRouteIdsPreferredForPreservation()
+    if (preferredPreservedRouteIds.size === 0) {
+      return this.findRelaxedBlockerPath(forbiddenOwnerRouteIds)
+    }
+
+    const preferredForbiddenOwnerRouteIds = new Set(forbiddenOwnerRouteIds)
+    for (const routeId of preferredPreservedRouteIds) {
+      preferredForbiddenOwnerRouteIds.add(routeId)
+    }
+    const preferredPath = this.findRelaxedBlockerPath(
+      preferredForbiddenOwnerRouteIds,
+    )
+    if (preferredPath.found && preferredPath.owners.size > 0) {
+      return preferredPath
+    }
+
+    return this.findRelaxedBlockerPath(forbiddenOwnerRouteIds)
   }
 
   protected getRelaxedSearchExpansionLimit(): number {

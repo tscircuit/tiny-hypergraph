@@ -8,6 +8,12 @@ import {
 import type { PortId, RegionId, RouteId } from "lib/types"
 
 class TestOutsideInPartialRipSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  preferredPreservedRouteIds = new Set<RouteId>()
+
+  protected override getRouteIdsPreferredForPreservation() {
+    return this.preferredPreservedRouteIds
+  }
+
   prepare(hotRegionIds: RegionId[], regionCosts: Float64Array): boolean {
     return this.preparePartialRip(hotRegionIds, regionCosts)
   }
@@ -84,6 +90,34 @@ test("partial rip preserves both outside route ends", () => {
   ])
   expect(solver.stats.partiallyRippedSegmentCount).toBe(1)
   expect(solver.stats.retainedPartialRipSegmentCount).toBe(3)
+})
+
+test("partial rip leaves preferred routes unchanged", () => {
+  const solver = createLinearSolver(24, {}, 2)
+  solver.preferredPreservedRouteIds.add(0)
+  for (let regionId = 1; regionId <= 4; regionId++) {
+    const [routeZeroSegment] = solver.state.regionSegments[regionId]!
+    solver.state.regionSegments[regionId]!.push([
+      1,
+      routeZeroSegment![1],
+      routeZeroSegment![2],
+    ])
+  }
+  const regionCosts = new Float64Array(6)
+  regionCosts[3] = 1
+
+  expect(solver.prepare([3], regionCosts)).toBe(true)
+  expect(solver.state.unroutedRoutes).toEqual([1])
+  expect(
+    solver.state.regionSegments
+      .flat()
+      .filter(([routeId]) => routeId === 0),
+  ).toEqual([
+    [0, 0, 1],
+    [0, 1, 2],
+    [0, 2, 3],
+    [0, 3, 4],
+  ])
 })
 
 test("a near-target initial solution selects the larger quality window", () => {
