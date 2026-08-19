@@ -455,10 +455,8 @@ const compareRegionCostSummaries = (
 const isParetoImprovement = (
   candidate: UnravelRegionCostSummary,
   current: UnravelRegionCostSummary,
-  downstreamBaseline: UnravelRegionCostSummary = current,
 ) => {
-  if (!isRoutingRiskNoWorse(candidate, current, downstreamBaseline))
-    return false
+  if (!isRoutingRiskNoWorse(candidate, current, current)) return false
 
   if (candidate.maxRegionCost < current.maxRegionCost - COST_EPSILON) {
     return true
@@ -512,27 +510,24 @@ const isRoutingRiskNoWorse = (
 /**
  * Boundary swaps preserve the set of routes in each region and each route's
  * transition count. Capacity-aware maxima may never regress from the current
- * state. Exact downstream via-demand may redistribute between regions during
- * an untwist sequence, but all of its aggregate metrics must remain inside
- * the solved input's feasibility envelope. A strict peak reduction may spend
- * wirelength to remove the bottleneck; peak-preserving cleanup must not make
- * the detailed-routing geometry longer.
+ * state. Exact downstream via-demand may redistribute between regions, but
+ * its aggregate pressure metrics must improve monotonically so a later
+ * region-cost win cannot trade away an easier detailed-routing state. A
+ * strict peak reduction may spend wirelength to remove the bottleneck;
+ * peak-preserving cleanup must not make the detailed-routing geometry longer.
  */
 const isSwapParetoImprovement = (
   candidate: UnravelRegionCostSummary,
   current: UnravelRegionCostSummary,
-  downstreamBaseline: UnravelRegionCostSummary = current,
 ) =>
   compareRegionCostSummaries(candidate, current) < 0 &&
   candidate.maxRoutingRisk <= current.maxRoutingRisk + COST_EPSILON &&
   candidate.maxSegmentRoutingRisk <=
     current.maxSegmentRoutingRisk + COST_EPSILON &&
-  candidate.maxDownstreamRisk <=
-    downstreamBaseline.maxDownstreamRisk + COST_EPSILON &&
+  candidate.maxDownstreamRisk <= current.maxDownstreamRisk + COST_EPSILON &&
   candidate.squaredDownstreamRisk <=
-    downstreamBaseline.squaredDownstreamRisk + COST_EPSILON &&
-  candidate.totalDownstreamRisk <=
-    downstreamBaseline.totalDownstreamRisk + COST_EPSILON
+    current.squaredDownstreamRisk + COST_EPSILON &&
+  candidate.totalDownstreamRisk <= current.totalDownstreamRisk + COST_EPSILON
 
 /**
  * Whole-route replacement changes the topology consumed by detailed routing,
@@ -543,9 +538,8 @@ const isSwapParetoImprovement = (
 const isRerouteParetoImprovement = (
   candidate: UnravelRegionCostSummary,
   current: UnravelRegionCostSummary,
-  downstreamBaseline: UnravelRegionCostSummary = current,
 ) =>
-  isParetoImprovement(candidate, current, downstreamBaseline) &&
+  isParetoImprovement(candidate, current) &&
   (candidate.maxRegionCost < current.maxRegionCost - COST_EPSILON ||
     candidate.totalRegionCost < current.totalRegionCost - COST_EPSILON)
 
@@ -2643,14 +2637,7 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
         region2PrimaryMetrics.segmentLength,
       totalRegionCost: candidateTotalRegionCost,
     }
-    if (
-      !isSwapParetoImprovement(
-        summary,
-        this.currentSummary,
-        this.initialSummary,
-      )
-    )
-      return
+    if (!isSwapParetoImprovement(summary, this.currentSummary)) return
 
     return {
       region1Id,
@@ -3114,13 +3101,7 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
         this.rejectedReroutePhysicalRiskCount += 1
         return { reusable: true }
       }
-      if (
-        !isRerouteParetoImprovement(
-          summary,
-          this.currentSummary,
-          this.initialSummary,
-        )
-      ) {
+      if (!isRerouteParetoImprovement(summary, this.currentSummary)) {
         return { reusable: true }
       }
 
@@ -3651,14 +3632,7 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
         this.rejectedReroutePhysicalRiskCount += 1
         return
       }
-      if (
-        !isRerouteParetoImprovement(
-          summary,
-          this.currentSummary,
-          this.initialSummary,
-        )
-      )
-        return
+      if (!isRerouteParetoImprovement(summary, this.currentSummary)) return
       if (
         incumbentSummary &&
         compareRegionCostSummaries(summary, incumbentSummary) >= 0
@@ -4718,6 +4692,18 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
     )
   }
 
+  private countTotalLayerChanges(solver: TinyHyperGraphSolver): number {
+    let layerChangeCount = 0
+    for (const segments of solver.state.regionSegments) {
+      for (const [, fromPortId, toPortId] of segments) {
+        if (this.topology.portZ[fromPortId] !== this.topology.portZ[toPortId]) {
+          layerChangeCount += 1
+        }
+      }
+    }
+    return layerChangeCount
+  }
+
   /**
    * Plateau untwists are useful as temporary ejection-chain moves, but a
    * solved chain should not retain every intermediate lane displacement. Walk
@@ -4801,6 +4787,7 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
       const savedPortAssignments = boundaryPortIds.map(
         (portId) => this.state.portAssignment[portId]!,
       )
+      const currentLayerChangeCount = this.countTotalLayerChanges(this)
 
       for (const regionId of regionIds) {
         for (const segment of this.state.regionSegments[regionId]!) {
@@ -4829,7 +4816,8 @@ export class UnravelTinyHyperGraphSolver extends TinyHyperGraphSolver {
       const candidate = this.summarizeSolverState(this)
       const summary = candidate.summary
       if (
-        this.isPathRelinkingCandidateAllowed(summary, achievedMaxRegionCost)
+        this.isPathRelinkingCandidateAllowed(summary, achievedMaxRegionCost) &&
+        this.countTotalLayerChanges(this) <= currentLayerChangeCount
       ) {
         this.currentSummary = summary
         this.routingRiskByRegion.set(candidate.routingRiskByRegion)
