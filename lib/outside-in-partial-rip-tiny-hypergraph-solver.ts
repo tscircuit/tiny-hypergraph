@@ -65,6 +65,8 @@ type CompletedRoundSummary = RegionCostSummary & {
   squaredRegionSegmentCount: number
 }
 
+const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
+
 /**
  * Retains the two outside portions of a completed route and only reroutes a
  * bounded window around a congested region. The active window is represented
@@ -232,6 +234,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     for (const routeId of routeIds) {
       this.partialRipRoutePlans.delete(routeId)
     }
+  }
+
+  /**
+   * Quality rerips retain these routes when other routes cross the same hot
+   * regions. Completion rerips may still use them when they are unavoidable.
+   */
+  protected getRouteIdsPreferredForPreservation(): ReadonlySet<RouteId> {
+    return NO_PREFERRED_PRESERVED_ROUTE_IDS
   }
 
   private getCommittedRouteSegments(
@@ -423,6 +433,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       }
     }
     if (routeIdsTouchingHotRegions.size === 0) return false
+    const preferredPreservedRouteIds =
+      this.getRouteIdsPreferredForPreservation()
+    const hasNonPreferredRouteTouchingHotRegions = [
+      ...routeIdsTouchingHotRegions,
+    ].some((routeId) => !preferredPreservedRouteIds.has(routeId))
 
     const retainedSegmentsByRegion = Array.from(
       { length: this.topology.regionCount },
@@ -436,7 +451,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const orderedSegments = this.getCommittedRouteSegments(routeId)
       if (!orderedSegments) return false
 
-      if (!routeIdsTouchingHotRegions.has(routeId)) {
+      if (
+        !routeIdsTouchingHotRegions.has(routeId) ||
+        (hasNonPreferredRouteTouchingHotRegions &&
+          preferredPreservedRouteIds.has(routeId))
+      ) {
         for (const segment of orderedSegments) {
           this.appendRetainedSegment(retainedSegmentsByRegion, routeId, segment)
           retainedSegmentCount += 1
