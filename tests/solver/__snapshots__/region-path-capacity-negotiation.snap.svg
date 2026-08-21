@@ -1,0 +1,127 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="0,1 2,0" data-type="line" data-label="boundary: flexible-start ↔ shared-left
+lane capacity: 1
+distinct-net demand: 1
+status: within capacity" points="87.91946308724835,325.6767337807606 244.51901565995527,403.9765100671141" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="0,-1 2,0" data-type="line" data-label="boundary: constrained-start ↔ shared-left
+lane capacity: 1
+distinct-net demand: 1
+status: within capacity" points="87.91946308724835,482.2762863534675 244.51901565995527,403.9765100671141" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="2,0 4,0" data-type="line" data-label="boundary: shared-left ↔ shared-right
+lane capacity: 1
+distinct-net demand: 2
+status: overbooked" points="244.51901565995527,403.9765100671141 401.1185682326622,403.9765100671141" fill="none" stroke="rgba(220, 38, 38, 0.95)" stroke-width="4.697986577181208"/></g><g><polyline data-points="4,0 6,1" data-type="line" data-label="boundary: shared-right ↔ flexible-end
+lane capacity: 1
+distinct-net demand: 1
+status: within capacity" points="401.1185682326622,403.9765100671141 557.7181208053692,325.6767337807606" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="4,0 6,-1" data-type="line" data-label="boundary: shared-right ↔ constrained-end
+lane capacity: 1
+distinct-net demand: 1
+status: within capacity" points="401.1185682326622,403.9765100671141 557.7181208053692,482.2762863534675" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="0,1 1,3" data-type="line" data-label="boundary: flexible-start ↔ detour-left
+lane capacity: 1
+distinct-net demand: 0
+status: within capacity" points="87.91946308724835,325.6767337807606 166.2192393736018,169.07718120805367" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="1,3 3,3" data-type="line" data-label="boundary: detour-left ↔ detour-center
+lane capacity: 1
+distinct-net demand: 0
+status: within capacity" points="166.2192393736018,169.07718120805367 322.81879194630875,169.07718120805367" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="3,3 5,3" data-type="line" data-label="boundary: detour-center ↔ detour-right
+lane capacity: 1
+distinct-net demand: 0
+status: within capacity" points="322.81879194630875,169.07718120805367 479.41834451901565,169.07718120805367" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="5,3 6,1" data-type="line" data-label="boundary: detour-right ↔ flexible-end
+lane capacity: 1
+distinct-net demand: 0
+status: within capacity" points="479.41834451901565,169.07718120805367 557.7181208053692,325.6767337807606" fill="none" stroke="rgba(100, 116, 139, 0.45)" stroke-width="1.9574944071588367"/></g><g><polyline data-points="0,1 6,1" data-type="line" data-label="flexible-net (hint)
+start: flexible-start
+end: flexible-end" points="87.91946308724835,325.6767337807606 557.7181208053692,325.6767337807606" fill="none" stroke="hsla(339, 70%, 50%, 0.28)" stroke-width="1px" stroke-dasharray="4 4"/></g><g><polyline data-points="0,-1 6,-1" data-type="line" data-label="constrained-net (hint)
+start: constrained-start
+end: constrained-end" points="87.91946308724835,482.2762863534675 557.7181208053692,482.2762863534675" fill="none" stroke="hsla(197, 70%, 50%, 0.28)" stroke-width="1px" stroke-dasharray="4 4"/></g><g><polyline data-points="0,1 2,0 4,0 6,1" data-type="line" data-label="route: flexible-net
+cost: 80.000" points="87.91946308724835,325.6767337807606 244.51901565995527,403.9765100671141 401.1185682326622,403.9765100671141 557.7181208053692,325.6767337807606" fill="none" stroke="hsla(339, 70%, 50%, 0.95)" stroke-width="1px"/></g><g><polyline data-points="0,-1 2,0 4,0 6,-1" data-type="line" data-label="route: constrained-net
+cost: 120.000" points="87.91946308724835,482.2762863534675 244.51901565995527,403.9765100671141 401.1185682326622,403.9765100671141 557.7181208053692,482.2762863534675" fill="none" stroke="hsla(197, 70%, 50%, 0.95)" stroke-width="1px"/></g><g><rect data-type="rect" data-label="region: flexible-start
+capacity: 1.000
+usage: 1
+fill: 100.0%
+net: 0
+routes: flexible-net" data-x="0" data-y="1" x="50.727069351230455" y="288.4843400447427" width="74.38478747203578" height="74.38478747203584" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: constrained-start
+capacity: 1.000
+usage: 1
+fill: 100.0%
+net: 1
+routes: constrained-net" data-x="0" data-y="-1" x="50.727069351230455" y="445.0838926174496" width="74.38478747203578" height="74.38478747203584" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: shared-left
+capacity: 1.000
+usage: 2
+fill: 200.0%
+net: free
+routes: flexible-net, constrained-net" data-x="2" data-y="0" x="207.32662192393735" y="366.7841163310962" width="74.38478747203584" height="74.38478747203578" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: shared-right
+capacity: 1.000
+usage: 2
+fill: 200.0%
+net: free
+routes: flexible-net, constrained-net" data-x="4" data-y="0" x="363.9261744966443" y="366.7841163310962" width="74.38478747203578" height="74.38478747203578" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: flexible-end
+capacity: 1.000
+usage: 1
+fill: 100.0%
+net: 0
+routes: flexible-net" data-x="6" data-y="1" x="520.5257270693512" y="288.4843400447427" width="74.38478747203578" height="74.38478747203584" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: constrained-end
+capacity: 1.000
+usage: 1
+fill: 100.0%
+net: 1
+routes: constrained-net" data-x="6" data-y="-1" x="520.5257270693512" y="445.0838926174496" width="74.38478747203578" height="74.38478747203584" fill="rgba(239, 128, 74, 0.730)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: detour-left
+capacity: 1.000
+usage: 0
+fill: 0.0%
+net: free" data-x="1" data-y="3" x="129.0268456375839" y="131.88478747203578" width="74.38478747203581" height="74.38478747203581" fill="rgba(216, 240, 254, 0.180)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: detour-center
+capacity: 1.000
+usage: 0
+fill: 0.0%
+net: free" data-x="3" data-y="3" x="285.62639821029086" y="131.88478747203578" width="74.38478747203578" height="74.38478747203581" fill="rgba(216, 240, 254, 0.180)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><g><rect data-type="rect" data-label="region: detour-right
+capacity: 1.000
+usage: 0
+fill: 0.0%
+net: free" data-x="5" data-y="3" x="442.22595078299776" y="131.88478747203578" width="74.38478747203573" height="74.38478747203581" fill="rgba(216, 240, 254, 0.180)" stroke="rgba(148, 163, 184, 0.5)" stroke-width="0.012771428571428572"/></g><text data-type="text" data-label="1/1 nets" data-x="1" data-y="0.62" x="166.2192393736018" y="355.43064876957493" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">1/1 nets</text><text data-type="text" data-label="1/1 nets" data-x="1" data-y="-0.38" x="166.2192393736018" y="433.7304250559284" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">1/1 nets</text><text data-type="text" data-label="2/1 nets" data-x="3" data-y="0.12" x="322.81879194630875" y="394.58053691275165" fill="rgb(185, 28, 28)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">2/1 nets</text><text data-type="text" data-label="1/1 nets" data-x="5" data-y="0.62" x="479.41834451901565" y="355.43064876957493" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">1/1 nets</text><text data-type="text" data-label="1/1 nets" data-x="5" data-y="-0.38" x="479.41834451901565" y="433.7304250559284" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">1/1 nets</text><text data-type="text" data-label="0/1 nets" data-x="0.5" data-y="2.12" x="127.06935123042507" y="237.98098434004473" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">0/1 nets</text><text data-type="text" data-label="0/1 nets" data-x="2" data-y="3.12" x="244.51901565995527" y="159.68120805369125" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">0/1 nets</text><text data-type="text" data-label="0/1 nets" data-x="4" data-y="3.12" x="401.1185682326622" y="159.68120805369125" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">0/1 nets</text><text data-type="text" data-label="0/1 nets" data-x="5.5" data-y="2.12" x="518.5682326621924" y="237.98098434004473" fill="rgb(71, 85, 105)" font-size="7.829977628635347" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">0/1 nets</text><text data-type="text" data-label="flexible-start" data-x="0" data-y="1.62" x="87.91946308724835" y="277.1308724832214" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">flexible-start</text><text data-type="text" data-label="1/1 nets" data-x="0" data-y="1" x="87.91946308724835" y="325.6767337807606" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">1/1 nets</text><text data-type="text" data-label="constrained-start" data-x="0" data-y="-0.38" x="87.91946308724835" y="433.7304250559284" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">constrained-start</text><text data-type="text" data-label="1/1 nets" data-x="0" data-y="-1" x="87.91946308724835" y="482.2762863534675" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">1/1 nets</text><text data-type="text" data-label="shared-left" data-x="2" data-y="0.62" x="244.51901565995527" y="355.43064876957493" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">shared-left</text><text data-type="text" data-label="2/1 nets" data-x="2" data-y="0" x="244.51901565995527" y="403.9765100671141" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">2/1 nets</text><text data-type="text" data-label="shared-right" data-x="4" data-y="0.62" x="401.1185682326622" y="355.43064876957493" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">shared-right</text><text data-type="text" data-label="2/1 nets" data-x="4" data-y="0" x="401.1185682326622" y="403.9765100671141" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">2/1 nets</text><text data-type="text" data-label="flexible-end" data-x="6" data-y="1.62" x="557.7181208053692" y="277.1308724832214" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">flexible-end</text><text data-type="text" data-label="1/1 nets" data-x="6" data-y="1" x="557.7181208053692" y="325.6767337807606" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">1/1 nets</text><text data-type="text" data-label="constrained-end" data-x="6" data-y="-0.38" x="557.7181208053692" y="433.7304250559284" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">constrained-end</text><text data-type="text" data-label="1/1 nets" data-x="6" data-y="-1" x="557.7181208053692" y="482.2762863534675" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">1/1 nets</text><text data-type="text" data-label="detour-left" data-x="1" data-y="3.62" x="166.2192393736018" y="120.53131991051453" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">detour-left</text><text data-type="text" data-label="0/1 nets" data-x="1" data-y="3" x="166.2192393736018" y="169.07718120805367" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">0/1 nets</text><text data-type="text" data-label="detour-center" data-x="3" data-y="3.62" x="322.81879194630875" y="120.53131991051453" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">detour-center</text><text data-type="text" data-label="0/1 nets" data-x="3" data-y="3" x="322.81879194630875" y="169.07718120805367" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">0/1 nets</text><text data-type="text" data-label="detour-right" data-x="5" data-y="3.62" x="479.41834451901565" y="120.53131991051453" fill="rgb(15, 23, 42)" font-size="9.395973154362416" font-family="sans-serif" text-anchor="middle" dominant-baseline="text-after-edge">detour-right</text><text data-type="text" data-label="0/1 nets" data-x="5" data-y="3" x="479.41834451901565" y="169.07718120805367" fill="rgb(15, 23, 42)" font-size="8.612975391498882" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">0/1 nets</text><g><circle data-type="point" data-label="route: flexible-net
+endpoint: start
+region: flexible-start" data-x="0" data-y="1" cx="87.91946308724835" cy="325.6767337807606" r="3" fill="hsla(339, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: flexible-net
+endpoint: end
+region: flexible-end" data-x="6" data-y="1" cx="557.7181208053692" cy="325.6767337807606" r="3" fill="hsla(339, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: constrained-net
+endpoint: start
+region: constrained-start" data-x="0" data-y="-1" cx="87.91946308724835" cy="482.2762863534675" r="3" fill="hsla(197, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: constrained-net
+endpoint: end
+region: constrained-end" data-x="6" data-y="-1" cx="557.7181208053692" cy="482.2762863534675" r="3" fill="hsla(197, 70%, 50%, 1)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '640');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '640');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":78.29977628635346,"c":0,"e":87.91946308724835,"b":0,"d":-78.29977628635346,"f":403.9765100671141};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>
