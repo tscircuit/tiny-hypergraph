@@ -761,6 +761,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const assignedNetId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
+        if (
+          neighborPortId !== currentCandidate.portId &&
+          !this.isPortTransitionAllowed(currentCandidate.portId, neighborPortId)
+        ) {
+          continue
+        }
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
@@ -771,6 +777,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
       if (neighborPortId === currentCandidate.portId) continue
+      if (
+        !this.isPortTransitionAllowed(currentCandidate.portId, neighborPortId)
+      ) {
+        continue
+      }
       if (problem.portSectionMask[neighborPortId] === 0) continue
 
       const nextRegionId =
@@ -952,6 +963,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
     )
+  }
+
+  /**
+   * Returns whether a physical segment may connect two ports. Implementations
+   * must be symmetric because outside-in routing explores from both route ends.
+   */
+  protected isPortTransitionAllowed(
+    _firstPortId: PortId,
+    _secondPortId: PortId,
+  ): boolean {
+    return true
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {

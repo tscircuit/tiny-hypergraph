@@ -719,6 +719,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       if (forwardCandidate.nextRegionId !== reverseCandidate.nextRegionId) {
         return undefined
       }
+      if (
+        !this.isPortTransitionAllowed(
+          forwardCandidate.portId,
+          reverseCandidate.portId,
+        )
+      ) {
+        return undefined
+      }
       const connectorDx =
         this.topology.portX[forwardCandidate.portId]! -
         this.topology.portX[reverseCandidate.portId]!
@@ -860,6 +868,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     ] ?? []) {
       if (neighborPortId === candidate.portId) continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (!this.isPortTransitionAllowed(candidate.portId, neighborPortId)) {
+        continue
+      }
       const assignedNetId = this.state.portAssignment[neighborPortId]!
       if (
         assignedNetId !== -1 &&
