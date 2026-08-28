@@ -742,32 +742,75 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    const currentCandidateHopId = this.getHopId(
-      currentCandidate.portId,
-      currentCandidate.nextRegionId,
-    )
-    if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+    const candidateBestCostByHopId = state.candidateBestCostByHopId
+    const candidateBestCostGenerationByHopId =
+      state.candidateBestCostGenerationByHopId
+    const candidateBestCostGeneration = state.candidateBestCostGeneration
+    const useDenseCandidateBestCosts =
+      candidateBestCostByHopId instanceof Float64Array &&
+      candidateBestCostGenerationByHopId instanceof Uint32Array
+
+    const currentCandidateBaseHopId =
+      currentCandidate.portId * this.candidateHopSlotStride
+    const currentCandidateHopId =
+      this.candidateFirstRegionByPortId[currentCandidate.portId] ===
+      currentCandidate.nextRegionId
+        ? currentCandidateBaseHopId
+        : this.candidateSecondRegionByPortId[currentCandidate.portId] ===
+            currentCandidate.nextRegionId
+          ? currentCandidateBaseHopId + 1
+          : this.getHopId(
+              currentCandidate.portId,
+              currentCandidate.nextRegionId,
+            )
+    const currentCandidateBestCost =
+      useDenseCandidateBestCosts &&
+      currentCandidateHopId >= 0 &&
+      candidateBestCostGenerationByHopId[currentCandidateHopId] ===
+        candidateBestCostGeneration
+        ? candidateBestCostByHopId[currentCandidateHopId]!
+        : useDenseCandidateBestCosts && currentCandidateHopId >= 0
+          ? Number.POSITIVE_INFINITY
+          : this.getCandidateBestCost(currentCandidateHopId)
+    if (currentCandidate.g > currentCandidateBestCost) {
       return
     }
 
-    if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
+    const currentRouteNetId = state.currentRouteNetId
+    const regionNetId = problem.regionNetId
+    const currentRegionReservedNetId =
+      regionNetId[currentCandidate.nextRegionId]!
+    if (
+      currentRegionReservedNetId !== -1 &&
+      currentRegionReservedNetId !== currentRouteNetId
+    ) {
       return
     }
 
+    const portEndpointReservationNetId =
+      this.problemSetup.portEndpointReservationNetId
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
     for (const neighborPortId of neighbors) {
       const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        const endpointReservedNetId =
+          portEndpointReservationNetId[neighborPortId]!
+        if (
+          endpointReservedNetId === -2 ||
+          (endpointReservedNetId !== -1 &&
+            endpointReservedNetId !== currentRouteNetId)
+        ) {
+          continue
+        }
+        if (assignedNetId !== -1 && assignedNetId !== currentRouteNetId) {
           continue
         }
         this.onPathFound(currentCandidate)
         return
       }
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+      if (assignedNetId !== -1 && assignedNetId !== currentRouteNetId) {
         continue
       }
       if (neighborPortId === currentCandidate.portId) continue
@@ -779,22 +822,49 @@ export class TinyHyperGraphSolver extends BaseSolver {
           ? topology.incidentPortRegion[neighborPortId][1]
           : topology.incidentPortRegion[neighborPortId][0]
 
-      if (
-        nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
-      ) {
+      if (nextRegionId === undefined) {
         continue
       }
 
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      const candidateBaseHopId =
+        neighborPortId * this.candidateHopSlotStride
+      const candidateHopId =
+        this.candidateFirstRegionByPortId[neighborPortId] === nextRegionId
+          ? candidateBaseHopId
+          : this.candidateSecondRegionByPortId[neighborPortId] === nextRegionId
+            ? candidateBaseHopId + 1
+            : this.getHopId(neighborPortId, nextRegionId)
       if (
         state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId) ===
         true
       ) {
         continue
       }
-      const previousBestCost = this.getCandidateBestCost(candidateHopId)
+      const previousBestCost =
+        useDenseCandidateBestCosts &&
+        candidateHopId >= 0 &&
+        candidateBestCostGenerationByHopId[candidateHopId] ===
+          candidateBestCostGeneration
+          ? candidateBestCostByHopId[candidateHopId]!
+          : useDenseCandidateBestCosts && candidateHopId >= 0
+            ? Number.POSITIVE_INFINITY
+            : this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
+      const endpointReservedNetId = portEndpointReservationNetId[neighborPortId]!
+      if (
+        endpointReservedNetId === -2 ||
+        (endpointReservedNetId !== -1 &&
+          endpointReservedNetId !== currentRouteNetId)
+      ) {
+        continue
+      }
+      const nextRegionReservedNetId = regionNetId[nextRegionId]!
+      if (
+        nextRegionReservedNetId !== -1 &&
+        nextRegionReservedNetId !== currentRouteNetId
+      ) {
+        continue
+      }
       const g = this.computeG(
         currentCandidate,
         neighborPortId,
@@ -818,7 +888,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      this.setCandidateBestCost(candidateHopId, g)
+      if (useDenseCandidateBestCosts && candidateHopId >= 0) {
+        candidateBestCostGenerationByHopId[candidateHopId] =
+          candidateBestCostGeneration
+        candidateBestCostByHopId[candidateHopId] = g
+      } else {
+        this.setCandidateBestCost(candidateHopId, g)
+      }
       state.candidateQueue.queue(newCandidate)
     }
   }
