@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
-import { DuplicateCongestedPortSolver, TinyHyperGraphSolver } from "lib/index"
+import {
+  DuplicateCongestedPortSolver,
+  SelectiveReripTinyHyperGraphSolver,
+  TinyHyperGraphSolver,
+} from "lib/index"
 
 const createRegion = (
   regionId: string,
@@ -218,4 +222,121 @@ test("duplicate congested port solver can preserve legacy port-use estimation", 
 
   expect(penaltyAwareSolver.report.portUseCounts["shared-neighbor"]).toBe(2)
   expect(compatibilitySolver.report.portUseCounts["shared-choke"]).toBe(2)
+})
+
+test("complete compact initial assignments survive an iteration limit during refinement", () => {
+  const graph = createDuplicatePortFixture()
+  const originalGraph = JSON.stringify(graph)
+  const allocator = new DuplicateCongestedPortSolver(graph, {
+    createInitialAssignments: true,
+    useSerializedPortPenalties: false,
+  })
+  allocator.solve()
+  expect(allocator.failed).toBe(false)
+  const allocated = allocator.getOutput()
+  const { topology, problem } = loadSerializedHyperGraph(allocated)
+  const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
+    MAX_ITERATIONS: 1,
+    RIP_THRESHOLD_START: -1,
+    RIP_THRESHOLD_END: -1,
+    RIP_THRESHOLD_RAMP_ATTEMPTS: 10,
+  })
+  solver.solve()
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.stats.acceptedBestSolutionOnTimeout).toBe(true)
+  expect(solver.state.unroutedRoutes).toEqual([])
+  const output = solver.getOutput()
+  expect(output.solvedRoutes).toHaveLength(2)
+  const paths = output.solvedRoutes!.map((route) =>
+    route.path.map((hop) => hop.portId),
+  )
+  expect(paths[0]).toEqual(["a-start-port", "shared-choke", "a-end-port"])
+  expect(paths[1]).toEqual(["b-start-port", "shared-choke::dup1", "b-end-port"])
+  expect(JSON.stringify(graph)).toBe(originalGraph)
+})
+
+test("initial routing keeps an existing route's geometry", () => {
+  const graph = createParallelPortFixture()
+  graph.regions.find((region) => region.regionId === "left")!.assignments = [
+    {
+      connectionId: "connection-a",
+      regionPort1Id: "start-port",
+      regionPort2Id: "middle-b",
+    },
+  ]
+  graph.regions.find((region) => region.regionId === "right")!.assignments = [
+    {
+      connectionId: "connection-a",
+      regionPort1Id: "middle-b",
+      regionPort2Id: "end-port",
+    },
+  ]
+  const allocator = new DuplicateCongestedPortSolver(graph, {
+    createInitialAssignments: true,
+    useSerializedPortPenalties: false,
+  })
+  allocator.solve()
+  expect(allocator.failed).toBe(false)
+  const { topology, problem } = loadSerializedHyperGraph(allocator.getOutput())
+  const solver = new TinyHyperGraphSolver(topology, problem, {
+    MAX_ITERATIONS: 1,
+  })
+  solver.solve()
+  expect(solver.solved).toBe(true)
+  expect(
+    solver.getOutput().solvedRoutes?.[0]?.path.map((hop) => hop.portId),
+  ).toEqual(["start-port", "middle-b", "end-port"])
+})
+
+test("initial routing reserves existing crossing points before allocating new routes", () => {
+  const graph = createDuplicatePortFixture()
+  graph.regions.find((region) => region.regionId === "left")!.assignments = [
+    {
+      connectionId: "connection-b",
+      regionPort1Id: "b-start-port",
+      regionPort2Id: "shared-choke",
+    },
+  ]
+  graph.regions.find((region) => region.regionId === "right")!.assignments = [
+    {
+      connectionId: "connection-b",
+      regionPort1Id: "shared-choke",
+      regionPort2Id: "b-end-port",
+    },
+  ]
+  const allocator = new DuplicateCongestedPortSolver(graph, {
+    createInitialAssignments: true,
+  })
+  allocator.solve()
+  expect(allocator.failed).toBe(false)
+  const { topology, problem } = loadSerializedHyperGraph(allocator.getOutput())
+  const solver = new TinyHyperGraphSolver(topology, problem, {
+    MAX_ITERATIONS: 1,
+  })
+  solver.solve()
+  expect(solver.solved).toBe(true)
+  const routes = solver.getOutput().solvedRoutes!
+  expect(routes.map((route) => route.path.map((hop) => hop.portId))).toEqual([
+    ["a-start-port", "shared-choke::dup1", "a-end-port"],
+    ["b-start-port", "shared-choke", "b-end-port"],
+  ])
+})
+
+test("initial routing reports a disconnected connection instead of a partial seed", () => {
+  const graph = createDuplicatePortFixture()
+  graph.ports = graph.ports.filter((port) => !port.portId.startsWith("shared-"))
+  for (const region of graph.regions) {
+    region.pointIds = region.pointIds.filter(
+      (portId) => !portId.startsWith("shared-"),
+    )
+  }
+  const allocator = new DuplicateCongestedPortSolver(graph, {
+    createInitialAssignments: true,
+  })
+  allocator.solve()
+  expect(allocator.solved).toBe(false)
+  expect(allocator.failed).toBe(true)
+  expect(allocator.error).toContain("could not be solved independently")
+  expect(() => allocator.getOutput()).toThrow()
 })

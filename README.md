@@ -55,6 +55,42 @@ existing ports and contribute to region congestion immediately, but remain
 eligible for the normal rip-and-reroute process. They do not create regions or
 otherwise change the hypergraph topology.
 
+### Complete initial approximation
+
+For crowded graphs, allocate crossing points and seed short independent routes
+before spending the iteration budget on congestion refinement:
+
+```ts
+import {
+  DuplicateCongestedPortSolver,
+  SelectiveReripTinyHyperGraphSolver,
+} from "lib"
+
+const allocation = new DuplicateCongestedPortSolver(inputGraph, {
+  createInitialAssignments: true,
+  useSerializedPortPenalties: false,
+})
+allocation.solve()
+const { topology, problem } = loadSerializedHyperGraph(allocation.getOutput())
+const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem)
+solver.solve()
+```
+
+The initial assignments connect every routable connection and allocate distinct
+crossing points to different nets. Existing assignments retain their geometry.
+New routes use geometric distance, so large soft port penalties do not turn the
+initial approximation into long detours. Duplicated points stay on shared
+rectangular edges so downstream port distribution can spread them along the edge.
+
+The normal solver records this complete approximation before ripping routes for
+quality improvements. If refinement reaches its iteration limit, the existing
+best-solution acceptance returns the best complete state. Congestion costs still
+describe the quality of that state; initial routing does not promise zero
+crossings or design-rule violations. Invalid or disconnected input still reports
+an error. Omitting `createInitialAssignments` retains allocation-only behavior.
+The independent-route prepass has its own `routeSolveOptions` budget; it must
+finish before a complete refinement seed is available.
+
 ### Outside-in partial reripping
 
 `SelectiveReripTinyHyperGraphSolver` preserves the unaffected prefix and

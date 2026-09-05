@@ -7,6 +7,12 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
+import {
+  createInitialRoutingAssignments,
+  type IndependentRouteAssignment,
+} from "./createInitialRoutingAssignments"
+import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
+import { getBoundaryDuplicatePortPlacement } from "./getBoundaryDuplicatePortPlacement"
 import type { PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
@@ -19,6 +25,8 @@ export interface DuplicateCongestedPortSolverOptions {
   routeSolveOptions?: TinyHyperGraphSolverOptions
   /** Ignore serialized port penalties while estimating shared-port use. */
   useSerializedPortPenalties?: boolean
+  /** Seed a complete geometric approximation before congestion refinement. */
+  createInitialAssignments?: boolean
 }
 
 export interface DuplicatedPortSummary {
@@ -299,6 +307,8 @@ const getUsedPortIdsForSolvedRoute = (
 }
 
 export class DuplicateCongestedPortSolver extends BaseSolver {
+  private independentRouteAssignments: IndependentRouteAssignment[] = []
+  private independentRouteIterations = 0
   revisedSerializedHyperGraph?: SerializedHyperGraph
   report: DuplicateCongestedPortSolverReport = {
     portUseCounts: {},
@@ -335,12 +345,21 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
+      if (this.options.createInitialAssignments) {
+        routeProblem.initialAssignments = problem.initialAssignments
+          ?.filter((assignment) => assignment.routeId === routeId)
+          .map((assignment) => ({ ...assignment, routeId: 0 }))
+      }
+      const RouteSolver = this.options.createInitialAssignments
+        ? DistanceAwareTinyHyperGraphSolver
+        : TinyHyperGraphSolver
+      const routeSolver = new RouteSolver(
         topology,
         routeProblem,
         this.getIndividualRouteSolveOptions(),
       )
       routeSolver.solve()
+      this.independentRouteIterations += routeSolver.iterations
 
       if (!routeSolver.solved || routeSolver.failed) {
         throw new Error(
@@ -356,6 +375,34 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           serializedPortId,
           (portUseCounts.get(serializedPortId) ?? 0) + 1,
         )
+      }
+      if (this.options.createInitialAssignments) {
+        const connectionId = problem.routeMetadata?.[routeId]?.connectionId
+        if (typeof connectionId !== "string") {
+          throw new Error(
+            `Initial routing is missing the connection id for route ${routeId}`,
+          )
+        }
+        for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+          const regionSegments = routeSolver.state.regionSegments[regionId]
+          if (regionSegments.length === 0) continue
+          const serializedRegionId =
+            topology.regionMetadata?.[regionId]?.serializedRegionId
+          if (typeof serializedRegionId !== "string") {
+            throw new Error(
+              `Initial routing is missing the serialized id for region ${regionId}`,
+            )
+          }
+          for (const [, fromPortId, toPortId] of regionSegments) {
+            this.independentRouteAssignments.push({
+              connectionId,
+              netId: problem.routeNet[routeId],
+              regionId: serializedRegionId,
+              fromPortId: getSerializedPortId(topology, fromPortId),
+              toPortId: getSerializedPortId(topology, toPortId),
+            })
+          }
+        }
       }
     }
 
@@ -413,6 +460,13 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
+      const duplicatePlacement = getBoundaryDuplicatePortPlacement({
+        sourcePoint,
+        direction: duplicateDirection,
+        region1Bounds: getRegionBounds(regionById.get(sourcePort.region1Id)),
+        region2Bounds: getRegionBounds(regionById.get(sourcePort.region2Id)),
+        duplicatePortProximity,
+      })
       const duplicatePortIds: string[] = []
 
       for (
@@ -426,12 +480,15 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           usedPortIds,
         )
         const offset =
-          (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
+          (duplicatePlacement.maxDistance * duplicateIndex) /
+          (duplicateCount + 1)
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
-        duplicatedPortData.x = sourcePoint.x + duplicateDirection.x * offset
-        duplicatedPortData.y = sourcePoint.y + duplicateDirection.y * offset
+        duplicatedPortData.x =
+          sourcePoint.x + duplicatePlacement.direction.x * offset
+        duplicatedPortData.y =
+          sourcePoint.y + duplicatePlacement.direction.y * offset
         duplicatedPortData.duplicatedFromPortId = sourcePortId
         duplicatedPortData.duplicateIndex = duplicateIndex
         duplicatedPortData.duplicatePortUseCount = useCount
@@ -484,8 +541,16 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       const portUseCounts = this.getPortUseCounts()
       this.revisedSerializedHyperGraph =
         this.duplicateCongestedPorts(portUseCounts)
+      if (this.options.createInitialAssignments) {
+        this.revisedSerializedHyperGraph = createInitialRoutingAssignments({
+          serializedHyperGraph: this.revisedSerializedHyperGraph,
+          duplicatedPorts: this.report.duplicatedPorts,
+          independentRouteAssignments: this.independentRouteAssignments,
+        })
+      }
       this.stats = {
         ...this.stats,
+        independentRouteIterations: this.independentRouteIterations,
         duplicateSourcePortCount: this.report.duplicatedPorts.length,
         duplicatedPortCount: this.report.duplicatedPorts.reduce(
           (sum, duplicatedPort) => sum + duplicatedPort.duplicatePortIds.length,
