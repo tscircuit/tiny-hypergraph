@@ -1,5 +1,7 @@
+import "bun-match-svg"
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import { getSvgFromGraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 import {
   DuplicateCongestedPortSolver,
@@ -224,7 +226,7 @@ test("duplicate congested port solver can preserve legacy port-use estimation", 
   expect(compatibilitySolver.report.portUseCounts["shared-choke"]).toBe(2)
 })
 
-test("complete compact initial assignments survive an iteration limit during refinement", () => {
+test("complete compact initial assignments survive an iteration limit during refinement", async () => {
   const graph = createDuplicatePortFixture()
   const originalGraph = JSON.stringify(graph)
   const allocator = new DuplicateCongestedPortSolver(graph, {
@@ -254,6 +256,9 @@ test("complete compact initial assignments survive an iteration limit during ref
   expect(paths[0]).toEqual(["a-start-port", "shared-choke", "a-end-port"])
   expect(paths[1]).toEqual(["b-start-port", "shared-choke::dup1", "b-end-port"])
   expect(JSON.stringify(graph)).toBe(originalGraph)
+  await expect(
+    getSvgFromGraphicsObject(solver.visualize(), { backgroundColor: "white" }),
+  ).toMatchSvgSnapshot(import.meta.path, "complete-initial-approximation")
 })
 
 test("initial routing keeps an existing route's geometry", () => {
