@@ -460,13 +460,22 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
-      const duplicatePlacement = getBoundaryDuplicatePortPlacement({
-        sourcePoint,
-        direction: duplicateDirection,
-        region1Bounds: getRegionBounds(regionById.get(sourcePort.region1Id)),
-        region2Bounds: getRegionBounds(regionById.get(sourcePort.region2Id)),
-        duplicatePortProximity,
-      })
+      const duplicatePlacement = this.options.createInitialAssignments
+        ? getBoundaryDuplicatePortPlacement({
+            sourcePoint,
+            direction: duplicateDirection,
+            region1Bounds: getRegionBounds(
+              regionById.get(sourcePort.region1Id),
+            ),
+            region2Bounds: getRegionBounds(
+              regionById.get(sourcePort.region2Id),
+            ),
+            duplicatePortProximity,
+          })
+        : {
+            direction: duplicateDirection,
+            maxDistance: duplicatePortProximity,
+          }
       const duplicatePortIds: string[] = []
 
       for (
