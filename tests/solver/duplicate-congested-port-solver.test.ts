@@ -256,9 +256,13 @@ test("complete compact initial assignments survive an iteration limit during ref
   expect(paths[0]).toEqual(["a-start-port", "shared-choke", "a-end-port"])
   expect(paths[1]).toEqual(["b-start-port", "shared-choke::dup1", "b-end-port"])
   expect(JSON.stringify(graph)).toBe(originalGraph)
-  await expect(
-    getSvgFromGraphicsObject(solver.visualize(), { backgroundColor: "white" }),
-  ).toMatchSvgSnapshot(import.meta.path, "complete-initial-approximation")
+  const svg = getSvgFromGraphicsObject(solver.visualize(), {
+    backgroundColor: "white",
+  })
+  await expect(svg.replace(/[ \t]+$/gm, "")).toMatchSvgSnapshot(
+    import.meta.path,
+    "complete-initial-approximation",
+  )
 })
 
 test("initial routing keeps an existing route's geometry", () => {
