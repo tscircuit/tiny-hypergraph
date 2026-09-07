@@ -8,7 +8,8 @@ import {
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import type { DistinctOwnerBlockerSearchResult } from "./find-distinct-owner-blocker-path"
 import { findResourceBlockerPath } from "./findResourceBlockerPath"
-import type { PortId, RegionId, RouteId } from "./types"
+import type { NetId, PortId, RegionId, RouteId } from "./types"
+import { MinHeap } from "./MinHeap"
 
 type RelaxedSearchState = {
   portId: PortId
@@ -149,6 +150,12 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * encourages later repairs to use different local resources.
  */
 export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  private readonly blockerResourceHistory = new Map<string, number>()
+  private readonly staticPortCostsByNetAndGoal = new Map<
+    NetId,
+    Map<PortId, Float64Array>
+  >()
+
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
     Map<RouteId, number>
@@ -162,6 +169,63 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     options?: TinyHyperGraphSolverOptions,
   ) {
     super(topology, problem, options)
+    this.USE_LAZY_ROUTE_HEURISTIC = true
+  }
+
+  /**
+   * A static reverse shortest-path cost accounts for expensive cramped ports.
+   * Ignoring occupancy and entry direction keeps this a lower bound while
+   * allowing the same net and goal to reuse it across local repairs.
+   */
+  override computeH(portId: PortId): number {
+    const routeId = this.state.currentRouteId!
+    const routeNetId = this.problem.routeNet[routeId]!
+    const goalPortId = this.getRouteEndPortId(routeId)
+    let costsByGoal = this.staticPortCostsByNetAndGoal.get(routeNetId)
+    if (!costsByGoal) {
+      costsByGoal = new Map<PortId, Float64Array>()
+      this.staticPortCostsByNetAndGoal.set(routeNetId, costsByGoal)
+    }
+    let costs = costsByGoal.get(goalPortId)
+    if (!costs) {
+      costs = new Float64Array(this.topology.portCount).fill(
+        Number.POSITIVE_INFINITY,
+      )
+      costs[goalPortId] = 0
+      const queue = new MinHeap<{ portId: PortId; cost: number }>(
+        [],
+        (left, right) => left.cost - right.cost,
+      )
+      queue.queue({ portId: goalPortId, cost: 0 })
+      while (queue.length > 0) {
+        const current = queue.dequeue()!
+        if (current.cost > costs[current.portId]!) continue
+        for (const regionId of this.topology.incidentPortRegion[
+          current.portId
+        ]!) {
+          if (this.isRegionReservedForDifferentNet(regionId)) continue
+          for (const previousPortId of this.topology.regionIncidentPorts[
+            regionId
+          ]!) {
+            if (this.isPortReservedForDifferentNet(previousPortId)) continue
+            const cost =
+              current.cost +
+              Math.hypot(
+                this.topology.portX[previousPortId]! -
+                  this.topology.portX[current.portId]!,
+                this.topology.portY[previousPortId]! -
+                  this.topology.portY[current.portId]!,
+              ) * this.DISTANCE_TO_COST +
+              (this.problem.portPenalty?.[current.portId] ?? 0)
+            if (cost >= costs[previousPortId]!) continue
+            costs[previousPortId] = cost
+            queue.queue({ portId: previousPortId, cost })
+          }
+        }
+      }
+      costsByGoal.set(goalPortId, costs)
+    }
+    return costs[portId]!
   }
 
   getSelectiveReripStats(): SelectiveReripTinyHyperGraphStats {
@@ -226,6 +290,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     this.clearPartialRipPlans(rippedRouteIds)
     for (const hop of directPath.hops) {
       for (const resource of hop.data?.resources ?? []) {
+        const key = this.getBlockerResourceKey(resource)
+        this.blockerResourceHistory.set(
+          key,
+          (this.blockerResourceHistory.get(key) ?? 0) + 1,
+        )
         const regionIds =
           resource.kind === "port"
             ? this.topology.incidentPortRegion[resource.portId]!
@@ -277,6 +346,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     this.publishSelectiveReripStats()
   }
 
+  private getBlockerResourceKey(
+    resource: SelectiveReripBlockerResource,
+  ): string {
+    if (resource.kind === "port") return `port:${resource.portId}`
+    const firstPortId = Math.min(resource.fromPortId, resource.toPortId)
+    const secondPortId = Math.max(resource.fromPortId, resource.toPortId)
+    return `crossing:${resource.regionId}:${firstPortId}:${secondPortId}`
+  }
+
   protected findRelaxedBlockerPath(
     forbiddenOwnerRouteIds: ReadonlySet<RouteId> = new Set<RouteId>(),
   ): DistinctOwnerBlockerSearchResult<
@@ -315,6 +393,14 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           portOwners,
           forbiddenOwnerRouteIds,
         }),
+      getBlockerCost: (hop): number =>
+        (hop.data?.resources ?? []).reduce((cost, resource) => {
+          const previousConflicts =
+            this.blockerResourceHistory.get(
+              this.getBlockerResourceKey(resource),
+            ) ?? 0
+          return cost + resource.owners.length * (1 + previousConflicts)
+        }, 0),
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
     })
   }

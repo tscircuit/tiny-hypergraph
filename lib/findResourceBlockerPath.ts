@@ -5,10 +5,21 @@ import type {
 } from "./find-distinct-owner-blocker-path"
 import { MinHeap } from "./MinHeap"
 
+export interface ResourceBlockerSearchOptions<
+  TState,
+  TStateKey,
+  TOwner,
+  THopData,
+> extends DistinctOwnerBlockerSearchOptions<TState, TStateKey, TOwner, THopData> {
+  getBlockerCost?: (
+    hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>,
+  ) => number
+}
+
 type ResourceSearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
-  blockerCount: number
+  blockerCost: number
   distance: number
   parent?: ResourceSearchLabel<TState, TStateKey, TOwner, THopData>
   incomingHop?: DistinctOwnerBlockerHop<TState, TOwner, THopData>
@@ -27,7 +38,7 @@ export const findResourceBlockerPath = <
   TOwner,
   THopData = unknown,
 >(
-  options: DistinctOwnerBlockerSearchOptions<
+  options: ResourceBlockerSearchOptions<
     TState,
     TStateKey,
     TOwner,
@@ -48,7 +59,7 @@ export const findResourceBlockerPath = <
   const queue = new MinHeap<Label>(
     [],
     (left, right) =>
-      left.blockerCount - right.blockerCount ||
+      left.blockerCost - right.blockerCost ||
       left.distance - right.distance ||
       left.queueOrder - right.queueOrder,
   )
@@ -57,7 +68,7 @@ export const findResourceBlockerPath = <
   const startLabel: Label = {
     state: options.start,
     stateKey: options.getStateKey(options.start),
-    blockerCount: 0,
+    blockerCost: 0,
     distance: 0,
     queueOrder: nextQueueOrder++,
   }
@@ -101,7 +112,13 @@ export const findResourceBlockerPath = <
         throw new Error("Resource blocker hops require finite distances >= 0")
       }
       const stateKey = options.getStateKey(hop.state)
-      const blockerCount = current.blockerCount + (hop.owners?.length ?? 0)
+      const hopBlockerCost = options.getBlockerCost
+        ? options.getBlockerCost(hop)
+        : (hop.owners?.length ?? 0)
+      if (!Number.isFinite(hopBlockerCost) || hopBlockerCost < 0) {
+        throw new Error("Resource blocker costs must be finite and non-negative")
+      }
+      const blockerCost = current.blockerCost + hopBlockerCost
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
         throw new Error("Resource blocker path distance overflowed")
@@ -109,8 +126,8 @@ export const findResourceBlockerPath = <
       const previous = bestLabelByState.get(stateKey)
       if (
         previous &&
-        (previous.blockerCount < blockerCount ||
-          (previous.blockerCount === blockerCount &&
+        (previous.blockerCost < blockerCost ||
+          (previous.blockerCost === blockerCost &&
             previous.distance <= distance))
       ) {
         continue
@@ -118,7 +135,7 @@ export const findResourceBlockerPath = <
       const candidate: Label = {
         state: hop.state,
         stateKey,
-        blockerCount,
+        blockerCost,
         distance,
         parent: current,
         incomingHop: hop,
