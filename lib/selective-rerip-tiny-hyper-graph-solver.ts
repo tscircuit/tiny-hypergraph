@@ -221,8 +221,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
             if (this.isPortReservedForDifferentNet(previousPortId)) continue
             const assignedNetId = this.state.portAssignment[previousPortId]!
             if (assignedNetId !== -1 && assignedNetId !== routeNetId) continue
-            const dx = this.topology.portX[previousPortId]! - this.topology.portX[current.portId]!
-            const dy = this.topology.portY[previousPortId]! - this.topology.portY[current.portId]!
+            const dx =
+              this.topology.portX[previousPortId]! -
+              this.topology.portX[current.portId]!
+            const dy =
+              this.topology.portY[previousPortId]! -
+              this.topology.portY[current.portId]!
             const cost =
               current.cost +
               Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST +
