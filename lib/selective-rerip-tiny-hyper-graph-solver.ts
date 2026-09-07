@@ -172,10 +172,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     this.USE_LAZY_ROUTE_HEURISTIC = true
   }
 
+  override resetRoutingStateForRerip(): void {
+    this.staticPortCostsByNetAndGoal.clear()
+    super.resetRoutingStateForRerip()
+  }
+
+  override onAllRoutesRouted(): void {
+    this.staticPortCostsByNetAndGoal.clear()
+    super.onAllRoutesRouted()
+  }
+
   /**
-   * A static reverse shortest-path cost accounts for expensive cramped ports.
-   * Ignoring occupancy and entry direction keeps this a lower bound while
-   * allowing the same net and goal to reuse it across local repairs.
+   * Reverse shortest-path costs avoid occupied ports and account for cramped
+   * port penalties. Adding routes only removes available edges, so cached
+   * lower bounds remain valid until a rip releases occupied ports.
+   * Ignoring entry direction and region crossings keeps the search relaxed.
    */
   override computeH(portId: PortId): number {
     const routeId = this.state.currentRouteId!
@@ -208,14 +219,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
             regionId
           ]!) {
             if (this.isPortReservedForDifferentNet(previousPortId)) continue
+            const assignedNetId = this.state.portAssignment[previousPortId]!
+            if (assignedNetId !== -1 && assignedNetId !== routeNetId) continue
+            const dx = this.topology.portX[previousPortId]! - this.topology.portX[current.portId]!
+            const dy = this.topology.portY[previousPortId]! - this.topology.portY[current.portId]!
             const cost =
               current.cost +
-              Math.hypot(
-                this.topology.portX[previousPortId]! -
-                  this.topology.portX[current.portId]!,
-                this.topology.portY[previousPortId]! -
-                  this.topology.portY[current.portId]!,
-              ) * this.DISTANCE_TO_COST +
+              Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST +
               (this.problem.portPenalty?.[current.portId] ?? 0)
             if (cost >= costs[previousPortId]!) continue
             costs[previousPortId] = cost
@@ -257,6 +267,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
 
+    this.staticPortCostsByNetAndGoal.clear()
     const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
     if (!directPath.found || directPath.owners.size === 0) {
       this.selectiveReripStats.globalReripCount += 1
