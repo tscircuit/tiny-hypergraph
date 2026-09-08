@@ -9,23 +9,18 @@ import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-ri
 import type { DistinctOwnerBlockerSearchResult } from "./find-distinct-owner-blocker-path"
 import { findResourceBlockerPath } from "./findResourceBlockerPath"
 import type { NetId, PortId, RegionId, RouteId } from "./types"
-import { MinHeap } from "./MinHeap"
+import { PortDistanceQueue } from "./PortDistanceQueue"
 
 type RelaxedSearchState = {
   portId: PortId
   nextRegionId: RegionId
 }
 
-type PortDistanceCandidate = {
-  portId: PortId
-  cost: number
-}
-
 type PortDistanceSearch = {
   costs: Float64Array
   settled: Uint8Array
   blockedPorts: Uint8Array
-  queue: MinHeap<PortDistanceCandidate>
+  queue: PortDistanceQueue
 }
 
 type PortBlockerResource = {
@@ -216,11 +211,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         Number.POSITIVE_INFINITY,
       )
       costs[goalPortId] = 0
-      const queue = new MinHeap<PortDistanceCandidate>(
-        [],
-        (left, right) => left.cost - right.cost,
-      )
-      queue.queue({ portId: goalPortId, cost: 0 })
+      const queue = new PortDistanceQueue(this.topology.portCount)
+      queue.queue(goalPortId, 0)
       // Snapshot occupancy so resumed searches use the same relaxed graph
       // even after another route commits between queries for this net.
       const blockedPorts = new Uint8Array(this.topology.portCount)
@@ -250,32 +242,35 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       return Number.POSITIVE_INFINITY
     }
     while (!settled[portId] && queue.length > 0) {
-      const current = queue.dequeue()!
-      if (current.cost > costs[current.portId]!) continue
+      const currentPortId = queue.dequeue()!
+      const currentCost = costs[currentPortId]!
+      const currentX = this.topology.portX[currentPortId]!
+      const currentY = this.topology.portY[currentPortId]!
+      const currentPortPenalty = this.problem.portPenalty?.[currentPortId] ?? 0
       for (const regionId of this.topology.incidentPortRegion[
-        current.portId
+        currentPortId
       ]!) {
         if (this.isRegionReservedForDifferentNet(regionId)) continue
         for (const previousPortId of this.topology.regionIncidentPorts[
           regionId
         ]!) {
-          if (blockedPorts[previousPortId]) continue
+          if (settled[previousPortId] || blockedPorts[previousPortId]) continue
           const dx =
             this.topology.portX[previousPortId]! -
-            this.topology.portX[current.portId]!
+            currentX
           const dy =
             this.topology.portY[previousPortId]! -
-            this.topology.portY[current.portId]!
+            currentY
           const cost =
-            current.cost +
+            currentCost +
             Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST +
-            (this.problem.portPenalty?.[current.portId] ?? 0)
+            currentPortPenalty
           if (cost >= costs[previousPortId]!) continue
           costs[previousPortId] = cost
-          queue.queue({ portId: previousPortId, cost })
+          queue.queue(previousPortId, cost)
         }
       }
-      settled[current.portId] = 1
+      settled[currentPortId] = 1
     }
     return costs[portId]!
   }
