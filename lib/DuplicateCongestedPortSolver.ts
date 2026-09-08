@@ -272,6 +272,7 @@ const createSingleRouteProblem = (
   routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
   routeNet: Int32Array.from([problem.routeNet[routeId]]),
   regionNetId: new Int32Array(problem.regionNetId),
+  portNetId: problem.portNetId && new Int32Array(problem.portNetId),
   portPenalty:
     problem.portPenalty === undefined
       ? undefined

@@ -143,6 +143,9 @@ export interface TinyHyperGraphProblem {
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
   regionNetId: Int32Array
 
+  /** Optional port net restrictions: -1 is free, -2 is blocked, otherwise the sole allowed net. */
+  portNetId?: Int32Array
+
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
 
@@ -638,6 +641,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
+    for (let portId = 0; portId < topology.portCount; portId++) {
+      const netId = problem.portNetId?.[portId] ?? -1
+      if (netId !== -1) recordEndpointNet(portId, netId)
+    }
+
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeNetId = problem.routeNet[routeId]!
       recordEndpointNet(problem.routeStartPort[routeId]!, routeNetId)
@@ -666,6 +674,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override _setup() {
     void this.problemSetup
+
+    if (this.problem.portNetId) {
+      for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+        for (const portId of [
+          this.problem.routeStartPort[routeId]!,
+          this.problem.routeEndPort[routeId]!,
+        ]) {
+          const requiredNetId = this.problem.portNetId[portId]!
+          if (
+            requiredNetId === -1 ||
+            requiredNetId === this.problem.routeNet[routeId]
+          ) continue
+          this.failed = true
+          this.error = `Route ${routeId} endpoint ${portId} violates its port net restriction`
+          return
+        }
+      }
+    }
 
     if (this.STATIC_REACHABILITY_PRECHECK) {
       const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
