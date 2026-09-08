@@ -16,6 +16,13 @@ type RelaxedSearchState = {
   nextRegionId: RegionId
 }
 
+type CommittedCrossingGeometry = {
+  ownerRouteId: RouteId
+  lesserAngle: number
+  greaterAngle: number
+  layerMask: number
+}
+
 type PortDistanceSearch = {
   costs: Float64Array
   settled: Uint8Array
@@ -428,6 +435,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    // Committed segments stay unchanged throughout this synchronous search.
+    // Keep geometry local so the next search observes any intervening rerips.
+    const crossingGeometryByRegion = new Map<
+      RegionId,
+      CommittedCrossingGeometry[]
+    >()
     return findResourceBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
@@ -440,15 +453,19 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           routeNetId,
           portOwners,
           forbiddenOwnerRouteIds,
+          crossingGeometryByRegion,
         }),
-      getBlockerCost: (hop): number =>
-        (hop.data?.resources ?? []).reduce((cost, resource) => {
+      getBlockerCost: (hop): number => {
+        let cost = 0
+        for (const resource of hop.data?.resources ?? []) {
           const previousConflicts =
             this.blockerResourceHistory.get(
               this.getBlockerResourceKey(resource),
             ) ?? 0
-          return cost + resource.owners.length * (1 + previousConflicts)
-        }, 0),
+          cost += resource.owners.length * (1 + previousConflicts)
+        }
+        return cost
+      },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
     })
   }
@@ -498,6 +515,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     forbiddenOwnerRouteIds: ReadonlySet<RouteId>
+    crossingGeometryByRegion: Map<RegionId, CommittedCrossingGeometry[]>
   }): Array<{
     state: RelaxedSearchState
     distance: number
@@ -525,16 +543,20 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         continue
       }
 
-      const resources = this.getHopBlockerResources({
-        regionId: state.nextRegionId,
-        fromPortId: state.portId,
-        toPortId: neighborPortId,
+      const resources = this.getHopBlockerResources(
+        state.nextRegionId,
+        state.portId,
+        neighborPortId,
         routeNetId,
-        portOwners: params.portOwners,
-      })
-      const owners = [
-        ...new Set(resources.flatMap((resource) => resource.owners)),
-      ]
+        params.portOwners,
+        params.crossingGeometryByRegion,
+      )
+      const owners: RouteId[] = []
+      for (const resource of resources) {
+        for (const owner of resource.owners) {
+          if (!owners.includes(owner)) owners.push(owner)
+        }
+      }
       if (
         owners.some((ownerRouteId) =>
           params.forbiddenOwnerRouteIds.has(ownerRouteId),
@@ -586,40 +608,46 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return hops
   }
 
-  private getHopBlockerResources(params: {
-    regionId: RegionId
-    fromPortId: PortId
-    toPortId: PortId
-    routeNetId: number
-    portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
-  }): SelectiveReripBlockerResource[] {
+  private getHopBlockerResources(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+    routeNetId: number,
+    portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>,
+    crossingGeometryByRegion: Map<RegionId, CommittedCrossingGeometry[]>,
+  ): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
-    const assignedNetId = this.state.portAssignment[params.toPortId]!
-    if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      const owners = [
-        ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
-      ].filter(
-        (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
-      )
+    const assignedNetId = this.state.portAssignment[toPortId]!
+    if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
+      const owners: RouteId[] = []
+      const toPortOwners = portOwners.get(toPortId)
+      if (toPortOwners) {
+        for (const routeId of toPortOwners) {
+          if (this.problem.routeNet[routeId] !== routeNetId) {
+            owners.push(routeId)
+          }
+        }
+      }
       if (owners.length === 0) {
         throw new Error(
-          `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+          `SelectiveReripTinyHyperGraphSolver: port ${toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
         )
       }
-      resources.push({ kind: "port", portId: params.toPortId, owners })
+      resources.push({ kind: "port", portId: toPortId, owners })
     }
 
     const sameLayerIntersectionOwners = this.getHardBlockedCrossingOwners(
-      params.regionId,
-      params.fromPortId,
-      params.toPortId,
+      regionId,
+      fromPortId,
+      toPortId,
+      crossingGeometryByRegion,
     )
     if (sameLayerIntersectionOwners.length > 0) {
       resources.push({
         kind: "same_layer_intersection",
-        regionId: params.regionId,
-        fromPortId: params.fromPortId,
-        toPortId: params.toPortId,
+        regionId,
+        fromPortId,
+        toPortId,
         owners: sameLayerIntersectionOwners,
       })
     }
@@ -646,6 +674,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     regionId: RegionId,
     fromPortId: PortId,
     toPortId: PortId,
+    crossingGeometryByRegion: Map<RegionId, CommittedCrossingGeometry[]>,
   ): RouteId[] {
     if (!this.isKnownSingleLayerRegion(regionId)) return []
 
@@ -655,64 +684,62 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         "SelectiveReripTinyHyperGraphSolver: crossing ownership requires a current route net",
       )
     }
-    const owners = new Set<RouteId>()
-    for (const [ownerRouteId, ownerFromPortId, ownerToPortId] of this.state
-      .regionSegments[regionId] ?? []) {
-      if (this.problem.routeNet[ownerRouteId] === routeNetId) continue
-      if (
-        this.segmentsCrossOnSameLayer(
+    let committed = crossingGeometryByRegion.get(regionId)
+    if (!committed) {
+      committed = []
+      for (const [ownerRouteId, ownerFromPortId, ownerToPortId] of this.state
+        .regionSegments[regionId] ?? []) {
+        if (this.problem.routeNet[ownerRouteId] === routeNetId) continue
+        const geometry = this.populateSegmentGeometryScratch(
           regionId,
-          fromPortId,
-          toPortId,
           ownerFromPortId,
           ownerToPortId,
         )
+        committed.push({
+          ownerRouteId,
+          lesserAngle: geometry.lesserAngle,
+          greaterAngle: geometry.greaterAngle,
+          layerMask: geometry.layerMask,
+        })
+      }
+      crossingGeometryByRegion.set(regionId, committed)
+    }
+    const owners: RouteId[] = []
+    if (committed.length === 0) return owners
+    const first = this.populateSegmentGeometryScratch(
+      regionId,
+      fromPortId,
+      toPortId,
+    )
+    const firstLesserAngle = first.lesserAngle
+    const firstGreaterAngle = first.greaterAngle
+    const firstLayerMask = first.layerMask
+    for (const second of committed) {
+      const ownerRouteId = second.ownerRouteId
+      if ((firstLayerMask & second.layerMask) === 0) continue
+      if (
+        firstLesserAngle === second.lesserAngle ||
+        firstLesserAngle === second.greaterAngle ||
+        firstGreaterAngle === second.lesserAngle ||
+        firstGreaterAngle === second.greaterAngle
       ) {
-        owners.add(ownerRouteId)
+        continue
+      }
+      const secondLesserInsideFirst =
+        firstLesserAngle < second.lesserAngle &&
+        second.lesserAngle < firstGreaterAngle
+      const secondGreaterInsideFirst =
+        firstLesserAngle < second.greaterAngle &&
+        second.greaterAngle < firstGreaterAngle
+      if (
+        secondLesserInsideFirst !== secondGreaterInsideFirst &&
+        !owners.includes(ownerRouteId)
+      ) {
+        owners.push(ownerRouteId)
       }
     }
 
-    return [...owners]
-  }
-
-  private segmentsCrossOnSameLayer(
-    regionId: RegionId,
-    firstFromPortId: PortId,
-    firstToPortId: PortId,
-    secondFromPortId: PortId,
-    secondToPortId: PortId,
-  ): boolean {
-    const first = {
-      ...this.populateSegmentGeometryScratch(
-        regionId,
-        firstFromPortId,
-        firstToPortId,
-      ),
-    }
-    const second = {
-      ...this.populateSegmentGeometryScratch(
-        regionId,
-        secondFromPortId,
-        secondToPortId,
-      ),
-    }
-    if ((first.layerMask & second.layerMask) === 0) return false
-    if (
-      first.lesserAngle === second.lesserAngle ||
-      first.lesserAngle === second.greaterAngle ||
-      first.greaterAngle === second.lesserAngle ||
-      first.greaterAngle === second.greaterAngle
-    ) {
-      return false
-    }
-
-    const secondLesserInsideFirst =
-      first.lesserAngle < second.lesserAngle &&
-      second.lesserAngle < first.greaterAngle
-    const secondGreaterInsideFirst =
-      first.lesserAngle < second.greaterAngle &&
-      second.greaterAngle < first.greaterAngle
-    return secondLesserInsideFirst !== secondGreaterInsideFirst
+    return owners
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
