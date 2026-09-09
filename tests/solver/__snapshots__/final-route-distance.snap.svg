@@ -1,0 +1,101 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="0,0 5,4" data-type="line" data-label="route: route
+region: region-1
+z: 0" points="41.39650872817958,431.0224438902743 320.6982543640898,207.58104738154614" fill="none" stroke="hsla(279, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="5,4 10,0" data-type="line" data-label="route: route
+region: region-4
+z: 0" points="320.6982543640898,207.58104738154614 600,431.0224438902743" fill="none" stroke="hsla(279, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><rect data-type="rect" data-label="region: region-0
+net: 0
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.017901785714285717"/></g><g><rect data-type="rect" data-label="region: region-1
+net: free
+cost: NaN
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(NaN, NaN, NaN, NaN)" stroke="black" stroke-width="0.017901785714285717"/></g><g><rect data-type="rect" data-label="region: region-2
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.017901785714285717"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.017901785714285717"/></g><g><rect data-type="rect" data-label="region: region-4
+net: free
+cost: NaN
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(NaN, NaN, NaN, NaN)" stroke="black" stroke-width="0.017901785714285717"/></g><g><rect data-type="rect" data-label="region: region-5
+net: 0
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.00000000000003" y="429.6259351620948" width="2.7930174563591095" height="2.7930174563590526" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.017901785714285717"/></g><g><circle data-type="point" data-label="route: route
+net: 0
+endpoint: start
+port: start
+z: 0" data-x="0" data-y="0" cx="41.39650872817958" cy="431.0224438902743" r="3" fill="hsla(279, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route
+net: 0
+endpoint: end
+port: end
+z: 0" data-x="10" data-y="0" cx="600" cy="431.0224438902743" r="3" fill="hsla(279, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route
+port: start
+net: 0
+z: 0" data-x="0" data-y="0" cx="41.39650872817958" cy="431.0224438902743" r="3" fill="hsla(279, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route
+port: short
+net: 0
+z: 0" data-x="5" data-y="4" cx="320.6982543640898" cy="207.58104738154614" r="3" fill="hsla(279, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route
+port: end
+net: 0
+z: 0" data-x="10" data-y="0" cx="600" cy="431.0224438902743" r="3" fill="hsla(279, 70%, 50%, 1)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '640');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '640');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":55.86034912718204,"c":0,"e":41.39650872817958,"b":0,"d":-55.86034912718204,"f":431.0224438902743};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e;
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>

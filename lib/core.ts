@@ -1780,8 +1780,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    const dx =
+      this.topology.portX[currentCandidate.portId] -
+      this.topology.portX[neighborPortId]
+    const dy =
+      this.topology.portY[currentCandidate.portId] -
+      this.topology.portY[neighborPortId]
+    return currentCandidate.g + Math.hypot(dx, dy) * this.DISTANCE_TO_COST
   }
 }
