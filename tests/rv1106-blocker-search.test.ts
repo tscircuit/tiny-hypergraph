@@ -6,7 +6,7 @@ import {
 } from "lib/find-distinct-owner-blocker-path"
 
 // Captured from the remaining-net phase of the 50 mm RV1106 board.
-// Full board context: fixtures/rv1106-full-board.svg (partially routed).
+// Full board snapshot: solver/__snapshots__/rv1106-full-board.snap.svg.
 // Run with `bun test tests/rv1106-blocker-search.test.ts` to compare timings.
 test("reproduces the RV1106 distinct-owner blocker search", async () => {
   const compressed = await Bun.file(
