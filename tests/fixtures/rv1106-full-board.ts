@@ -8,8 +8,19 @@ import {
 } from "lib/index"
 import { applyInitialAssignments } from "lib/initialAssignments"
 
-// Restore the preloaded assignments after a global rerip.
+// Matches the autorouter's stable-initial-assignment subclass at 2d4ebf7.
 class RV1106Solver extends SelectiveReripTinyHyperGraphSolver {
+  private initialAssignmentRouteIds?: ReadonlySet<number>
+
+  protected override getRouteIdsPreferredForPreservation(): ReadonlySet<number> {
+    if (!this.initialAssignmentRouteIds) {
+      this.initialAssignmentRouteIds = new Set(
+        (this.problem.initialAssignments ?? []).map(({ routeId }) => routeId),
+      )
+    }
+    return this.initialAssignmentRouteIds
+  }
+
   override resetRoutingStateForRerip(): void {
     super.resetRoutingStateForRerip()
     if (!this.problem.initialAssignments?.length) return
