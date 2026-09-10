@@ -18,7 +18,7 @@ RV1106_FULL_REPRO=1 bun test tests/solver/rv1106-full-board.test.ts
 
 In the repro PR, the shared snapshot shows the initial graph. The stacked fix PR
 refreshes that same snapshot after running the solver. The test is opt-in because
-the full search can take many minutes. `full-board-graph.png` previews that SVG.
+the full search can take many minutes. The [full-board SVG](../../solver/__snapshots__/rv1106-full-board.snap.svg) is the single graph snapshot.
 `partial-board.png` provides PCB component context; it is not a completed PCB.
 
 The fixture preserves typed arrays and non-finite numeric options. Its helper
