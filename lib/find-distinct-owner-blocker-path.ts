@@ -135,6 +135,7 @@ const labelDominates = <TState, TStateKey, TOwner, THopData>(
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): boolean => {
   if (left.distance > right.distance) return false
+  // Every owner in left must also be present in right.
   return (left.ownerMask & right.ownerMask) === left.ownerMask
 }
 
