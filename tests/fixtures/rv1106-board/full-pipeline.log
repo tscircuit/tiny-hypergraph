@@ -1,0 +1,41 @@
+{"elapsedMs":38492.134584,"iterations":240657,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":76738.26516699999,"iterations":443392,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":87371.557375,"iterations":593653,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":97378.839625,"iterations":692019,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":140841.745334,"iterations":742079,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":150943.44024999999,"iterations":810045,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":165523.991084,"iterations":885977,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":188880.751292,"iterations":966182,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":265775.46141700004,"iterations":973416,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":282825.20375000004,"iterations":1031786,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":308816.11887500004,"iterations":1184449,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":381491.45525,"iterations":1255574,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":418959.953042,"iterations":1485204,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":489959.27520900004,"iterations":1560404,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":567605.5468339999,"iterations":1605471,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":598700.806875,"iterations":1721681,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":675347.591625,"iterations":1846783,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":699068.169792,"iterations":1946678,"stage":"TinyHypergraphPortPointPathingSolver","progress":0.4583333333333333}
+{"elapsedMs":709068.230167,"iterations":2039189,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":719068.2341669999,"iterations":2312749,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":729068.256209,"iterations":2572403,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":739068.498625,"iterations":2788780,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":749068.576959,"iterations":2985641,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":759068.577125,"iterations":3134434,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":769068.768584,"iterations":3309832,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":779068.795875,"iterations":3446231,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":789069.0447089999,"iterations":3553121,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":799234.8265419999,"iterations":3765479,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":809234.8373339999,"iterations":4232321,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":819234.902584,"iterations":4290371,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":829235.2678339999,"iterations":4370113,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":839466.7106669999,"iterations":4619964,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":849562.186959,"iterations":4717275,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":859648.9453339999,"iterations":4744294,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":869661.853834,"iterations":4873684,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+{"elapsedMs":879662.031125,"iterations":4982635,"stage":"Pipeline9HighDensitySolver","progress":0.5416666666666666}
+Could not find longest segment for source_net_10_mst37 while trying to reach 6 segments.
+Could not find longest segment for source_net_10_mst37 while trying to reach 6 segments.
+Could not find longest segment for source_net_10_mst37 while trying to reach 6 segments.
+Could not find longest segment for source_net_10_mst37 while trying to reach 6 segments.
+{"elapsedMs":890089.213792,"iterations":5085792,"stage":"Pipeline4HighDensityRepairSolver","progress":0.625}

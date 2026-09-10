@@ -1,0 +1,7 @@
+{
+  "status": "external_timeout",
+  "deadlineSeconds": 900,
+  "lastStage": "Pipeline4HighDensityRepairSolver",
+  "lastLoggedIterations": 5085792,
+  "pcbRoutingCompleted": false
+}

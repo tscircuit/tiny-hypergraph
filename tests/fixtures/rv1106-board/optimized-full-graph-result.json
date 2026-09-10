@@ -1,0 +1,248 @@
+{
+  "elapsedMs": 641000.9032079999,
+  "iterations": 2000000,
+  "maxIterations": 2000000,
+  "solved": true,
+  "failed": false,
+  "error": null,
+  "selectiveRerip": {
+    "selectiveRipCount": 498,
+    "selectivelyRippedRouteCount": 640,
+    "globalReripCount": 17,
+    "alternateBlockerSearchCount": 12,
+    "alternateOwnerCount": 11,
+    "failedOwnerPairCount": 43,
+    "maxFailedOwnerPairCount": 1,
+    "failedOwnerPairs": [
+      {
+        "failedRouteId": 80,
+        "ownerRouteId": 234,
+        "count": 1
+      },
+      {
+        "failedRouteId": 89,
+        "ownerRouteId": 181,
+        "count": 1
+      },
+      {
+        "failedRouteId": 91,
+        "ownerRouteId": 137,
+        "count": 1
+      },
+      {
+        "failedRouteId": 93,
+        "ownerRouteId": 152,
+        "count": 1
+      },
+      {
+        "failedRouteId": 96,
+        "ownerRouteId": 122,
+        "count": 1
+      },
+      {
+        "failedRouteId": 97,
+        "ownerRouteId": 147,
+        "count": 1
+      },
+      {
+        "failedRouteId": 98,
+        "ownerRouteId": 216,
+        "count": 1
+      },
+      {
+        "failedRouteId": 99,
+        "ownerRouteId": 141,
+        "count": 1
+      },
+      {
+        "failedRouteId": 99,
+        "ownerRouteId": 161,
+        "count": 1
+      },
+      {
+        "failedRouteId": 103,
+        "ownerRouteId": 163,
+        "count": 1
+      },
+      {
+        "failedRouteId": 103,
+        "ownerRouteId": 174,
+        "count": 1
+      },
+      {
+        "failedRouteId": 107,
+        "ownerRouteId": 149,
+        "count": 1
+      },
+      {
+        "failedRouteId": 113,
+        "ownerRouteId": 197,
+        "count": 1
+      },
+      {
+        "failedRouteId": 127,
+        "ownerRouteId": 84,
+        "count": 1
+      },
+      {
+        "failedRouteId": 128,
+        "ownerRouteId": 201,
+        "count": 1
+      },
+      {
+        "failedRouteId": 135,
+        "ownerRouteId": 207,
+        "count": 1
+      },
+      {
+        "failedRouteId": 136,
+        "ownerRouteId": 164,
+        "count": 1
+      },
+      {
+        "failedRouteId": 137,
+        "ownerRouteId": 97,
+        "count": 1
+      },
+      {
+        "failedRouteId": 137,
+        "ownerRouteId": 180,
+        "count": 1
+      },
+      {
+        "failedRouteId": 140,
+        "ownerRouteId": 102,
+        "count": 1
+      },
+      {
+        "failedRouteId": 141,
+        "ownerRouteId": 173,
+        "count": 1
+      },
+      {
+        "failedRouteId": 146,
+        "ownerRouteId": 179,
+        "count": 1
+      },
+      {
+        "failedRouteId": 148,
+        "ownerRouteId": 99,
+        "count": 1
+      },
+      {
+        "failedRouteId": 150,
+        "ownerRouteId": 107,
+        "count": 1
+      },
+      {
+        "failedRouteId": 150,
+        "ownerRouteId": 127,
+        "count": 1
+      },
+      {
+        "failedRouteId": 161,
+        "ownerRouteId": 146,
+        "count": 1
+      },
+      {
+        "failedRouteId": 164,
+        "ownerRouteId": 71,
+        "count": 1
+      },
+      {
+        "failedRouteId": 172,
+        "ownerRouteId": 136,
+        "count": 1
+      },
+      {
+        "failedRouteId": 174,
+        "ownerRouteId": 159,
+        "count": 1
+      },
+      {
+        "failedRouteId": 181,
+        "ownerRouteId": 91,
+        "count": 1
+      },
+      {
+        "failedRouteId": 185,
+        "ownerRouteId": 94,
+        "count": 1
+      },
+      {
+        "failedRouteId": 195,
+        "ownerRouteId": 140,
+        "count": 1
+      },
+      {
+        "failedRouteId": 196,
+        "ownerRouteId": 121,
+        "count": 1
+      },
+      {
+        "failedRouteId": 197,
+        "ownerRouteId": 93,
+        "count": 1
+      },
+      {
+        "failedRouteId": 198,
+        "ownerRouteId": 124,
+        "count": 1
+      },
+      {
+        "failedRouteId": 202,
+        "ownerRouteId": 100,
+        "count": 1
+      },
+      {
+        "failedRouteId": 203,
+        "ownerRouteId": 214,
+        "count": 1
+      },
+      {
+        "failedRouteId": 205,
+        "ownerRouteId": 202,
+        "count": 1
+      },
+      {
+        "failedRouteId": 211,
+        "ownerRouteId": 194,
+        "count": 1
+      },
+      {
+        "failedRouteId": 211,
+        "ownerRouteId": 205,
+        "count": 1
+      },
+      {
+        "failedRouteId": 212,
+        "ownerRouteId": 213,
+        "count": 1
+      },
+      {
+        "failedRouteId": 214,
+        "ownerRouteId": 177,
+        "count": 1
+      },
+      {
+        "failedRouteId": 216,
+        "ownerRouteId": 129,
+        "count": 1
+      }
+    ],
+    "lastDirectOwnerRouteIds": [
+      107,
+      127
+    ],
+    "lastRepeatedOwnerRouteIds": [],
+    "lastAlternateOwnerRouteIds": [],
+    "lastRippedRouteIds": [
+      107,
+      127
+    ],
+    "lastRelaxedSearchExpandedLabelCount": 1335,
+    "lastAlternateSearchExpandedLabelCount": 0,
+    "lastFailedRouteId": 150,
+    "globalReripReason": "failed_owner_cycle"
+  }
+}
