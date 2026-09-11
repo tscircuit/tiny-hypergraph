@@ -7,10 +7,11 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import type { PortId, RouteId } from "./types"
+import type { NetId, PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
+type SerializedPortId = SerializedPort["portId"]
 
 export const DUPLICATE_PORT_PROXIMITY = 0.05
 
@@ -179,6 +180,23 @@ const getFallbackBoundaryDirection = (
 ): Point => {
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
+  const region1Bounds = getRegionBounds(regionById.get(sourcePort.region1Id))
+  const region2Bounds = getRegionBounds(regionById.get(sourcePort.region2Id))
+  const sharedWidth =
+    Math.min(region1Bounds.maxX, region2Bounds.maxX) -
+    Math.max(region1Bounds.minX, region2Bounds.minX)
+  const sharedHeight =
+    Math.min(region1Bounds.maxY, region2Bounds.maxY) -
+    Math.max(region1Bounds.minY, region2Bounds.minY)
+
+  // Neighboring rectangles can have offset centers. Their shared boundary
+  // is axis-aligned even when the line between their centers is diagonal.
+  if (Math.abs(sharedWidth) <= EPSILON && sharedHeight > EPSILON) {
+    return { x: 0, y: region2Center.x >= region1Center.x ? 1 : -1 }
+  }
+  if (Math.abs(sharedHeight) <= EPSILON && sharedWidth > EPSILON) {
+    return { x: region2Center.y >= region1Center.y ? -1 : 1, y: 0 }
+  }
   const perpendicular = normalize({
     x: -(region2Center.y - region1Center.y),
     y: region2Center.x - region1Center.x,
@@ -324,14 +342,14 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  private getPortUseCounts(): Map<string, number> {
+  private getPortUseCounts(): Map<SerializedPortId, number> {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
     if (this.options.useSerializedPortPenalties === false) {
       problem.portPenalty = undefined
     }
-    const portUseCounts = new Map<string, number>()
+    const netsByPortId = new Map<SerializedPortId, Set<NetId>>()
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
@@ -352,14 +370,16 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
         const serializedPortId = getSerializedPortId(topology, portId)
-        portUseCounts.set(
-          serializedPortId,
-          (portUseCounts.get(serializedPortId) ?? 0) + 1,
-        )
+        const nets = netsByPortId.get(serializedPortId) ?? new Set<NetId>()
+        nets.add(problem.routeNet[routeId]!)
+        netsByPortId.set(serializedPortId, nets)
       }
     }
 
-    return portUseCounts
+    // The router owns ports by net, so branches of one net share capacity.
+    return new Map(
+      [...netsByPortId].map(([portId, nets]) => [portId, nets.size]),
+    )
   }
 
   private duplicateCongestedPorts(
