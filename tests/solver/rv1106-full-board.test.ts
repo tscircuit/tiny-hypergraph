@@ -11,7 +11,10 @@ test.skipIf(process.env.RV1106_FULL_REPRO !== "1")(
     expect(solver.topology.regionCount).toBe(2527)
     expect(solver.problem.routeCount).toBe(244)
     expect(solver.problem.initialAssignments).toHaveLength(90)
-    expect(solver.iterations).toBe(0)
+    solver.solve()
+    expect(solver.solved).toBe(true)
+    expect(solver.failed).toBe(false)
+    expect(solver.state.unroutedRoutes).toHaveLength(0)
     expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
       import.meta.path,
     )
