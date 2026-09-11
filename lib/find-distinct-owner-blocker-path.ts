@@ -50,8 +50,8 @@ export type DistinctOwnerBlockerSearchResult<
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
-  owners: Set<TOwner>
   ownerMask: bigint
+  ownerCount: number
   distance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
@@ -63,7 +63,7 @@ const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
+  const ownerCountDifference = left.ownerCount - right.ownerCount
   if (ownerCountDifference !== 0) return ownerCountDifference
 
   const distanceDifference = left.distance - right.distance
@@ -154,11 +154,15 @@ const reconstructSuccessfulSearch = <TState, TStateKey, TOwner, THopData>(
 
   states.reverse()
   hops.reverse()
+  const owners = new Set<TOwner>()
+  for (const hop of hops) {
+    for (const owner of hop.owners ?? []) owners.add(owner)
+  }
   return {
     found: true,
     states,
     hops,
-    owners: new Set(goal.owners),
+    owners,
     distance: goal.distance,
     expandedLabelCount,
   }
@@ -207,8 +211,8 @@ export const findDistinctOwnerBlockerPath = <
   const startLabel: SearchLabel<TState, TStateKey, TOwner, THopData> = {
     state: options.start,
     stateKey: options.getStateKey(options.start),
-    owners: new Set<TOwner>(),
     ownerMask: 0n,
+    ownerCount: 0,
     distance: 0,
     parent: null,
     incomingHop: null,
@@ -238,16 +242,17 @@ export const findDistinctOwnerBlockerPath = <
         )
       }
 
-      const owners = new Set(current.owners)
       let ownerMask = current.ownerMask
+      let ownerCount = current.ownerCount
       for (const owner of hop.owners ?? []) {
-        owners.add(owner)
         let ownerBit = ownerBits.get(owner)
         if (ownerBit === undefined) {
           ownerBit = 1n << BigInt(ownerBits.size)
           ownerBits.set(owner, ownerBit)
         }
+        if ((ownerMask & ownerBit) !== 0n) continue
         ownerMask |= ownerBit
+        ownerCount++
       }
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
@@ -256,8 +261,8 @@ export const findDistinctOwnerBlockerPath = <
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
         stateKey: options.getStateKey(hop.state),
-        owners,
         ownerMask,
+        ownerCount,
         distance,
         parent: current,
         incomingHop: hop,
