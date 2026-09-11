@@ -248,6 +248,23 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ...repeatedOwnerRouteIds,
       ...cyclicOwnerRouteIds,
     ])
+    // Alternate blockers also participate in cycles. Avoid every owner that
+    // would repeat a failed displacement, not only the direct path's owners.
+    for (
+      let ownerRouteId = 0;
+      ownerRouteId < this.problem.routeCount;
+      ownerRouteId++
+    ) {
+      if (ownerRouteId === failedRouteId) continue
+      const failureCount =
+        this.failedOwnerPairCounts.get(failedRouteId)?.get(ownerRouteId) ?? 0
+      if (
+        failureCount >= 2 ||
+        this.hasFailedOwnerPath(ownerRouteId, failedRouteId)
+      ) {
+        ownersToAvoid.add(ownerRouteId)
+      }
+    }
 
     let alternatePath:
       | DistinctOwnerBlockerSearchResult<
@@ -295,6 +312,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
     )
+    for (const ownerRouteId of alternateOnlyOwnerRouteIds) {
+      this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+    }
     if (
       this.selectiveReripCongestionUpdateCount <
       MAX_SELECTIVE_RERIP_CONGESTION_UPDATES

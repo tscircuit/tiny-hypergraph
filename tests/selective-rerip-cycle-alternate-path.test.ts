@@ -94,10 +94,28 @@ test("a rerip cycle uses another occupied channel without restarting completed r
     MAX_ITERATIONS: 20_000,
     GREEDY_FINAL_ROUTE_ITERS: 0,
   })
-  solver.solve()
+  let checkedAlternateRipCount = 0
+  let lastSelectiveRipCount = 0
+  while (!solver.solved && !solver.failed) {
+    solver.step()
+    const stats = solver.getSelectiveReripStats()
+    if (stats.selectiveRipCount === lastSelectiveRipCount) continue
+    lastSelectiveRipCount = stats.selectiveRipCount
+    for (const ownerRouteId of stats.lastAlternateOwnerRouteIds) {
+      checkedAlternateRipCount += 1
+      expect(
+        stats.failedOwnerPairs.some(
+          (pair) =>
+            pair.failedRouteId === stats.lastFailedRouteId &&
+            pair.ownerRouteId === ownerRouteId,
+        ),
+      ).toBe(true)
+    }
+  }
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   expect(solver.getSelectiveReripStats().globalReripCount).toBe(0)
+  expect(checkedAlternateRipCount).toBeGreaterThan(0)
   expect(
     solver.getSelectiveReripStats().alternateBlockerSearchCount,
   ).toBeGreaterThan(0)
