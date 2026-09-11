@@ -73,9 +73,10 @@ const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
  * as a normal route with temporary endpoints, so all existing cost and hard
  * constraint checks continue to apply.
  *
- * Outside-in frontier search is implemented by this class separately from the
- * partial-rip state transition. Initial whole routes retain the established
- * one-ended search; the bounded two-ended search applies to reopened spans.
+ * Outside-in frontier search applies to whole routes and reopened spans. Only
+ * reopened spans use the local distance bound; whole routes are bounded by the
+ * solver's iteration budget. Either frontier can detect a blocked endpoint
+ * without flooding the graph from the other end.
  */
 export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
   protected partialRipRoutePlans = new Map<RouteId, PartialRipRoutePlan>()
@@ -729,10 +730,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         connectorDx * connectorDx + connectorDy * connectorDy,
       )
       if (
+        this.state.currentRouteId !== undefined &&
+        this.partialRipRoutePlans.has(this.state.currentRouteId) &&
         forwardCandidate.travelDistance +
           reverseCandidate.travelDistance +
           connectorDistance >
-        this.OUTSIDE_IN_MAX_DISTANCE * 2
+          this.OUTSIDE_IN_MAX_DISTANCE * 2
       ) {
         return undefined
       }
@@ -884,7 +887,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         segmentDx * segmentDx + segmentDy * segmentDy,
       )
       const travelDistance = candidate.travelDistance + segmentDistance
-      if (travelDistance > this.OUTSIDE_IN_MAX_DISTANCE) {
+      if (
+        this.partialRipRoutePlans.has(search.routeId) &&
+        travelDistance > this.OUTSIDE_IN_MAX_DISTANCE
+      ) {
         search.distanceLimitHit = true
         this.outsideInDistancePruneCount += 1
         continue
@@ -959,16 +965,6 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       return
     }
 
-    const routeIdToAdvance =
-      this.state.currentRouteId ?? this.state.unroutedRoutes[0]
-    if (
-      routeIdToAdvance !== undefined &&
-      !this.partialRipRoutePlans.has(routeIdToAdvance)
-    ) {
-      super._step()
-      return
-    }
-
     if (this.oneSidedFallbackRouteId !== undefined) {
       super._step()
       return
@@ -1011,10 +1007,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       }
     }
 
+    const forwardExhausted = search.forward.queue.length === 0
+    const reverseExhausted = search.reverse.queue.length === 0
     if (
-      !expanded &&
-      search.forward.queue.length === 0 &&
-      search.reverse.queue.length === 0
+      (!search.distanceLimitHit && (forwardExhausted || reverseExhausted)) ||
+      (!expanded && forwardExhausted && reverseExhausted)
     ) {
       if (this.commitBestOutsideInJoin()) return
       this.outsideInRouteSearch = undefined

@@ -222,11 +222,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
       if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
     }
-    if (
-      directOwnerRouteIds.some((ownerRouteId) =>
-        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
-      )
-    ) {
+    const cyclicOwnerRouteIds = directOwnerRouteIds.filter((ownerRouteId) =>
+      this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
+    )
+    // Before the first complete solution, keep completed routes while
+    // looking for another blocker. Quality retries can use the established
+    // global rerip once a complete solution is available to restore.
+    if (cyclicOwnerRouteIds.length > 0 && this.bestSolvedStateSnapshot) {
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
       this.selectiveReripStats.lastFailedRouteId = failedRouteId
@@ -242,6 +244,27 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       this.publishSelectiveReripStats()
       return
     }
+    const ownersToAvoid = new Set([
+      ...repeatedOwnerRouteIds,
+      ...cyclicOwnerRouteIds,
+    ])
+    // Alternate blockers also participate in cycles. Avoid every owner that
+    // would repeat a failed displacement, not only the direct path's owners.
+    for (
+      let ownerRouteId = 0;
+      ownerRouteId < this.problem.routeCount;
+      ownerRouteId++
+    ) {
+      if (ownerRouteId === failedRouteId) continue
+      const failureCount =
+        this.failedOwnerPairCounts.get(failedRouteId)?.get(ownerRouteId) ?? 0
+      if (
+        failureCount >= 2 ||
+        this.hasFailedOwnerPath(ownerRouteId, failedRouteId)
+      ) {
+        ownersToAvoid.add(ownerRouteId)
+      }
+    }
 
     let alternatePath:
       | DistinctOwnerBlockerSearchResult<
@@ -250,14 +273,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           RelaxedSearchHopData
         >
       | undefined
-    if (repeatedOwnerRouteIds.length > 0) {
+    if (ownersToAvoid.size > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
-      alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
-        new Set(repeatedOwnerRouteIds),
-      )
+      alternatePath =
+        this.findRelaxedBlockerPathPreferringPreservedRoutes(ownersToAvoid)
       if (!alternatePath.found) {
         this.selectiveReripStats.globalReripCount += 1
-        this.selectiveReripStats.globalReripReason = alternatePath.reason
+        this.selectiveReripStats.globalReripReason =
+          cyclicOwnerRouteIds.length > 0
+            ? "failed_owner_cycle"
+            : alternatePath.reason
         this.selectiveReripStats.lastFailedRouteId = failedRouteId
         this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
         this.selectiveReripStats.lastRepeatedOwnerRouteIds =
@@ -268,6 +293,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           directPath.expandedLabelCount
         this.selectiveReripStats.lastAlternateSearchExpandedLabelCount =
           alternatePath.expandedLabelCount
+        if (cyclicOwnerRouteIds.length > 0) this.failedOwnerPairCounts.clear()
         super.onOutOfCandidates()
         this.publishSelectiveReripStats()
         return
@@ -286,6 +312,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
     )
+    for (const ownerRouteId of alternateOnlyOwnerRouteIds) {
+      this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+    }
     if (
       this.selectiveReripCongestionUpdateCount <
       MAX_SELECTIVE_RERIP_CONGESTION_UPDATES

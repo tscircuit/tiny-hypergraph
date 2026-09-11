@@ -64,6 +64,10 @@ from both retained ends, with a hard geometric travel limit on each frontier;
 if the frontiers cannot meet within that limit, the span safely falls back to
 the regular one-ended search.
 
+Whole routes also search from both endpoints, without the local span's distance
+limit. If either unrestricted frontier exhausts its candidates, reripping can
+begin immediately instead of exploring the remaining graph from the other end.
+
 The behavior can be tuned through `TinyHyperGraphSolverOptions`:
 
 ```ts
