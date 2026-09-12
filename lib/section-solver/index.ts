@@ -1,17 +1,17 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
 import {
   applyTinyHyperGraphSolverOptions,
   createEmptyRegionIntersectionCache,
   getTinyHyperGraphSolverOptions,
   type RegionCostSummary,
-  TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolution,
-  type TinyHyperGraphTopology,
+  TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
+  type TinyHyperGraphTopology,
 } from "../core"
-import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
 import { shuffle } from "../shuffle"
 import type {
   PortId,
@@ -294,7 +294,10 @@ const getOrderedRoutePath = (
   let currentPortId = startPortId
   let previousPortId: PortId | undefined
 
-  while (currentPortId !== endPortId) {
+  while (
+    currentPortId !== endPortId ||
+    usedSegmentIndices.size < routeSegments.length
+  ) {
     const nextSegments = (segmentsByPort.get(currentPortId) ?? []).filter(
       ({ segmentIndex, fromPortId, toPortId }) => {
         if (usedSegmentIndices.has(segmentIndex)) {
@@ -303,17 +306,31 @@ const getOrderedRoutePath = (
 
         const nextPortId = fromPortId === currentPortId ? toPortId : fromPortId
 
-        return nextPortId !== previousPortId
+        const closesRoute =
+          nextPortId === endPortId &&
+          usedSegmentIndices.size + 1 === routeSegments.length
+
+        return nextPortId !== previousPortId || closesRoute
       },
     )
 
-    if (nextSegments.length !== 1) {
+    const nextSegment =
+      currentPortId === endPortId &&
+      usedSegmentIndices.size === 0 &&
+      nextSegments.length === 2
+        ? nextSegments.toSorted(
+            (left, right) => left.segmentIndex - right.segmentIndex,
+          )[0]
+        : nextSegments.length === 1
+          ? nextSegments[0]
+          : undefined
+
+    if (!nextSegment) {
       throw new Error(
         `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
       )
     }
 
-    const nextSegment = nextSegments[0]!
     const nextPortId =
       nextSegment.fromPortId === currentPortId
         ? nextSegment.toPortId
