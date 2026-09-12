@@ -326,7 +326,8 @@ const getSerializedSolvedRoute = (
   const endPortId = solver.problem.routeEndPort[routeId]
 
   if (startPortId === endPortId && routeSegments.length === 0) {
-    const endpointRegionId = solver.topology.incidentPortRegion[startPortId]?.[0]
+    const endpointRegionId =
+      solver.topology.incidentPortRegion[startPortId]?.[0]
     if (endpointRegionId === undefined) {
       throw new Error(`Route ${routeId} has no endpoint region`)
     }
