@@ -16,6 +16,8 @@ type RelaxedSearchState = {
   nextRegionId: RegionId
 }
 
+type FailedOwnerCycleKey = string
+
 type PortBlockerResource = {
   kind: "port"
   portId: PortId
@@ -160,6 +162,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
+  private readonly rerippedCycleKeys = new Set<FailedOwnerCycleKey>()
+
   private selectiveReripCongestionUpdateCount = 0
 
   constructor(
@@ -226,6 +230,29 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
     const cycleRouteIds = this.getFailedOwnerCycleRouteIds(failedRouteId)
     if (cycleRouteIds.size > 0) {
+      const cycleKey: FailedOwnerCycleKey = [failedRouteId, ...cycleRouteIds]
+        .sort((left, right) => left - right)
+        .join(",")
+      if (this.rerippedCycleKeys.has(cycleKey)) {
+        // A repeated cycle after its members were reopened still depends on
+        // the surrounding assignments. Retain the existing global escape.
+        this.selectiveReripStats.globalReripCount += 1
+        this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
+        this.selectiveReripStats.lastFailedRouteId = failedRouteId
+        this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
+        this.selectiveReripStats.lastRepeatedOwnerRouteIds =
+          repeatedOwnerRouteIds
+        this.selectiveReripStats.lastAlternateOwnerRouteIds = []
+        this.selectiveReripStats.lastRippedRouteIds = []
+        this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
+          directPath.expandedLabelCount
+        this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
+        this.failedOwnerPairCounts.clear()
+        super.onOutOfCandidates()
+        this.publishSelectiveReripStats()
+        return
+      }
+      this.rerippedCycleKeys.add(cycleKey)
       this.selectiveReripStats.cycleReripCount += 1
       // Their old assignments cannot be resolved independently. Reopen the
       // cycle together, retaining all committed routes outside that cycle.
