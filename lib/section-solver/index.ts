@@ -294,20 +294,32 @@ const getOrderedRoutePath = (
   let currentPortId = startPortId
   let previousPortId: PortId | undefined
 
-  while (currentPortId !== endPortId) {
-    const nextSegments = (segmentsByPort.get(currentPortId) ?? []).filter(
-      ({ segmentIndex, fromPortId, toPortId }) => {
-        if (usedSegmentIndices.has(segmentIndex)) {
-          return false
-        }
+  const routeIsCycle = startPortId === endPortId
+  while (
+    currentPortId !== endPortId ||
+    (routeIsCycle && usedSegmentIndices.size === 0)
+  ) {
+    const nextSegments = [
+      ...new Map(
+        (segmentsByPort.get(currentPortId) ?? [])
+          .filter(({ segmentIndex, fromPortId, toPortId }) => {
+            if (usedSegmentIndices.has(segmentIndex)) {
+              return false
+            }
 
-        const nextPortId = fromPortId === currentPortId ? toPortId : fromPortId
+            const nextPortId =
+              fromPortId === currentPortId ? toPortId : fromPortId
 
-        return nextPortId !== previousPortId
-      },
-    )
+            return routeIsCycle || nextPortId !== previousPortId
+          })
+          .map((segment) => [segment.segmentIndex, segment]),
+      ).values(),
+    ].sort((left, right) => left.segmentIndex - right.segmentIndex)
 
-    if (nextSegments.length !== 1) {
+    if (
+      nextSegments.length === 0 ||
+      (nextSegments.length !== 1 && usedSegmentIndices.size > 0)
+    ) {
       throw new Error(
         `Route ${routeId} is not a single ordered path from ${startPortId} to ${endPortId}`,
       )
