@@ -50,6 +50,7 @@ export type SelectiveReripTinyHyperGraphStats = {
   selectiveRipCount: number
   selectivelyRippedRouteCount: number
   globalReripCount: number
+  cycleReripCount: number
   globalReripReason?:
     | "no_path"
     | "expansion_limit"
@@ -74,6 +75,7 @@ const createInitialSelectiveReripStats =
     selectiveRipCount: 0,
     selectivelyRippedRouteCount: 0,
     globalReripCount: 0,
+    cycleReripCount: 0,
     alternateBlockerSearchCount: 0,
     alternateOwnerCount: 0,
     failedOwnerPairCount: 0,
@@ -222,25 +224,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
       if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
     }
-    if (
-      directOwnerRouteIds.some((ownerRouteId) =>
-        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
-      )
-    ) {
-      this.selectiveReripStats.globalReripCount += 1
-      this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
-      this.selectiveReripStats.lastFailedRouteId = failedRouteId
-      this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
-      this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
-      this.selectiveReripStats.lastAlternateOwnerRouteIds = []
-      this.selectiveReripStats.lastRippedRouteIds = []
-      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
-        directPath.expandedLabelCount
-      this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
-      this.failedOwnerPairCounts.clear()
-      super.onOutOfCandidates()
-      this.publishSelectiveReripStats()
-      return
+    const cycleRouteIds = this.getFailedOwnerCycleRouteIds(failedRouteId)
+    if (cycleRouteIds.size > 0) {
+      this.selectiveReripStats.cycleReripCount += 1
+      // Their old assignments cannot be resolved independently. Reopen the
+      // cycle together, retaining all committed routes outside that cycle.
+      this.failedOwnerPairCounts.delete(failedRouteId)
+      for (const routeId of cycleRouteIds) {
+        this.failedOwnerPairCounts.delete(routeId)
+      }
     }
 
     let alternatePath:
@@ -250,7 +242,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           RelaxedSearchHopData
         >
       | undefined
-    if (repeatedOwnerRouteIds.length > 0) {
+    if (cycleRouteIds.size === 0 && repeatedOwnerRouteIds.length > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
       alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
         new Set(repeatedOwnerRouteIds),
@@ -282,6 +274,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       directOwnerRouteIds,
       alternateOwnerRouteIds,
     })
+    for (const routeId of cycleRouteIds) rippedRouteIds.add(routeId)
     this.clearPartialRipPlans(rippedRouteIds)
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
@@ -687,6 +680,23 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
     return false
+  }
+
+  private getFailedOwnerCycleRouteIds(failedRouteId: RouteId): Set<RouteId> {
+    const cycleRouteIds = new Set<RouteId>()
+    const pendingRouteIds = [failedRouteId]
+    const visitedRouteIds = new Set<RouteId>()
+    while (pendingRouteIds.length > 0) {
+      const routeId = pendingRouteIds.pop()!
+      if (visitedRouteIds.has(routeId)) continue
+      visitedRouteIds.add(routeId)
+      if (!this.hasFailedOwnerPath(routeId, failedRouteId)) continue
+      if (routeId !== failedRouteId) cycleRouteIds.add(routeId)
+      pendingRouteIds.push(
+        ...(this.failedOwnerPairCounts.get(routeId)?.keys() ?? []),
+      )
+    }
+    return cycleRouteIds
   }
 
   private publishSelectiveReripStats(): void {
