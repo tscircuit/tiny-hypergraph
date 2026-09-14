@@ -1780,8 +1780,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    // Greedy ordering may ignore finite costs, but must retain the normal
+    // search's hard constraints, including single-layer copper crossings.
+    const candidateCost = super.computeG(currentCandidate, neighborPortId)
+    if (!Number.isFinite(candidateCost)) return Number.POSITIVE_INFINITY
     return currentCandidate.g
   }
 }
