@@ -225,7 +225,11 @@ const getOrderedRoutePath = (
     usedSegmentIndices: Set<number>,
     visitedPortIds: Set<PortId>,
   ): boolean => {
-    if (currentPortId === endPortId) {
+    const isClosedRoute = startPortId === endPortId
+    if (
+      currentPortId === endPortId &&
+      (!isClosedRoute || usedSegmentIndices.size === routeSegments.length)
+    ) {
       return true
     }
 
@@ -237,10 +241,12 @@ const getOrderedRoutePath = (
           ? routeSegment.toPortId
           : routeSegment.fromPortId
 
-      if (visitedPortIds.has(nextPortId)) continue
+      const closesRoute = isClosedRoute && nextPortId === endPortId
+      if (visitedPortIds.has(nextPortId) && !closesRoute) continue
 
       usedSegmentIndices.add(routeSegment.segmentIndex)
-      visitedPortIds.add(nextPortId)
+      const addedVisitedPort = !visitedPortIds.has(nextPortId)
+      if (addedVisitedPort) visitedPortIds.add(nextPortId)
       orderedRegionIds.push(routeSegment.regionId)
       orderedPortIds.push(nextPortId)
 
@@ -252,7 +258,7 @@ const getOrderedRoutePath = (
 
       orderedPortIds.pop()
       orderedRegionIds.pop()
-      visitedPortIds.delete(nextPortId)
+      if (addedVisitedPort) visitedPortIds.delete(nextPortId)
       usedSegmentIndices.delete(routeSegment.segmentIndex)
     }
 
@@ -316,6 +322,47 @@ const getSerializedSolvedRoute = (
   connection: SerializedConnection
   solvedRoute: SerializedSolvedRoute
 } => {
+  const startPortId = solver.problem.routeStartPort[routeId]
+  const endPortId = solver.problem.routeEndPort[routeId]
+
+  if (startPortId === endPortId && routeSegments.length === 0) {
+    const endpointRegionId =
+      solver.topology.incidentPortRegion[startPortId]?.[0]
+    if (endpointRegionId === undefined) {
+      throw new Error(`Route ${routeId} has no endpoint region`)
+    }
+
+    const serializedEndpointRegionId = getSerializedRegionId(
+      solver,
+      endpointRegionId,
+    )
+    const connection = getSerializedConnection(
+      solver,
+      routeId,
+      serializedEndpointRegionId,
+      serializedEndpointRegionId,
+    )
+
+    return {
+      connection,
+      solvedRoute: {
+        connection,
+        path: [
+          {
+            portId: getSerializedPortId(solver, startPortId),
+            g: 0,
+            h: 0,
+            f: 0,
+            hops: 0,
+            ripRequired: false,
+            nextRegionId: connection.endRegionId,
+          },
+        ],
+        requiredRip: false,
+      },
+    }
+  }
+
   const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
     solver,
     routeId,
