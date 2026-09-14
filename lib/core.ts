@@ -764,6 +764,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
