@@ -230,8 +230,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const directOwnerRouteIds = [...directPath.owners]
     const repeatedOwnerRouteIds: RouteId[] = []
     for (const ownerRouteId of directOwnerRouteIds) {
-      const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
-      if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
+      const previousRipCount =
+        this.failedOwnerPairCounts.get(failedRouteId)?.get(ownerRouteId) ?? 0
+      if (previousRipCount > 0) repeatedOwnerRouteIds.push(ownerRouteId)
     }
     const cycleOwnerRouteIds = directOwnerRouteIds.filter((ownerRouteId) =>
       this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
@@ -290,6 +291,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       directOwnerRouteIds,
       alternateOwnerRouteIds,
     })
+    // Cycle preservation follows routes actually displaced, including alternate
+    // owners. Recording a rejected direct path invents dependencies and loses
+    // the relationship that the next displaced route must preserve.
+    for (const ownerRouteId of rippedRouteIds) {
+      this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+    }
     this.clearPartialRipPlans(rippedRouteIds)
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
