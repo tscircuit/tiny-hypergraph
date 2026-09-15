@@ -1,5 +1,6 @@
 import {
   createEmptyRegionIntersectionCache,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
@@ -189,6 +190,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
   }
 
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    return new FinalSelectiveReripTinyHyperGraphSolver(
+      this.topology,
+      this.problem,
+      options,
+    )
+  }
+
   override onOutOfCandidates(): void {
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
@@ -219,28 +230,22 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const directOwnerRouteIds = [...directPath.owners]
     const repeatedOwnerRouteIds: RouteId[] = []
     for (const ownerRouteId of directOwnerRouteIds) {
-      const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
-      if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
+      const previousRipCount =
+        this.failedOwnerPairCounts.get(failedRouteId)?.get(ownerRouteId) ?? 0
+      if (previousRipCount > 0) repeatedOwnerRouteIds.push(ownerRouteId)
     }
-    if (
-      directOwnerRouteIds.some((ownerRouteId) =>
-        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
-      )
-    ) {
-      this.selectiveReripStats.globalReripCount += 1
-      this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
-      this.selectiveReripStats.lastFailedRouteId = failedRouteId
-      this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
-      this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
-      this.selectiveReripStats.lastAlternateOwnerRouteIds = []
-      this.selectiveReripStats.lastRippedRouteIds = []
-      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
-        directPath.expandedLabelCount
-      this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
-      this.failedOwnerPairCounts.clear()
-      super.onOutOfCandidates()
-      this.publishSelectiveReripStats()
-      return
+    const cycleOwnerRouteIds = directOwnerRouteIds.filter((ownerRouteId) =>
+      this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
+    )
+    const forbiddenOwnerRouteIds = new Set(repeatedOwnerRouteIds)
+    if (cycleOwnerRouteIds.length > 0) {
+      // An owner already displaced this route. Look for a different owner
+      // before the existing global cycle escape discards committed routing.
+      for (const ownerRouteId of this.failedOwnerPairCounts.keys()) {
+        if (this.hasFailedOwnerPath(ownerRouteId, failedRouteId)) {
+          forbiddenOwnerRouteIds.add(ownerRouteId)
+        }
+      }
     }
 
     let alternatePath:
@@ -250,14 +255,18 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           RelaxedSearchHopData
         >
       | undefined
-    if (repeatedOwnerRouteIds.length > 0) {
+    if (forbiddenOwnerRouteIds.size > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
       alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
-        new Set(repeatedOwnerRouteIds),
+        forbiddenOwnerRouteIds,
       )
       if (!alternatePath.found) {
         this.selectiveReripStats.globalReripCount += 1
-        this.selectiveReripStats.globalReripReason = alternatePath.reason
+        this.selectiveReripStats.globalReripReason =
+          cycleOwnerRouteIds.length > 0
+            ? "failed_owner_cycle"
+            : alternatePath.reason
+        if (cycleOwnerRouteIds.length > 0) this.failedOwnerPairCounts.clear()
         this.selectiveReripStats.lastFailedRouteId = failedRouteId
         this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
         this.selectiveReripStats.lastRepeatedOwnerRouteIds =
@@ -282,6 +291,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       directOwnerRouteIds,
       alternateOwnerRouteIds,
     })
+    // Cycle preservation follows routes actually displaced, including alternate
+    // owners. Recording a rejected direct path invents dependencies and loses
+    // the relationship that the next displaced route must preserve.
+    for (const ownerRouteId of rippedRouteIds) {
+      this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+    }
     this.clearPartialRipPlans(rippedRouteIds)
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
@@ -715,5 +730,46 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return connectionId === undefined
       ? String(routeId)
       : `${routeId} (${String(connectionId)})`
+  }
+}
+
+class FinalSelectiveReripTinyHyperGraphSolver extends SelectiveReripTinyHyperGraphSolver {
+  private readonly reversedRouteIds = new Set<RouteId>()
+
+  override _setup(): void {
+    // Search from the endpoint with fewer exits. A trapped pad should exhaust
+    // its local pocket before the search floods the open side of the board.
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      const startPortId = this.problem.routeStartPort[routeId]!
+      const endPortId = this.problem.routeEndPort[routeId]!
+      const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
+      const endRegionId = this.getStartingNextRegionId(routeId, endPortId)
+      if (startRegionId === undefined || endRegionId === undefined) {
+        throw new Error(`Route ${routeId} has an endpoint without a region`)
+      }
+      if (
+        this.topology.regionIncidentPorts[endRegionId]!.length <
+        this.topology.regionIncidentPorts[startRegionId]!.length
+      ) {
+        this.reversedRouteIds.add(routeId)
+      }
+    }
+    // The original problem and exported route direction stay unchanged.
+    // Evaluate the heuristic against the selected search endpoint instead.
+    this.USE_LAZY_ROUTE_HEURISTIC = true
+    this.stats.greedyReversedRouteCount = this.reversedRouteIds.size
+    super._setup()
+  }
+
+  protected override getRouteStartPortId(routeId: RouteId): PortId {
+    return this.reversedRouteIds.has(routeId)
+      ? super.getRouteEndPortId(routeId)
+      : super.getRouteStartPortId(routeId)
+  }
+
+  protected override getRouteEndPortId(routeId: RouteId): PortId {
+    return this.reversedRouteIds.has(routeId)
+      ? super.getRouteStartPortId(routeId)
+      : super.getRouteEndPortId(routeId)
   }
 }

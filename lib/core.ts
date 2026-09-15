@@ -747,6 +747,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentCandidate.nextRegionId,
     )
     if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+      this.stats.staleCandidateCount =
+        Number(this.stats.staleCandidateCount ?? 0) + 1
       return
     }
 
@@ -762,6 +764,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -1394,6 +1399,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
+  }
+
   protected tryGreedyFinalRouteAcceptance(): boolean {
     const greedyFinalRouteIters = Math.max(
       0,
@@ -1416,6 +1427,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
+    const attemptStats: Array<Record<string, unknown>> = []
+    this.stats.greedyFinalRouteAttempts = attemptStats
     for (
       let greedyFinalRouteIter = 0;
       greedyFinalRouteIter < greedyFinalRouteIters;
@@ -1428,18 +1441,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = new GreedyFinalRouteSolver(
-        this.topology,
-        this.problem,
-        {
-          ...getTinyHyperGraphSolverOptions(this),
-          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-          GREEDY_FINAL_ROUTE_ITERS: 0,
-          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-          STATIC_REACHABILITY_PRECHECK: false,
-        },
-      )
+      const greedySolver = this.createGreedyFinalRouteSolver({
+        ...getTinyHyperGraphSolverOptions(this),
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+        GREEDY_FINAL_ROUTE_ITERS: 0,
+        MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+        STATIC_REACHABILITY_PRECHECK: false,
+      })
 
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
@@ -1447,6 +1456,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         routeIds,
       )
       greedySolver.solve()
+      attemptStats.push({
+        ...greedySolver.stats,
+        solved: greedySolver.solved,
+        failed: greedySolver.failed,
+        error: greedySolver.error,
+        iterations: greedySolver.iterations,
+        remainingRouteIds:
+          greedySolver.getRemainingRouteIdsForGreedyFinalRoute(),
+      })
 
       if (!greedySolver.solved || greedySolver.failed) {
         continue
@@ -1536,6 +1554,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
     ) {
+      // A later complete round can be worse after congestion-driven rerouting.
+      // Use the same best-complete-state selection as timeout acceptance.
+      this.restoreBestSolvedState()
+      const selectedSummary = this.summarizeSolvedState(this)
+      this.stats = {
+        ...this.stats,
+        maxRegionCost: selectedSummary.maxRegionCost,
+        totalRegionCost: selectedSummary.totalRegionCost,
+        ripCount: state.ripCount,
+      }
       this.solved = true
       return
     }
@@ -1780,8 +1808,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    // Greedy ordering may ignore finite costs, but must retain the normal
+    // search's hard constraints, including single-layer copper crossings.
+    const candidateCost = super.computeG(currentCandidate, neighborPortId)
+    if (!Number.isFinite(candidateCost)) return Number.POSITIVE_INFINITY
     return currentCandidate.g
   }
 }
