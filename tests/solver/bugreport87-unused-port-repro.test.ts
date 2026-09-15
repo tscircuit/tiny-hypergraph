@@ -1,4 +1,5 @@
 import "bun-match-svg"
+import { writeFileSync } from "node:fs"
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { getSvgFromGraphicsObject } from "graphics-debug"
@@ -36,9 +37,23 @@ test(
     }
 
     expect(solver.solved).toBe(true)
-    expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
-      import.meta.path,
+    const svg = getSvgFromGraphicsObject(solver.visualize())
+    writeFileSync(
+      new URL(
+        "./__snapshots__/bugreport87-unused-port-repro.actual.svg",
+        import.meta.url,
+      ),
+      svg,
     )
+    console.log(
+      JSON.stringify({
+        routeCount: problem.routeCount,
+        iterations: solver.iterations,
+        maxRegionCost: solver.getMaxRegionCost(),
+        routingStats: solver.stats,
+      }),
+    )
+    expect(svg).toMatchSvgSnapshot(import.meta.path)
   },
   REPRO_TIMEOUT_MS + 10_000,
 )
