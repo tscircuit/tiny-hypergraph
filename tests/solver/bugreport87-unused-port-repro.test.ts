@@ -37,6 +37,15 @@ test(
     }
 
     expect(solver.solved).toBe(true)
+    expect(solver.failed).toBe(false)
+    const maxRegionCost = Math.max(
+      ...solver.state.regionIntersectionCaches.map(
+        (cache) => cache.existingRegionCost,
+      ),
+    )
+    expect(maxRegionCost).toBeLessThanOrEqual(
+      Number(solver.stats.bestMaxRegionCost) + 1e-9,
+    )
     const svg = getSvgFromGraphicsObject(solver.visualize())
     writeFileSync(
       new URL(
@@ -49,7 +58,7 @@ test(
       JSON.stringify({
         routeCount: problem.routeCount,
         iterations: solver.iterations,
-        maxRegionCost: solver.getMaxRegionCost(),
+        maxRegionCost,
         routingStats: solver.stats,
       }),
     )

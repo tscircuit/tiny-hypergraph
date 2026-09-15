@@ -1554,6 +1554,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
     ) {
+      // A later complete round can be worse after congestion-driven rerouting.
+      // Use the same best-complete-state selection as timeout acceptance.
+      this.restoreBestSolvedState()
+      const selectedSummary = this.summarizeSolvedState(this)
+      this.stats = {
+        ...this.stats,
+        maxRegionCost: selectedSummary.maxRegionCost,
+        totalRegionCost: selectedSummary.totalRegionCost,
+        ripCount: state.ripCount,
+      }
       this.solved = true
       return
     }
