@@ -731,6 +731,45 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 }
 
 class GreedySelectiveReripTinyHyperGraphSolver extends SelectiveReripTinyHyperGraphSolver {
+  private readonly reversedRouteIds = new Set<RouteId>()
+
+  override _setup(): void {
+    // Search from the endpoint with fewer exits. A trapped pad should exhaust
+    // its local pocket before the search floods the open side of the board.
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      const startPortId = this.problem.routeStartPort[routeId]!
+      const endPortId = this.problem.routeEndPort[routeId]!
+      const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
+      const endRegionId = this.getStartingNextRegionId(routeId, endPortId)
+      if (startRegionId === undefined || endRegionId === undefined) {
+        throw new Error(`Route ${routeId} has an endpoint without a region`)
+      }
+      if (
+        this.topology.regionIncidentPorts[endRegionId]!.length <
+        this.topology.regionIncidentPorts[startRegionId]!.length
+      ) {
+        this.reversedRouteIds.add(routeId)
+      }
+    }
+    // The original problem and exported route direction stay unchanged.
+    // Evaluate the heuristic against the selected search endpoint instead.
+    this.USE_LAZY_ROUTE_HEURISTIC = true
+    this.stats.greedyReversedRouteCount = this.reversedRouteIds.size
+    super._setup()
+  }
+
+  protected override getRouteStartPortId(routeId: RouteId): PortId {
+    return this.reversedRouteIds.has(routeId)
+      ? super.getRouteEndPortId(routeId)
+      : super.getRouteStartPortId(routeId)
+  }
+
+  protected override getRouteEndPortId(routeId: RouteId): PortId {
+    return this.reversedRouteIds.has(routeId)
+      ? super.getRouteStartPortId(routeId)
+      : super.getRouteEndPortId(routeId)
+  }
+
   override computeG(
     currentCandidate: Candidate,
     neighborPortId: PortId,
