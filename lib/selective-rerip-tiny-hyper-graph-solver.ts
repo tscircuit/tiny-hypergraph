@@ -234,25 +234,18 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
       if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
     }
-    if (
-      directOwnerRouteIds.some((ownerRouteId) =>
-        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
-      )
-    ) {
-      this.selectiveReripStats.globalReripCount += 1
-      this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
-      this.selectiveReripStats.lastFailedRouteId = failedRouteId
-      this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
-      this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
-      this.selectiveReripStats.lastAlternateOwnerRouteIds = []
-      this.selectiveReripStats.lastRippedRouteIds = []
-      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
-        directPath.expandedLabelCount
-      this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
-      this.failedOwnerPairCounts.clear()
-      super.onOutOfCandidates()
-      this.publishSelectiveReripStats()
-      return
+    const cycleOwnerRouteIds = directOwnerRouteIds.filter((ownerRouteId) =>
+      this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
+    )
+    const forbiddenOwnerRouteIds = new Set(repeatedOwnerRouteIds)
+    if (cycleOwnerRouteIds.length > 0) {
+      // An owner already displaced this route. Look for a different owner
+      // before the existing global cycle escape discards committed routing.
+      for (const ownerRouteId of this.failedOwnerPairCounts.keys()) {
+        if (this.hasFailedOwnerPath(ownerRouteId, failedRouteId)) {
+          forbiddenOwnerRouteIds.add(ownerRouteId)
+        }
+      }
     }
 
     let alternatePath:
@@ -262,14 +255,18 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           RelaxedSearchHopData
         >
       | undefined
-    if (repeatedOwnerRouteIds.length > 0) {
+    if (forbiddenOwnerRouteIds.size > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
       alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
-        new Set(repeatedOwnerRouteIds),
+        forbiddenOwnerRouteIds,
       )
       if (!alternatePath.found) {
         this.selectiveReripStats.globalReripCount += 1
-        this.selectiveReripStats.globalReripReason = alternatePath.reason
+        this.selectiveReripStats.globalReripReason =
+          cycleOwnerRouteIds.length > 0
+            ? "failed_owner_cycle"
+            : alternatePath.reason
+        if (cycleOwnerRouteIds.length > 0) this.failedOwnerPairCounts.clear()
         this.selectiveReripStats.lastFailedRouteId = failedRouteId
         this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
         this.selectiveReripStats.lastRepeatedOwnerRouteIds =
