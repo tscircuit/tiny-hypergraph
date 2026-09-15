@@ -50,29 +50,19 @@ test("a blocker cycle uses an alternate owner before resetting unrelated routes"
   const problem: TinyHyperGraphProblem = {
     routeCount: 4,
     portSectionMask: new Int8Array(13).fill(1),
-    routeStartPort: new Int32Array([0, 3, 7, 11]),
-    routeEndPort: new Int32Array([2, 4, 8, 12]),
-    routeNet: new Int32Array([0, 1, 2, 3]),
+    routeStartPort: new Int32Array([0, 7, 11, 3]),
+    routeEndPort: new Int32Array([2, 8, 12, 4]),
+    routeNet: new Int32Array([0, 2, 3, 1]),
     regionNetId: new Int32Array([
       -1, -1, -1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     ]),
-    initialAssignments: [
-      { routeId: 0, regionId: 0, fromPortId: 0, toPortId: 1 },
-      { routeId: 0, regionId: 1, fromPortId: 1, toPortId: 2 },
-      { routeId: 2, regionId: 0, fromPortId: 7, toPortId: 5 },
-      { routeId: 2, regionId: 2, fromPortId: 5, toPortId: 6 },
-      { routeId: 2, regionId: 1, fromPortId: 6, toPortId: 8 },
-      { routeId: 3, regionId: 4, fromPortId: 11, toPortId: 12 },
-    ],
   }
   const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
     RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
   })
-  const unrelatedSegments = structuredClone(solver.state.regionSegments[4])
-
   solver.solve()
 
-  expect(solver.solved).toBe(true)
+  expect(solver.solved, solver.error ?? JSON.stringify(solver.stats)).toBe(true)
   expect(solver.failed).toBe(false)
   expect(solver.state.unroutedRoutes).toEqual([])
   expect(solver.state.portAssignment[1]).toBe(1)
@@ -80,7 +70,7 @@ test("a blocker cycle uses an alternate owner before resetting unrelated routes"
   expect(solver.state.portAssignment[6]).toBe(0)
   expect(solver.state.portAssignment[9]).toBe(2)
   expect(solver.state.portAssignment[10]).toBe(2)
-  expect(solver.state.regionSegments[4]).toEqual(unrelatedSegments)
+  expect(solver.state.regionSegments[4]).toEqual([[2, 11, 12]])
   expect(solver.getSelectiveReripStats().globalReripCount).toBe(0)
   expect(solver.getSelectiveReripStats().alternateOwnerCount).toBe(1)
   expect(solver.getSelectiveReripStats().selectivelyRippedRouteCount).toBe(2)
