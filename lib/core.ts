@@ -747,6 +747,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentCandidate.nextRegionId,
     )
     if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+      this.stats.staleCandidateCount =
+        Number(this.stats.staleCandidateCount ?? 0) + 1
       return
     }
 
@@ -1425,6 +1427,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
+    const attemptStats: Array<Record<string, unknown>> = []
+    this.stats.greedyFinalRouteAttempts = attemptStats
     for (
       let greedyFinalRouteIter = 0;
       greedyFinalRouteIter < greedyFinalRouteIters;
@@ -1452,6 +1456,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         routeIds,
       )
       greedySolver.solve()
+      attemptStats.push({
+        ...greedySolver.stats,
+        solved: greedySolver.solved,
+        failed: greedySolver.failed,
+        error: greedySolver.error,
+        iterations: greedySolver.iterations,
+        remainingRouteIds:
+          greedySolver.getRemainingRouteIdsForGreedyFinalRoute(),
+      })
 
       if (!greedySolver.solved || greedySolver.failed) {
         continue
