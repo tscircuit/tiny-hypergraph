@@ -74,4 +74,10 @@ test("a blocker cycle uses an alternate owner before resetting unrelated routes"
   expect(solver.getSelectiveReripStats().globalReripCount).toBe(0)
   expect(solver.getSelectiveReripStats().alternateOwnerCount).toBe(1)
   expect(solver.getSelectiveReripStats().selectivelyRippedRouteCount).toBe(2)
+  // B displaced A, then A displaced C through the alternate corridor. The
+  // rejected A -> B choice must not replace that actual A -> C dependency.
+  expect(solver.getSelectiveReripStats().failedOwnerPairs).toEqual([
+    { failedRouteId: 0, ownerRouteId: 1, count: 1 },
+    { failedRouteId: 3, ownerRouteId: 0, count: 1 },
+  ])
 })
