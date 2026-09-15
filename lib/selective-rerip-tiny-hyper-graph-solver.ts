@@ -1,5 +1,7 @@
 import {
   createEmptyRegionIntersectionCache,
+  type Candidate,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
@@ -187,6 +189,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ],
       lastRippedRouteIds: [...this.selectiveReripStats.lastRippedRouteIds],
     }
+  }
+
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    return new GreedySelectiveReripTinyHyperGraphSolver(
+      this.topology,
+      this.problem,
+      options,
+    )
   }
 
   override onOutOfCandidates(): void {
@@ -715,5 +727,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return connectionId === undefined
       ? String(routeId)
       : `${routeId} (${String(connectionId)})`
+  }
+}
+
+class GreedySelectiveReripTinyHyperGraphSolver extends SelectiveReripTinyHyperGraphSolver {
+  override computeG(
+    currentCandidate: Candidate,
+    neighborPortId: PortId,
+  ): number {
+    const candidateCost = super.computeG(currentCandidate, neighborPortId)
+    if (!Number.isFinite(candidateCost)) return Number.POSITIVE_INFINITY
+    return currentCandidate.g
   }
 }
