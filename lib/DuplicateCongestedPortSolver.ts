@@ -38,6 +38,8 @@ interface Point {
 }
 
 const EPSILON = 1e-9
+// Match the precision accepted when capacity-node ports are generated.
+const SHARED_BOUNDARY_TOLERANCE = 1e-4
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -173,25 +175,83 @@ const findNearestPortOnSameBoundary = (
   return nearestPort
 }
 
-const getFallbackBoundaryDirection = (
-  sourcePort: SerializedPort,
-  regionById: Map<string, SerializedRegion>,
-): Point => {
-  const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
-  const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
-  const perpendicular = normalize({
-    x: -(region2Center.y - region1Center.y),
-    y: region2Center.x - region1Center.x,
-  })
-
-  return perpendicular ?? { x: 1, y: 0 }
+interface SharedBoundary {
+  tangentAxis: "x" | "y"
+  min: number
+  max: number
 }
 
-const getDuplicateDirection = (
-  sourcePort: SerializedPort,
-  nearestBoundaryPort: SerializedPort | undefined,
-  regionById: Map<string, SerializedRegion>,
-): Point => {
+interface DuplicatePortPlacement {
+  direction: Point
+  offsetSpan: number
+}
+
+const getSharedBoundary = ({
+  sourcePoint,
+  region1,
+  region2,
+}: {
+  sourcePoint: Point
+  region1: SerializedRegion | undefined
+  region2: SerializedRegion | undefined
+}): SharedBoundary | undefined => {
+  const region1Bounds = getRegionBounds(region1)
+  const region2Bounds = getRegionBounds(region2)
+  if (
+    region1Bounds.maxX <= region1Bounds.minX ||
+    region1Bounds.maxY <= region1Bounds.minY ||
+    region2Bounds.maxX <= region2Bounds.minX ||
+    region2Bounds.maxY <= region2Bounds.minY
+  ) {
+    return undefined
+  }
+
+  const minX = Math.max(region1Bounds.minX, region2Bounds.minX)
+  const maxX = Math.min(region1Bounds.maxX, region2Bounds.maxX)
+  const minY = Math.max(region1Bounds.minY, region2Bounds.minY)
+  const maxY = Math.min(region1Bounds.maxY, region2Bounds.maxY)
+  // Offset region centers do not define the tangent of their shared edge.
+  // Generated ports lie midway across any small rounding gap between faces.
+  if (
+    (Math.abs(region1Bounds.maxX - region2Bounds.minX) <=
+      SHARED_BOUNDARY_TOLERANCE ||
+      Math.abs(region2Bounds.maxX - region1Bounds.minX) <=
+        SHARED_BOUNDARY_TOLERANCE) &&
+    maxY > minY + EPSILON &&
+    Math.abs(sourcePoint.x - (minX + maxX) / 2) <= SHARED_BOUNDARY_TOLERANCE &&
+    sourcePoint.y >= minY &&
+    sourcePoint.y <= maxY
+  ) {
+    return { tangentAxis: "y", min: minY, max: maxY }
+  }
+  if (
+    (Math.abs(region1Bounds.maxY - region2Bounds.minY) <=
+      SHARED_BOUNDARY_TOLERANCE ||
+      Math.abs(region2Bounds.maxY - region1Bounds.minY) <=
+        SHARED_BOUNDARY_TOLERANCE) &&
+    maxX > minX + EPSILON &&
+    Math.abs(sourcePoint.y - (minY + maxY) / 2) <= SHARED_BOUNDARY_TOLERANCE &&
+    sourcePoint.x >= minX &&
+    sourcePoint.x <= maxX
+  ) {
+    return { tangentAxis: "x", min: minX, max: maxX }
+  }
+  return undefined
+}
+
+const getDuplicatePlacement = ({
+  sourcePort,
+  nearestBoundaryPort,
+  region1,
+  region2,
+  duplicatePortProximity,
+}: {
+  sourcePort: SerializedPort
+  nearestBoundaryPort: SerializedPort | undefined
+  region1: SerializedRegion | undefined
+  region2: SerializedRegion | undefined
+  duplicatePortProximity: number
+}): DuplicatePortPlacement => {
   const sourcePoint = getPortPoint(sourcePort)
 
   if (nearestBoundaryPort) {
@@ -200,10 +260,42 @@ const getDuplicateDirection = (
       x: sourcePoint.x - nearestPoint.x,
       y: sourcePoint.y - nearestPoint.y,
     })
-    if (awayFromNearest) return awayFromNearest
+    if (awayFromNearest) {
+      return {
+        direction: awayFromNearest,
+        offsetSpan: duplicatePortProximity,
+      }
+    }
   }
 
-  return getFallbackBoundaryDirection(sourcePort, regionById)
+  const sharedBoundary = getSharedBoundary({ sourcePoint, region1, region2 })
+  if (sharedBoundary) {
+    const sourceCoordinate = sourcePoint[sharedBoundary.tangentAxis]
+    const forwardRoom = sharedBoundary.max - sourceCoordinate
+    // The positive tangent is independent of region order. Reverse only when
+    // the source is already at that endpoint of the shared edge.
+    const directionSign = forwardRoom > EPSILON ? 1 : -1
+    const availableRoom =
+      directionSign === 1 ? forwardRoom : sourceCoordinate - sharedBoundary.min
+    return {
+      direction:
+        sharedBoundary.tangentAxis === "x"
+          ? { x: directionSign, y: 0 }
+          : { x: 0, y: directionSign },
+      offsetSpan: Math.min(duplicatePortProximity, availableRoom),
+    }
+  }
+
+  const region1Center = getRegionCenter(region1)
+  const region2Center = getRegionCenter(region2)
+  const perpendicular = normalize({
+    x: -(region2Center.y - region1Center.y),
+    y: region2Center.x - region1Center.x,
+  })
+  return {
+    direction: perpendicular ?? { x: 1, y: 0 },
+    offsetSpan: duplicatePortProximity,
+  }
 }
 
 const createDuplicatePortId = (
@@ -407,11 +499,14 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         sourcePort,
         this.serializedHyperGraph.ports,
       )
-      const duplicateDirection = getDuplicateDirection(
-        sourcePort,
-        nearestBoundaryPort,
-        regionById,
-      )
+      const { direction: duplicateDirection, offsetSpan } =
+        getDuplicatePlacement({
+          sourcePort,
+          nearestBoundaryPort,
+          region1: regionById.get(sourcePort.region1Id),
+          region2: regionById.get(sourcePort.region2Id),
+          duplicatePortProximity,
+        })
       const sourcePoint = getPortPoint(sourcePort)
       const duplicatePortIds: string[] = []
 
@@ -425,8 +520,8 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           duplicateIndex,
           usedPortIds,
         )
-        const offset =
-          (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
+        // Scale the whole group so clipping never collapses distinct ports.
+        const offset = (offsetSpan * duplicateIndex) / (duplicateCount + 1)
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
