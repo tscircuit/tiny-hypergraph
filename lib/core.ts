@@ -8,6 +8,10 @@ import {
 } from "./computeRegionCost"
 import { countNewIntersectionsWithValues } from "./countNewIntersections"
 import {
+  getRegionLayerCostsToGoal,
+  type RemainingRouteCosts,
+} from "./getRegionLayerCostsToGoal"
+import {
   applyInitialAssignments,
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
@@ -764,8 +768,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId)))
+          continue
         this.onPathFound(currentCandidate)
-        return
+        if (state.currentRouteId === undefined) return
+        continue
       }
       if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
         continue
@@ -801,7 +808,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         previousBestCost,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
+      if (!Number.isFinite(h)) continue
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -824,6 +832,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   resetCandidateBestCosts() {
+    this.regionLayerCostsToGoal = undefined
     const { state } = this
 
     this.candidateOverflowBestCost?.clear()
@@ -1121,6 +1130,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
+    const failedRouteId = state.currentRouteId
 
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
@@ -1134,6 +1144,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
     state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    if (failedRouteId !== undefined) {
+      state.unroutedRoutes = [
+        failedRouteId,
+        ...state.unroutedRoutes.filter((routeId) => routeId !== failedRouteId),
+      ]
+    }
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
@@ -1752,7 +1768,30 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.logNeverSuccessfullyRoutedRoutes()
   }
 
-  computeH(neighborPortId: PortId): number {
+  private regionLayerCostsToGoal?: RemainingRouteCosts
+
+  computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
+    let remainingPortCost = 0
+    if (this.problem.portPenalty) {
+      this.regionLayerCostsToGoal ??= getRegionLayerCostsToGoal(this)
+      remainingPortCost =
+        nextRegionId === undefined
+          ? Math.min(
+              ...this.topology.incidentPortRegion[neighborPortId].map(
+                (regionId) =>
+                  this.regionLayerCostsToGoal!.costByHop.get(
+                    this.getHopId(neighborPortId, regionId),
+                  ) ?? this.regionLayerCostsToGoal!.unsettledCost,
+              ),
+            )
+          : (this.regionLayerCostsToGoal.costByHop.get(
+              this.getHopId(neighborPortId, nextRegionId),
+            ) ?? this.regionLayerCostsToGoal!.unsettledCost)
+    }
+    return remainingPortCost + this.computeGeometricH(neighborPortId)
+  }
+
+  protected computeGeometricH(neighborPortId: PortId): number {
     const precomputedHCost = this.problemSetup.portHCostToEndOfRoute
     if (precomputedHCost) {
       return precomputedHCost[
@@ -1778,10 +1817,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
 }
 
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
+  override computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
+    return Number.isFinite(super.computeH(neighborPortId, nextRegionId))
+      ? this.computeGeometricH(neighborPortId)
+      : Number.POSITIVE_INFINITY
+  }
+
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+      ? currentCandidate.g
+      : Number.POSITIVE_INFINITY
   }
 }
