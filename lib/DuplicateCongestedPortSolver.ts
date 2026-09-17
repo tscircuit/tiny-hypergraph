@@ -206,6 +206,66 @@ const getDuplicateDirection = (
   return getFallbackBoundaryDirection(sourcePort, regionById)
 }
 
+const getDuplicateOffset = (
+  {
+    sourcePort,
+    nearestBoundaryPort,
+    duplicatePortProximity,
+  }: {
+    sourcePort: SerializedPort
+    nearestBoundaryPort: SerializedPort | undefined
+    duplicatePortProximity: number
+  },
+  regionById: Map<SerializedPort["region1Id"], SerializedRegion>,
+): Point => {
+  const region1 = regionById.get(sourcePort.region1Id)
+  const region2 = regionById.get(sourcePort.region2Id)
+  const sourcePoint = getPortPoint(sourcePort)
+  if (region1 !== region2 && !region1?.d?.polygon && !region2?.d?.polygon) {
+    const bounds1 = getRegionBounds(region1)
+    const bounds2 = getRegionBounds(region2)
+    const minX = Math.max(bounds1.minX, bounds2.minX)
+    const maxX = Math.min(bounds1.maxX, bounds2.maxX)
+    const minY = Math.max(bounds1.minY, bounds2.minY)
+    const maxY = Math.min(bounds1.maxY, bounds2.maxY)
+    const vertical = Math.abs(maxX - minX) <= EPSILON
+    const axis = vertical ? "y" : "x"
+    const min = vertical ? minY : minX
+    const max = vertical ? maxY : maxX
+    const edgeCoordinate = vertical ? minX : minY
+    const normalCoordinate = vertical ? sourcePoint.x : sourcePoint.y
+    if (
+      (vertical || Math.abs(maxY - minY) <= EPSILON) &&
+      Math.abs(normalCoordinate - edgeCoordinate) <= EPSILON &&
+      min < max &&
+      min <= sourcePoint[axis] &&
+      sourcePoint[axis] <= max
+    ) {
+      const coordinate = sourcePoint[axis]
+      const nearestCoordinate = nearestBoundaryPort
+        ? getPortPoint(nearestBoundaryPort)[axis]
+        : coordinate
+      const direction = coordinate < nearestCoordinate ? -1 : 1
+      const endpoint =
+        (direction < 0 && coordinate > min) || coordinate === max ? min : max
+      const offset =
+        Math.sign(endpoint - coordinate) *
+        Math.min(duplicatePortProximity, Math.abs(endpoint - coordinate))
+      return axis === "x" ? { x: offset, y: 0 } : { x: 0, y: offset }
+    }
+  }
+
+  const direction = getDuplicateDirection(
+    sourcePort,
+    nearestBoundaryPort,
+    regionById,
+  )
+  return {
+    x: direction.x * duplicatePortProximity,
+    y: direction.y * duplicatePortProximity,
+  }
+}
+
 const createDuplicatePortId = (
   sourcePortId: string,
   duplicateIndex: number,
@@ -407,9 +467,8 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         sourcePort,
         this.serializedHyperGraph.ports,
       )
-      const duplicateDirection = getDuplicateDirection(
-        sourcePort,
-        nearestBoundaryPort,
+      const duplicateOffset = getDuplicateOffset(
+        { sourcePort, nearestBoundaryPort, duplicatePortProximity },
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
@@ -425,13 +484,12 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           duplicateIndex,
           usedPortIds,
         )
-        const offset =
-          (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
+        const fraction = duplicateIndex / (duplicateCount + 1)
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
-        duplicatedPortData.x = sourcePoint.x + duplicateDirection.x * offset
-        duplicatedPortData.y = sourcePoint.y + duplicateDirection.y * offset
+        duplicatedPortData.x = sourcePoint.x + duplicateOffset.x * fraction
+        duplicatedPortData.y = sourcePoint.y + duplicateOffset.y * fraction
         duplicatedPortData.duplicatedFromPortId = sourcePortId
         duplicatedPortData.duplicateIndex = duplicateIndex
         duplicatedPortData.duplicatePortUseCount = useCount
