@@ -1398,12 +1398,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  protected createGreedyFinalRouteSolver(
-    options: TinyHyperGraphSolverOptions,
-  ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
-  }
-
   protected tryGreedyFinalRouteAcceptance(): boolean {
     const greedyFinalRouteIters = Math.max(
       0,
@@ -1438,14 +1432,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = this.createGreedyFinalRouteSolver({
-        ...getTinyHyperGraphSolverOptions(this),
-        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-        GREEDY_FINAL_ROUTE_ITERS: 0,
-        MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-        STATIC_REACHABILITY_PRECHECK: false,
-      })
+      const greedySolver = new GreedyFinalRouteSolver(
+        this.topology,
+        this.problem,
+        {
+          ...getTinyHyperGraphSolverOptions(this),
+          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+          GREEDY_FINAL_ROUTE_ITERS: 0,
+          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+          STATIC_REACHABILITY_PRECHECK: false,
+        },
+      )
 
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
