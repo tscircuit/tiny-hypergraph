@@ -6,7 +6,6 @@ import { sectionSolverFixtureGraph } from "./fixtures/section-solver.fixture"
 test("pipeline returns full-connection reroutes after section optimization", () => {
   const solver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: structuredClone(sectionSolverFixtureGraph),
-    fullConnectionReroute: {},
     createSectionMask: ({ topology }) => new Int8Array(topology.portCount),
   })
   solver.solve()

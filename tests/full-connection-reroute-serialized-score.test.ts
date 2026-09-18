@@ -6,14 +6,10 @@ import { TinyHyperGraphSectionPipelineSolver } from "../lib/section-solver/TinyH
 
 test("rerouting never regresses the serialized output's whole-graph region score", () => {
   for (const graph of [dataset.sample034, dataset.sample037, dataset.sample041, dataset.sample067]) {
-    const baseline = new TinyHyperGraphSectionPipelineSolver({ serializedHyperGraph: graph })
-    const reroute = new TinyHyperGraphSectionPipelineSolver({ serializedHyperGraph: graph, fullConnectionReroute: {} })
-    baseline.solve()
+    const reroute = new TinyHyperGraphSectionPipelineSolver({ serializedHyperGraph: graph })
     reroute.solve()
-    expect(baseline.solved).toBe(true)
     expect(reroute.solved).toBe(true)
-    const summaries = [baseline, reroute].map((pipeline) => {
-      const output = pipeline.getOutput()!
+    const summaries = [reroute.getStageOutput<import("@tscircuit/hypergraph").SerializedHyperGraph>("optimizeSection")!, reroute.getOutput()!].map((output) => {
       expect(output.solvedRoutes!.length).toBe(graph.connections!.length)
       const loaded = loadSerializedHyperGraph(output)
       return new TinyHyperGraphSectionSolver(loaded.topology, loaded.problem, loaded.solution).baselineSummary

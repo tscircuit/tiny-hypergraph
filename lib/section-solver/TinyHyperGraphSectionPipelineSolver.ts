@@ -9,7 +9,7 @@ import type {
   TinyHyperGraphTopology,
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
-import { FullConnectionRerouteSolver, type FullConnectionRerouteOptions } from "../full-connection-reroute-solver"
+import { FullConnectionRerouteSolver } from "../full-connection-reroute-solver"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -317,7 +317,6 @@ export interface TinyHyperGraphSectionPipelineInput {
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
-  fullConnectionReroute?: FullConnectionRerouteOptions
 }
 
 export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
@@ -329,18 +328,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
-    if (inputProblem.fullConnectionReroute) {
-      this.pipelineDef.push({
-        solverName: "rerouteFullConnections",
-        solverClass: FullConnectionRerouteSolver,
-        getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
-          const output = instance.getStageOutput<SerializedHyperGraph>("optimizeSection")
-          if (!output) throw new Error("optimizeSection output is required for full-connection rerouting")
-          const { topology, problem, solution } = instance.loadHyperGraph(output)
-          return [topology, problem, solution, instance.getSectionSolverOptions(), inputProblem.fullConnectionReroute, output]
-        },
-      })
-    }
+
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
@@ -392,6 +380,16 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       solverClass: TinyHyperGraphSectionSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
         instance.getSectionStageParams(),
+    },
+    {
+      solverName: "rerouteFullConnections",
+      solverClass: FullConnectionRerouteSolver,
+      getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
+        const output = instance.getStageOutput<SerializedHyperGraph>("optimizeSection")
+        if (!output) throw new Error("optimizeSection output is required for full-connection rerouting")
+        const { topology, problem, solution } = instance.loadHyperGraph(output)
+        return [topology, problem, solution, instance.getSectionSolverOptions(), {}, output]
+      },
     },
   ]
 

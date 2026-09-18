@@ -10,7 +10,7 @@ test("circuit005 can reroute boundary endpoints through the unblocked terminal s
     serializedHyperGraph: sample005,
   })
   baseline.solve()
-  const original = baseline.getOutput()!
+  const original = baseline.getStageOutput<import("@tscircuit/hypergraph").SerializedHyperGraph>("optimizeSection")!
   const loaded = loadSerializedHyperGraph(original)
   const initial = new TinyHyperGraphSectionSolver(
     loaded.topology,
