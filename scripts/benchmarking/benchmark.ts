@@ -747,15 +747,15 @@ const getSrj18DatasetDir = async (cwd: string) => {
 
   for (const candidateDir of candidateDirs) {
     try {
-      await access(candidateDir)
+      await access(path.join(candidateDir, "manifest.json"))
       return candidateDir
     } catch {
-      // Try the next known dataset layout.
+      // Older generated datasets have no Pipeline7 manifest; try the next layout.
     }
   }
 
   return usageError(
-    `Could not find srj18 generated dataset directory. Tried: ${candidateDirs.join(", ")}`,
+    `Could not find srj18 Pipeline7 dataset manifest. Tried: ${candidateDirs.join(", ")}`,
   )
 }
 
