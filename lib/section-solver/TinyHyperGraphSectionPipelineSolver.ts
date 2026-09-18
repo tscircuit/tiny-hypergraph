@@ -388,7 +388,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
         const output = instance.getStageOutput<SerializedHyperGraph>("optimizeSection")
         if (!output) throw new Error("optimizeSection output is required for full-connection rerouting")
         const { topology, problem, solution } = instance.loadHyperGraph(output)
-        return [topology, problem, solution, instance.getSectionSolverOptions(), {}, output]
+        return [topology, problem, solution, instance.getSectionSolverOptions(), {}, output, (graph: SerializedHyperGraph) => instance.loadHyperGraph(graph)]
       },
     },
   ]

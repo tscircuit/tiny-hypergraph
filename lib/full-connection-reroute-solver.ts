@@ -83,6 +83,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     public solverOptions: TinyHyperGraphSolverOptions = {},
     public options: FullConnectionRerouteOptions = {},
     serializedInput?: SerializedHyperGraph,
+    private loadHyperGraph: typeof loadSerializedHyperGraph = loadSerializedHyperGraph,
   ) {
     super()
     this.bestSolver = new TinyHyperGraphSectionSolver(
@@ -166,7 +167,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     if (this.candidate.solved && !this.candidate.failed) {
       const before = summarize(this.bestSolver)
       const candidateOutput = this.candidate.getOutput()
-      const replay = loadSerializedHyperGraph(candidateOutput)
+      const replay = this.loadHyperGraph(candidateOutput)
       const replaySolver = new TinyHyperGraphSectionSolver(
         replay.topology,
         replay.problem,
