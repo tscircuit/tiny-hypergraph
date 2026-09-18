@@ -764,9 +764,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
-        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
-          continue
-        }
         this.onPathFound(currentCandidate)
         if (state.currentRouteId === undefined) return
         continue
@@ -1398,12 +1395,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  protected createGreedyFinalRouteSolver(
-    options: TinyHyperGraphSolverOptions,
-  ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
-  }
-
   protected tryGreedyFinalRouteAcceptance(): boolean {
     const greedyFinalRouteIters = Math.max(
       0,
@@ -1438,14 +1429,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = this.createGreedyFinalRouteSolver({
-        ...getTinyHyperGraphSolverOptions(this),
-        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-        GREEDY_FINAL_ROUTE_ITERS: 0,
-        MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-        STATIC_REACHABILITY_PRECHECK: false,
-      })
+      const greedySolver = new GreedyFinalRouteSolver(
+        this.topology,
+        this.problem,
+        {
+          ...getTinyHyperGraphSolverOptions(this),
+          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+          GREEDY_FINAL_ROUTE_ITERS: 0,
+          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+          STATIC_REACHABILITY_PRECHECK: false,
+        },
+      )
 
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
@@ -1786,10 +1781,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    neighborPortId: PortId,
+    _neighborPortId: PortId,
   ): number {
-    return Number.isFinite(super.computeG(currentCandidate, neighborPortId))
-      ? currentCandidate.g
-      : Number.POSITIVE_INFINITY
+    return currentCandidate.g
   }
 }
