@@ -55,6 +55,41 @@ existing ports and contribute to region congestion immediately, but remain
 eligible for the normal rip-and-reroute process. They do not create regions or
 otherwise change the hypergraph topology.
 
+### Optional congestion rerouting
+
+`TinyHyperGraphSectionPipelineSolver` can run `TinyHyperGraphCongestionSolver`
+after section optimization. Enable it explicitly:
+
+```ts
+import { TinyHyperGraphSectionPipelineSolver } from "lib"
+
+const solver = new TinyHyperGraphSectionPipelineSolver({
+  serializedHyperGraph: inputGraph,
+  congestionSolverOptions: {},
+})
+solver.solve()
+const solvedGraph = solver.getOutput()
+```
+
+The stage tries up to four single-route replacements, with at most 2,000 search
+steps each. It temporarily avoids a congested region, keeps the other routes in
+place, and accepts a replacement only when the serialized output improves the
+maximum region cost or sum of squared region costs without increasing either. Failed
+or unsupported replacements leave the previous complete solution available.
+The concept dictionary and exact defaults are documented above the solver class.
+
+This stage is optional because the measured benefit depends on the input. The
+research configuration improved SRJ18/HG07 congestion at additional runtime cost,
+but did not improve the fresh SRJ13 cases. It does not replace physical DRC.
+Compare the current implementation with the normal pipeline using:
+
+```sh
+./benchmark.sh --dataset srj18 --concurrency 1
+./benchmark.sh --dataset srj18 --concurrency 1 --optimize-congestion
+./benchmark.sh --dataset hg07 --concurrency 1
+./benchmark.sh --dataset hg07 --concurrency 1 --optimize-congestion
+```
+
 ### Outside-in partial reripping
 
 `SelectiveReripTinyHyperGraphSolver` preserves the unaffected prefix and

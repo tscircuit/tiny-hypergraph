@@ -9,6 +9,10 @@ import type {
   TinyHyperGraphTopology,
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
+import {
+  TinyHyperGraphCongestionSolver,
+  type TinyHyperGraphCongestionSolverOptions,
+} from "../TinyHyperGraphCongestionSolver"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -316,6 +320,8 @@ export interface TinyHyperGraphSectionPipelineInput {
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
+  /** Opt in to bounded whole-route congestion rerouting after section optimization. */
+  congestionSolverOptions?: TinyHyperGraphCongestionSolverOptions
 }
 
 export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
@@ -327,6 +333,14 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+    if (inputProblem.congestionSolverOptions !== undefined) {
+      this.pipelineDef.push({
+        solverName: "optimizeCongestion",
+        solverClass: TinyHyperGraphCongestionSolver,
+        getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) =>
+          instance.getCongestionStageParams(),
+      })
+    }
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
@@ -473,6 +487,53 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return [topology, problem, solution, sectionSolverOptions]
   }
 
+  getCongestionStageParams(): ConstructorParameters<
+    typeof TinyHyperGraphCongestionSolver
+  > {
+    const output = this.getStageOutput<SerializedHyperGraph>("optimizeSection")
+    if (!output)
+      throw new Error(
+        "optimizeSection did not produce a solved serialized hypergraph",
+      )
+    const initial = this.loadHyperGraph(this.inputProblem.serializedHyperGraph)
+    const options = this.inputProblem.congestionSolverOptions!
+    // Protect the original preloaded connections, not all assignments emitted by
+    // the solved stages. Connection IDs bridge any loader route-index changes.
+    const preservedConnectionIds = new Set(
+      (initial.problem.initialAssignments ?? []).map(
+        (assignment) =>
+          (
+            initial.problem.routeMetadata?.[assignment.routeId] as {
+              connectionId?: string
+            }
+          )?.connectionId,
+      ),
+    )
+    const loaded = this.loadHyperGraph(output)
+    const preservedRouteIds = new Set(options.preservedRouteIds ?? [0])
+    loaded.problem.routeMetadata?.forEach((metadata, routeId) => {
+      if (
+        preservedConnectionIds.has(
+          (metadata as { connectionId?: string })?.connectionId,
+        )
+      )
+        preservedRouteIds.add(routeId)
+    })
+    return [
+      output,
+      {
+        ...options,
+        preservedRouteIds,
+        portSectionMask:
+          options.portSectionMask ?? initial.problem.portSectionMask,
+        solverOptions: {
+          ...this.getSectionSolverOptions(),
+          ...options.solverOptions,
+        },
+      },
+    ]
+  }
+
   getInitialVisualizationSolver() {
     if (!this.initialVisualizationSolver) {
       const { topology, problem } = this.loadHyperGraph(
@@ -502,6 +563,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override getOutput() {
     return (
+      this.getStageOutput<SerializedHyperGraph>("optimizeCongestion") ??
       this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
       this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
       null
@@ -510,6 +572,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
 
   override tryFinalAcceptance() {
     if (this.getStageOutput<SerializedHyperGraph>("solveGraph")) {
+      if (this.activeSubSolver instanceof TinyHyperGraphCongestionSolver) {
+        // Congestion output is always a complete, accepted solution, even while
+        // a later replacement is still being explored.
+        this.pipelineOutputs.optimizeCongestion =
+          this.activeSubSolver.getOutput()
+      }
       this.stats = {
         ...this.stats,
         acceptedSolveGraphOutputOnSectionPipelineTimeout: true,
