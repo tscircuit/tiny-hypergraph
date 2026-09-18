@@ -27,6 +27,25 @@ class AvoidRegionRouteSolver extends TinyHyperGraphSolver {
     )
   }
 
+  override getStartingNextRegionId(
+    routeId: number,
+    startingPortId: number,
+  ): number | undefined {
+    const preferredRegion = super.getStartingNextRegionId(
+      routeId,
+      startingPortId,
+    )
+    if (
+      preferredRegion !== undefined &&
+      !this.isRegionReservedForDifferentNet(preferredRegion)
+    ) {
+      return preferredRegion
+    }
+    return this.topology.incidentPortRegion[startingPortId]?.find(
+      (regionId) => !this.isRegionReservedForDifferentNet(regionId),
+    )
+  }
+
   override onAllRoutesRouted(): void {
     this.solved = true
   }
@@ -87,15 +106,16 @@ export class FullConnectionRerouteSolver extends BaseSolver {
             ),
           ),
         ]
-          // A connection cannot avoid a region containing one of its terminals.
+          // Boundary endpoints can escape through their other incident region.
+          // Only skip endpoints that have no incident region outside the blocked one.
           .filter(
             (routeId) =>
-              !topology.incidentPortRegion[
+              topology.incidentPortRegion[
                 problem.routeStartPort[routeId]!
-              ]!.includes(regionId) &&
-              !topology.incidentPortRegion[
-                problem.routeEndPort[routeId]!
-              ]!.includes(regionId),
+              ]!.some((incidentRegionId) => incidentRegionId !== regionId) &&
+              topology.incidentPortRegion[problem.routeEndPort[routeId]!]!.some(
+                (incidentRegionId) => incidentRegionId !== regionId,
+              ),
           )
           .map((routeId) => ({ regionId, routeId })),
       )
@@ -148,7 +168,10 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       const candidateOutput = this.candidate.getOutput()
       const replay = loadSerializedHyperGraph(candidateOutput)
       const replaySolver = new TinyHyperGraphSectionSolver(
-        replay.topology, replay.problem, replay.solution, this.solverOptions,
+        replay.topology,
+        replay.problem,
+        replay.solution,
+        this.solverOptions,
       ).baselineSolver
       const after = summarize(replaySolver)
       if (
