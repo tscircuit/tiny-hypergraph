@@ -28,3 +28,5 @@ export {
   type TinyHyperGraphSectionPipelineInput,
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
+
+export * from "./full-connection-reroute-solver"
