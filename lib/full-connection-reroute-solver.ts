@@ -1,3 +1,5 @@
+import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
   TinyHyperGraphSolver,
@@ -48,6 +50,7 @@ const summarize = (solver: TinyHyperGraphSolver) => {
 /** Try full connections individually; only retain strict whole-graph improvements. */
 export class FullConnectionRerouteSolver extends BaseSolver {
   bestSolver: TinyHyperGraphSolver
+  private acceptedOutput: SerializedHyperGraph
   private attempts: Array<{ regionId: number; routeId: number }>
   private candidate?: AvoidRegionRouteSolver
   private attemptIndex = 0
@@ -60,6 +63,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     solution: TinyHyperGraphSolution,
     public solverOptions: TinyHyperGraphSolverOptions = {},
     public options: FullConnectionRerouteOptions = {},
+    serializedInput?: SerializedHyperGraph,
   ) {
     super()
     this.bestSolver = new TinyHyperGraphSectionSolver(
@@ -68,6 +72,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       solution,
       solverOptions,
     ).baselineSolver
+    this.acceptedOutput = serializedInput ?? this.bestSolver.getOutput()
     this.initialScore = summarize(this.bestSolver)
     this.attempts = this.bestSolver.state.regionIntersectionCaches
       .map((cache, regionId) => ({ regionId, cost: cache.existingRegionCost }))
@@ -140,14 +145,20 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     if (!this.candidate.solved && !this.candidate.failed) return
     if (this.candidate.solved && !this.candidate.failed) {
       const before = summarize(this.bestSolver)
-      const after = summarize(this.candidate)
+      const candidateOutput = this.candidate.getOutput()
+      const replay = loadSerializedHyperGraph(candidateOutput)
+      const replaySolver = new TinyHyperGraphSectionSolver(
+        replay.topology, replay.problem, replay.solution, this.solverOptions,
+      ).baselineSolver
+      const after = summarize(replaySolver)
       if (
         after.max < before.max - 1e-9 ||
         (Math.abs(after.max - before.max) <= 1e-9 &&
           after.max <= before.max &&
           after.total < before.total - 1e-9)
       ) {
-        this.bestSolver = this.candidate
+        this.bestSolver = replaySolver
+        this.acceptedOutput = candidateOutput
         this.accepted += 1
       }
     }
@@ -179,7 +190,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   }
 
   override getOutput() {
-    return this.bestSolver.getOutput()
+    return this.acceptedOutput
   }
 
   override visualize() {

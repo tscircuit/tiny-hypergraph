@@ -3,7 +3,7 @@ import { TinyHyperGraphSectionPipelineSolver } from "../lib/section-solver/TinyH
 import { FullConnectionRerouteSolver } from "../lib/full-connection-reroute-solver"
 import { sectionSolverFixtureGraph } from "./fixtures/section-solver.fixture"
 
-test("pipeline consumes full-connection reroutes before section optimization", () => {
+test("pipeline returns full-connection reroutes after section optimization", () => {
   const solver = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: structuredClone(sectionSolverFixtureGraph),
     fullConnectionReroute: {},

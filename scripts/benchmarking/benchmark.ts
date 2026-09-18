@@ -129,6 +129,7 @@ type BenchmarkSampleResult = {
 
 type BenchmarkReport = {
   version: 1
+  fullConnectionReroute: boolean
   datasetName: DatasetKey
   datasetSource: string
   datasetRevision: string | null
@@ -183,6 +184,7 @@ Options:
   --concurrency N Benchmark concurrency value, or "auto". Defaults to BENCHMARK_CONCURRENCY or CPU count.
   --families LIST Override hg07 candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
+  --full-connection-reroute  Enable whole-connection rerouting around high-cost regions.
   --help          Show this help text.
 
 Examples:
@@ -280,6 +282,7 @@ const parseCandidateFamilies = (
 }
 
 const parseArgs = () => {
+  let fullConnectionReroute = false
   let limit: number | null = null
   let sampleName: string | null = null
   let candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null = null
@@ -293,6 +296,11 @@ const parseArgs = () => {
     if (arg === "--help" || arg === "-h") {
       console.log(HELP_TEXT)
       process.exit(0)
+    }
+
+    if (arg === "--full-connection-reroute") {
+      fullConnectionReroute = true
+      continue
     }
 
     if (arg === "--limit") {
@@ -383,6 +391,7 @@ const parseArgs = () => {
   }
 
   return {
+    fullConnectionReroute,
     limit,
     sampleName,
     candidateFamilies,
@@ -569,6 +578,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     `Revision: ${report.datasetRevision ?? "n/a"}`,
     `Samples: ${report.sampleSelection}`,
     `Solver: ${report.solverVariant}`,
+    `Full-connection reroute: ${report.fullConnectionReroute}`,
     `Families: ${report.candidateFamilies}`,
     `Concurrency: ${report.concurrency}`,
     `Sample count: ${report.sampleCount}`,
@@ -944,8 +954,10 @@ const getPipelineInput = (
   serializedHyperGraph: SerializedHyperGraph,
   candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null,
   benchmarkCase: Srj18BenchmarkCase | undefined,
+  fullConnectionReroute: boolean,
 ): TinyHyperGraphSectionPipelineInput => ({
   serializedHyperGraph,
+  fullConnectionReroute: fullConnectionReroute ? {} : undefined,
   sectionSearchConfig: candidateFamilies ? { candidateFamilies } : undefined,
   ...(benchmarkCase
     ? {
@@ -964,17 +976,20 @@ const createPipelineSolver = ({
   serializedHyperGraph,
   candidateFamilies,
   benchmarkCase,
+  fullConnectionReroute,
 }: {
   datasetKey: DatasetKey
   solverVariant: SolverVariant
   serializedHyperGraph: SerializedHyperGraph
   candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null
   benchmarkCase: Srj18BenchmarkCase | undefined
+  fullConnectionReroute: boolean
 }) => {
   const input = getPipelineInput(
     serializedHyperGraph,
     candidateFamilies,
     benchmarkCase,
+    fullConnectionReroute,
   )
   const pipelineSolver =
     solverVariant === "poly"
@@ -1003,6 +1018,7 @@ const createPipelineSolver = ({
 const main = async () => {
   const cwd = process.cwd()
   const {
+    fullConnectionReroute,
     limit,
     sampleName,
     candidateFamilies,
@@ -1044,6 +1060,7 @@ const main = async () => {
         serializedHyperGraph,
         candidateFamilies,
         benchmarkCase,
+        fullConnectionReroute,
       })
       pipelineSolver.solve()
       pipelineIterations = pipelineSolver.iterations
@@ -1057,7 +1074,7 @@ const main = async () => {
       const solveGraphOutput =
         pipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
       const optimizeSectionOutput =
-        pipelineSolver.getStageOutput<SerializedHyperGraph>("optimizeSection")
+        pipelineSolver.getOutput()
 
       if (!solveGraphOutput || !optimizeSectionOutput) {
         throw new Error("pipeline did not produce both stage outputs")
@@ -1170,6 +1187,7 @@ const main = async () => {
           serializedHyperGraph,
           candidateFamilies,
           benchmarkCase,
+          fullConnectionReroute,
         })
         const png = await getSnapshotPng(pipelineSolver)
         await writeFile(snapshotPath, png)
@@ -1314,6 +1332,7 @@ const main = async () => {
 
   const report: BenchmarkReport = {
     version: 1,
+    fullConnectionReroute,
     datasetName: datasetKey,
     datasetSource: loadedDataset.datasetSource,
     datasetRevision: loadedDataset.datasetRevision,
