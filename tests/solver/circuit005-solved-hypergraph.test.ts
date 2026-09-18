@@ -16,6 +16,7 @@ test("circuit005 solved hypergraph matches the benchmark pipeline", () => {
   ).toBe("circuit005")
   const pipeline = new TinyHyperGraphSectionPipelineSolver({
     serializedHyperGraph: structuredClone(sample005),
+    fullConnectionReroute: {},
   })
   pipeline.solve()
   expect(pipeline.solved).toBe(true)
