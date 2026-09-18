@@ -74,6 +74,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   private candidate?: AvoidRegionRouteSolver
   private attemptIndex = 0
   private accepted = 0
+  private reroutedRouteIds = new Set<number>()
   private initialScore: ReturnType<typeof summarize>
 
   constructor(
@@ -188,6 +189,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         this.bestSolver = replaySolver
         this.acceptedOutput = candidateOutput
         this.accepted += 1
+        this.reroutedRouteIds.add(this.attempts[this.attemptIndex]!.routeId)
       }
     }
     this.candidate = undefined
@@ -200,6 +202,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       ...this.stats,
       rerouteAttempts: this.attemptIndex,
       acceptedReroutes: this.accepted,
+      reroutedRouteCount: this.reroutedRouteIds.size,
       initialMaxRegionCost: this.initialScore.max,
       finalMaxRegionCost: score.max,
       initialTotalRegionCost: this.initialScore.total,

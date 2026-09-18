@@ -12,6 +12,10 @@ test("full-connection rerouting avoids hot regions and only accepts whole-graph 
   expect(solver.failed).toBe(false)
   expect(solver.solved).toBe(true)
   expect(solver.stats.acceptedReroutes).toBeGreaterThan(0)
+  expect(solver.stats.reroutedRouteCount).toBeGreaterThan(0)
+  expect(solver.stats.reroutedRouteCount).toBeLessThanOrEqual(
+    solver.stats.acceptedReroutes,
+  )
   expect(solver.stats.finalMaxRegionCost).toBeLessThan(
     solver.stats.initialMaxRegionCost,
   )
@@ -30,5 +34,6 @@ test("full-connection rerouting avoids hot regions and only accepts whole-graph 
   const original = rejected.getOutput()
   rejected.solve()
   expect(rejected.stats.acceptedReroutes).toBe(0)
+  expect(rejected.stats.reroutedRouteCount).toBe(0)
   expect(rejected.getOutput()).toEqual(original)
 })
