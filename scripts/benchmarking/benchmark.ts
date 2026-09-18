@@ -1057,7 +1057,7 @@ const main = async () => {
       const solveGraphOutput =
         pipelineSolver.getStageOutput<SerializedHyperGraph>("solveGraph")
       const optimizeSectionOutput =
-        pipelineSolver.getStageOutput<SerializedHyperGraph>("optimizeSection")
+        pipelineSolver.getOutput()
 
       if (!solveGraphOutput || !optimizeSectionOutput) {
         throw new Error("pipeline did not produce both stage outputs")
