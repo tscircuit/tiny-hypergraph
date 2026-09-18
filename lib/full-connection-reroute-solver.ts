@@ -154,6 +154,10 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         },
         {
           ...this.solverOptions,
+          // Only one connection is active. Avoid a portCount * routeCount
+          // distance table for the connections fixed by initialAssignments.
+          USE_LAZY_ROUTE_HEURISTIC:
+            this.solverOptions.USE_LAZY_ROUTE_HEURISTIC ?? true,
           MAX_ITERATIONS: this.options.maxIterationsPerAttempt ?? 20_000,
           STATIC_REACHABILITY_PRECHECK: false,
           ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
