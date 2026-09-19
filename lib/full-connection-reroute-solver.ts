@@ -63,6 +63,22 @@ const summarize = (solver: TinyHyperGraphSolver) => {
   return {
     max: costs.reduce((max, cost) => Math.max(max, cost), 0),
     total: costs.reduce((total, cost) => total + cost, 0),
+    estimatedVias: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) =>
+        sum +
+        2 * cache.existingSameLayerIntersections +
+        cache.existingCrossingLayerIntersections +
+        cache.existingEntryExitLayerChanges,
+      0,
+    ),
+    layerChanges: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) => sum + cache.existingEntryExitLayerChanges,
+      0,
+    ),
+    segments: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) => sum + cache.existingSegmentCount,
+      0,
+    ),
   }
 }
 
@@ -181,10 +197,17 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       ).baselineSolver
       const after = summarize(replaySolver)
       if (
-        after.max < before.max - 1e-9 ||
-        (Math.abs(after.max - before.max) <= 1e-9 &&
-          after.max <= before.max &&
-          after.total < before.total - 1e-9)
+        // Moving crossings into a larger region lowers its area-normalized
+        // cost even when it introduces more vias or longer region detours.
+        // Preserve the unweighted via estimate and downstream path complexity.
+        after.estimatedVias <= before.estimatedVias &&
+        after.layerChanges <= before.layerChanges &&
+        after.segments <= before.segments &&
+        after.total <= before.total + 1e-9 &&
+        (after.max < before.max - 1e-9 ||
+          (Math.abs(after.max - before.max) <= 1e-9 &&
+            after.max <= before.max &&
+            after.total < before.total - 1e-9))
       ) {
         this.bestSolver = replaySolver
         this.acceptedOutput = candidateOutput
@@ -207,6 +230,12 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       finalMaxRegionCost: score.max,
       initialTotalRegionCost: this.initialScore.total,
       finalTotalRegionCost: score.total,
+      initialEstimatedViaCount: this.initialScore.estimatedVias,
+      finalEstimatedViaCount: score.estimatedVias,
+      initialLayerChangeCount: this.initialScore.layerChanges,
+      finalLayerChangeCount: score.layerChanges,
+      initialSegmentCount: this.initialScore.segments,
+      finalSegmentCount: score.segments,
     }
     this.solved = true
   }
