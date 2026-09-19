@@ -481,20 +481,13 @@ export const loadSerializedHyperGraph = (
   const routableConnections = connections
     .map((connection) => {
       const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
-      const sharedPortIds = getSharedPortIdsForConnection(
-        filteredHyperGraph,
-        connection,
-      )
-
-      return {
-        connection,
-        solvedRoute,
-        sharedPortIds,
-      }
+      return { connection, solvedRoute }
     })
     .filter(
-      ({ solvedRoute, sharedPortIds }) =>
-        sharedPortIds.length === 0 || (solvedRoute?.path.length ?? 0) > 1,
+      ({ connection, solvedRoute }) =>
+        (solvedRoute?.path.length ?? 0) > 1 ||
+        getSharedPortIdsForConnection(filteredHyperGraph, connection).length ===
+          0,
     )
 
   const routeCount = routableConnections.length
@@ -510,23 +503,24 @@ export const loadSerializedHyperGraph = (
   const routeNet = new Int32Array(routeCount)
 
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
-    const fallbackStartPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.startRegionId,
-      ),
-      portById,
-    )
-    const fallbackEndPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.endRegionId,
-      ),
-      portById,
-    )
-
-    const startPortId = solvedRoute?.path[0]?.portId ?? fallbackStartPortId
+    // Serialized routes already specify endpoints. Avoid scanning regions and
+    // sorting their ports again on every solved-graph replay.
+    const startPortId =
+      solvedRoute?.path[0]?.portId ??
+      getCentermostPortIdForRegion(
+        filteredHyperGraph.regions[
+          regionIdToIndex.get(connection.startRegionId)!
+        ],
+        portById,
+      )
     const endPortId =
       solvedRoute?.path[solvedRoute.path.length - 1]?.portId ??
-      fallbackEndPortId
+      getCentermostPortIdForRegion(
+        filteredHyperGraph.regions[
+          regionIdToIndex.get(connection.endRegionId)!
+        ],
+        portById,
+      )
 
     const startPortIndex =
       startPortId !== undefined ? portIdToIndex.get(startPortId) : undefined
