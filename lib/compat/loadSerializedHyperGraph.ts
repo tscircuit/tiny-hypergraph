@@ -481,10 +481,12 @@ export const loadSerializedHyperGraph = (
   const routableConnections = connections
     .map((connection) => {
       const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
-      const sharedPortIds = getSharedPortIdsForConnection(
-        filteredHyperGraph,
-        connection,
-      )
+      // A solved multi-port path is always routable. Avoid scanning every port
+      // for every connection during repeated serialized-candidate replays.
+      const sharedPortIds =
+        (solvedRoute?.path.length ?? 0) > 1
+          ? []
+          : getSharedPortIdsForConnection(filteredHyperGraph, connection)
 
       return {
         connection,
@@ -510,23 +512,23 @@ export const loadSerializedHyperGraph = (
   const routeNet = new Int32Array(routeCount)
 
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
-    const fallbackStartPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.startRegionId,
-      ),
-      portById,
-    )
-    const fallbackEndPortId = getCentermostPortIdForRegion(
-      filteredHyperGraph.regions.find(
-        (region) => region.regionId === connection.endRegionId,
-      ),
-      portById,
-    )
-
-    const startPortId = solvedRoute?.path[0]?.portId ?? fallbackStartPortId
+    // Endpoint fallbacks are only needed for unsolved or incomplete paths.
+    const startPortId =
+      solvedRoute?.path[0]?.portId ??
+      getCentermostPortIdForRegion(
+        filteredHyperGraph.regions[
+          regionIdToIndex.get(connection.startRegionId)!
+        ],
+        portById,
+      )
     const endPortId =
       solvedRoute?.path[solvedRoute.path.length - 1]?.portId ??
-      fallbackEndPortId
+      getCentermostPortIdForRegion(
+        filteredHyperGraph.regions[
+          regionIdToIndex.get(connection.endRegionId)!
+        ],
+        portById,
+      )
 
     const startPortIndex =
       startPortId !== undefined ? portIdToIndex.get(startPortId) : undefined
