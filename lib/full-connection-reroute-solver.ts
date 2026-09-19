@@ -1,10 +1,12 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
+import { getOrderedRoutePath } from "./compat/convertToSerializedHyperGraph"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
   TinyHyperGraphSolver,
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphProblemSetup,
   type TinyHyperGraphSolution,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
@@ -19,13 +21,53 @@ export interface FullConnectionRerouteOptions {
 
 // Keep every other connection fixed, and never reseed/rip the graph on failure.
 class AvoidRegionRouteSolver extends TinyHyperGraphSolver {
-  blockedRegionId = -1
+  sharedProblemSetup?: TinyHyperGraphProblemSetup
+  private reservedPorts!: Uint8Array
+  private reservedRegions!: Uint8Array
+  private routeHeuristic!: Float64Array
+
+  prepareAttempt(regionId: number, routeId: number): void {
+    const netId = this.problem.routeNet[routeId]!
+    const reservations = this.problemSetup.portEndpointReservationNetId
+    this.reservedPorts = Uint8Array.from(reservations, (reservedNetId) =>
+      Number(
+        reservedNetId === -2 ||
+          (reservedNetId !== -1 && reservedNetId !== netId),
+      ),
+    )
+    this.reservedRegions = Uint8Array.from(
+      this.problem.regionNetId,
+      (reservedNetId, id) =>
+        Number(
+          id === regionId ||
+            (reservedNetId !== -1 && reservedNetId !== netId),
+        ),
+    )
+    const endPortId = this.problem.routeEndPort[routeId]!
+    const endX = this.topology.portX[endPortId]!
+    const endY = this.topology.portY[endPortId]!
+    this.routeHeuristic = Float64Array.from(this.topology.portX, (x, portId) => {
+      const dx = x - endX
+      const dy = this.topology.portY[portId]! - endY
+      return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+    })
+  }
+
+  override computeProblemSetup(): TinyHyperGraphProblemSetup {
+    // Every attempt has the same topology, endpoints, nets, and options.
+    return this.sharedProblemSetup ?? super.computeProblemSetup()
+  }
+
+  override isPortReservedForDifferentNet(portId: number): boolean {
+    return this.reservedPorts[portId] === 1
+  }
 
   override isRegionReservedForDifferentNet(regionId: number): boolean {
-    return (
-      regionId === this.blockedRegionId ||
-      super.isRegionReservedForDifferentNet(regionId)
-    )
+    return this.reservedRegions[regionId] === 1
+  }
+
+  override computeH(portId: number): number {
+    return this.routeHeuristic[portId]!
   }
 
   override getStartingNextRegionId(
@@ -47,26 +89,46 @@ class AvoidRegionRouteSolver extends TinyHyperGraphSolver {
     )
   }
 
-  canonicalizeRegionCosts(): void {
-    for (let regionId = 0; regionId < this.topology.regionCount; regionId++) {
-      const segments = this.state.regionSegments[regionId]!
-      if (
-        segments.every(
-          ([routeId], index) => index === 0 || segments[index - 1]![0] <= routeId,
-        )
-      ) {
-        continue
+  canonicalizeRegionCosts(routeId: number): void {
+    const routeSegments = this.state.regionSegments.flatMap(
+      (segments, regionId) =>
+        segments
+          .filter(([segmentRouteId]) => segmentRouteId === routeId)
+          .map(([, fromPortId, toPortId]) => ({ regionId, fromPortId, toPortId })),
+    )
+    // Use the serializer's exact path extraction, including removal of loops.
+    const path = getOrderedRoutePath(this, routeId, routeSegments)
+    const canonicalRouteByRegion = new Map<
+      number,
+      Array<[number, number, number]>
+    >()
+    for (let index = 0; index < path.orderedRegionIds.length; index++) {
+      const regionId = path.orderedRegionIds[index]!
+      let segments = canonicalRouteByRegion.get(regionId)
+      if (!segments) {
+        segments = []
+        canonicalRouteByRegion.set(regionId, segments)
       }
-
-      // Fixed routes retain canonical route order; the newly searched route
-      // was appended last. Equal-angle crossings are order-sensitive, so score
-      // it in replay order before deciding whether a full replay is worthwhile.
+      segments.push([
+        routeId,
+        path.orderedPortIds[index]!,
+        path.orderedPortIds[index + 1]!,
+      ])
+    }
+    const affectedRegionIds = new Set(
+      routeSegments.map((segment) => segment.regionId),
+    )
+    for (const regionId of affectedRegionIds) {
+      const segments = this.state.regionSegments[regionId]!
+        .filter(([segmentRouteId]) => segmentRouteId !== routeId)
+        .concat(canonicalRouteByRegion.get(regionId) ?? [])
+        .sort((a, b) => a[0] - b[0])
+      // Equal-angle crossings are order-sensitive. Fixed routes are already
+      // canonical; only caches touched by the newly searched route need replay.
       this.state.regionIntersectionCaches[regionId] =
         createEmptyRegionIntersectionCache()
-      for (const [routeId, fromPortId, toPortId] of [...segments].sort(
-        (a, b) => a[0] - b[0],
-      )) {
-        this.state.currentRouteNetId = this.problem.routeNet[routeId]
+      for (const [segmentRouteId, fromPortId, toPortId] of segments) {
+        this.state.currentRouteNetId = this.problem.routeNet[segmentRouteId]
         this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
       }
     }
@@ -116,6 +178,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   private attempts: Array<{ regionId: number; routeId: number }>
   private hotRegionIds: number[]
   private candidate?: AvoidRegionRouteSolver
+  private sharedProblemSetup?: TinyHyperGraphProblemSetup
   private attemptIndex = 0
   private accepted = 0
   private reroutedRouteIds = new Set<number>()
@@ -211,7 +274,9 @@ export class FullConnectionRerouteSolver extends BaseSolver {
           GREEDY_FINAL_ROUTE_ITERS: 0,
         },
       )
-      this.candidate.blockedRegionId = attempt.regionId
+      this.candidate.sharedProblemSetup = this.sharedProblemSetup
+      this.candidate.prepareAttempt(attempt.regionId, attempt.routeId)
+      this.sharedProblemSetup = this.candidate.problemSetup
     }
     // A search expansion is tiny, but each outer pipeline step rebuilds its
     // diagnostic stats. Batch expansions while preserving the candidate's own
@@ -223,7 +288,9 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     if (!this.candidate.solved && !this.candidate.failed) return
     if (this.candidate.solved && !this.candidate.failed) {
       const before = summarize(this.bestSolver)
-      this.candidate.canonicalizeRegionCosts()
+      this.candidate.canonicalizeRegionCosts(
+        this.attempts[this.attemptIndex]!.routeId,
+      )
       if (!this.improvesScore(this.candidate, before)) {
         this.candidate = undefined
         this.attemptIndex += 1

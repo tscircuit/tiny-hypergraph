@@ -183,7 +183,7 @@ const getOppositeRegionIdForPort = (
   return oppositeRegionId
 }
 
-const getOrderedRoutePath = (
+export const getOrderedRoutePath = (
   solver: TinyHyperGraphSolver,
   routeId: number,
   routeSegments: RouteSegment[],
