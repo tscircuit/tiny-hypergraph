@@ -87,6 +87,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   bestSolver: TinyHyperGraphSolver
   private acceptedOutput: SerializedHyperGraph
   private attempts: Array<{ regionId: number; routeId: number }>
+  private hotRegionIds: number[]
   private candidate?: AvoidRegionRouteSolver
   private attemptIndex = 0
   private accepted = 0
@@ -111,12 +112,14 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     ).baselineSolver
     this.acceptedOutput = serializedInput ?? this.bestSolver.getOutput()
     this.initialScore = summarize(this.bestSolver)
-    this.attempts = this.bestSolver.state.regionIntersectionCaches
+    this.hotRegionIds = this.bestSolver.state.regionIntersectionCaches
       .map((cache, regionId) => ({ regionId, cost: cache.existingRegionCost }))
       .filter(({ cost }) => cost > 0)
       .sort((a, b) => b.cost - a.cost)
       .slice(0, options.maxHotRegions ?? 8)
-      .flatMap(({ regionId }) =>
+      .map(({ regionId }) => regionId)
+    this.attempts = this.hotRegionIds
+      .flatMap((regionId) =>
         [
           ...new Set(
             this.bestSolver.state.regionSegments[regionId]!.map(
@@ -205,6 +208,15 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         after.segments + 2 * after.estimatedVias <=
           before.segments + 2 * before.estimatedVias &&
         after.total <= before.total + 1e-9 &&
+        // A lower maximum must not hide increased congestion in another
+        // high-cost region selected for this pass.
+        this.hotRegionIds.every(
+          (regionId) =>
+            replaySolver.state.regionIntersectionCaches[regionId]!
+              .existingRegionCost <=
+            this.bestSolver.state.regionIntersectionCaches[regionId]!
+              .existingRegionCost + 1e-9,
+        ) &&
         (after.max < before.max - 1e-9 ||
           (Math.abs(after.max - before.max) <= 1e-9 &&
             after.max <= before.max &&
