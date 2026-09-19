@@ -186,7 +186,13 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       )
       this.candidate.blockedRegionId = attempt.regionId
     }
-    this.candidate.step()
+    // A search expansion is tiny, but each outer pipeline step rebuilds its
+    // diagnostic stats. Batch expansions while preserving the candidate's own
+    // iteration limit and stopping immediately when it finishes.
+    for (let expansion = 0; expansion < 256; expansion++) {
+      this.candidate.step()
+      if (this.candidate.solved || this.candidate.failed) break
+    }
     if (!this.candidate.solved && !this.candidate.failed) return
     if (this.candidate.solved && !this.candidate.failed) {
       const before = summarize(this.bestSolver)
