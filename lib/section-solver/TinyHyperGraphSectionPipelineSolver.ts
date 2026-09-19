@@ -9,7 +9,10 @@ import type {
   TinyHyperGraphTopology,
 } from "../core"
 import { TinyHyperGraphSolver } from "../core"
-import { FullConnectionRerouteSolver } from "../full-connection-reroute-solver"
+import {
+  FullConnectionRerouteSolver,
+  type FullConnectionRerouteOptions,
+} from "../full-connection-reroute-solver"
 import type { RegionId } from "../types"
 import type { TinyHyperGraphSectionSolverOptions } from "./index"
 import { getActiveSectionRouteIds, TinyHyperGraphSectionSolver } from "./index"
@@ -317,6 +320,7 @@ export interface TinyHyperGraphSectionPipelineInput {
   solveGraphOptions?: TinyHyperGraphSolverOptions
   sectionSolverOptions?: TinyHyperGraphSectionSolverOptions
   sectionSearchConfig?: TinyHyperGraphSectionPipelineSearchConfig
+  fullConnectionRerouteOptions?: FullConnectionRerouteOptions
 }
 
 export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
@@ -328,7 +332,6 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
-
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {
@@ -385,10 +388,22 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
       solverName: "rerouteFullConnections",
       solverClass: FullConnectionRerouteSolver,
       getConstructorParams: (instance: TinyHyperGraphSectionPipelineSolver) => {
-        const output = instance.getStageOutput<SerializedHyperGraph>("optimizeSection")
-        if (!output) throw new Error("optimizeSection output is required for full-connection rerouting")
+        const output =
+          instance.getStageOutput<SerializedHyperGraph>("optimizeSection")
+        if (!output)
+          throw new Error(
+            "optimizeSection output is required for full-connection rerouting",
+          )
         const { topology, problem, solution } = instance.loadHyperGraph(output)
-        return [topology, problem, solution, instance.getSectionSolverOptions(), {}, output, (graph: SerializedHyperGraph) => instance.loadHyperGraph(graph)]
+        return [
+          topology,
+          problem,
+          solution,
+          instance.getSectionSolverOptions(),
+          instance.inputProblem.fullConnectionRerouteOptions,
+          output,
+          (graph: SerializedHyperGraph) => instance.loadHyperGraph(graph),
+        ]
       },
     },
   ]
@@ -512,9 +527,27 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     return super.visualize()
   }
 
+  /** The latest complete incumbent, including accepted reroutes before a timeout. */
+  getSolvedSolver(): TinyHyperGraphSolver {
+    const reroute = this.getSolver<FullConnectionRerouteSolver>(
+      "rerouteFullConnections",
+    )
+    if (reroute) return reroute.getSolvedSolver()
+    const section =
+      this.getSolver<TinyHyperGraphSectionSolver>("optimizeSection")
+    if (section?.solved && !section.failed) return section.getSolvedSolver()
+    const graph = this.getSolver<TinyHyperGraphSolver>("solveGraph")
+    if (graph?.solved && !graph.failed) return graph
+    throw new Error(
+      "TinyHyperGraph section pipeline does not have a solved graph",
+    )
+  }
+
   override getOutput() {
     return (
-      this.getStageOutput<SerializedHyperGraph>("rerouteFullConnections") ??
+      this.getSolver<FullConnectionRerouteSolver>(
+        "rerouteFullConnections",
+      )?.getOutput() ??
       this.getStageOutput<SerializedHyperGraph>("optimizeSection") ??
       this.getStageOutput<SerializedHyperGraph>("solveGraph") ??
       null
