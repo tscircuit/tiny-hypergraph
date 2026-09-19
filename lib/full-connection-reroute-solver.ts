@@ -63,6 +63,22 @@ const summarize = (solver: TinyHyperGraphSolver) => {
   return {
     max: costs.reduce((max, cost) => Math.max(max, cost), 0),
     total: costs.reduce((total, cost) => total + cost, 0),
+    estimatedVias: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) =>
+        sum +
+        2 * cache.existingSameLayerIntersections +
+        cache.existingCrossingLayerIntersections +
+        cache.existingEntryExitLayerChanges,
+      0,
+    ),
+    layerChanges: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) => sum + cache.existingEntryExitLayerChanges,
+      0,
+    ),
+    segments: solver.state.regionIntersectionCaches.reduce(
+      (sum, cache) => sum + cache.existingSegmentCount,
+      0,
+    ),
   }
 }
 
@@ -71,9 +87,11 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   bestSolver: TinyHyperGraphSolver
   private acceptedOutput: SerializedHyperGraph
   private attempts: Array<{ regionId: number; routeId: number }>
+  private hotRegionIds: number[]
   private candidate?: AvoidRegionRouteSolver
   private attemptIndex = 0
   private accepted = 0
+  private reroutedRouteIds = new Set<number>()
   private initialScore: ReturnType<typeof summarize>
 
   constructor(
@@ -94,12 +112,14 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     ).baselineSolver
     this.acceptedOutput = serializedInput ?? this.bestSolver.getOutput()
     this.initialScore = summarize(this.bestSolver)
-    this.attempts = this.bestSolver.state.regionIntersectionCaches
+    this.hotRegionIds = this.bestSolver.state.regionIntersectionCaches
       .map((cache, regionId) => ({ regionId, cost: cache.existingRegionCost }))
       .filter(({ cost }) => cost > 0)
       .sort((a, b) => b.cost - a.cost)
       .slice(0, options.maxHotRegions ?? 8)
-      .flatMap(({ regionId }) =>
+      .map(({ regionId }) => regionId)
+    this.attempts = this.hotRegionIds
+      .flatMap((regionId) =>
         [
           ...new Set(
             this.bestSolver.state.regionSegments[regionId]!.map(
@@ -154,6 +174,10 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         },
         {
           ...this.solverOptions,
+          // Only one connection is active. Avoid a portCount * routeCount
+          // distance table for the connections fixed by initialAssignments.
+          USE_LAZY_ROUTE_HEURISTIC:
+            this.solverOptions.USE_LAZY_ROUTE_HEURISTIC ?? true,
           MAX_ITERATIONS: this.options.maxIterationsPerAttempt ?? 20_000,
           STATIC_REACHABILITY_PRECHECK: false,
           ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
@@ -176,14 +200,32 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       ).baselineSolver
       const after = summarize(replaySolver)
       if (
-        after.max < before.max - 1e-9 ||
-        (Math.abs(after.max - before.max) <= 1e-9 &&
-          after.max <= before.max &&
-          after.total < before.total - 1e-9)
+        // Moving crossings into a larger region lowers its area-normalized
+        // cost even when it introduces more vias or longer region detours.
+        // Preserve the unweighted via estimate and downstream path complexity.
+        after.estimatedVias < before.estimatedVias &&
+        after.layerChanges <= before.layerChanges &&
+        after.segments + 2 * after.estimatedVias <=
+          before.segments + 2 * before.estimatedVias &&
+        after.total <= before.total + 1e-9 &&
+        // A lower maximum must not hide increased congestion in another
+        // high-cost region selected for this pass.
+        this.hotRegionIds.every(
+          (regionId) =>
+            replaySolver.state.regionIntersectionCaches[regionId]!
+              .existingRegionCost <=
+            this.bestSolver.state.regionIntersectionCaches[regionId]!
+              .existingRegionCost + 1e-9,
+        ) &&
+        (after.max < before.max - 1e-9 ||
+          (Math.abs(after.max - before.max) <= 1e-9 &&
+            after.max <= before.max &&
+            after.total < before.total - 1e-9))
       ) {
         this.bestSolver = replaySolver
         this.acceptedOutput = candidateOutput
         this.accepted += 1
+        this.reroutedRouteIds.add(this.attempts[this.attemptIndex]!.routeId)
       }
     }
     this.candidate = undefined
@@ -196,10 +238,17 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       ...this.stats,
       rerouteAttempts: this.attemptIndex,
       acceptedReroutes: this.accepted,
+      reroutedRouteCount: this.reroutedRouteIds.size,
       initialMaxRegionCost: this.initialScore.max,
       finalMaxRegionCost: score.max,
       initialTotalRegionCost: this.initialScore.total,
       finalTotalRegionCost: score.total,
+      initialEstimatedViaCount: this.initialScore.estimatedVias,
+      finalEstimatedViaCount: score.estimatedVias,
+      initialLayerChangeCount: this.initialScore.layerChanges,
+      finalLayerChangeCount: score.layerChanges,
+      initialSegmentCount: this.initialScore.segments,
+      finalSegmentCount: score.segments,
     }
     this.solved = true
   }
