@@ -3,6 +3,7 @@ import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import {
   TinyHyperGraphSolver,
+  createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolution,
   type TinyHyperGraphSolverOptions,
@@ -44,6 +45,32 @@ class AvoidRegionRouteSolver extends TinyHyperGraphSolver {
     return this.topology.incidentPortRegion[startingPortId]?.find(
       (regionId) => !this.isRegionReservedForDifferentNet(regionId),
     )
+  }
+
+  canonicalizeRegionCosts(): void {
+    for (let regionId = 0; regionId < this.topology.regionCount; regionId++) {
+      const segments = this.state.regionSegments[regionId]!
+      if (
+        segments.every(
+          ([routeId], index) => index === 0 || segments[index - 1]![0] <= routeId,
+        )
+      ) {
+        continue
+      }
+
+      // Fixed routes retain canonical route order; the newly searched route
+      // was appended last. Equal-angle crossings are order-sensitive, so score
+      // it in replay order before deciding whether a full replay is worthwhile.
+      this.state.regionIntersectionCaches[regionId] =
+        createEmptyRegionIntersectionCache()
+      for (const [routeId, fromPortId, toPortId] of [...segments].sort(
+        (a, b) => a[0] - b[0],
+      )) {
+        this.state.currentRouteNetId = this.problem.routeNet[routeId]
+        this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+      }
+    }
+    this.state.currentRouteNetId = undefined
   }
 
   override onAllRoutesRouted(): void {
@@ -196,6 +223,12 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     if (!this.candidate.solved && !this.candidate.failed) return
     if (this.candidate.solved && !this.candidate.failed) {
       const before = summarize(this.bestSolver)
+      this.candidate.canonicalizeRegionCosts()
+      if (!this.improvesScore(this.candidate, before)) {
+        this.candidate = undefined
+        this.attemptIndex += 1
+        return
+      }
       const candidateOutput = this.candidate.getOutput()
       const replay = this.loadHyperGraph(candidateOutput)
       const replaySolver = new TinyHyperGraphSectionSolver(
@@ -204,30 +237,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         replay.solution,
         this.solverOptions,
       ).baselineSolver
-      const after = summarize(replaySolver)
-      if (
-        // Moving crossings into a larger region lowers its area-normalized
-        // cost even when it introduces more vias or longer region detours.
-        // Preserve the unweighted via estimate and downstream path complexity.
-        after.estimatedVias < before.estimatedVias &&
-        after.layerChanges <= before.layerChanges &&
-        after.segments + 2 * after.estimatedVias <=
-          before.segments + 2 * before.estimatedVias &&
-        after.total <= before.total + 1e-9 &&
-        // A lower maximum must not hide increased congestion in another
-        // high-cost region selected for this pass.
-        this.hotRegionIds.every(
-          (regionId) =>
-            replaySolver.state.regionIntersectionCaches[regionId]!
-              .existingRegionCost <=
-            this.bestSolver.state.regionIntersectionCaches[regionId]!
-              .existingRegionCost + 1e-9,
-        ) &&
-        (after.max < before.max - 1e-9 ||
-          (Math.abs(after.max - before.max) <= 1e-9 &&
-            after.max <= before.max &&
-            after.total < before.total - 1e-9))
-      ) {
+      if (this.improvesScore(replaySolver, before)) {
         this.bestSolver = replaySolver
         this.acceptedOutput = candidateOutput
         this.accepted += 1
@@ -236,6 +246,36 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     }
     this.candidate = undefined
     this.attemptIndex += 1
+  }
+
+  private improvesScore(
+    solver: TinyHyperGraphSolver,
+    before: ReturnType<typeof summarize>,
+  ): boolean {
+    const after = summarize(solver)
+    return (
+      // Moving crossings into a larger region lowers its area-normalized
+      // cost even when it introduces more vias or longer region detours.
+      // Preserve the unweighted via estimate and downstream path complexity.
+      after.estimatedVias < before.estimatedVias &&
+      after.layerChanges <= before.layerChanges &&
+      after.segments + 2 * after.estimatedVias <=
+        before.segments + 2 * before.estimatedVias &&
+      after.total <= before.total + 1e-9 &&
+      // A lower maximum must not hide increased congestion in another
+      // high-cost region selected for this pass.
+      this.hotRegionIds.every(
+        (regionId) =>
+          solver.state.regionIntersectionCaches[regionId]!
+            .existingRegionCost <=
+          this.bestSolver.state.regionIntersectionCaches[regionId]!
+            .existingRegionCost + 1e-9,
+      ) &&
+      (after.max < before.max - 1e-9 ||
+        (Math.abs(after.max - before.max) <= 1e-9 &&
+          after.max <= before.max &&
+          after.total < before.total - 1e-9))
+    )
   }
 
   private finish(): void {
