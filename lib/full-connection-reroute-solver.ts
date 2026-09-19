@@ -200,9 +200,10 @@ export class FullConnectionRerouteSolver extends BaseSolver {
         // Moving crossings into a larger region lowers its area-normalized
         // cost even when it introduces more vias or longer region detours.
         // Preserve the unweighted via estimate and downstream path complexity.
-        after.estimatedVias <= before.estimatedVias &&
+        after.estimatedVias < before.estimatedVias &&
         after.layerChanges <= before.layerChanges &&
-        after.segments <= before.segments &&
+        after.segments + 2 * after.estimatedVias <=
+          before.segments + 2 * before.estimatedVias &&
         after.total <= before.total + 1e-9 &&
         (after.max < before.max - 1e-9 ||
           (Math.abs(after.max - before.max) <= 1e-9 &&

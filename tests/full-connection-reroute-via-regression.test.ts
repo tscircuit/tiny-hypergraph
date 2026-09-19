@@ -43,7 +43,10 @@ test("rerouting cannot buy lower area-normalized cost with more vias or detours"
   })
   // The old maximum-first rule accepted a lower cost with 17 -> 20 estimated vias.
   expect(scores[0]!.vias).toBe(17)
-  for (const key of ["max", "total", "vias", "layerChanges", "segments"] as const) {
+  for (const key of ["max", "total", "vias", "layerChanges"] as const) {
     expect(scores[1]![key]).toBeLessThanOrEqual(scores[0]![key])
   }
+  expect(scores[1]!.segments + 2 * scores[1]!.vias).toBeLessThanOrEqual(
+    scores[0]!.segments + 2 * scores[0]!.vias,
+  )
 })
