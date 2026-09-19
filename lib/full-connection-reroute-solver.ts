@@ -14,6 +14,8 @@ import {
 import { TinyHyperGraphSectionSolver } from "./section-solver"
 
 export interface FullConnectionRerouteOptions {
+  preserveAllRegionCosts?: boolean
+  maxRouteSegmentRatio?: number
   maxHotRegions?: number
   maxAttempts?: number
   maxIterationsPerAttempt?: number
@@ -177,6 +179,7 @@ export class FullConnectionRerouteSolver extends BaseSolver {
   private acceptedOutput: SerializedHyperGraph
   private attempts: Array<{ regionId: number; routeId: number }>
   private hotRegionIds: number[]
+  private guardedRegionIds: number[]
   private candidate?: AvoidRegionRouteSolver
   private sharedProblemSetup?: TinyHyperGraphProblemSetup
   private attemptIndex = 0
@@ -208,6 +211,9 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       .sort((a, b) => b.cost - a.cost)
       .slice(0, options.maxHotRegions ?? 8)
       .map(({ regionId }) => regionId)
+    this.guardedRegionIds = options.preserveAllRegionCosts
+      ? this.bestSolver.state.regionIntersectionCaches.map((_, regionId) => regionId)
+      : this.hotRegionIds
     this.attempts = this.hotRegionIds
       .flatMap((regionId) =>
         [
@@ -320,6 +326,24 @@ export class FullConnectionRerouteSolver extends BaseSolver {
     before: ReturnType<typeof summarize>,
   ): boolean {
     const after = summarize(solver)
+    if (this.options.maxRouteSegmentRatio !== undefined) {
+      const routeId = this.attempts[this.attemptIndex]!.routeId
+      const originalSegmentCount = this.bestSolver.state.regionSegments.reduce(
+        (count, segments) =>
+          count +
+          segments.filter(([segmentRouteId]) => segmentRouteId === routeId)
+            .length,
+        0,
+      )
+      const reroutedSegmentCount =
+        originalSegmentCount + after.segments - before.segments
+      if (
+        reroutedSegmentCount >
+        originalSegmentCount * this.options.maxRouteSegmentRatio
+      ) {
+        return false
+      }
+    }
     return (
       // Moving crossings into a larger region lowers its area-normalized
       // cost even when it introduces more vias or longer region detours.
@@ -329,14 +353,13 @@ export class FullConnectionRerouteSolver extends BaseSolver {
       after.segments + 2 * after.estimatedVias <=
         before.segments + 2 * before.estimatedVias &&
       after.total <= before.total + 1e-9 &&
-      // A lower maximum must not hide increased congestion in another
-      // high-cost region selected for this pass.
-      this.hotRegionIds.every(
+      // Moving a crossing into a previously clear region can force new
+      // physical vias even when the whole-graph estimate decreases.
+      this.guardedRegionIds.every(
         (regionId) =>
-          solver.state.regionIntersectionCaches[regionId]!
-            .existingRegionCost <=
-          this.bestSolver.state.regionIntersectionCaches[regionId]!
-            .existingRegionCost + 1e-9,
+          solver.state.regionIntersectionCaches[regionId]!.existingRegionCost <=
+            this.bestSolver.state.regionIntersectionCaches[regionId]!
+              .existingRegionCost + 1e-9,
       ) &&
       (after.max < before.max - 1e-9 ||
         (Math.abs(after.max - before.max) <= 1e-9 &&
