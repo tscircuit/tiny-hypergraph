@@ -38,6 +38,13 @@ type RelaxedSearchHopData = {
   resources: SelectiveReripBlockerResource[]
 }
 
+type RelaxedSearchHop = {
+  state: RelaxedSearchState
+  distance: number
+  owners: RouteId[]
+  data: RelaxedSearchHopData
+}
+
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
 
 export type FailedOwnerPairCount = {
@@ -358,18 +365,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 
     const portOwners = this.getPortOwners()
     const portResources = new Map<PortId, PortBlockerResource>()
+    const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
-    const hopsByState = new Map<
-      number,
-      ReturnType<typeof this.getRelaxedSearchHops>
-    >()
+    const hopsByState = new Map<number, RelaxedSearchHop[]>()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): ReturnType<typeof this.getRelaxedSearchHops> => {
+      getHops: (state): RelaxedSearchHop[] => {
         const key = this.getHopId(state.portId, state.nextRegionId)
         const cached = hopsByState.get(key)
         if (cached) return cached
@@ -379,6 +384,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           routeNetId,
           portOwners,
           portResources,
+          hopTemplatesByRegion,
           forbiddenOwnerRouteIds,
         })
         hopsByState.set(key, hops)
@@ -434,25 +440,50 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
     forbiddenOwnerRouteIds: ReadonlySet<RouteId>
-  }): Array<{
-    state: RelaxedSearchState
-    distance: number
-    owners: RouteId[]
-    data: RelaxedSearchHopData
-  }> {
+    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
+    buildRegionTemplates?: boolean
+  }): RelaxedSearchHop[] {
     const { state, goalPortId, routeNetId } = params
     if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
+    // In multilayer regions, reservations and blocker resources depend only
+    // on the destination. Share their immutable metadata across incoming hops;
+    // each directed edge still gets its original distance and ordering.
+    if (
+      !params.buildRegionTemplates &&
+      !this.isKnownSingleLayerRegion(state.nextRegionId)
+    ) {
+      let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
+      if (!templates) {
+        templates = this.getRelaxedSearchHops({
+          ...params,
+          buildRegionTemplates: true,
+        })
+        params.hopTemplatesByRegion.set(state.nextRegionId, templates)
+      }
+      const hops: RelaxedSearchHop[] = []
+      for (const template of templates) {
+        if (template.state.portId === state.portId) continue
+        hops.push({
+          state: template.state,
+          owners: template.owners,
+          data: template.data,
+          distance: Math.hypot(
+            this.topology.portX[state.portId]! -
+              this.topology.portX[template.state.portId]!,
+            this.topology.portY[state.portId]! -
+              this.topology.portY[template.state.portId]!,
+          ),
+        })
+      }
+      return hops
+    }
 
-    const hops: Array<{
-      state: RelaxedSearchState
-      distance: number
-      owners: RouteId[]
-      data: RelaxedSearchHopData
-    }> = []
+    const hops: RelaxedSearchHop[] = []
     for (const neighborPortId of this.topology.regionIncidentPorts[
       state.nextRegionId
     ] ?? []) {
-      if (neighborPortId === state.portId) continue
+      if (neighborPortId === state.portId && !params.buildRegionTemplates)
+        continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (
         neighborPortId !== goalPortId &&
