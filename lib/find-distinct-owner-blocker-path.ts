@@ -143,6 +143,19 @@ const isOwnerSubset = <TOwner>(
   return true
 }
 
+const isOwnerSubsetOfUnion = <TOwner>(
+  subset: ReadonlySet<TOwner>,
+  existing: ReadonlySet<TOwner>,
+  added: readonly TOwner[],
+): boolean => {
+  if (subset === existing) return true
+  if (subset.size > existing.size + added.length) return false
+  for (const owner of subset) {
+    if (!existing.has(owner) && !added.includes(owner)) return false
+  }
+  return true
+}
+
 const labelDominates = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
@@ -295,31 +308,45 @@ export const findDistinctOwnerBlockerPath = <
         )
       }
 
-      // Labels never mutate their owner set after entering the queue. Most
-      // hops encounter no new owner, so share the set until it changes.
-      let owners = current.owners
-      for (const owner of hop.owners ?? []) {
-        if (owners.has(owner)) continue
-        if (owners === current.owners) owners = new Set(current.owners)
-        owners.add(owner)
-      }
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
         throw new Error("Distinct-owner blocker path distance overflowed")
       }
+      const stateKey = options.getStateKey(hop.state)
+      const queueOrder = nextQueueOrder++
+      const existingLabels = labelsByStateKey.get(stateKey) ?? []
+      const addedOwners = hop.owners ?? []
+      // Most proposed labels are dominated. Test the owner union without
+      // allocating a label or copying its owner set for those rejected hops.
+      let dominated = false
+      for (const label of existingLabels) {
+        if (
+          label.distance <= distance &&
+          isOwnerSubsetOfUnion(label.owners, current.owners, addedOwners)
+        ) {
+          dominated = true
+          break
+        }
+      }
+      if (dominated) continue
+
+      // Labels never mutate their owner set after entering the queue. Most
+      // hops encounter no new owner, so share the set until it changes.
+      let owners = current.owners
+      for (const owner of addedOwners) {
+        if (owners.has(owner)) continue
+        if (owners === current.owners) owners = new Set(current.owners)
+        owners.add(owner)
+      }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
-        stateKey: options.getStateKey(hop.state),
+        stateKey,
         owners,
         distance,
         parent: current,
         incomingHop: hop,
-        queueOrder: nextQueueOrder++,
+        queueOrder,
         active: true,
-      }
-      const existingLabels = labelsByStateKey.get(candidate.stateKey) ?? []
-      if (existingLabels.some((label) => labelDominates(label, candidate))) {
-        continue
       }
 
       const survivingLabels: Array<
