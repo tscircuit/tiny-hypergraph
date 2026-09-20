@@ -357,6 +357,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    const portResources = new Map<PortId, PortBlockerResource>()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<
@@ -377,6 +378,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           goalPortId,
           routeNetId,
           portOwners,
+          portResources,
           forbiddenOwnerRouteIds,
         })
         hopsByState.set(key, hops)
@@ -431,6 +433,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     goalPortId: PortId
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+    portResources: Map<PortId, PortBlockerResource>
     forbiddenOwnerRouteIds: ReadonlySet<RouteId>
   }): Array<{
     state: RelaxedSearchState
@@ -465,6 +468,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         toPortId: neighborPortId,
         routeNetId,
         portOwners: params.portOwners,
+        portResources: params.portResources,
       })
       const owners: RouteId[] = []
       for (const resource of resources) {
@@ -516,21 +520,27 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     toPortId: PortId
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+    portResources: Map<PortId, PortBlockerResource>
   }): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      const owners = [
-        ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
-      ].filter(
-        (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
-      )
-      if (owners.length === 0) {
-        throw new Error(
-          `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+      let resource = params.portResources.get(params.toPortId)
+      if (!resource) {
+        const owners = [
+          ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
+        ].filter(
+          (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
         )
+        if (owners.length === 0) {
+          throw new Error(
+            `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+          )
+        }
+        resource = { kind: "port", portId: params.toPortId, owners }
+        params.portResources.set(params.toPortId, resource)
       }
-      resources.push({ kind: "port", portId: params.toPortId, owners })
+      resources.push(resource)
     }
 
     const sameLayerIntersectionOwners = this.getHardBlockedCrossingOwners(
