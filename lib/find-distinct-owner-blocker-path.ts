@@ -246,8 +246,14 @@ export const findDistinctOwnerBlockerPath = <
         )
       }
 
-      const owners = new Set(current.owners)
-      for (const owner of hop.owners ?? []) owners.add(owner)
+      // Labels never mutate their owner set after entering the queue. Most
+      // hops encounter no new owner, so share the set until it changes.
+      let owners = current.owners
+      for (const owner of hop.owners ?? []) {
+        if (owners.has(owner)) continue
+        if (owners === current.owners) owners = new Set(current.owners)
+        owners.add(owner)
+      }
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
         throw new Error("Distinct-owner blocker path distance overflowed")

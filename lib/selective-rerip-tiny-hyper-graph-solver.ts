@@ -357,19 +357,31 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    // Occupancy stays fixed during this synchronous search. Distinct owner
+    // labels revisit the same hop, but their outgoing resources are identical.
+    const hopsByState = new Map<
+      number,
+      ReturnType<typeof this.getRelaxedSearchHops>
+    >()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state) =>
-        this.getRelaxedSearchHops({
+      getHops: (state): ReturnType<typeof this.getRelaxedSearchHops> => {
+        const key = this.getHopId(state.portId, state.nextRegionId)
+        const cached = hopsByState.get(key)
+        if (cached) return cached
+        const hops = this.getRelaxedSearchHops({
           state,
           goalPortId,
           routeNetId,
           portOwners,
           forbiddenOwnerRouteIds,
-        }),
+        })
+        hopsByState.set(key, hops)
+        return hops
+      },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
     })
   }
@@ -453,9 +465,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         routeNetId,
         portOwners: params.portOwners,
       })
-      const owners = [
-        ...new Set(resources.flatMap((resource) => resource.owners)),
-      ]
+      const owners: RouteId[] = []
+      for (const resource of resources) {
+        for (const owner of resource.owners) {
+          if (!owners.includes(owner)) owners.push(owner)
+        }
+      }
       if (
         owners.some((ownerRouteId) =>
           params.forbiddenOwnerRouteIds.has(ownerRouteId),
