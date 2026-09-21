@@ -369,26 +369,48 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
+    const getHops = (state: RelaxedSearchState): RelaxedSearchHop[] => {
+      const key = this.getHopId(state.portId, state.nextRegionId)
+      const cached = hopsByState.get(key)
+      if (cached) return cached
+      const hops = this.getRelaxedSearchHops({
+        state,
+        goalPortId,
+        routeNetId,
+        portOwners,
+        portResources,
+        hopTemplatesByRegion,
+        forbiddenOwnerRouteIds,
+      })
+      hopsByState.set(key, hops)
+      return hops
+    }
+    const reachabilityRegions = new Map<
+      RegionId,
+      { firstSourcePortId: PortId; processedSecondSource: boolean }
+    >()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): RelaxedSearchHop[] => {
-        const key = this.getHopId(state.portId, state.nextRegionId)
-        const cached = hopsByState.get(key)
-        if (cached) return cached
-        const hops = this.getRelaxedSearchHops({
-          state,
-          goalPortId,
-          routeNetId,
-          portOwners,
-          portResources,
-          hopTemplatesByRegion,
-          forbiddenOwnerRouteIds,
-        })
-        hopsByState.set(key, hops)
-        return hops
+      getHops,
+      certifyMinimumOwnerCount: true,
+      getOwnerFreeReachabilityHops: (state): RelaxedSearchHop[] => {
+        if (this.isKnownSingleLayerRegion(state.nextRegionId)) return getHops(state)
+        const previous = reachabilityRegions.get(state.nextRegionId)
+        if (!previous) {
+          reachabilityRegions.set(state.nextRegionId, {
+            firstSourcePortId: state.portId,
+            processedSecondSource: false,
+          })
+          return getHops(state)
+        }
+        if (previous.processedSecondSource || state.portId === previous.firstSourcePortId) return []
+        previous.processedSecondSource = true
+        // Multilayer resources depend only on the destination. The first source
+        // visited every possible exit except itself; only that exit remains.
+        return getHops(state).filter((hop): boolean => hop.state.portId === previous.firstSourcePortId)
       },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
     })

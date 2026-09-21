@@ -211,6 +211,10 @@ export interface Candidate {
   h: number
 }
 
+type RouteNeighbor =
+  | { kind: "goal"; portId: PortId }
+  | { kind: "hop"; portId: PortId; nextRegionId: RegionId; hopId: HopId }
+
 export interface TinyHyperGraphCandidateQueue {
   readonly length: number
   toArray(): Candidate[]
@@ -492,6 +496,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected readonly candidateSecondRegionByPortId: Int32Array
   /** Rare fallback for callers that construct a non-incident directed hop. */
   private candidateOverflowBestCost?: Map<HopId, number>
+  private routeNeighborsByRegion = new Map<RegionId, readonly RouteNeighbor[]>()
   private _problemSetup?: TinyHyperGraphProblemSetup
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
@@ -754,39 +759,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    const neighbors =
-      topology.regionIncidentPorts[currentCandidate.nextRegionId]
+    const neighbors = this.getRouteNeighbors(currentCandidate.nextRegionId)
 
-    for (const neighborPortId of neighbors) {
-      const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-      if (neighborPortId === state.goalPortId) {
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-          continue
-        }
+    for (const neighbor of neighbors) {
+      const neighborPortId = neighbor.portId
+      if (neighbor.kind === "goal") {
         this.onPathFound(currentCandidate)
         return
       }
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-        continue
-      }
       if (neighborPortId === currentCandidate.portId) continue
-      if (problem.portSectionMask[neighborPortId] === 0) continue
 
-      const nextRegionId =
-        topology.incidentPortRegion[neighborPortId][0] ===
-        currentCandidate.nextRegionId
-          ? topology.incidentPortRegion[neighborPortId][1]
-          : topology.incidentPortRegion[neighborPortId][0]
-
-      if (
-        nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
-      ) {
-        continue
-      }
-
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      const nextRegionId = neighbor.nextRegionId
+      const candidateHopId = neighbor.hopId
       if (
         state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId) ===
         true
@@ -823,8 +807,48 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  private getRouteNeighbors(regionId: RegionId): readonly RouteNeighbor[] {
+    const cached = this.routeNeighborsByRegion.get(regionId)
+    if (cached) return cached
+
+    const { topology, problem, state } = this
+    const neighbors: RouteNeighbor[] = []
+    for (const portId of topology.regionIncidentPorts[regionId]) {
+      const assignedNetId = state.portAssignment[portId]
+      if (this.isPortReservedForDifferentNet(portId)) continue
+      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        continue
+      }
+      // Goal contact precedes section and next-region checks in the search.
+      if (portId === state.goalPortId) {
+        neighbors.push({ kind: "goal", portId })
+        continue
+      }
+      if (problem.portSectionMask[portId] === 0) continue
+      const nextRegionId =
+        topology.incidentPortRegion[portId][0] === regionId
+          ? topology.incidentPortRegion[portId][1]
+          : topology.incidentPortRegion[portId][0]
+      if (
+        nextRegionId === undefined ||
+        this.isRegionReservedForDifferentNet(nextRegionId)
+      ) {
+        continue
+      }
+      neighbors.push({
+        kind: "hop",
+        portId,
+        nextRegionId,
+        hopId: this.getHopId(portId, nextRegionId),
+      })
+    }
+    this.routeNeighborsByRegion.set(regionId, neighbors)
+    return neighbors
+  }
+
   resetCandidateBestCosts() {
     const { state } = this
+    this.routeNeighborsByRegion.clear()
 
     this.candidateOverflowBestCost?.clear()
 
