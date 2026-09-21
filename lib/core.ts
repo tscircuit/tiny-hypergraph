@@ -1,3 +1,4 @@
+import { getRemainingPortPenalty } from "./getRemainingPortPenalty"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
@@ -801,7 +802,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         previousBestCost,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
+      if (!Number.isFinite(h)) continue
 
       const newCandidate = {
         prevRegionId: currentCandidate.nextRegionId,
@@ -824,6 +826,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   resetCandidateBestCosts() {
+    this.remainingPortPenalty = undefined
     const { state } = this
 
     this.candidateOverflowBestCost?.clear()
@@ -1752,12 +1755,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.logNeverSuccessfullyRoutedRoutes()
   }
 
-  computeH(neighborPortId: PortId): number {
+  private remainingPortPenalty?: Float64Array
+
+  computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
+    let portPenalty = 0
+    if (this.problem.portPenalty && nextRegionId !== undefined) {
+      this.remainingPortPenalty ??= getRemainingPortPenalty(
+        this,
+        this.getRouteStartPortId(this.state.currentRouteId!),
+      )
+      portPenalty = this.remainingPortPenalty[nextRegionId]!
+    }
     const precomputedHCost = this.problemSetup.portHCostToEndOfRoute
     if (precomputedHCost) {
-      return precomputedHCost[
-        neighborPortId * this.problem.routeCount + this.state.currentRouteId!
-      ]
+      return (
+        portPenalty +
+        precomputedHCost[
+          neighborPortId * this.problem.routeCount + this.state.currentRouteId!
+        ]
+      )
     }
 
     const endPortId = this.getRouteEndPortId(this.state.currentRouteId!)
@@ -1765,7 +1781,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.portX[neighborPortId] - this.topology.portX[endPortId]
     const dy =
       this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
-    return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+    return portPenalty + Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
   }
 
   override visualize(): GraphicsObject {
