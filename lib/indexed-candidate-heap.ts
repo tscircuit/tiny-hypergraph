@@ -123,10 +123,10 @@ export class IndexedCandidateHeap {
   }
 
   private getQueuedHopIndex(hopId: number): number | undefined {
-    if (hopId >= 0 && this.hopStateGeneration) {
-      if (this.hopStateGeneration[hopId] !== this.currentHopStateGeneration) {
-        return undefined
-      }
+    if (
+      hopId >= 0 &&
+      this.hopStateGeneration?.[hopId] === this.currentHopStateGeneration
+    ) {
       const index = this.hopIndexOrClosed![hopId]!
       return index >= 0 ? index : undefined
     }
@@ -134,11 +134,11 @@ export class IndexedCandidateHeap {
   }
 
   private isHopClosed(hopId: number): boolean {
-    if (hopId >= 0 && this.hopStateGeneration) {
-      return (
-        this.hopStateGeneration[hopId] === this.currentHopStateGeneration &&
-        this.hopIndexOrClosed![hopId] === -1
-      )
+    if (
+      hopId >= 0 &&
+      this.hopStateGeneration?.[hopId] === this.currentHopStateGeneration
+    ) {
+      return this.hopIndexOrClosed![hopId] === -1
     }
     return this.closedHopIds.has(hopId)
   }
