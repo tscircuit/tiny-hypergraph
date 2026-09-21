@@ -764,6 +764,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
@@ -1394,6 +1397,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    return new GreedyFinalRouteSolver(
+      this.topology,
+      this.problem,
+      options,
+    )
+  }
+
   protected tryGreedyFinalRouteAcceptance(): boolean {
     const greedyFinalRouteIters = Math.max(
       0,
@@ -1416,6 +1429,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
+    let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
     for (
       let greedyFinalRouteIter = 0;
       greedyFinalRouteIter < greedyFinalRouteIters;
@@ -1428,18 +1442,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = new GreedyFinalRouteSolver(
-        this.topology,
-        this.problem,
-        {
-          ...getTinyHyperGraphSolverOptions(this),
-          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-          GREEDY_FINAL_ROUTE_ITERS: 0,
-          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-          STATIC_REACHABILITY_PRECHECK: false,
-        },
-      )
+      const greedySolver = this.createGreedyFinalRouteSolver({
+        ...getTinyHyperGraphSolverOptions(this),
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+        GREEDY_FINAL_ROUTE_ITERS: 0,
+        MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+        STATIC_REACHABILITY_PRECHECK: false,
+        OUTSIDE_IN_ROUTING: false,
+        PARTIAL_RIP_ENABLED: false,
+      })
+      greedyFinalRouteMaxIterations = greedySolver.MAX_ITERATIONS
 
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
@@ -1466,7 +1479,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         acceptedGreedyFinalRouteOnTimeout: true,
         greedyFinalRouteIter,
         greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
-        greedyFinalRouteMaxIterations: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        greedyFinalRouteMaxIterations,
         neverSuccessfullyRoutedRouteCount: 0,
         maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
         totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
@@ -1483,7 +1496,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ...this.stats,
       greedyFinalRouteAttemptCount: greedyFinalRouteIters,
       greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
-      greedyFinalRouteMaxIterations: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+      greedyFinalRouteMaxIterations,
     }
 
     return false
@@ -1780,8 +1793,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    // Greedy routing drops congestion costs, never physical feasibility.
+    if (
+      this.isKnownSingleLayerRegion(currentCandidate.nextRegionId) &&
+      !Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
     return currentCandidate.g
   }
 }
