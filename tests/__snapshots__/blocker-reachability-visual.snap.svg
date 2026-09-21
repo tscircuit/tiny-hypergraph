@@ -3,7 +3,7 @@
   <g font-family="sans-serif" fill="#0f172a">
     <text x="30" y="36" font-size="23" font-weight="bold">Disconnected blocker search</text>
     <text x="30" y="66" font-size="15">8 owner-choice stages; each left/right edge adds a distinct blocker owner.</text>
-    <text x="30" y="94" font-size="17" fill="#dc2626">Result: no_path | Expanded states/labels: 511 | Reachable states: 9</text>
+    <text x="30" y="94" font-size="17" fill="#2563eb">Result: no_path | Expanded states/labels: 9 | Reachable states: 9</text>
     
     <path d="M 78 170 Q 107 104 136 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="107" y="128" font-size="11" text-anchor="middle">left-0</text>
@@ -16,54 +16,54 @@
     <text x="201" y="128" font-size="11" text-anchor="middle">left-1</text>
     <path d="M 172 170 Q 201 236 230 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="201" y="212" font-size="11" text-anchor="middle">right-1</text>
-    <circle cx="154" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="154" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="154" y="175" text-anchor="middle" font-size="13">1</text>
-    <text x="154" y="224" text-anchor="middle" fill="#dc2626" font-size="14">2 visits</text>
+    <text x="154" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 266 170 Q 295 104 324 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="295" y="128" font-size="11" text-anchor="middle">left-2</text>
     <path d="M 266 170 Q 295 236 324 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="295" y="212" font-size="11" text-anchor="middle">right-2</text>
-    <circle cx="248" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="248" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="248" y="175" text-anchor="middle" font-size="13">2</text>
-    <text x="248" y="224" text-anchor="middle" fill="#dc2626" font-size="14">4 visits</text>
+    <text x="248" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 360 170 Q 389 104 418 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="389" y="128" font-size="11" text-anchor="middle">left-3</text>
     <path d="M 360 170 Q 389 236 418 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="389" y="212" font-size="11" text-anchor="middle">right-3</text>
-    <circle cx="342" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="342" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="342" y="175" text-anchor="middle" font-size="13">3</text>
-    <text x="342" y="224" text-anchor="middle" fill="#dc2626" font-size="14">8 visits</text>
+    <text x="342" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 454 170 Q 483 104 512 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="483" y="128" font-size="11" text-anchor="middle">left-4</text>
     <path d="M 454 170 Q 483 236 512 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="483" y="212" font-size="11" text-anchor="middle">right-4</text>
-    <circle cx="436" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="436" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="436" y="175" text-anchor="middle" font-size="13">4</text>
-    <text x="436" y="224" text-anchor="middle" fill="#dc2626" font-size="14">16 visits</text>
+    <text x="436" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 548 170 Q 577 104 606 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="577" y="128" font-size="11" text-anchor="middle">left-5</text>
     <path d="M 548 170 Q 577 236 606 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="577" y="212" font-size="11" text-anchor="middle">right-5</text>
-    <circle cx="530" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="530" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="530" y="175" text-anchor="middle" font-size="13">5</text>
-    <text x="530" y="224" text-anchor="middle" fill="#dc2626" font-size="14">32 visits</text>
+    <text x="530" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 642 170 Q 671 104 700 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="671" y="128" font-size="11" text-anchor="middle">left-6</text>
     <path d="M 642 170 Q 671 236 700 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="671" y="212" font-size="11" text-anchor="middle">right-6</text>
-    <circle cx="624" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="624" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="624" y="175" text-anchor="middle" font-size="13">6</text>
-    <text x="624" y="224" text-anchor="middle" fill="#dc2626" font-size="14">64 visits</text>
+    <text x="624" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <path d="M 736 170 Q 765 104 794 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="765" y="128" font-size="11" text-anchor="middle">left-7</text>
     <path d="M 736 170 Q 765 236 794 170" fill="none" stroke="#94a3b8" stroke-width="2"/>
     <text x="765" y="212" font-size="11" text-anchor="middle">right-7</text>
-    <circle cx="718" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <circle cx="718" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="718" y="175" text-anchor="middle" font-size="13">7</text>
-    <text x="718" y="224" text-anchor="middle" fill="#dc2626" font-size="14">128 visits</text>
-    <circle cx="812" cy="170" r="18" fill="white" stroke="#dc2626" stroke-width="3"/>
+    <text x="718" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
+    <circle cx="812" cy="170" r="18" fill="white" stroke="#2563eb" stroke-width="3"/>
     <text x="812" y="175" text-anchor="middle" font-size="13">8</text>
-    <text x="812" y="224" text-anchor="middle" fill="#dc2626" font-size="14">256 visits</text>
+    <text x="812" y="224" text-anchor="middle" fill="#2563eb" font-size="14">1 visits</text>
     <circle cx="940" cy="170" r="23" fill="#f1f5f9" stroke="#64748b" stroke-width="2" stroke-dasharray="4 3"/>
     <text x="940" y="175" text-anchor="middle" font-size="13">goal</text>
     <text x="940" y="224" text-anchor="middle" font-size="14">unreachable</text>
@@ -73,29 +73,29 @@
     <rect x="112" y="312" width="2" height="17" fill="#2563eb"/>
     <text x="124" y="325" font-size="13">1</text>
     <text x="40" y="351" font-size="13">State 1</text>
-    <rect x="112" y="339" width="4" height="17" fill="#dc2626"/>
-    <text x="126" y="352" font-size="13">2</text>
+    <rect x="112" y="339" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="352" font-size="13">1</text>
     <text x="40" y="378" font-size="13">State 2</text>
-    <rect x="112" y="366" width="8" height="17" fill="#dc2626"/>
-    <text x="130" y="379" font-size="13">4</text>
+    <rect x="112" y="366" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="379" font-size="13">1</text>
     <text x="40" y="405" font-size="13">State 3</text>
-    <rect x="112" y="393" width="16" height="17" fill="#dc2626"/>
-    <text x="138" y="406" font-size="13">8</text>
+    <rect x="112" y="393" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="406" font-size="13">1</text>
     <text x="40" y="432" font-size="13">State 4</text>
-    <rect x="112" y="420" width="32" height="17" fill="#dc2626"/>
-    <text x="154" y="433" font-size="13">16</text>
+    <rect x="112" y="420" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="433" font-size="13">1</text>
     <text x="40" y="459" font-size="13">State 5</text>
-    <rect x="112" y="447" width="64" height="17" fill="#dc2626"/>
-    <text x="186" y="460" font-size="13">32</text>
+    <rect x="112" y="447" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="460" font-size="13">1</text>
     <text x="40" y="486" font-size="13">State 6</text>
-    <rect x="112" y="474" width="128" height="17" fill="#dc2626"/>
-    <text x="250" y="487" font-size="13">64</text>
+    <rect x="112" y="474" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="487" font-size="13">1</text>
     <text x="40" y="513" font-size="13">State 7</text>
-    <rect x="112" y="501" width="256" height="17" fill="#dc2626"/>
-    <text x="378" y="514" font-size="13">128</text>
+    <rect x="112" y="501" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="514" font-size="13">1</text>
     <text x="40" y="540" font-size="13">State 8</text>
-    <rect x="112" y="528" width="512" height="17" fill="#dc2626"/>
-    <text x="634" y="541" font-size="13">256</text>
+    <rect x="112" y="528" width="2" height="17" fill="#2563eb"/>
+    <text x="124" y="541" font-size="13">1</text>
     <text x="30" y="582" font-size="13">Blue: visited once. Red: revisited for different owner sets. Counts recorded by the search's getHops callback.</text>
   </g>
 </svg>
