@@ -1,6 +1,7 @@
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
@@ -194,6 +195,20 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ],
       lastRippedRouteIds: [...this.selectiveReripStats.lastRippedRouteIds],
     }
+  }
+
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    // Finishing a congested board still needs route costs and blocker rerips.
+    // Zero-cost greedy paths can complete the graph but overwhelm detailed routing.
+    return new SelectiveReripTinyHyperGraphSolver(this.topology, this.problem, {
+      ...options,
+      MAX_ITERATIONS: Math.max(
+        options.MAX_ITERATIONS ?? 50_000,
+        this.MAX_ITERATIONS * 2,
+      ),
+    })
   }
 
   override onOutOfCandidates(): void {
