@@ -506,7 +506,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     entryExitLayerChanges: 0,
   }
   protected ADD_SEGMENT_DISTANCE_TO_G = false
-  protected costAwareFinalAttempt = false
+  protected costAwareFinalReripBudget = 0
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
@@ -1429,9 +1429,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     })
 
     let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
-    // The extra candidate must not shift the existing greedy shuffle seeds.
+    // Do not reset the rerip budget by opening a new cost-aware search after
+    // the parent has already repeatedly rearranged the graph. Preserve the
+    // existing greedy shuffle seeds when the extra candidate is skipped.
     for (
-      let greedyFinalRouteIter = this.costAwareFinalAttempt ? -1 : 0;
+      let greedyFinalRouteIter =
+        this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0;
       greedyFinalRouteIter < greedyFinalRouteIters;
       greedyFinalRouteIter++
     ) {
