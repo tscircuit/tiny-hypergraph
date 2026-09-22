@@ -795,11 +795,14 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 class CongestionAwareFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver {
   override onOutOfCandidates(): void {
     super.onOutOfCandidates()
-    // Repeated whole-graph restarts defeat the purpose of completing a nearly
+    // Repeated blocker rerips or whole-graph restarts defeat completing a nearly
     // routed graph. Leave the existing greedy attempts their normal budget.
-    if (Number(this.stats.globalReripCount) >= 2) {
+    if (
+      Number(this.stats.globalReripCount) >= 2 ||
+      Number(this.stats.selectiveRipCount) >= 8
+    ) {
       this.failed = true
-      this.error = "Congestion-aware final routing exhausted its restart budget"
+      this.error = "Congestion-aware final routing exhausted its rerip budget"
     }
   }
 }
