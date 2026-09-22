@@ -18,6 +18,12 @@ export type DistinctOwnerBlockerSearchOptions<
     state: TState,
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
+  /** Requires a finite fixed graph; may visit hops before weighted expansion. */
+  certifyMinimumOwnerCount?: boolean
+  /** Optional reduction preserving exactly the same owner-free goal reachability. */
+  getOwnerFreeReachabilityHops?: (
+    state: TState,
+  ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
 }
 
 export type DistinctOwnerBlockerSearchSuccess<
@@ -51,18 +57,20 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
   owners: Set<TOwner>
+  priorityOwnerCount: number
   distance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
   queueOrder: number
   active: boolean
+  queueIndex: number
 }
 
 const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
+  const ownerCountDifference = left.priorityOwnerCount - right.priorityOwnerCount
   if (ownerCountDifference !== 0) return ownerCountDifference
 
   const distanceDifference = left.distance - right.distance
@@ -76,55 +84,103 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
     SearchLabel<TState, TStateKey, TOwner, THopData>
   > = []
 
-  push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
-    this.heap.push(label)
-    let index = this.heap.length - 1
-
+  private siftUp(index: number): void {
+    const label = this.heap[index]!
     while (index > 0) {
       const parentIndex = Math.floor((index - 1) / 2)
-      if (compareLabels(this.heap[parentIndex]!, this.heap[index]!) <= 0) {
-        break
-      }
-      ;[this.heap[parentIndex], this.heap[index]] = [
-        this.heap[index]!,
-        this.heap[parentIndex]!,
-      ]
+      const parent = this.heap[parentIndex]!
+      if (compareLabels(parent, label) <= 0) break
+      this.heap[index] = parent
+      parent.queueIndex = index
       index = parentIndex
+    }
+    this.heap[index] = label
+    label.queueIndex = index
+  }
+
+  private siftDown(index: number): void {
+    const label = this.heap[index]!
+    while (true) {
+      const leftIndex = index * 2 + 1
+      if (leftIndex >= this.heap.length) break
+      const rightIndex = leftIndex + 1
+      const bestIndex =
+        rightIndex < this.heap.length &&
+        compareLabels(this.heap[rightIndex]!, this.heap[leftIndex]!) < 0
+          ? rightIndex
+          : leftIndex
+      const child = this.heap[bestIndex]!
+      if (compareLabels(child, label) >= 0) break
+      this.heap[index] = child
+      child.queueIndex = index
+      index = bestIndex
+    }
+    this.heap[index] = label
+    label.queueIndex = index
+  }
+
+  push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
+    if (label.queueIndex !== -1) {
+      throw new Error("Blocker label is already queued")
+    }
+    label.queueIndex = this.heap.length
+    this.heap.push(label)
+    this.siftUp(label.queueIndex)
+  }
+
+  replaceDominated(
+    previous: SearchLabel<TState, TStateKey, TOwner, THopData>,
+    candidate: SearchLabel<TState, TStateKey, TOwner, THopData>,
+  ): void {
+    const index = previous.queueIndex
+    if (
+      index < 0 ||
+      this.heap[index] !== previous ||
+      candidate.queueIndex !== -1
+    ) {
+      throw new Error("Invalid dominated blocker label replacement")
+    }
+    previous.queueIndex = -1
+    candidate.queueIndex = index
+    this.heap[index] = candidate
+    // A certified owner floor can give fewer-owner labels the same priority.
+    // Their later queueOrder can move the replacement down rather than up.
+    if (
+      index > 0 &&
+      compareLabels(candidate, this.heap[Math.floor((index - 1) / 2)]!) < 0
+    ) {
+      this.siftUp(index)
+    } else {
+      this.siftDown(index)
+    }
+  }
+
+  remove(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
+    const index = label.queueIndex
+    if (index < 0 || this.heap[index] !== label) {
+      throw new Error("Blocker label queue index is inconsistent")
+    }
+    const last = this.heap.pop()!
+    label.queueIndex = -1
+    if (last === label) return
+    this.heap[index] = last
+    last.queueIndex = index
+    if (
+      index > 0 &&
+      compareLabels(last, this.heap[Math.floor((index - 1) / 2)]!) < 0
+    ) {
+      this.siftUp(index)
+    } else {
+      this.siftDown(index)
     }
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
     const first = this.heap[0]
-    const last = this.heap.pop()
-    if (!first || !last) return null
-    if (this.heap.length === 0) return first
-
-    this.heap[0] = last
-    let index = 0
-    while (true) {
-      const leftIndex = index * 2 + 1
-      const rightIndex = leftIndex + 1
-      let bestIndex = index
-      if (
-        leftIndex < this.heap.length &&
-        compareLabels(this.heap[leftIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = leftIndex
-      }
-      if (
-        rightIndex < this.heap.length &&
-        compareLabels(this.heap[rightIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = rightIndex
-      }
-      if (bestIndex === index) break
-      ;[this.heap[index], this.heap[bestIndex]] = [
-        this.heap[bestIndex]!,
-        this.heap[index]!,
-      ]
-      index = bestIndex
+    if (!first) {
+      return null
     }
-
+    this.remove(first)
     return first
   }
 }
@@ -197,6 +253,32 @@ const getNextActiveLabel = <TState, TStateKey, TOwner, THopData>(
   }
 }
 
+const certifyMinimumOwnerCount = <TState, TStateKey, TOwner, THopData>(
+  options: DistinctOwnerBlockerSearchOptions<TState, TStateKey, TOwner, THopData>,
+): 0 | 1 => {
+  const visited = new Set<TStateKey>([options.getStateKey(options.start)])
+  const pending: TState[] = [options.start]
+  for (let cursor = 0; cursor < pending.length; cursor++) {
+    const current = pending[cursor]!
+    if (options.isGoal(current)) return 0
+    for (const hop of (options.getOwnerFreeReachabilityHops ?? options.getHops)(current)) {
+      if (!Number.isFinite(hop.distance) || hop.distance < 0) {
+        throw new Error(
+          "Distinct-owner blocker hops require finite distances >= 0",
+        )
+      }
+      if (hop.owners !== undefined && hop.owners.length !== 0) continue
+      const key = options.getStateKey(hop.state)
+      if (visited.has(key)) continue
+      visited.add(key)
+      pending.push(hop.state)
+    }
+  }
+  // Exhausting owner-free reachability proves every solution needs an owner.
+  // This does not replace the weighted labels or consume their expansion limit.
+  return 1
+}
+
 export const findDistinctOwnerBlockerPath = <
   TState,
   TStateKey,
@@ -219,6 +301,10 @@ export const findDistinctOwnerBlockerPath = <
     throw new Error("maxExpandedLabels must be a non-negative integer")
   }
 
+  const minimumOwnerCount =
+    options.certifyMinimumOwnerCount && maxExpandedLabels !== 0
+      ? certifyMinimumOwnerCount(options)
+      : 0
   const labelsByStateKey = new Map<
     TStateKey,
     Array<SearchLabel<TState, TStateKey, TOwner, THopData>>
@@ -230,11 +316,13 @@ export const findDistinctOwnerBlockerPath = <
     state: options.start,
     stateKey: options.getStateKey(options.start),
     owners: new Set<TOwner>(),
+    priorityOwnerCount: minimumOwnerCount,
     distance: 0,
     parent: null,
     incomingHop: null,
     queueOrder: nextQueueOrder++,
     active: true,
+    queueIndex: -1,
   }
   labelsByStateKey.set(startLabel.stateKey, [startLabel])
   queue.push(startLabel)
@@ -293,11 +381,13 @@ export const findDistinctOwnerBlockerPath = <
         state: hop.state,
         stateKey,
         owners,
+        priorityOwnerCount: Math.max(owners.size, minimumOwnerCount),
         distance,
         parent: current,
         incomingHop: hop,
         queueOrder,
         active: true,
+        queueIndex: -1,
       }
 
       const survivingLabels: Array<
@@ -306,13 +396,22 @@ export const findDistinctOwnerBlockerPath = <
       for (const label of existingLabels) {
         if (labelDominates(candidate, label)) {
           label.active = false
+          if (label.queueIndex !== -1) {
+            // Replace one dominated queued label and remove the others without
+            // retaining stale entries. Routing data in parent labels is unchanged.
+            if (candidate.queueIndex === -1) {
+              queue.replaceDominated(label, candidate)
+            } else {
+              queue.remove(label)
+            }
+          }
         } else {
           survivingLabels.push(label)
         }
       }
       survivingLabels.push(candidate)
       labelsByStateKey.set(candidate.stateKey, survivingLabels)
-      queue.push(candidate)
+      if (candidate.queueIndex === -1) queue.push(candidate)
     }
   }
 }
