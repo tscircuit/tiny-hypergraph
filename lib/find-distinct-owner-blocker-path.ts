@@ -18,6 +18,8 @@ export type DistinctOwnerBlockerSearchOptions<
     state: TState,
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
+  /** Check the same filtered graph before enumerating owner sets. Hops must be stable during this call. */
+  checkReachability?: boolean
 }
 
 export type DistinctOwnerBlockerSearchSuccess<
@@ -184,6 +186,37 @@ const getNextActiveLabel = <TState, TStateKey, TOwner, THopData>(
   }
 }
 
+const checkBlockerPathReachability = <TState, TStateKey, TOwner, THopData>(
+  options: DistinctOwnerBlockerSearchOptions<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  >,
+  maxExpandedStates: number,
+): "reachable" | "unreachable" | "search_limit" => {
+  const queue = [options.start]
+  const seen = new Set([options.getStateKey(options.start)])
+  for (let index = 0; index < queue.length; index++) {
+    const state = queue[index]!
+    if (options.isGoal(state)) return "reachable"
+    if (index >= maxExpandedStates) return "search_limit"
+
+    for (const hop of options.getHops(state)) {
+      if (!Number.isFinite(hop.distance) || hop.distance < 0) {
+        throw new Error(
+          "Distinct-owner blocker hops require finite distances >= 0",
+        )
+      }
+      const key = options.getStateKey(hop.state)
+      if (seen.has(key)) continue
+      seen.add(key)
+      queue.push(hop.state)
+    }
+  }
+  return "unreachable"
+}
+
 export const findDistinctOwnerBlockerPath = <
   TState,
   TStateKey,
@@ -205,6 +238,15 @@ export const findDistinctOwnerBlockerPath = <
   ) {
     throw new Error("maxExpandedLabels must be a non-negative integer")
   }
+
+  if (
+    options.checkReachability &&
+    checkBlockerPathReachability(options, maxExpandedLabels) === "unreachable"
+  ) {
+    return { found: false, reason: "no_path", expandedLabelCount: 0 }
+  }
+  // A truncated connectivity check proves nothing. The weighted search below
+  // still owns its original label budget and minimum-owner/distance ordering.
 
   const labelsByStateKey = new Map<
     TStateKey,
