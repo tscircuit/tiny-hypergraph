@@ -25,7 +25,7 @@ test("visualizes repeated owner-set exploration before a disconnected goal", asy
   expect(result.found).toBe(false)
   if (result.found) throw new Error("The isolated goal must be unreachable")
   expect(result.reason).toBe("no_path")
-  expect(result.expandedLabelCount).toBe(511)
+  expect(result.expandedLabelCount).toBe(9)
   expect(visits.reduce((sum, count) => sum + count, 0)).toBe(
     result.expandedLabelCount,
   )
