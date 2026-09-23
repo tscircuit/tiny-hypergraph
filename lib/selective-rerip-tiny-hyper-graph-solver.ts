@@ -1,6 +1,7 @@
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
@@ -36,6 +37,13 @@ export type SelectiveReripBlockerResource =
 
 type RelaxedSearchHopData = {
   resources: SelectiveReripBlockerResource[]
+}
+
+type RelaxedSearchHop = {
+  state: RelaxedSearchState
+  distance: number
+  owners: RouteId[]
+  data: RelaxedSearchHopData
 }
 
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
@@ -151,6 +159,7 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * known set of committed blockers.
  */
 export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  protected override costAwareFinalReripBudget = 8
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
     Map<RouteId, number>
@@ -187,6 +196,25 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ],
       lastRippedRouteIds: [...this.selectiveReripStats.lastRippedRouteIds],
     }
+  }
+
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+    attempt: number,
+  ): TinyHyperGraphSolver {
+    if (attempt >= 0) return super.createGreedyFinalRouteSolver(options, attempt)
+    // Finishing a congested board still needs route costs and blocker rerips.
+    // Zero-cost greedy paths can complete the graph but overwhelm detailed routing.
+    const solver = new CongestionAwareFinalRouteSolver(this.topology, this.problem, {
+      ...options,
+      MAX_ITERATIONS: Math.max(
+        options.MAX_ITERATIONS ?? 50_000,
+        this.MAX_ITERATIONS * 2,
+      ),
+    })
+    solver.remainingReripBudget =
+      this.costAwareFinalReripBudget - this.state.ripCount
+    return solver
   }
 
   override onOutOfCandidates(): void {
@@ -357,19 +385,32 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    const portResources = new Map<PortId, PortBlockerResource>()
+    const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
+    // Occupancy stays fixed during this synchronous search. Distinct owner
+    // labels revisit the same hop, but their outgoing resources are identical.
+    const hopsByState = new Map<number, RelaxedSearchHop[]>()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state) =>
-        this.getRelaxedSearchHops({
+      getHops: (state): RelaxedSearchHop[] => {
+        const key = this.getHopId(state.portId, state.nextRegionId)
+        const cached = hopsByState.get(key)
+        if (cached) return cached
+        const hops = this.getRelaxedSearchHops({
           state,
           goalPortId,
           routeNetId,
           portOwners,
+          portResources,
+          hopTemplatesByRegion,
           forbiddenOwnerRouteIds,
-        }),
+        })
+        hopsByState.set(key, hops)
+        return hops
+      },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
       checkReachability: true,
     })
@@ -419,26 +460,52 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     goalPortId: PortId
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+    portResources: Map<PortId, PortBlockerResource>
     forbiddenOwnerRouteIds: ReadonlySet<RouteId>
-  }): Array<{
-    state: RelaxedSearchState
-    distance: number
-    owners: RouteId[]
-    data: RelaxedSearchHopData
-  }> {
+    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
+    buildRegionTemplates?: boolean
+  }): RelaxedSearchHop[] {
     const { state, goalPortId, routeNetId } = params
     if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
+    // In multilayer regions, reservations and blocker resources depend only
+    // on the destination. Share their immutable metadata across incoming hops;
+    // each directed edge still gets its original distance and ordering.
+    if (
+      !params.buildRegionTemplates &&
+      !this.isKnownSingleLayerRegion(state.nextRegionId)
+    ) {
+      let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
+      if (!templates) {
+        templates = this.getRelaxedSearchHops({
+          ...params,
+          buildRegionTemplates: true,
+        })
+        params.hopTemplatesByRegion.set(state.nextRegionId, templates)
+      }
+      const hops: RelaxedSearchHop[] = []
+      for (const template of templates) {
+        if (template.state.portId === state.portId) continue
+        hops.push({
+          state: template.state,
+          owners: template.owners,
+          data: template.data,
+          distance: Math.hypot(
+            this.topology.portX[state.portId]! -
+              this.topology.portX[template.state.portId]!,
+            this.topology.portY[state.portId]! -
+              this.topology.portY[template.state.portId]!,
+          ),
+        })
+      }
+      return hops
+    }
 
-    const hops: Array<{
-      state: RelaxedSearchState
-      distance: number
-      owners: RouteId[]
-      data: RelaxedSearchHopData
-    }> = []
+    const hops: RelaxedSearchHop[] = []
     for (const neighborPortId of this.topology.regionIncidentPorts[
       state.nextRegionId
     ] ?? []) {
-      if (neighborPortId === state.portId) continue
+      if (neighborPortId === state.portId && !params.buildRegionTemplates)
+        continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (
         neighborPortId !== goalPortId &&
@@ -453,10 +520,14 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         toPortId: neighborPortId,
         routeNetId,
         portOwners: params.portOwners,
+        portResources: params.portResources,
       })
-      const owners = [
-        ...new Set(resources.flatMap((resource) => resource.owners)),
-      ]
+      const owners: RouteId[] = []
+      for (const resource of resources) {
+        for (const owner of resource.owners) {
+          if (!owners.includes(owner)) owners.push(owner)
+        }
+      }
       if (
         owners.some((ownerRouteId) =>
           params.forbiddenOwnerRouteIds.has(ownerRouteId),
@@ -501,21 +572,27 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     toPortId: PortId
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+    portResources: Map<PortId, PortBlockerResource>
   }): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      const owners = [
-        ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
-      ].filter(
-        (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
-      )
-      if (owners.length === 0) {
-        throw new Error(
-          `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+      let resource = params.portResources.get(params.toPortId)
+      if (!resource) {
+        const owners = [
+          ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
+        ].filter(
+          (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
         )
+        if (owners.length === 0) {
+          throw new Error(
+            `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+          )
+        }
+        resource = { kind: "port", portId: params.toPortId, owners }
+        params.portResources.set(params.toPortId, resource)
       }
-      resources.push({ kind: "port", portId: params.toPortId, owners })
+      resources.push(resource)
     }
 
     const sameLayerIntersectionOwners = this.getHardBlockedCrossingOwners(
@@ -716,5 +793,19 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return connectionId === undefined
       ? String(routeId)
       : `${routeId} (${String(connectionId)})`
+  }
+}
+
+class CongestionAwareFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver {
+  remainingReripBudget = 0
+
+  override onOutOfCandidates(): void {
+    super.onOutOfCandidates()
+    // This completion candidate shares its rerip budget with the parent search.
+    // Repeated rearrangements indicate that more of the same search is unhelpful.
+    if (this.state.ripCount >= this.remainingReripBudget) {
+      this.failed = true
+      this.error = "Congestion-aware final routing exhausted its rerip budget"
+    }
   }
 }
