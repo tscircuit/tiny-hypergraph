@@ -1399,11 +1399,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options: TinyHyperGraphSolverOptions,
     _attempt: number,
   ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(
-      this.topology,
-      this.problem,
-      options,
-    )
+    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
   }
 
   protected tryGreedyFinalRouteAcceptance(): boolean {
