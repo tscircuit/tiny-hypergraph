@@ -371,6 +371,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           forbiddenOwnerRouteIds,
         }),
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
+      checkReachability: true,
     })
   }
 
