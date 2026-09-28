@@ -1,5 +1,15 @@
 # Boundary bugs and implementation evidence
 
+Current-base audit: fetched and merged `origin/main` at
+`0750fa4c95e25a61d0e9e7250aa08c2046e671d8` on 2026-09-28. The loader is
+unchanged between the historical baseline below and that main revision, so
+both defects still apply. Main adds trace-density costs and closed-route
+serialization support; the modeled incidence/neighbor/commit/reset operations
+are unchanged. Focused round-trip tests cover the refreshed serializer. The
+proof source line references remain explicitly tied to the historical baseline;
+they are not current line numbers. No performance improvement is claimed, and
+no consumer dependency is bumped by this PR.
+
 Inspected baseline: `c60c55266323974507ca3de06ff6ff3c4860436d`.
 The coordinating autorouter checkout is based on
 `8e8adc693d63f89583b71862f7c39c9d82791a79`, which pins tiny-hypergraph
