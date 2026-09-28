@@ -59,13 +59,30 @@ be reviewed and covered by differential tests.
 
 `bucket_length_le` proves that each query visits no more entries than the full
 scan. `query_visits_le` sums this bound across any list of queries.
-`grouping_and_queries_bound` includes the one `N`-entry preprocessing pass:
-`N + sum(bucket sizes) <= N + Q*N`. Bucket key construction occurs once per
-original port, plus one lookup key per query, instead of being repeated for
-almost every port on every query. The proof does not claim that map lookups are
-constant time, that preprocessing is free, or that all inputs become faster.
-Measured bucket sizes, query counts, runtime and memory must establish whether
-the preprocessing pays off for the selected workload. The formal bound alone
-is not evidence of a practical performance win.
+`full_visits_decomposition` gives the exact accounting:
+
+```text
+Q*N = retained bucket visits + off-boundary omitted visits
+```
+
+`preprocessing_pays_iff` proves that grouping plus bucket scans have strictly
+fewer entry visits **if and only if** total omitted visits exceed `N`, the cost
+of the one grouping pass. This measurable effort condition is not an assumption
+of correctness; `bucket_scan_eq` is unconditional. Entry visits count even ports
+rejected by the same-ID guard. They must not be confused with distance calls or
+boundary-key computations.
+
+The baseline computes one source key per query and repeats key sort/join for
+original ports except those rejected by the same-ID check. The candidate
+computes `N + Q` keys: once per original port during grouping, then once per
+query. Both versions perform the same distance evaluations on retained ports
+that pass the same-ID check, in the same order. Thus the reduction removes
+repeated full-array traversal and boundary-key construction; it does not depend
+on Bun, browser JIT behavior, or an arithmetic shortcut.
+
+The proof does not claim that map lookups are constant time, that preprocessing
+is free, or that every input becomes faster. Runtime and memory measurements
+must supplement the exact visit reduction on the selected workload. Historical
+runs with unmatched revisions or environments do not establish a speedup.
 
 No custom axioms, `sorry`, or `admit` are used.

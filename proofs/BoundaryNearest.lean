@@ -114,4 +114,41 @@ theorem grouping_and_queries_bound (key : Port → Key) (ports : List Port)
       ports.length + queries.length * ports.length := by
   exact Nat.add_le_add_left (query_visits_le key ports queries) _
 
+/-- Entries omitted by a query, including any same-ID entries on other boundaries.
+These are loop visits, not distance evaluations or boundary-key evaluations. -/
+def rejectedVisits (key : Port → Key) (ports : List Port) (queries : List Key) : Nat :=
+  (queries.map (fun query =>
+    (ports.filter (fun port => decide (key port ≠ query))).length)).sum
+
+theorem boundary_visit_partition (key : Port → Key) (ports : List Port) (query : Key) :
+    ports.length = (buildBuckets key ports query).length +
+      (ports.filter (fun port => decide (key port ≠ query))).length := by
+  rw [bucket_eq_filter]
+  induction ports with
+  | nil => simp
+  | cons port ports ih =>
+    by_cases h : key port = query <;> simp [h] at * <;> omega
+
+/-- Exact accounting of all full-scan loop visits across repeated queries. -/
+theorem full_visits_decomposition (key : Port → Key) (ports : List Port)
+    (queries : List Key) :
+    queries.length * ports.length =
+      queryVisits key ports queries + rejectedVisits key ports queries := by
+  induction queries with
+  | nil => simp [queryVisits, rejectedVisits]
+  | cons query queries ih =>
+    have h := boundary_visit_partition key ports query
+    simp only [queryVisits, rejectedVisits, List.map_cons, List.sum_cons] at *
+    simp only [List.length_cons, Nat.add_mul, Nat.one_mul]
+    omega
+
+/-- Strictly fewer loop visits including grouping iff omitted visits repay N.
+The measurable condition concerns effort only; scan correctness is unconditional. -/
+theorem preprocessing_pays_iff (key : Port → Key) (ports : List Port)
+    (queries : List Key) :
+    ports.length + queryVisits key ports queries < queries.length * ports.length ↔
+      ports.length < rejectedVisits key ports queries := by
+  rw [full_visits_decomposition key ports queries]
+  omega
+
 end BoundaryNearest
