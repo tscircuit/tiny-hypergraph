@@ -152,16 +152,14 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
 
 const findNearestPortOnSameBoundary = (
   sourcePort: SerializedPort,
-  ports: SerializedPort[],
+  boundaryPorts: SerializedPort[],
 ): SerializedPort | undefined => {
-  const sourceBoundaryKey = getBoundaryKey(sourcePort)
   const sourcePoint = getPortPoint(sourcePort)
   let nearestPort: SerializedPort | undefined
   let nearestDistance = Number.POSITIVE_INFINITY
 
-  for (const port of ports) {
+  for (const port of boundaryPorts) {
     if (port.portId === sourcePort.portId) continue
-    if (getBoundaryKey(port) !== sourceBoundaryKey) continue
 
     const distance = getDistance(sourcePoint, getPortPoint(port))
     if (distance <= EPSILON || distance >= nearestDistance) continue
@@ -171,6 +169,17 @@ const findNearestPortOnSameBoundary = (
   }
 
   return nearestPort
+}
+
+const groupPortsByBoundary = (ports: SerializedPort[]) => {
+  const portsByBoundary = new Map<string, SerializedPort[]>()
+  for (const port of ports) {
+    const key = getBoundaryKey(port)
+    const boundaryPorts = portsByBoundary.get(key)
+    if (boundaryPorts) boundaryPorts.push(port)
+    else portsByBoundary.set(key, [port])
+  }
+  return portsByBoundary
 }
 
 const getFallbackBoundaryDirection = (
@@ -393,6 +402,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
+    let portsByBoundary: Map<string, SerializedPort[]> | undefined
 
     for (const [sourcePortId, useCount] of [...portUseCounts.entries()].sort(
       ([leftPortId], [rightPortId]) => leftPortId.localeCompare(rightPortId),
@@ -403,9 +413,12 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       if (!sourcePort) continue
 
       const duplicateCount = useCount - 1
+      // Index only the original ports, in input order: newly created duplicates
+      // must not change later nearest-neighbor choices or equal-distance ties.
+      portsByBoundary ??= groupPortsByBoundary(this.serializedHyperGraph.ports)
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
-        this.serializedHyperGraph.ports,
+        portsByBoundary.get(getBoundaryKey(sourcePort))!,
       )
       const duplicateDirection = getDuplicateDirection(
         sourcePort,
