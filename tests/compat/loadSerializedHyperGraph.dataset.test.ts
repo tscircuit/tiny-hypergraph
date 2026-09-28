@@ -11,22 +11,34 @@ const datasetModule = datasetHg07 as Record<string, unknown> & {
   }
 }
 
-test("loadSerializedHyperGraph loads every hg07 dataset sample", () => {
-  const fullObstacleErrors: string[] = []
+test("loadSerializedHyperGraph loads hg07 except its known baseline endpoint failure", () => {
+  let loaded = 0
+  const knownFailures: string[] = []
 
   for (const { sampleName } of datasetModule.manifest.samples) {
     const sample = datasetModule[sampleName] as SerializedHyperGraph
 
     try {
       loadSerializedHyperGraph(sample)
+      loaded++
     } catch (error) {
-      if (String(error).includes("references full-obstacle region")) {
-        fullObstacleErrors.push(`${sampleName}: ${String(error)}`)
+      // Present before incidence validation at both c60c552 and c1043b.
+      // Do not hide other loader errors: they may be compatibility regressions.
+      if (
+        sampleName === "sample014" &&
+        error instanceof Error &&
+        error.message ===
+          'Connection "source_trace_69" could not be mapped to route endpoints'
+      ) {
+        knownFailures.push(sampleName)
+      } else {
+        throw error
       }
     }
   }
 
-  expect(fullObstacleErrors).toEqual([])
+  expect(loaded).toBe(104)
+  expect(knownFailures).toEqual(["sample014"])
 })
 
 test("loadSerializedHyperGraph loads hg07 sample001", () => {
