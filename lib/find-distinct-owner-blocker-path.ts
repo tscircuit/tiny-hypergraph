@@ -18,6 +18,8 @@ export type DistinctOwnerBlockerSearchOptions<
     state: TState,
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
+  /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
+  checkReachability?: boolean
 }
 
 export type DistinctOwnerBlockerSearchSuccess<
@@ -184,6 +186,48 @@ const getNextActiveLabel = <TState, TStateKey, TOwner, THopData>(
   }
 }
 
+const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
+  options: DistinctOwnerBlockerSearchOptions<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  >,
+  maxExpandedStates: number,
+): DistinctOwnerBlockerSearchFailure | undefined => {
+  const queue = [options.start]
+  const seenStateKeys = new Set([options.getStateKey(options.start)])
+  let expandedStateCount = 0
+  let totalHopDistance = 0
+
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+    const state = queue[queueIndex]!
+    if (options.isGoal(state)) return undefined
+    // An incomplete precheck cannot rule out a path. Keep the original search
+    // and its label budget when this traversal reaches the same work limit.
+    if (expandedStateCount >= maxExpandedStates) return undefined
+    expandedStateCount++
+
+    for (const hop of options.getHops(state)) {
+      totalHopDistance += hop.distance
+      // Preserve the weighted search's validation and overflow behavior.
+      if (hop.distance < 0 || !Number.isFinite(totalHopDistance)) {
+        return undefined
+      }
+      const stateKey = options.getStateKey(hop.state)
+      if (seenStateKeys.has(stateKey)) continue
+      seenStateKeys.add(stateKey)
+      queue.push(hop.state)
+    }
+  }
+
+  return {
+    found: false,
+    reason: "no_path",
+    expandedLabelCount: expandedStateCount,
+  }
+}
+
 export const findDistinctOwnerBlockerPath = <
   TState,
   TStateKey,
@@ -204,6 +248,11 @@ export const findDistinctOwnerBlockerPath = <
     (!Number.isInteger(maxExpandedLabels) || maxExpandedLabels < 0)
   ) {
     throw new Error("maxExpandedLabels must be a non-negative integer")
+  }
+
+  if (options.checkReachability) {
+    const disconnected = findDisconnectedSearch(options, maxExpandedLabels)
+    if (disconnected) return disconnected
   }
 
   const labelsByStateKey = new Map<

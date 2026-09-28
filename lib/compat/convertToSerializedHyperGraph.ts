@@ -197,6 +197,7 @@ const getOrderedRoutePath = (
 
   const startPortId = solver.problem.routeStartPort[routeId]
   const endPortId = solver.problem.routeEndPort[routeId]
+  const isClosedRoute = startPortId === endPortId
   const segmentsByPort = new Map<
     PortId,
     Array<RouteSegment & { segmentIndex: number }>
@@ -225,7 +226,10 @@ const getOrderedRoutePath = (
     usedSegmentIndices: Set<number>,
     visitedPortIds: Set<PortId>,
   ): boolean => {
-    if (currentPortId === endPortId) {
+    if (
+      currentPortId === endPortId &&
+      (!isClosedRoute || usedSegmentIndices.size === routeSegments.length)
+    ) {
       return true
     }
 
@@ -237,10 +241,15 @@ const getOrderedRoutePath = (
           ? routeSegment.toPortId
           : routeSegment.fromPortId
 
-      if (visitedPortIds.has(nextPortId)) continue
+      const closesRoute =
+        isClosedRoute &&
+        nextPortId === endPortId &&
+        usedSegmentIndices.size + 1 === routeSegments.length
+      if (visitedPortIds.has(nextPortId) && !closesRoute) continue
 
       usedSegmentIndices.add(routeSegment.segmentIndex)
-      visitedPortIds.add(nextPortId)
+      const addedVisitedPort = !visitedPortIds.has(nextPortId)
+      if (addedVisitedPort) visitedPortIds.add(nextPortId)
       orderedRegionIds.push(routeSegment.regionId)
       orderedPortIds.push(nextPortId)
 
@@ -252,7 +261,7 @@ const getOrderedRoutePath = (
 
       orderedPortIds.pop()
       orderedRegionIds.pop()
-      visitedPortIds.delete(nextPortId)
+      if (addedVisitedPort) visitedPortIds.delete(nextPortId)
       usedSegmentIndices.delete(routeSegment.segmentIndex)
     }
 

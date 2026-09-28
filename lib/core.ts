@@ -255,6 +255,8 @@ export interface TinyHyperGraphSolverOptions {
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
   RIP_CONGESTION_REGION_COST_FACTOR?: number
+  /** Opt-in quadratic penalty for concentrating traces in low-capacity regions. */
+  TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS?: number
@@ -301,6 +303,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
+  TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS: number
@@ -350,6 +353,12 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.RIP_CONGESTION_REGION_COST_FACTOR !== undefined) {
     solver.RIP_CONGESTION_REGION_COST_FACTOR =
       options.RIP_CONGESTION_REGION_COST_FACTOR
+  }
+  if (options.TRACE_DENSITY_COST_FACTOR !== undefined) {
+    solver.TRACE_DENSITY_COST_FACTOR = Math.max(
+      0,
+      options.TRACE_DENSITY_COST_FACTOR,
+    )
   }
   if (options.USE_LAZY_ROUTE_HEURISTIC !== undefined) {
     solver.USE_LAZY_ROUTE_HEURISTIC = options.USE_LAZY_ROUTE_HEURISTIC
@@ -433,6 +442,7 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
+  TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
@@ -505,6 +515,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   RIP_THRESHOLD_RAMP_ATTEMPTS = 50
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+  TRACE_DENSITY_COST_FACTOR = 0
   USE_LAZY_ROUTE_HEURISTIC = false
   USE_SPARSE_CANDIDATE_STORAGE = false
 
@@ -965,6 +976,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
+      this.TRACE_DENSITY_COST_FACTOR,
     )
   }
 
