@@ -1,0 +1,1319 @@
+{
+  "packageMain": "0750fa4c95e25a61d0e9e7250aa08c2046e671d8",
+  "candidateCodeRevision": "cc9e5e5c0a73e6fd5e44c26fefedc24c407cd962",
+  "consumerMain": "34dc48b0bec14d802eda5936f0bd76a426a41136",
+  "consumerPin": "31459ceef75e443d3ea6efca75cde10b90d63180",
+  "consumerHarnessHead": "d1f01c5dc63796cecd35533a8ccb806edf5e9f4f",
+  "consumerOverride": "Harness forces lazy false except explicitly lazy modes; consumer main unchanged at fetch. No package pin bump.",
+  "environment": "Apple M5, Darwin arm64/macOS27.0; serial experiments",
+  "inputHashes": {
+    "1": {
+      "capturedFileSha256": "e503b66bfc102ca0bb688dfd5c22f852d4bce35dea9b354cbc16dfae3b27ab1e",
+      "ports": 13127,
+      "uniquePortIds": 13127
+    },
+    "2": {
+      "capturedFileSha256": "e76a83ca2470eeee35c918220d3162186a355a616addb6a1b11e7e263e9128f6",
+      "ports": 19961,
+      "uniquePortIds": 19961
+    },
+    "3": {
+      "capturedFileSha256": "309435bd6525859ae519f8ec353f79cc9cdcd9649dc0666b00afb6d9e1d85d16",
+      "ports": 15209,
+      "uniquePortIds": 15209
+    },
+    "4": {
+      "capturedFileSha256": "4af4f6fa1391e7f993207063d6e4363dbabefc53e426d52c292ec903956050c9",
+      "ports": 8107,
+      "uniquePortIds": 8107
+    },
+    "5": {
+      "capturedFileSha256": "a5e71c6e2eaaac0e502900a8b1aea14e870042a08048894b76604e7a96dd3c7a",
+      "ports": 14346,
+      "uniquePortIds": 14346
+    }
+  },
+  "engines": {
+    "chromium": {
+      "metadata": {
+        "kind": "metadata",
+        "version": {
+          "Browser": "HeadlessChrome/151.0.7922.34",
+          "Protocol-Version": "1.3",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "V8-Version": "15.1.206.8",
+          "WebKit-Version": "537.36 (@782af9cb30a53f54487e5d2e44738645a8ec457c)"
+        },
+        "platform": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+        "date": "2026-09-28T13:01:19.775Z",
+        "warmupRounds": 2,
+        "measuredRounds": 5,
+        "order": "rotate modes each round; sample order1..5; each mode/sample fresh solver; explicit GC before and after solve, hashing excluded",
+        "memory": "performance.memory usedJSHeapSize after explicit GC/before solve, immediately after solve, after GC retaining solver. Not peak/RSS."
+      },
+      "cases": [
+        {
+          "sample": 1,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                300.6999999284744, 284, 288.7999999523163, 280.2999999523163,
+                282.2999999523163
+              ],
+              "medianMs": 284,
+              "heapBefore": [24842384, 24883744, 24892900, 25243934, 24979328],
+              "heapAfter": [55871211, 58547783, 56069015, 55873207, 56101059],
+              "heapRetained": [
+                23588279, 24363343, 23636651, 23643775, 23715991
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                299.1999999284744, 277.60000002384186, 283.7999999523163, 280,
+                286.2999999523163
+              ],
+              "medianMs": 283.7999999523163,
+              "heapBefore": [24851092, 24892452, 24902472, 24909340, 25321470],
+              "heapAfter": [53988323, 50428295, 47344587, 50399155, 50330835],
+              "heapRetained": [
+                24695807, 23624291, 23634859, 23641379, 23724411
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 44954
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                217.60000002384186, 199.89999997615814, 200.89999997615814,
+                195.70000004768372, 201.5
+              ],
+              "medianMs": 200.89999997615814,
+              "heapBefore": [25184258, 24892496, 24903212, 24909504, 24988056],
+              "heapAfter": [47367853, 47434213, 47516213, 47424057, 47520481],
+              "heapRetained": [
+                23559719, 23621127, 23615231, 23648535, 23701175
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                300.8000000715256, 291.7999999523163, 279, 279.90000009536743,
+                286.60000002384186
+              ],
+              "medianMs": 286.60000002384186,
+              "heapBefore": [24842260, 25212674, 24894768, 24926636, 24979328],
+              "heapAfter": [55728543, 55947163, 55931119, 55882251, 56096491],
+              "heapRetained": [
+                23570235, 23616983, 23624439, 23684311, 23710399
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                213.60000002384186, 199.39999997615814, 205.19999992847443,
+                197.5, 202.40000009536743
+              ],
+              "medianMs": 202.40000009536743,
+              "heapBefore": [24851148, 24886040, 25235046, 24962144, 24988040],
+              "heapAfter": [47451053, 47428673, 47510793, 47483877, 47524197],
+              "heapRetained": [
+                23562195, 23614675, 23613323, 23701059, 23701391
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                482.3000000715256, 519.2999999523163, 476.90000009536743,
+                485.1999999284744, 486.10000002384186
+              ],
+              "medianMs": 485.1999999284744,
+              "heapBefore": [26973523, 27021603, 27025907, 24979160, 27112403],
+              "heapAfter": [44886222, 45129578, 44829750, 44983766, 33421846],
+              "heapRetained": [
+                26045226, 26084510, 26099838, 26173698, 25074934
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                480.2000000476837, 509.8000000715256, 475, 467.8000000715256,
+                473.2000000476837
+              ],
+              "medianMs": 475,
+              "heapBefore": [26982231, 27030947, 27034655, 27119007, 24989972],
+              "heapAfter": [36646998, 37236150, 65713226, 66188174, 66325762],
+              "heapRetained": [
+                26039494, 26088326, 26099126, 26190474, 26192270
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 86930
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                364.09999990463257, 351.09999990463257, 351.5,
+                339.2000000476837, 338.10000002384186
+              ],
+              "medianMs": 351.09999990463257,
+              "heapBefore": [24851096, 27031083, 27034619, 27119055, 27121095],
+              "heapAfter": [72212118, 64701012, 64700764, 64799860, 64782868],
+              "heapRetained": [
+                27103784, 27151268, 27169992, 27240812, 27242664
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                542.2999999523163, 472.6999999284744, 486.7000000476837,
+                471.89999997615814, 477.2999999523163
+              ],
+              "medianMs": 477.2999999523163,
+              "heapBefore": [26973503, 24890324, 27025907, 27110343, 27112383],
+              "heapAfter": [33160594, 33330242, 41083514, 41109234, 44620374],
+              "heapRetained": [
+                24923986, 24970218, 24984862, 25060554, 26170842
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                366.89999997615814, 346.60000002384186, 332.5,
+                340.39999997615814, 335.90000009536743
+              ],
+              "medianMs": 340.39999997615814,
+              "heapBefore": [26982271, 27030195, 24903520, 27119055, 27121115],
+              "heapAfter": [60304512, 60297904, 60895152, 68553834, 60979916],
+              "heapRetained": [
+                24914898, 24961258, 26056908, 26132616, 26134932
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                277.3000000715256, 279.10000002384186, 273.1999999284744,
+                271.40000009536743, 276.90000009536743
+              ],
+              "medianMs": 276.90000009536743,
+              "heapBefore": [25400069, 25450945, 25452025, 27110343, 25538545],
+              "heapAfter": [41303310, 41226762, 41219638, 41420370, 41663558],
+              "heapRetained": [
+                24024122, 24073606, 24103106, 24161002, 24174086
+              ],
+              "outputHash": "fe4e759e78a045a71ad745bfa2ace68c519ae5117eb95956c865d6aa7d22d398",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                272.10000002384186, 273.2999999523163, 270.90000009536743,
+                265.8000000715256, 278.8000000715256
+              ],
+              "medianMs": 272.10000002384186,
+              "heapBefore": [25408777, 25457869, 25462021, 25545169, 27121151],
+              "heapAfter": [37625014, 37620874, 37454442, 37772094, 37658794],
+              "heapRetained": [
+                24053210, 24092326, 24081166, 24164138, 24160090
+              ],
+              "outputHash": "fe4e759e78a045a71ad745bfa2ace68c519ae5117eb95956c865d6aa7d22d398",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 54028
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                192.5, 192.59999990463257, 196.20000004768372,
+                186.60000002384186, 190.39999997615814
+              ],
+              "medianMs": 192.5,
+              "heapBefore": [26983903, 25457889, 25460765, 25545257, 25547257],
+              "heapAfter": [60450180, 60613652, 62182528, 60707320, 60588384],
+              "heapRetained": [
+                26526424, 26581268, 27017728, 26680584, 26666768
+              ],
+              "outputHash": "fe4e759e78a045a71ad745bfa2ace68c519ae5117eb95956c865d6aa7d22d398",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                272.39999997615814, 276.09999990463257, 272.40000009536743,
+                272.2999999523163, 279
+              ],
+              "medianMs": 272.40000009536743,
+              "heapBefore": [25399985, 27022491, 25452053, 25536545, 25538545],
+              "heapAfter": [41121758, 41288614, 41278450, 44678010, 41373858],
+              "heapRetained": [
+                24016798, 24068826, 24080146, 25026398, 24157058
+              ],
+              "outputHash": "fe4e759e78a045a71ad745bfa2ace68c519ae5117eb95956c865d6aa7d22d398",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                186, 189.40000009536743, 185.40000009536743, 186, 192.5
+              ],
+              "medianMs": 186,
+              "heapBefore": [25408781, 25457589, 27034619, 25545297, 25547257],
+              "heapAfter": [60556880, 60505884, 60615592, 60597548, 60589372],
+              "heapRetained": [
+                26526752, 26580700, 26590140, 26680340, 26666768
+              ],
+              "outputHash": "fe4e759e78a045a71ad745bfa2ace68c519ae5117eb95956c865d6aa7d22d398",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            }
+          }
+        },
+        {
+          "sample": 4,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                159.89999997615814, 163, 157.5, 155.69999992847443,
+                159.30000007152557
+              ],
+              "medianMs": 159.30000007152557,
+              "heapBefore": [23590609, 23613877, 23617829, 25536545, 23703141],
+              "heapAfter": [52787581, 37291965, 37267253, 37462953, 37351877],
+              "heapRetained": [
+                22830173, 22860897, 22863553, 22951477, 22971465
+              ],
+              "outputHash": "648fab6675664dc1b95d6a77cb2f2db7f15cbabf4bfb601cd26de7bbf52bfc2e",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                153.60000002384186, 155.5, 157.79999995231628, 152,
+                155.29999995231628
+              ],
+              "medianMs": 155.29999995231628,
+              "heapBefore": [23590533, 23622593, 23625333, 23709737, 25547333],
+              "heapAfter": [33244853, 31925465, 29406017, 32219141, 32209525],
+              "heapRetained": [
+                22864353, 22873129, 22874373, 22969305, 22948633
+              ],
+              "outputHash": "648fab6675664dc1b95d6a77cb2f2db7f15cbabf4bfb601cd26de7bbf52bfc2e",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 30018
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                105.30000007152557, 105.30000007152557, 103.10000002384186,
+                103.60000002384186, 109.70000004768372
+              ],
+              "medianMs": 105.30000007152557,
+              "heapBefore": [25434329, 23622581, 23625385, 23709741, 23713057],
+              "heapAfter": [58582888, 58505172, 58620784, 58695464, 58706600],
+              "heapRetained": [
+                26012324, 26056328, 26046444, 26132340, 26130048
+              ],
+              "outputHash": "648fab6675664dc1b95d6a77cb2f2db7f15cbabf4bfb601cd26de7bbf52bfc2e",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                157.39999997615814, 158.69999992847443, 156.39999997615814,
+                156.19999992847443, 161
+              ],
+              "medianMs": 157.39999997615814,
+              "heapBefore": [23590585, 25451269, 23617765, 23701037, 23703117],
+              "heapAfter": [37027961, 37280865, 37310921, 37164037, 37454697],
+              "heapRetained": [
+                22836725, 22880945, 22869641, 22954325, 22954685
+              ],
+              "outputHash": "648fab6675664dc1b95d6a77cb2f2db7f15cbabf4bfb601cd26de7bbf52bfc2e",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                105.19999992847443, 109.60000002384186, 106.70000004768372, 104,
+                109
+              ],
+              "medianMs": 106.70000004768372,
+              "heapBefore": [23599337, 23622645, 25460805, 23709789, 23711981],
+              "heapAfter": [58580376, 58622156, 58497696, 58696708, 58705336],
+              "heapRetained": [
+                26012348, 26056328, 26046212, 26129924, 26130072
+              ],
+              "outputHash": "648fab6675664dc1b95d6a77cb2f2db7f15cbabf4bfb601cd26de7bbf52bfc2e",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            }
+          }
+        },
+        {
+          "sample": 5,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                246.60000002384186, 247.5, 267.8000000715256,
+                239.39999997615814, 270.2000000476837
+              ],
+              "medianMs": 247.5,
+              "heapBefore": [25212766, 25234962, 25237630, 23701037, 25326618],
+              "heapAfter": [47075921, 31071161, 30999733, 30927729, 35196549],
+              "heapRetained": [
+                23779157, 23789045, 23796773, 23875557, 25093725
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                237.60000002384186, 236.5, 244.60000002384186,
+                234.29999995231628, 245.70000004768372
+              ],
+              "medianMs": 237.60000002384186,
+              "heapBefore": [25221510, 25234830, 25242558, 25321342, 23713869],
+              "heapAfter": [27923629, 27908569, 28116969, 28048697, 28011457],
+              "heapRetained": [
+                23791317, 23806209, 23812341, 23892721, 23883973
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 40240
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                184.5, 185.30000007152557, 183.80000007152557, 187,
+                191.59999990463257
+              ],
+              "medianMs": 185.30000007152557,
+              "heapBefore": [23599713, 25234834, 25242714, 25321346, 25326602],
+              "heapAfter": [56961194, 56985230, 56994918, 56934902, 56925366],
+              "heapRetained": [
+                26113602, 26135394, 26140042, 26229334, 26223898
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                247.60000002384186, 243.70000004768372, 241.5, 249.5,
+                243.39999997615814
+              ],
+              "medianMs": 243.70000004768372,
+              "heapBefore": [25211430, 23613877, 25242778, 25321458, 25326618],
+              "heapAfter": [31112693, 28042917, 31050937, 50503517, 31157465],
+              "heapRetained": [
+                23768337, 23788701, 23794961, 23891437, 23877493
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                190.89999997615814, 185.60000002384186, 193.89999997615814,
+                194.20000004768372, 194.39999997615814
+              ],
+              "medianMs": 193.89999997615814,
+              "heapBefore": [25212226, 25234834, 23625313, 25330186, 25326490],
+              "heapAfter": [56814350, 56835714, 56856482, 56947254, 56844430],
+              "heapRetained": [
+                26115154, 26135094, 26134894, 26229118, 26224142
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            }
+          }
+        }
+      ],
+      "allWarmupAndMeasuredHashesMatched": true
+    },
+    "bun": {
+      "metadata": {
+        "kind": "metadata",
+        "engine": "Bun 1.3.14",
+        "warmupRounds": 2,
+        "measuredRounds": 5,
+        "order": "same rotating mode order and inputs as Chromium",
+        "memory": "bun:jsc heapStats().heapSize at same three points; not peak/RSS; not comparable absolute units to Chromium heap"
+      },
+      "cases": [
+        {
+          "sample": 1,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                203.2821670000012, 208.50266600000032, 222.58274999999776,
+                214.64295800000036, 212.32645800000319
+              ],
+              "medianMs": 212.32645800000319,
+              "heapBefore": [34938370, 34836201, 34864104, 34859078, 34997234],
+              "heapAfter": [76281905, 71579255, 73732288, 76446045, 68363782],
+              "heapRetained": [
+                37785810, 37681305, 37720022, 37705973, 37842660
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                216.83187499999985, 207.38483300000007, 219.24374999999782,
+                213.12062499999956, 215.4500840000037
+              ],
+              "medianMs": 215.4500840000037,
+              "heapBefore": [34940100, 34835595, 34874320, 34860479, 34984208],
+              "heapAfter": [72367249, 72289673, 77894765, 77909200, 75377173],
+              "heapRetained": [
+                37785810, 37690729, 37711600, 37701200, 37829672
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 44954
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                83.05166599999939, 88.49962499999674, 92.8404589999991,
+                87.1999590000014, 86.65987499999756
+              ],
+              "medianMs": 87.1999590000014,
+              "heapBefore": [34953711, 34845012, 34865896, 34855473, 34980122],
+              "heapAfter": [67526189, 76394481, 74476709, 69991217, 76256827],
+              "heapRetained": [
+                37791873, 41888821, 37718469, 37669025, 42019328
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                203.248708000001, 210.59779200000048, 222.17525000000023,
+                215.35741599999892, 210.45804200000566
+              ],
+              "medianMs": 210.59779200000048,
+              "heapBefore": [34946410, 34792594, 34872837, 34823632, 34991538],
+              "heapAfter": [81695037, 73367022, 76157679, 78908231, 79163680],
+              "heapRetained": [
+                37791630, 37645569, 37707357, 37369355, 42035321
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                89.95449999999983, 92.80762500000128, 94.71266699999978,
+                95.67766699999993, 90.83691700000054
+              ],
+              "medianMs": 92.80762500000128,
+              "heapBefore": [34942534, 34796531, 34867358, 34520486, 35003506],
+              "heapAfter": [75853335, 74807757, 75418335, 76127384, 78478348],
+              "heapRetained": [
+                37783834, 37681659, 37709730, 37768136, 37842895
+              ],
+              "outputHash": "d86444045c5a1cd4a5153a16bc8fb129c8e8262d342028a7193bf21045345de7",
+              "counts": {
+                "solves": 205,
+                "eagerEntries": 2596325,
+                "eagerBytes": 20770600,
+                "hQueries": 44954
+              }
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                374.515625, 364.9782919999998, 403.1298749999987,
+                363.9314579999991, 382.6236250000002
+              ],
+              "medianMs": 374.515625,
+              "heapBefore": [34939327, 34855623, 34853026, 34683910, 34975396],
+              "heapAfter": [53715860, 64412456, 46902803, 51962718, 60503645],
+              "heapRetained": [
+                39082960, 39121225, 39126254, 38966932, 39251184
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                361.42462500000147, 364.2622080000001, 415.3119170000027,
+                357.258041999994, 376.28741699999955
+              ],
+              "medianMs": 364.2622080000001,
+              "heapBefore": [34804918, 34837167, 34849184, 34688874, 34996942],
+              "heapAfter": [46956090, 56202485, 67984823, 75763037, 60241507],
+              "heapRetained": [
+                39117982, 39101902, 39119184, 38951382, 39271078
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 86930
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                157.98708299999998, 159.8425419999985, 167.07395800000086,
+                167.66700000000128, 157.07404099999985
+              ],
+              "medianMs": 159.8425419999985,
+              "heapBefore": [34940100, 34824074, 34840907, 34673344, 34993018],
+              "heapAfter": [88331489, 72851809, 72821944, 70352626, 61101582],
+              "heapRetained": [
+                50572038, 50447976, 50479009, 50385560, 50623980
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                361.17920799999956, 367.2628339999974, 399.1720000000023,
+                357.8478329999998, 375.83374999999796
+              ],
+              "medianMs": 367.2628339999974,
+              "heapBefore": [34939327, 34861323, 34846883, 34752906, 34991294],
+              "heapAfter": [81696794, 72415319, 78902988, 77659326, 89908016],
+              "heapRetained": [
+                50575462, 39120667, 50474974, 50461816, 50609566
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                163.90433400000074, 166.39587499999834, 174.8760000000002,
+                203.90904099999898, 161.97449999999662
+              ],
+              "medianMs": 166.39587499999834,
+              "heapBefore": [34939327, 34863283, 34851839, 34825703, 34969372],
+              "heapAfter": [75037118, 65784743, 64534616, 81603398, 60678912],
+              "heapRetained": [
+                50571977, 50487506, 50485460, 50557618, 50606846
+              ],
+              "outputHash": "fc8d95bfd01eff8f2fa9c2b55c5ad56cc64cd65e43a430bf10a1a319e8668983",
+              "counts": {
+                "solves": 244,
+                "eagerEntries": 4651128,
+                "eagerBytes": 37209024,
+                "hQueries": 86930
+              }
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                210.35433299999931, 232.4777920000015, 227.5980419999978,
+                216.12399999999616, 210.5739590000012
+              ],
+              "medianMs": 216.12399999999616,
+              "heapBefore": [33846068, 34826880, 34839545, 34916770, 34996602],
+              "heapAfter": [81974572, 93670516, 97090461, 83169134, 93798572],
+              "heapRetained": [
+                37260892, 38164925, 38177690, 38255578, 38319263
+              ],
+              "outputHash": "7440da88da92ea41f86cc369e93f9af1da6d8550760cf0cf4ff6667619ec3e21",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                205.958208, 217.37158400000044, 218.492374999998,
+                212.70795799999905, 209.24208299999736
+              ],
+              "medianMs": 212.70795799999905,
+              "heapBefore": [33930786, 34831402, 34846389, 34924708, 34966101],
+              "heapAfter": [83934598, 75098897, 71747734, 78564827, 82022206],
+              "heapRetained": [
+                37260894, 38166875, 38190863, 38278314, 38318274
+              ],
+              "outputHash": "7440da88da92ea41f86cc369e93f9af1da6d8550760cf0cf4ff6667619ec3e21",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 54028
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                87.49875000000065, 89.04925000000003, 94.89220800000112,
+                88.97229199999856, 112.48662499999773
+              ],
+              "medianMs": 89.04925000000003,
+              "heapBefore": [34833912, 34834561, 34858561, 34946000, 34986213],
+              "heapAfter": [82932278, 90523233, 88023269, 95024777, 90472268],
+              "heapRetained": [
+                42247658, 38171185, 38196913, 42731232, 42772046
+              ],
+              "outputHash": "7440da88da92ea41f86cc369e93f9af1da6d8550760cf0cf4ff6667619ec3e21",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                245.67458299999998, 205.50387499999852, 218.1516249999986,
+                210.43849999999657, 215.768250000001
+              ],
+              "medianMs": 215.768250000001,
+              "heapBefore": [34357839, 34815549, 34865446, 34956121, 34996934],
+              "heapAfter": [92894174, 86294256, 75940671, 90565536, 89569189],
+              "heapRetained": [
+                44953844, 38154635, 38207067, 42720524, 42782678
+              ],
+              "outputHash": "7440da88da92ea41f86cc369e93f9af1da6d8550760cf0cf4ff6667619ec3e21",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                93.18437500000073, 96.25533400000131, 103.96358400000099,
+                96.45941700000549, 89.43487499999901
+              ],
+              "medianMs": 96.25533400000131,
+              "heapBefore": [34098242, 34818780, 34839094, 34965565, 35004213],
+              "heapAfter": [88571996, 90542714, 83538664, 77103361, 69089201],
+              "heapRetained": [
+                44680609, 38158005, 38171137, 38580961, 38335106
+              ],
+              "outputHash": "7440da88da92ea41f86cc369e93f9af1da6d8550760cf0cf4ff6667619ec3e21",
+              "counts": {
+                "solves": 145,
+                "eagerEntries": 2119030,
+                "eagerBytes": 16952240,
+                "hQueries": 54028
+              }
+            }
+          }
+        },
+        {
+          "sample": 4,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                121.86258299999827, 130.18349999999919, 126.14016699999775,
+                125.90895799999998, 118.8852079999997
+              ],
+              "medianMs": 125.90895799999998,
+              "heapBefore": [34490197, 34848720, 34874397, 34994808, 35006857],
+              "heapAfter": [55030212, 55520389, 50806279, 55613567, 55654862],
+              "heapRetained": [
+                36468221, 36826638, 36865538, 36975222, 36982442
+              ],
+              "outputHash": "5f19b12133d801963a128ac67b91d7d14f97ed3bcd43e49cffee953b2cce8406",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                118.53283299999748, 122.50699999999779, 129.86312499999985,
+                118.72266700000182, 116.82070899999962
+              ],
+              "medianMs": 118.72266700000182,
+              "heapBefore": [34491195, 34849360, 34888253, 34996857, 34987584],
+              "heapAfter": [56853306, 55125754, 57473210, 57576511, 57560999],
+              "heapRetained": [
+                36479663, 36826638, 36865310, 36978238, 36966666
+              ],
+              "outputHash": "5f19b12133d801963a128ac67b91d7d14f97ed3bcd43e49cffee953b2cce8406",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 30018
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                52.12712500000271, 46.468415999999706, 48.489291999998386,
+                48.09220800000185, 46.805374999996275
+              ],
+              "medianMs": 48.09220800000185,
+              "heapBefore": [33928811, 34849328, 34888025, 35000953, 34989653],
+              "heapAfter": [52918548, 53548435, 55692849, 55807089, 48743681],
+              "heapRetained": [
+                40709953, 36846717, 36859045, 36987749, 36974399
+              ],
+              "outputHash": "5f19b12133d801963a128ac67b91d7d14f97ed3bcd43e49cffee953b2cce8406",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                121.50029200000063, 115.56183299999975, 124.9287089999998,
+                117.62083300000086, 118.09787499999948
+              ],
+              "medianMs": 118.09787499999948,
+              "heapBefore": [34157273, 34839757, 34882285, 35010772, 34997393],
+              "heapAfter": [57298558, 60260957, 60319660, 62891976, 53525114],
+              "heapRetained": [
+                36429973, 40375381, 36856502, 37001422, 36985546
+              ],
+              "outputHash": "5f19b12133d801963a128ac67b91d7d14f97ed3bcd43e49cffee953b2cce8406",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                52.421041999998124, 49.976041999998415, 51.38941700000214,
+                48.652125000000524, 46.577832999995735
+              ],
+              "medianMs": 49.976041999998415,
+              "heapBefore": [34327022, 34846370, 34872246, 35020876, 35005737],
+              "heapAfter": [53162705, 54449876, 55732612, 53812051, 48862386],
+              "heapRetained": [
+                36608226, 40374138, 40400245, 36974386, 36983854
+              ],
+              "outputHash": "5f19b12133d801963a128ac67b91d7d14f97ed3bcd43e49cffee953b2cce8406",
+              "counts": {
+                "solves": 114,
+                "eagerEntries": 869706,
+                "eagerBytes": 6957648,
+                "hQueries": 30018
+              }
+            }
+          }
+        },
+        {
+          "sample": 5,
+          "modes": {
+            "pinned-baseline": {
+              "elapsedMs": [
+                155.4679589999978, 170.55845899999986, 172.7584999999999,
+                159.9020410000012, 156.47641600000497
+              ],
+              "medianMs": 159.9020410000012,
+              "heapBefore": [34795911, 34857092, 34827286, 34991407, 35016508],
+              "heapAfter": [75949761, 79219224, 82217810, 76390710, 79377351],
+              "heapRetained": [
+                37791240, 37873524, 37876492, 37982780, 38014314
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "pinned-lazy": {
+              "elapsedMs": [
+                156.44750000000204, 166.7560420000009, 159.19379099999787,
+                155.11962499999936, 157.48266699999658
+              ],
+              "medianMs": 157.48266699999658,
+              "heapBefore": [34793662, 34875719, 34878680, 34993900, 35005157],
+              "heapAfter": [69062755, 72315507, 61955599, 69581641, 69624505],
+              "heapRetained": [
+                37790314, 37873444, 37877364, 37991033, 37996068
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 0,
+                "eagerBytes": 0,
+                "hQueries": 40240
+              }
+            },
+            "pinned-boundary": {
+              "elapsedMs": [
+                89.02637500000128, 81.91395900000134, 80.60416699999769,
+                82.49187499999971, 82.9945829999997
+              ],
+              "medianMs": 82.49187499999971,
+              "heapBefore": [34501715, 34875639, 34879559, 34984424, 34997592],
+              "heapAfter": [75627804, 72903796, 71105323, 73584551, 88025935],
+              "heapRetained": [
+                37593191, 42168557, 42180753, 42279761, 42306757
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "current-baseline": {
+              "elapsedMs": [
+                160.14808300000004, 167.15520900000047, 156.8257909999993,
+                154.99120799999946, 154.61108399999648
+              ],
+              "medianMs": 156.8257909999993,
+              "heapBefore": [34596308, 34869740, 34879559, 34978560, 35002008],
+              "heapAfter": [81429639, 66931789, 81631470, 72916995, 84914150],
+              "heapRetained": [
+                42015537, 37857236, 42168498, 42276365, 42315565
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            },
+            "current-boundary": {
+              "elapsedMs": [
+                88.05474999999933, 132.00950000000012, 88.81233299999803,
+                86.30349999999453, 83.86529200000223
+              ],
+              "medianMs": 88.05474999999933,
+              "heapBefore": [34703708, 34857460, 34875949, 34977617, 35012156],
+              "heapAfter": [79068291, 69464582, 76639294, 73990612, 76159454],
+              "heapRetained": [
+                42105787, 37854412, 37824577, 42288417, 42317709
+              ],
+              "outputHash": "97ccd2178527f68aeba852632dba07516d5ee9b0c4dc853f81d774622bec4bc3",
+              "counts": {
+                "solves": 172,
+                "eagerEntries": 2374116,
+                "eagerBytes": 18992928,
+                "hQueries": 40240
+              }
+            }
+          }
+        }
+      ],
+      "allWarmupAndMeasuredHashesMatched": true
+    }
+  },
+  "fullBrowser": [
+    {
+      "source": "chromium-full-results.jsonl",
+      "metadata": {
+        "kind": "metadata",
+        "version": {
+          "Browser": "HeadlessChrome/151.0.7922.34",
+          "Protocol-Version": "1.3",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "V8-Version": "15.1.206.8",
+          "WebKit-Version": "537.36 (@782af9cb30a53f54487e5d2e44738645a8ec457c)"
+        },
+        "platform": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+        "date": "2026-09-28T13:05:11.109Z",
+        "warmupCases": 2,
+        "measuredRunsPerVariant": 1,
+        "order": "Warmup sample1 baseline/boundary; measured1,3,5; baseline first except sample3.",
+        "memory": "performance.memory.usedJSHeapSize before/after solve; GC before solve only. Not peak/RSS. DRC/hash outside timer."
+      },
+      "rows": [
+        {
+          "mode": "baseline",
+          "sample": 1,
+          "elapsedMs": 9165.299999952316,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 13688581,
+          "heapAfter": 261639844,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": true
+        },
+        {
+          "mode": "boundary",
+          "sample": 1,
+          "elapsedMs": 8909.600000023842,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 62717438,
+          "heapAfter": 258182595,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": true
+        },
+        {
+          "mode": "baseline",
+          "sample": 1,
+          "elapsedMs": 9072.700000047684,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 62994914,
+          "heapAfter": 249246260,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": false
+        },
+        {
+          "mode": "boundary",
+          "sample": 1,
+          "elapsedMs": 8836.800000071526,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 62190507,
+          "heapAfter": 241618680,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": false
+        },
+        {
+          "mode": "boundary",
+          "sample": 3,
+          "elapsedMs": 7374.900000095367,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 60921107,
+          "heapAfter": 174546509,
+          "hash": "ccfe0d01de79bcc8fbc557e656b7cbe62545e55f2f50e416b26f38edad8cabda",
+          "drcErrors": 0,
+          "vias": 90,
+          "planarWireLength": 890.1272643884525,
+          "warmup": false
+        },
+        {
+          "mode": "baseline",
+          "sample": 3,
+          "elapsedMs": 6266.299999952316,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 55214880,
+          "heapAfter": 174144953,
+          "hash": "ccfe0d01de79bcc8fbc557e656b7cbe62545e55f2f50e416b26f38edad8cabda",
+          "drcErrors": 0,
+          "vias": 90,
+          "planarWireLength": 890.1272643884525,
+          "warmup": false
+        },
+        {
+          "mode": "baseline",
+          "sample": 5,
+          "elapsedMs": 7444.5,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 56573562,
+          "heapAfter": 222617068,
+          "hash": "a3547069c2df3117a7849b4ca1c03abd09284ac859222fb4aec68e132eaa718a",
+          "drcErrors": 0,
+          "vias": 146,
+          "planarWireLength": 1993.9792985474164,
+          "warmup": false
+        },
+        {
+          "mode": "boundary",
+          "sample": 5,
+          "elapsedMs": 7159.100000023842,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 61780252,
+          "heapAfter": 163263573,
+          "hash": "a3547069c2df3117a7849b4ca1c03abd09284ac859222fb4aec68e132eaa718a",
+          "drcErrors": 0,
+          "vias": 146,
+          "planarWireLength": 1993.9792985474164,
+          "warmup": false
+        }
+      ]
+    },
+    {
+      "source": "chromium-full-lazy-results.jsonl",
+      "metadata": {
+        "kind": "metadata",
+        "version": {
+          "Browser": "HeadlessChrome/151.0.7922.34",
+          "Protocol-Version": "1.3",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+          "V8-Version": "15.1.206.8",
+          "WebKit-Version": "537.36 (@782af9cb30a53f54487e5d2e44738645a8ec457c)"
+        },
+        "platform": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+        "date": "2026-09-28T13:07:58.125Z",
+        "warmupCases": 1,
+        "measuredRunsPerVariant": 1,
+        "order": "Separate lazy-only session: warmup sample1; measured1,3,5.",
+        "memory": "performance.memory.usedJSHeapSize before/after solve; GC before solve only. Not peak/RSS. DRC/hash outside timer."
+      },
+      "rows": [
+        {
+          "mode": "lazy",
+          "sample": 1,
+          "elapsedMs": 8901.300000071526,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 13733227,
+          "heapAfter": 284299142,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": true
+        },
+        {
+          "mode": "lazy",
+          "sample": 1,
+          "elapsedMs": 9096.600000023842,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 61685324,
+          "heapAfter": 244769522,
+          "hash": "f1fbe5f8f727c4bc12efd0c17b9d16e9601d539a03804fa7cfcf7c123ee5482f",
+          "drcErrors": 0,
+          "vias": 174,
+          "planarWireLength": 2219.7900719664626,
+          "warmup": false
+        },
+        {
+          "mode": "lazy",
+          "sample": 3,
+          "elapsedMs": 7614.600000023842,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 63609197,
+          "heapAfter": 198117625,
+          "hash": "ccfe0d01de79bcc8fbc557e656b7cbe62545e55f2f50e416b26f38edad8cabda",
+          "drcErrors": 0,
+          "vias": 90,
+          "planarWireLength": 890.1272643884525,
+          "warmup": false
+        },
+        {
+          "mode": "lazy",
+          "sample": 5,
+          "elapsedMs": 6950.899999976158,
+          "solved": true,
+          "failed": false,
+          "timedOut": false,
+          "error": null,
+          "phase": "none",
+          "heapBefore": 55368298,
+          "heapAfter": 199275071,
+          "hash": "a3547069c2df3117a7849b4ca1c03abd09284ac859222fb4aec68e132eaa718a",
+          "drcErrors": 0,
+          "vias": 146,
+          "planarWireLength": 1993.9792985474164,
+          "warmup": false
+        }
+      ]
+    }
+  ]
+}
