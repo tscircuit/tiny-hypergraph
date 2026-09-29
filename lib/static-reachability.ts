@@ -75,11 +75,19 @@ const getDefaultRouteConnectionId = (
   return typeof connectionId === "string" ? connectionId : `route-${routeId}`
 }
 
-const isPortEndpointReservedForStaticReachability = (
+const isPortReservedForStaticReachability = (
+  problem: TinyHyperGraphProblem,
   problemSetup: TinyHyperGraphProblemSetup,
   routeNetId: NetId,
   portId: PortId,
 ) => {
+  const problemReservedNetId = problem.portReservationNetId?.[portId] ?? -1
+  if (
+    problemReservedNetId === -2 ||
+    (problemReservedNetId !== -1 && problemReservedNetId !== routeNetId)
+  ) {
+    return true
+  }
   const reservedNetIds = problemSetup.portEndpointNetIds[portId]
   if (!reservedNetIds) {
     return false
@@ -151,7 +159,8 @@ const hasStaticReachabilityPath = (
       const assignedNetId = portAssignment[neighborPortId]
 
       if (
-        isPortEndpointReservedForStaticReachability(
+        isPortReservedForStaticReachability(
+          problem,
           problemSetup,
           routeNetId,
           neighborPortId,
