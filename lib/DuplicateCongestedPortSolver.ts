@@ -11,6 +11,8 @@ import type { PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
+declare const boundaryKeyBrand: unique symbol
+type BoundaryKey = string & { readonly [boundaryKeyBrand]: true }
 
 export const DUPLICATE_PORT_PROXIMITY = 0.05
 
@@ -75,7 +77,26 @@ const getPortPoint = (port: SerializedPort): Point => ({
 
 const getBoundaryKey = (
   port: Pick<SerializedPort, "region1Id" | "region2Id">,
-) => [port.region1Id, port.region2Id].sort().join("\u0000")
+): BoundaryKey =>
+  (port.region1Id < port.region2Id
+    ? `${port.region1Id}\u0000${port.region2Id}`
+    : `${port.region2Id}\u0000${port.region1Id}`) as BoundaryKey
+
+const getPortsByBoundaryKey = (
+  ports: readonly SerializedPort[],
+): Map<BoundaryKey, SerializedPort[]> => {
+  const portsByBoundaryKey = new Map<BoundaryKey, SerializedPort[]>()
+  for (const port of ports) {
+    const boundaryKey = getBoundaryKey(port)
+    const portsOnBoundary = portsByBoundaryKey.get(boundaryKey)
+    if (portsOnBoundary) {
+      portsOnBoundary.push(port)
+    } else {
+      portsByBoundaryKey.set(boundaryKey, [port])
+    }
+  }
+  return portsByBoundaryKey
+}
 
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
@@ -152,16 +173,18 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
 
 const findNearestPortOnSameBoundary = (
   sourcePort: SerializedPort,
-  ports: SerializedPort[],
+  portsByBoundaryKey: ReadonlyMap<BoundaryKey, readonly SerializedPort[]>,
 ): SerializedPort | undefined => {
-  const sourceBoundaryKey = getBoundaryKey(sourcePort)
+  const portsOnBoundary = portsByBoundaryKey.get(getBoundaryKey(sourcePort))
+  if (!portsOnBoundary) {
+    throw new Error(`No boundary ports found for "${sourcePort.portId}"`)
+  }
   const sourcePoint = getPortPoint(sourcePort)
   let nearestPort: SerializedPort | undefined
   let nearestDistance = Number.POSITIVE_INFINITY
 
-  for (const port of ports) {
+  for (const port of portsOnBoundary) {
     if (port.portId === sourcePort.portId) continue
-    if (getBoundaryKey(port) !== sourceBoundaryKey) continue
 
     const distance = getDistance(sourcePoint, getPortPoint(port))
     if (distance <= EPSILON || distance >= nearestDistance) continue
@@ -391,6 +414,9 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const sourcePortById = new Map(
       ports.map((port) => [port.portId, port] as const),
     )
+    const portsByBoundaryKey = getPortsByBoundaryKey(
+      this.serializedHyperGraph.ports,
+    )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
 
@@ -405,7 +431,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       const duplicateCount = useCount - 1
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
-        this.serializedHyperGraph.ports,
+        portsByBoundaryKey,
       )
       const duplicateDirection = getDuplicateDirection(
         sourcePort,
