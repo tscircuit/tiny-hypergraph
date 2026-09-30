@@ -4,6 +4,14 @@ import { DuplicateCongestedPortSolver } from "lib/DuplicateCongestedPortSolver"
 
 type Port = SerializedHyperGraph["ports"][number]
 
+class BoundaryIndexTestSolver extends DuplicateCongestedPortSolver {
+  duplicateWithPortUseCounts(
+    portUseCounts: Map<string, number>,
+  ): SerializedHyperGraph {
+    return this.duplicateCongestedPorts(portUseCounts)
+  }
+}
+
 const port = (
   portId: string,
   x: number,
@@ -28,16 +36,14 @@ const duplicate = (
     ports,
     connections: [],
   }
-  const solver = new DuplicateCongestedPortSolver(graph, {
+  const solver = new BoundaryIndexTestSolver(graph, {
     duplicatePortProximity,
   })
   // Isolate geometric duplication from independent route solving so each
   // deliberately chosen neighbor arrangement reaches the lookup unchanged.
-  const output = (
-    solver as unknown as {
-      duplicateCongestedPorts(counts: Map<string, number>): SerializedHyperGraph
-    }
-  ).duplicateCongestedPorts(new Map(sourceIds.map((id) => [id, 2])))
+  const output = solver.duplicateWithPortUseCounts(
+    new Map(sourceIds.map((id) => [id, 2])),
+  )
   return output.ports.filter((p) => p.d?.duplicatedFromPortId !== undefined)
 }
 

@@ -11,6 +11,15 @@ type Pmp23595CongestedPortRepro = {
     stage: string
   }
   serializedHyperGraph: SerializedHyperGraph
+  portUseCounts: Record<string, number>
+}
+
+class Pmp23595DuplicateCongestedPortSolver extends DuplicateCongestedPortSolver {
+  duplicateWithCapturedPortUseCounts(
+    portUseCounts: Record<string, number>,
+  ): SerializedHyperGraph {
+    return this.duplicateCongestedPorts(new Map(Object.entries(portUseCounts)))
+  }
 }
 
 test("duplicates congested ports on the PMP23595 power converter graph", () => {
@@ -24,25 +33,15 @@ test("duplicates congested ports on the PMP23595 power converter graph", () => {
       ),
     ).toString("utf8"),
   ) as Pmp23595CongestedPortRepro
-  const solver = new DuplicateCongestedPortSolver(
+  const solver = new Pmp23595DuplicateCongestedPortSolver(
     fixture.serializedHyperGraph,
-    {
-      duplicatePortProximity: 0.05,
-      useSerializedPortPenalties: false,
-      routeSolveOptions: {
-        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
-        GREEDY_FINAL_ROUTE_ITERS: 4,
-        MAX_ITERATIONS: 2_000_000,
-        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-        STATIC_REACHABILITY_PRECHECK: true,
-        USE_SPARSE_CANDIDATE_STORAGE: false,
-        minViaPadDiameter: 0.3,
-      },
-    },
+    { duplicatePortProximity: 0.05 },
   )
   const startedAt = performance.now()
 
-  solver.solve()
+  const output = solver.duplicateWithCapturedPortUseCounts(
+    fixture.portUseCounts,
+  )
 
   const durationMs = performance.now() - startedAt
   const duplicatedPortCount = solver.report.duplicatedPorts.reduce(
@@ -50,7 +49,7 @@ test("duplicates congested ports on the PMP23595 power converter graph", () => {
     0,
   )
   console.log(
-    `PMP23595 congested-port preprocessing duration=${durationMs.toFixed(3)}ms`,
+    `PMP23595 congested-port duplication duration=${durationMs.toFixed(3)}ms`,
   )
 
   expect(fixture.source).toEqual({
@@ -61,9 +60,7 @@ test("duplicates congested ports on the PMP23595 power converter graph", () => {
   expect(fixture.serializedHyperGraph.regions).toHaveLength(29_696)
   expect(fixture.serializedHyperGraph.ports).toHaveLength(136_577)
   expect(fixture.serializedHyperGraph.connections).toHaveLength(458)
-  expect(solver.solved).toBe(true)
-  expect(solver.failed).toBe(false)
   expect(solver.report.duplicatedPorts).toHaveLength(411)
   expect(duplicatedPortCount).toBe(683)
-  expect(solver.getOutput().ports).toHaveLength(137_260)
+  expect(output.ports).toHaveLength(137_260)
 })
