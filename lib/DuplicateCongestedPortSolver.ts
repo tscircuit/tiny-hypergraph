@@ -30,6 +30,12 @@ export interface DuplicatedPortSummary {
 export interface DuplicateCongestedPortSolverReport {
   portUseCounts: Record<string, number>
   duplicatedPorts: DuplicatedPortSummary[]
+  routeCongestionScoreByConnectionId: Record<string, number>
+}
+
+type PortUseAnalysis = {
+  portUseCounts: Map<string, number>
+  routePortIdsByConnectionId: Map<string, string[]>
 }
 
 interface Point {
@@ -317,6 +323,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
   report: DuplicateCongestedPortSolverReport = {
     portUseCounts: {},
     duplicatedPorts: [],
+    routeCongestionScoreByConnectionId: {},
   }
 
   constructor(
@@ -338,7 +345,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  private getPortUseCounts(): Map<string, number> {
+  private getPortUseAnalysis(): PortUseAnalysis {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
@@ -346,6 +353,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       problem.portPenalty = undefined
     }
     const portUseCounts = new Map<string, number>()
+    const routePortIdsByConnectionId = new Map<string, string[]>()
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
@@ -364,16 +372,26 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         )
       }
 
-      for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
-        const serializedPortId = getSerializedPortId(topology, portId)
+      const serializedPortIds = [
+        ...getUsedPortIdsForSolvedRoute(routeSolver),
+      ].map((portId) => getSerializedPortId(topology, portId))
+      for (const serializedPortId of serializedPortIds) {
         portUseCounts.set(
           serializedPortId,
           (portUseCounts.get(serializedPortId) ?? 0) + 1,
         )
       }
+      const routeMetadata = problem.routeMetadata?.[routeId]
+      const connectionId = isRecord(routeMetadata)
+        ? routeMetadata.connectionId
+        : undefined
+      if (typeof connectionId !== "string") {
+        throw new Error(`Route ${routeId} is missing its connection id`)
+      }
+      routePortIdsByConnectionId.set(connectionId, serializedPortIds)
     }
 
-    return portUseCounts
+    return { portUseCounts, routePortIdsByConnectionId }
   }
 
   protected duplicateCongestedPorts(
@@ -487,6 +505,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     this.report = {
       portUseCounts: Object.fromEntries([...portUseCounts.entries()].sort()),
       duplicatedPorts,
+      routeCongestionScoreByConnectionId: {},
     }
 
     return {
@@ -502,9 +521,20 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
   override _setup() {
     try {
-      const portUseCounts = this.getPortUseCounts()
+      const { portUseCounts, routePortIdsByConnectionId } =
+        this.getPortUseAnalysis()
       this.revisedSerializedHyperGraph =
         this.duplicateCongestedPorts(portUseCounts)
+      this.report.routeCongestionScoreByConnectionId = Object.fromEntries(
+        [...routePortIdsByConnectionId].map(([connectionId, portIds]) => [
+          connectionId,
+          portIds.reduce(
+            (score, portId) =>
+              score + Math.max(0, (portUseCounts.get(portId) ?? 1) - 1),
+            0,
+          ),
+        ]),
+      )
       this.stats = {
         ...this.stats,
         duplicateSourcePortCount: this.report.duplicatedPorts.length,

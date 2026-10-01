@@ -310,6 +310,8 @@ export interface TinyHyperGraphSolverOptions {
   OUTSIDE_IN_ROUTING?: boolean
   /** Maximum geometric distance explored by either outside-in frontier. */
   OUTSIDE_IN_MAX_DISTANCE?: number
+  /** Route ids to use for the first pass and as the basis for later rerips. */
+  INITIAL_ROUTE_ORDER?: RouteId[]
 }
 
 export interface TinyHyperGraphSolverOptionTarget {
@@ -341,6 +343,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO?: number
   OUTSIDE_IN_ROUTING?: boolean
   OUTSIDE_IN_MAX_DISTANCE?: number
+  INITIAL_ROUTE_ORDER?: RouteId[]
 }
 
 export const applyTinyHyperGraphSolverOptions = (
@@ -447,6 +450,9 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.OUTSIDE_IN_MAX_DISTANCE !== undefined) {
     solver.OUTSIDE_IN_MAX_DISTANCE = options.OUTSIDE_IN_MAX_DISTANCE
   }
+  if (options.INITIAL_ROUTE_ORDER !== undefined) {
+    solver.INITIAL_ROUTE_ORDER = [...options.INITIAL_ROUTE_ORDER]
+  }
 }
 
 export const getTinyHyperGraphSolverOptions = (
@@ -486,7 +492,28 @@ export const getTinyHyperGraphSolverOptions = (
     solver.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO,
   OUTSIDE_IN_ROUTING: solver.OUTSIDE_IN_ROUTING,
   OUTSIDE_IN_MAX_DISTANCE: solver.OUTSIDE_IN_MAX_DISTANCE,
+  INITIAL_ROUTE_ORDER: solver.INITIAL_ROUTE_ORDER,
 })
+
+const getInitialRouteOrder = (
+  problem: TinyHyperGraphProblem,
+  initialRouteOrder?: RouteId[],
+): RouteId[] => {
+  if (initialRouteOrder === undefined) return range(problem.routeCount)
+  if (
+    initialRouteOrder.length !== problem.routeCount ||
+    new Set(initialRouteOrder).size !== problem.routeCount ||
+    initialRouteOrder.some(
+      (routeId) =>
+        !Number.isInteger(routeId) ||
+        routeId < 0 ||
+        routeId >= problem.routeCount,
+    )
+  ) {
+    throw new Error("INITIAL_ROUTE_ORDER must contain every route id once")
+  }
+  return [...initialRouteOrder]
+}
 
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
@@ -554,6 +581,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO = 0.1
   OUTSIDE_IN_ROUTING = false
   OUTSIDE_IN_MAX_DISTANCE = 24
+  INITIAL_ROUTE_ORDER?: RouteId[]
 
   constructor(
     public topology: TinyHyperGraphTopology,
@@ -591,7 +619,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ),
       currentRouteId: undefined,
       currentRouteNetId: undefined,
-      unroutedRoutes: range(problem.routeCount),
+      unroutedRoutes: getInitialRouteOrder(problem, this.INITIAL_ROUTE_ORDER),
       candidateQueue: new MinHeap([], compareCandidatesByF),
       candidateBestCostByHopId: this.USE_SPARSE_CANDIDATE_STORAGE
         ? new Map()
@@ -1149,7 +1177,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    state.unroutedRoutes = shuffle(
+      this.INITIAL_ROUTE_ORDER ?? range(problem.routeCount),
+      state.ripCount,
+    )
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
