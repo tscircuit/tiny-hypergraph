@@ -29,7 +29,9 @@ test("keeps the lowest-cost queued directed hop and closes dequeued hops", () =>
 
   expect(heap.length).toBe(2)
   expect(secondHop.hopId).toBe(22)
+  expect(heap.isClosedHopId(22)).toBe(false)
   expect(heap.dequeue()).toBe(secondHop)
+  expect(heap.isClosedHopId(22)).toBe(true)
 
   heap.queue(candidate({ portId: 2, nextRegionId: 2, g: 0, f: 0 }))
   expect(heap.length).toBe(1)

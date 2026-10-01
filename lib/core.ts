@@ -233,6 +233,7 @@ export interface TinyHyperGraphCandidateQueue {
   queue(candidate: Candidate): void
   dequeue(): Candidate | undefined
   isClosedHop?(portId: PortId, nextRegionId: RegionId): boolean
+  isClosedHopId?(hopId: HopId): boolean
 }
 
 export interface TinyHyperGraphWorkingState {
@@ -759,10 +760,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
-    const currentCandidateHopId = this.getHopId(
-      currentCandidate.portId,
-      currentCandidate.nextRegionId,
-    )
+    const currentCandidateHopId =
+      currentCandidate.hopId ??
+      this.getHopId(currentCandidate.portId, currentCandidate.nextRegionId)
     if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
       return
     }
@@ -775,17 +775,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
 
     for (const neighborPortId of neighbors) {
-      const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (neighborPortId === state.goalPortId) {
+        const assignedNetId = state.portAssignment[neighborPortId]
+        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
         this.onPathFound(currentCandidate)
         return
-      }
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-        continue
       }
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
@@ -796,20 +793,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
           ? topology.incidentPortRegion[neighborPortId][1]
           : topology.incidentPortRegion[neighborPortId][0]
 
-      if (
-        nextRegionId === undefined ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
-      ) {
-        continue
-      }
+      if (nextRegionId === undefined) continue
 
       const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
-      if (
-        state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId) ===
-        true
-      ) {
+      const candidateHopIsClosed = state.candidateQueue.isClosedHopId
+        ? state.candidateQueue.isClosedHopId(candidateHopId)
+        : state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId)
+      if (candidateHopIsClosed === true) {
         continue
       }
+      const assignedNetId = state.portAssignment[neighborPortId]
+      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        continue
+      }
+      if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
       const g = this.computeG(
@@ -1644,6 +1642,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const nextRegionId = currentCandidate.nextRegionId
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
+    const regionCongestionCost = state.regionCongestionCost[nextRegionId]!
+    const neighborPortPenalty = this.problem.portPenalty?.[neighborPortId] ?? 0
     let segmentDistanceCost = 0
     if (this.ADD_SEGMENT_DISTANCE_TO_G) {
       let segmentDistance = knownSegmentDistance
@@ -1660,8 +1660,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     const lowerBoundCost =
       currentCandidate.g +
-      state.regionCongestionCost[nextRegionId]! +
-      (this.problem.portPenalty?.[neighborPortId] ?? 0) +
+      regionCongestionCost +
+      neighborPortPenalty +
       segmentDistanceCost
     if (lowerBoundCost > maximumCost + 1e-9) {
       return Number.POSITIVE_INFINITY
@@ -1725,8 +1725,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
-      state.regionCongestionCost[nextRegionId] +
-      (this.problem.portPenalty?.[neighborPortId] ?? 0) +
+      regionCongestionCost +
+      neighborPortPenalty +
       segmentDistanceCost
     )
   }
