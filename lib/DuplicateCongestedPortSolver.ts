@@ -362,7 +362,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     return portUseCounts
   }
 
-  private duplicateCongestedPorts(
+  protected duplicateCongestedPorts(
     portUseCounts: Map<string, number>,
   ): SerializedHyperGraph {
     const duplicatePortProximity = this.getDuplicatePortProximity()
