@@ -35,12 +35,14 @@ export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
 
+const EMPTY_INTERSECTION_VALUES = new Int32Array(0)
+
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
-    netIds: new Int32Array(0),
-    lesserAngles: new Int32Array(0),
-    greaterAngles: new Int32Array(0),
-    layerMasks: new Int32Array(0),
+    netIds: EMPTY_INTERSECTION_VALUES,
+    lesserAngles: EMPTY_INTERSECTION_VALUES,
+    greaterAngles: EMPTY_INTERSECTION_VALUES,
+    layerMasks: EMPTY_INTERSECTION_VALUES,
     existingCrossingLayerIntersections: 0,
     existingSameLayerIntersections: 0,
     existingEntryExitLayerChanges: 0,
@@ -58,13 +60,25 @@ const cloneRegionSegments = (
     ),
   )
 
-const cloneRegionIntersectionCache = (
+export const cloneRegionIntersectionCache = (
   regionIntersectionCache: RegionIntersectionCache,
 ): RegionIntersectionCache => ({
-  netIds: new Int32Array(regionIntersectionCache.netIds),
-  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
-  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
-  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+  netIds:
+    regionIntersectionCache.netIds.length === 0
+      ? EMPTY_INTERSECTION_VALUES
+      : new Int32Array(regionIntersectionCache.netIds),
+  lesserAngles:
+    regionIntersectionCache.lesserAngles.length === 0
+      ? EMPTY_INTERSECTION_VALUES
+      : new Int32Array(regionIntersectionCache.lesserAngles),
+  greaterAngles:
+    regionIntersectionCache.greaterAngles.length === 0
+      ? EMPTY_INTERSECTION_VALUES
+      : new Int32Array(regionIntersectionCache.greaterAngles),
+  layerMasks:
+    regionIntersectionCache.layerMasks.length === 0
+      ? EMPTY_INTERSECTION_VALUES
+      : new Int32Array(regionIntersectionCache.layerMasks),
   existingCrossingLayerIntersections:
     regionIntersectionCache.existingCrossingLayerIntersections,
   existingSameLayerIntersections:

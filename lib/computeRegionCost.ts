@@ -55,12 +55,13 @@ export const computeRegionCostForArea = (
   )
     ? numSameLayerIntersections * IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST
     : 0
-  const layerCount = countAvailableLayers(regionAvailableZMask)
   const traceDensityCost =
-    (traceDensityCostFactor *
-      (traceCount / layerCount) ** 2 *
-      traceWidth ** 2) /
-    area
+    traceDensityCostFactor === 0
+      ? 0
+      : (traceDensityCostFactor *
+          (traceCount / countAvailableLayers(regionAvailableZMask)) ** 2 *
+          traceWidth ** 2) /
+        area
 
   return (
     (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
