@@ -283,7 +283,7 @@ const createSingleRouteProblem = (
   routeId: RouteId,
 ): TinyHyperGraphProblem => ({
   routeCount: 1,
-  portSectionMask: new Int8Array(problem.portSectionMask),
+  portSectionMask: problem.portSectionMask,
   routeMetadata:
     problem.routeMetadata === undefined
       ? undefined
@@ -291,11 +291,8 @@ const createSingleRouteProblem = (
   routeStartPort: Int32Array.from([problem.routeStartPort[routeId]]),
   routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
   routeNet: Int32Array.from([problem.routeNet[routeId]]),
-  regionNetId: new Int32Array(problem.regionNetId),
-  portPenalty:
-    problem.portPenalty === undefined
-      ? undefined
-      : new Float64Array(problem.portPenalty),
+  regionNetId: problem.regionNetId,
+  portPenalty: problem.portPenalty,
 })
 
 const getUsedPortIdsForSolvedRoute = (
