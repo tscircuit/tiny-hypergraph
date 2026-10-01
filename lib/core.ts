@@ -1532,10 +1532,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    this.captureBestSolvedState({
-      maxRegionCost,
-      totalRegionCost,
-    })
+    const summary = { maxRegionCost, totalRegionCost }
+    const shouldFinish =
+      regionIdsOverCostThreshold.length === 0 ||
+      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
+    if (shouldFinish) {
+      if (
+        !this.bestSolvedStateSummary ||
+        this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) <
+          0
+      ) {
+        this.bestSolvedStateSummary = summary
+      }
+    } else {
+      this.captureBestSolvedState(summary)
+    }
 
     this.stats = {
       ...this.stats,
@@ -1548,10 +1559,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: state.ripCount,
     }
 
-    if (
-      regionIdsOverCostThreshold.length === 0 ||
-      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
-    ) {
+    if (shouldFinish) {
       this.solved = true
       return
     }
