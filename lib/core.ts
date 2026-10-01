@@ -214,6 +214,7 @@ export interface NeverSuccessfullyRoutedRouteSummary {
 }
 
 export interface Candidate {
+  hopId?: HopId
   prevRegionId?: RegionId
   portId: PortId
   nextRegionId: RegionId
@@ -735,11 +736,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      this.setCandidateBestCost(
-        this.getHopId(startingPortId, startingNextRegionId),
-        0,
+      const startingHopId = this.getHopId(
+        startingPortId,
+        startingNextRegionId,
       )
+      this.setCandidateBestCost(startingHopId, 0)
       state.candidateQueue.queue({
+        hopId: startingHopId,
         nextRegionId: startingNextRegionId,
         portId: startingPortId,
         f: 0,
@@ -818,6 +821,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const h = this.computeH(neighborPortId)
 
       const newCandidate = {
+        hopId: candidateHopId,
         prevRegionId: currentCandidate.nextRegionId,
         nextRegionId,
         portId: neighborPortId,

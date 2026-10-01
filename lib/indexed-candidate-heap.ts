@@ -99,7 +99,14 @@ export class IndexedCandidateHeap {
   }
 
   private getHopId(candidate: Candidate): number {
-    return this.getHopIdFromValues(candidate.portId, candidate.nextRegionId)
+    if (candidate.hopId !== undefined) return candidate.hopId
+
+    const hopId = this.getHopIdFromValues(
+      candidate.portId,
+      candidate.nextRegionId,
+    )
+    candidate.hopId = hopId
+    return hopId
   }
 
   private getHopIdFromValues(portId: number, nextRegionId: number): number {
