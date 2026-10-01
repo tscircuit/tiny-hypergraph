@@ -26,7 +26,7 @@ class Pmp23595DuplicateCongestedPortSolver extends DuplicateCongestedPortSolver 
 
 const MAX_EXPECTED_DUPLICATION_TIME_MS = 1_000
 
-test.failing("repro: PMP23595 congested-port duplication should finish within one second", () => {
+test("PMP23595 congested-port duplication finishes within one second", () => {
   const fixture = JSON.parse(
     gunzipSync(
       readFileSync(
@@ -65,4 +65,4 @@ test.failing("repro: PMP23595 congested-port duplication should finish within on
   expect(duplicatedPortCount).toBe(683)
   expect(output.ports).toHaveLength(137_260)
   expect(durationMs).toBeLessThan(MAX_EXPECTED_DUPLICATION_TIME_MS)
-}, 30_000)
+})
