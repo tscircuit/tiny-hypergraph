@@ -172,7 +172,7 @@ export interface TinyHyperGraphProblem {
 export interface TinyHyperGraphProblemSetup {
   // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
   portHCostToEndOfRoute: Float64Array
-  portEndpointNetIds: Array<Set<NetId>>
+  portEndpointNetIds: Array<Set<NetId> | undefined>
   /** -1 for no endpoint, -2 for endpoints from multiple nets, otherwise the sole endpoint net. */
   portEndpointReservationNetId: Int32Array
 }
@@ -665,15 +665,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       : new Float64Array(topology.portCount * problem.routeCount)
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
-    const portEndpointNetIds = Array.from(
-      { length: topology.portCount },
-      () => new Set<NetId>(),
-    )
+    const portEndpointNetIds: Array<Set<NetId> | undefined> = []
     const portEndpointReservationNetId = new Int32Array(
       topology.portCount,
     ).fill(-1)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
-      portEndpointNetIds[portId]!.add(netId)
+      const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
+      endpointNetIds.add(netId)
+      portEndpointNetIds[portId] = endpointNetIds
       const reservedNetId = portEndpointReservationNetId[portId]!
       if (reservedNetId === -1) {
         portEndpointReservationNetId[portId] = netId
