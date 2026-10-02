@@ -1580,6 +1580,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
 
+    if (this.bestSolvedStateSnapshot && this.bestSolvedStateSummary) {
+      this.restoreBestSolvedState()
+      this.stats = {
+        ...this.stats,
+        acceptedBestSolutionAfterReripFailure: true,
+        maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+        bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
+        bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
+      }
+      this.solved = true
+      return
+    }
+
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
         state.regionIntersectionCaches[regionId]?.existingRegionCost ?? 0
