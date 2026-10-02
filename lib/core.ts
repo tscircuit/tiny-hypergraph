@@ -270,6 +270,8 @@ export interface TinyHyperGraphWorkingState {
 export interface TinyHyperGraphSolverOptions {
   minViaPadDiameter?: number
   DISTANCE_TO_COST?: number
+  /** A* heuristic weight: f = g + GREEDY_MULTIPLIER * h. */
+  GREEDY_MULTIPLIER?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
@@ -318,6 +320,7 @@ export interface TinyHyperGraphSolverOptions {
 export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   DISTANCE_TO_COST: number
+  GREEDY_MULTIPLIER: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
@@ -359,6 +362,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
+  }
+  if (options.GREEDY_MULTIPLIER !== undefined) {
+    solver.GREEDY_MULTIPLIER = options.GREEDY_MULTIPLIER
   }
   if (options.RIP_THRESHOLD_START !== undefined) {
     solver.RIP_THRESHOLD_START = options.RIP_THRESHOLD_START
@@ -457,6 +463,7 @@ export const getTinyHyperGraphSolverOptions = (
 ): TinyHyperGraphSolverOptions => ({
   minViaPadDiameter: solver.minViaPadDiameter,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
+  GREEDY_MULTIPLIER: solver.GREEDY_MULTIPLIER,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
@@ -525,6 +532,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected ADD_SEGMENT_DISTANCE_TO_G = false
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  GREEDY_MULTIPLIER = 1
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
 
   RIP_THRESHOLD_START = 0.05
@@ -825,7 +833,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         portId: neighborPortId,
         g,
         h,
-        f: g + h,
+        f: g + h * this.GREEDY_MULTIPLIER,
         prevCandidate: currentCandidate,
       }
 
