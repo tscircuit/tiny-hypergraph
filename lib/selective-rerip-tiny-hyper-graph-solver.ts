@@ -69,6 +69,8 @@ export type SelectiveReripTinyHyperGraphStats = {
   lastAlternateSearchExpandedLabelCount: number
 }
 
+export type NetCardinalityOrder = "larger-first" | "smaller-first"
+
 const createInitialSelectiveReripStats =
   (): SelectiveReripTinyHyperGraphStats => ({
     selectiveRipCount: 0,
@@ -90,6 +92,7 @@ const createInitialSelectiveReripStats =
 export function orderConnectionsByNetCardinality<TConnection>(
   connections: readonly TConnection[],
   getNetId: (connection: TConnection) => string | number,
+  order: NetCardinalityOrder = "larger-first",
 ): TConnection[] {
   const connectionCountByNetId = new Map<string | number, number>()
   for (const connection of connections) {
@@ -103,10 +106,17 @@ export function orderConnectionsByNetCardinality<TConnection>(
   return connections
     .map((connection, index) => ({ connection, index }))
     .sort(
-      (left, right) =>
-        (connectionCountByNetId.get(getNetId(right.connection)) ?? 0) -
-          (connectionCountByNetId.get(getNetId(left.connection)) ?? 0) ||
-        left.index - right.index,
+      (left, right) => {
+        const leftCount =
+          connectionCountByNetId.get(getNetId(left.connection)) ?? 0
+        const rightCount =
+          connectionCountByNetId.get(getNetId(right.connection)) ?? 0
+        const cardinalityDifference =
+          order === "larger-first"
+            ? rightCount - leftCount
+            : leftCount - rightCount
+        return cardinalityDifference || left.index - right.index
+      },
     )
     .map(({ connection }) => connection)
 }
