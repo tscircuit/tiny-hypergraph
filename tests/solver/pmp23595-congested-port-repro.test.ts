@@ -16,17 +16,9 @@ type Pmp23595CongestedPortRepro = {
   portUseCounts: Record<SerializedPortId, number>
 }
 
-class Pmp23595DuplicateCongestedPortSolver extends DuplicateCongestedPortSolver {
-  duplicateWithCapturedPortUseCounts(
-    portUseCounts: Record<SerializedPortId, number>,
-  ): SerializedHyperGraph {
-    return this.duplicateCongestedPorts(new Map(Object.entries(portUseCounts)))
-  }
-}
+const MAX_EXPECTED_ANALYSIS_TIME_MS = 2_000
 
-const MAX_EXPECTED_DUPLICATION_TIME_MS = 1_000
-
-test("PMP23595 congested-port duplication finishes within one second", () => {
+test("PMP23595 congested-port analysis reuses one routing workspace", () => {
   const fixture = JSON.parse(
     gunzipSync(
       readFileSync(
@@ -37,17 +29,27 @@ test("PMP23595 congested-port duplication finishes within one second", () => {
       ),
     ).toString("utf8"),
   ) as Pmp23595CongestedPortRepro
-  const solver = new Pmp23595DuplicateCongestedPortSolver(
+  const solver = new DuplicateCongestedPortSolver(
     fixture.serializedHyperGraph,
-    { duplicatePortProximity: 0.05 },
+    {
+      duplicatePortProximity: 0.05,
+      useSerializedPortPenalties: false,
+      routeSolveOptions: {
+        USE_SPARSE_CANDIDATE_STORAGE: false,
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
+        GREEDY_FINAL_ROUTE_ITERS: 4,
+        MAX_ITERATIONS: 2_000_000,
+        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+        STATIC_REACHABILITY_PRECHECK: true,
+      },
+    },
   )
   const startedAt = performance.now()
 
-  const output = solver.duplicateWithCapturedPortUseCounts(
-    fixture.portUseCounts,
-  )
+  solver.solve()
 
   const durationMs = performance.now() - startedAt
+  const output = solver.getOutput()
   const duplicatedPortCount = solver.report.duplicatedPorts.reduce(
     (sum, duplicatedPort) => sum + duplicatedPort.duplicatePortIds.length,
     0,
@@ -61,8 +63,10 @@ test("PMP23595 congested-port duplication finishes within one second", () => {
   expect(fixture.serializedHyperGraph.regions).toHaveLength(29_696)
   expect(fixture.serializedHyperGraph.ports).toHaveLength(136_577)
   expect(fixture.serializedHyperGraph.connections).toHaveLength(458)
+  expect(solver.error).toBeNull()
+  expect(solver.report.portUseCounts).toEqual(fixture.portUseCounts)
   expect(solver.report.duplicatedPorts).toHaveLength(411)
   expect(duplicatedPortCount).toBe(683)
   expect(output.ports).toHaveLength(137_260)
-  expect(durationMs).toBeLessThan(MAX_EXPECTED_DUPLICATION_TIME_MS)
+  expect(durationMs).toBeLessThan(MAX_EXPECTED_ANALYSIS_TIME_MS)
 })

@@ -2,12 +2,12 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
+  type Candidate,
   TinyHyperGraphSolver,
-  type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import type { PortId, RouteId } from "./types"
+import type { PortId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
@@ -278,41 +278,33 @@ const getSerializedPortId = (
   return `port-${portId}`
 }
 
-const createSingleRouteProblem = (
-  problem: TinyHyperGraphProblem,
-  routeId: RouteId,
-): TinyHyperGraphProblem => ({
-  routeCount: 1,
-  portSectionMask: problem.portSectionMask,
-  routeMetadata:
-    problem.routeMetadata === undefined
-      ? undefined
-      : [problem.routeMetadata[routeId]],
-  routeStartPort: Int32Array.from([problem.routeStartPort[routeId]]),
-  routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
-  routeNet: Int32Array.from([problem.routeNet[routeId]]),
-  regionNetId: problem.regionNetId,
-  portPenalty: problem.portPenalty,
-})
+class IndependentRoutePortUseSolver extends TinyHyperGraphSolver {
+  readonly usedPortIdsByRouteId: Array<Set<PortId> | undefined> = []
 
-const getUsedPortIdsForSolvedRoute = (
-  solver: TinyHyperGraphSolver,
-): Set<PortId> => {
-  const usedPortIds = new Set<PortId>()
+  override isPortReservedForDifferentNet(_portId: PortId): boolean {
+    return false
+  }
 
-  for (const regionSegments of solver.state.regionSegments) {
-    for (const [, fromPortId, toPortId] of regionSegments) {
+  override onPathFound(finalCandidate: Candidate): void {
+    const currentRouteId = this.state.currentRouteId
+    if (currentRouteId === undefined) return
+
+    const usedPortIds = new Set<PortId>()
+    for (const { fromPortId, toPortId } of
+      this.getSolvedPathSegments(finalCandidate)) {
       usedPortIds.add(fromPortId)
       usedPortIds.add(toPortId)
     }
+    if (usedPortIds.size === 0) {
+      usedPortIds.add(this.problem.routeStartPort[currentRouteId]!)
+      usedPortIds.add(this.problem.routeEndPort[currentRouteId]!)
+    }
+    this.usedPortIdsByRouteId[currentRouteId] = usedPortIds
+    this.routeSuccessCountByRouteId[currentRouteId] += 1
+    this.state.candidateQueue.clear()
+    this.state.currentRouteNetId = undefined
+    this.state.currentRouteId = undefined
   }
-
-  if (usedPortIds.size === 0 && solver.problem.routeCount === 1) {
-    usedPortIds.add(solver.problem.routeStartPort[0])
-    usedPortIds.add(solver.problem.routeEndPort[0])
-  }
-
-  return usedPortIds
 }
 
 export class DuplicateCongestedPortSolver extends BaseSolver {
@@ -351,27 +343,30 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
     const portUseCounts = new Map<string, number>()
     const routePortIdsByConnectionId = new Map<string, string[]>()
+    const routeSolver = new IndependentRoutePortUseSolver(topology, problem, {
+      ...this.getIndividualRouteSolveOptions(),
+      STATIC_REACHABILITY_PRECHECK: false,
+      USE_LAZY_ROUTE_HEURISTIC: true,
+    })
+    routeSolver.MAX_ITERATIONS *= Math.max(problem.routeCount, 1)
+    routeSolver.solve()
+
+    if (!routeSolver.solved || routeSolver.failed) {
+      throw new Error(
+        `Routes could not be solved independently: ${
+          routeSolver.error ?? "unknown error"
+        }`,
+      )
+    }
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-      const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
-        topology,
-        routeProblem,
-        this.getIndividualRouteSolveOptions(),
-      )
-      routeSolver.solve()
-
-      if (!routeSolver.solved || routeSolver.failed) {
-        throw new Error(
-          `Route ${routeId} could not be solved independently: ${
-            routeSolver.error ?? "unknown error"
-          }`,
-        )
+      const usedPortIds = routeSolver.usedPortIdsByRouteId[routeId]
+      if (!usedPortIds) {
+        throw new Error(`Route ${routeId} is missing its independent path`)
       }
-
-      const serializedPortIds = [
-        ...getUsedPortIdsForSolvedRoute(routeSolver),
-      ].map((portId) => getSerializedPortId(topology, portId))
+      const serializedPortIds = [...usedPortIds].map((portId) =>
+        getSerializedPortId(topology, portId),
+      )
       for (const serializedPortId of serializedPortIds) {
         portUseCounts.set(
           serializedPortId,
