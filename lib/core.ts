@@ -1700,17 +1700,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (lowerBoundCost > maximumCost + 1e-9) {
       return Number.POSITIVE_INFINITY
     }
-    const segmentGeometry = this.populateSegmentGeometryScratch(
-      nextRegionId,
-      currentCandidate.portId,
-      neighborPortId,
-    )
-    setNewIntersectionCounts(regionCache, segmentGeometry)
-    const newSameLayerIntersections =
-      segmentGeometry.sameLayerIntersectionCount
-    const newCrossLayerIntersections =
-      segmentGeometry.crossingLayerIntersectionCount
-    const newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
+    let newSameLayerIntersections = 0
+    let newCrossLayerIntersections = 0
+    let newEntryExitLayerChanges =
+      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
+        ? 1
+        : 0
+    if (regionCache.existingSegmentCount > 0) {
+      const segmentGeometry = this.populateSegmentGeometryScratch(
+        nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
+      setNewIntersectionCounts(regionCache, segmentGeometry)
+      newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
+      newCrossLayerIntersections =
+        segmentGeometry.crossingLayerIntersectionCount
+      newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
+    }
 
     if (
       newSameLayerIntersections > 0 &&
