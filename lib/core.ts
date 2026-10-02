@@ -6,7 +6,10 @@ import {
   DEFAULT_MIN_VIA_PAD_DIAMETER,
   isKnownSingleLayerMask,
 } from "./computeRegionCost"
-import { countNewIntersectionsWithValues } from "./countNewIntersections"
+import {
+  type MutableIntersectionCount,
+  setNewIntersectionCounts,
+} from "./countNewIntersections"
 import {
   applyInitialAssignments,
   type TinyHyperGraphInitialAssignment,
@@ -172,7 +175,7 @@ export interface TinyHyperGraphProblem {
 export interface TinyHyperGraphProblemSetup {
   // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
   portHCostToEndOfRoute: Float64Array
-  portEndpointNetIds: Array<Set<NetId>>
+  portEndpointNetIds: Array<Set<NetId> | undefined>
   /** -1 for no endpoint, -2 for endpoints from multiple nets, otherwise the sole endpoint net. */
   portEndpointReservationNetId: Int32Array
 }
@@ -267,6 +270,8 @@ export interface TinyHyperGraphWorkingState {
 export interface TinyHyperGraphSolverOptions {
   minViaPadDiameter?: number
   DISTANCE_TO_COST?: number
+  /** A* heuristic weight: f = g + GREEDY_MULTIPLIER * h. */
+  GREEDY_MULTIPLIER?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
   RIP_THRESHOLD_RAMP_ATTEMPTS?: number
@@ -315,6 +320,7 @@ export interface TinyHyperGraphSolverOptions {
 export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
   DISTANCE_TO_COST: number
+  GREEDY_MULTIPLIER: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
@@ -356,6 +362,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.DISTANCE_TO_COST !== undefined) {
     solver.DISTANCE_TO_COST = options.DISTANCE_TO_COST
+  }
+  if (options.GREEDY_MULTIPLIER !== undefined) {
+    solver.GREEDY_MULTIPLIER = options.GREEDY_MULTIPLIER
   }
   if (options.RIP_THRESHOLD_START !== undefined) {
     solver.RIP_THRESHOLD_START = options.RIP_THRESHOLD_START
@@ -454,6 +463,7 @@ export const getTinyHyperGraphSolverOptions = (
 ): TinyHyperGraphSolverOptions => ({
   minViaPadDiameter: solver.minViaPadDiameter,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
+  GREEDY_MULTIPLIER: solver.GREEDY_MULTIPLIER,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
@@ -491,12 +501,7 @@ export const getTinyHyperGraphSolverOptions = (
 const compareCandidatesByF = (left: Candidate, right: Candidate) =>
   left.f - right.f
 
-interface SegmentGeometryScratch {
-  lesserAngle: number
-  greaterAngle: number
-  layerMask: number
-  entryExitLayerChanges: number
-}
+type SegmentGeometryScratch = MutableIntersectionCount
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
@@ -516,14 +521,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
+    netId: 0,
     lesserAngle: 0,
     greaterAngle: 0,
     layerMask: 0,
     entryExitLayerChanges: 0,
+    sameLayerIntersectionCount: 0,
+    crossingLayerIntersectionCount: 0,
   }
   protected ADD_SEGMENT_DISTANCE_TO_G = false
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  GREEDY_MULTIPLIER = 1
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
 
   RIP_THRESHOLD_START = 0.05
@@ -637,15 +646,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       : new Float64Array(topology.portCount * problem.routeCount)
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
-    const portEndpointNetIds = Array.from(
-      { length: topology.portCount },
-      () => new Set<NetId>(),
-    )
+    const portEndpointNetIds: Array<Set<NetId> | undefined> = []
     const portEndpointReservationNetId = new Int32Array(
       topology.portCount,
     ).fill(-1)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
-      portEndpointNetIds[portId]!.add(netId)
+      const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
+      endpointNetIds.add(netId)
+      portEndpointNetIds[portId] = endpointNetIds
       const reservedNetId = portEndpointReservationNetId[portId]!
       if (reservedNetId === -1) {
         portEndpointReservationNetId[portId] = netId
@@ -825,7 +833,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         portId: neighborPortId,
         g,
         h,
-        f: g + h,
+        f: g + h * this.GREEDY_MULTIPLIER,
         prevCandidate: currentCandidate,
       }
 
@@ -1001,7 +1009,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     port1Id: PortId,
     port2Id: PortId,
   ): SegmentGeometryScratch {
-    const { topology } = this
+    const { state, topology } = this
     const scratch = this.segmentGeometryScratch
     const angle1 =
       this.candidateFirstRegionByPortId[port1Id] === regionId ||
@@ -1021,6 +1029,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     scratch.greaterAngle = angle1 < angle2 ? angle2 : angle1
     scratch.layerMask = (1 << z1) | (1 << z2)
     scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.netId = state.currentRouteNetId!
 
     return scratch
   }
@@ -1037,18 +1046,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       port1Id,
       port2Id,
     )
-    const [
-      newSameLayerIntersections,
-      newCrossLayerIntersections,
-      newEntryExitLayerChanges,
-    ] = countNewIntersectionsWithValues(
-      regionCache,
-      state.currentRouteNetId!,
-      segmentGeometry.lesserAngle,
-      segmentGeometry.greaterAngle,
-      segmentGeometry.layerMask,
-      segmentGeometry.entryExitLayerChanges,
-    )
+    setNewIntersectionCounts(regionCache, segmentGeometry)
+    const newSameLayerIntersections =
+      segmentGeometry.sameLayerIntersectionCount
+    const newCrossLayerIntersections =
+      segmentGeometry.crossingLayerIntersectionCount
+    const newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
     const nextLength = regionCache.netIds.length + 1
 
     const netIds = new Int32Array(nextLength)
@@ -1532,10 +1535,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    this.captureBestSolvedState({
-      maxRegionCost,
-      totalRegionCost,
-    })
+    const summary = { maxRegionCost, totalRegionCost }
+    const shouldFinish =
+      regionIdsOverCostThreshold.length === 0 ||
+      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
+    if (shouldFinish) {
+      if (
+        !this.bestSolvedStateSummary ||
+        this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) <
+          0
+      ) {
+        this.bestSolvedStateSummary = summary
+      }
+    } else {
+      this.captureBestSolvedState(summary)
+    }
 
     this.stats = {
       ...this.stats,
@@ -1548,10 +1562,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: state.ripCount,
     }
 
-    if (
-      regionIdsOverCostThreshold.length === 0 ||
-      state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
-    ) {
+    if (shouldFinish) {
       this.solved = true
       return
     }
@@ -1666,44 +1677,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (lowerBoundCost > maximumCost + 1e-9) {
       return Number.POSITIVE_INFINITY
     }
-    const currentPortId = currentCandidate.portId
-    const currentPortAngle =
-      this.candidateFirstRegionByPortId[currentPortId] === nextRegionId ||
-      this.candidateSecondRegionByPortId[currentPortId] !== nextRegionId
-        ? topology.portAngleForRegion1[currentPortId]
-        : (topology.portAngleForRegion2?.[currentPortId] ??
-          topology.portAngleForRegion1[currentPortId])
-    const neighborPortAngle =
-      this.candidateFirstRegionByPortId[neighborPortId] === nextRegionId ||
-      this.candidateSecondRegionByPortId[neighborPortId] !== nextRegionId
-        ? topology.portAngleForRegion1[neighborPortId]
-        : (topology.portAngleForRegion2?.[neighborPortId] ??
-          topology.portAngleForRegion1[neighborPortId])
-    const lesserAngle =
-      currentPortAngle < neighborPortAngle
-        ? currentPortAngle
-        : neighborPortAngle
-    const greaterAngle =
-      currentPortAngle < neighborPortAngle
-        ? neighborPortAngle
-        : currentPortAngle
-    const currentPortZ = topology.portZ[currentPortId]
-    const neighborPortZ = topology.portZ[neighborPortId]
-    const layerMask = (1 << currentPortZ) | (1 << neighborPortZ)
-    const entryExitLayerChanges = currentPortZ !== neighborPortZ ? 1 : 0
-
-    const [
-      newSameLayerIntersections,
-      newCrossLayerIntersections,
-      newEntryExitLayerChanges,
-    ] = countNewIntersectionsWithValues(
-      regionCache,
-      state.currentRouteNetId!,
-      lesserAngle,
-      greaterAngle,
-      layerMask,
-      entryExitLayerChanges,
-    )
+    let newSameLayerIntersections = 0
+    let newCrossLayerIntersections = 0
+    let newEntryExitLayerChanges =
+      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
+        ? 1
+        : 0
+    if (regionCache.existingSegmentCount > 0) {
+      const segmentGeometry = this.populateSegmentGeometryScratch(
+        nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
+      setNewIntersectionCounts(regionCache, segmentGeometry)
+      newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
+      newCrossLayerIntersections =
+        segmentGeometry.crossingLayerIntersectionCount
+      newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
+    }
 
     if (
       newSameLayerIntersections > 0 &&
