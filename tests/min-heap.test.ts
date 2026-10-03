@@ -10,7 +10,9 @@ test("pop returns items in ascending order", () => {
   heap.queue(3)
   heap.queue(2)
 
+  expect(heap.peek()).toBe(1)
   expect(heap.dequeue()).toBe(1)
+  expect(heap.peek()).toBe(2)
   expect(heap.dequeue()).toBe(2)
   expect(heap.dequeue()).toBe(3)
   expect(heap.dequeue()).toBe(4)
@@ -27,5 +29,6 @@ test("clear empties the backing array", () => {
   heap.clear()
 
   expect(heap.length).toBe(0)
+  expect(heap.peek()).toBeUndefined()
   expect(heapItems).toEqual([])
 })
