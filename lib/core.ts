@@ -818,10 +818,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
+      const lowerBoundWithoutDistance =
+        currentCandidate.g +
+        state.regionCongestionCost[currentCandidate.nextRegionId]! +
+        (problem.portPenalty?.[neighborPortId] ?? 0)
+      let knownSegmentDistance: number | undefined
+      let lowerBoundCost = lowerBoundWithoutDistance
+      if (this.ADD_SEGMENT_DISTANCE_TO_G) {
+        const dx =
+          topology.portX[currentCandidate.portId]! -
+          topology.portX[neighborPortId]!
+        const dy =
+          topology.portY[currentCandidate.portId]! -
+          topology.portY[neighborPortId]!
+        knownSegmentDistance = Math.sqrt(dx * dx + dy * dy)
+        lowerBoundCost += knownSegmentDistance * this.DISTANCE_TO_COST
+      }
+      if (lowerBoundCost >= previousBestCost) continue
       const g = this.computeG(
         currentCandidate,
         neighborPortId,
         previousBestCost,
+        knownSegmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       const h = this.computeH(neighborPortId)
