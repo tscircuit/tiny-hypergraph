@@ -631,6 +631,53 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  /**
+   * Reuse the topology-sized workspace for another independent problem on the
+   * same topology. Solver options are preserved; all route state is cleared.
+   */
+  resetForProblem(problem: TinyHyperGraphProblem): void {
+    this.problem = problem
+    this._problemSetup = undefined
+    this.state.portAssignment.fill(-1)
+    for (const regionSegments of this.state.regionSegments) {
+      regionSegments.length = 0
+    }
+    this.state.regionIntersectionCaches.fill(
+      createEmptyRegionIntersectionCache(),
+    )
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = range(problem.routeCount)
+    this.state.candidateQueue.clear()
+    this.state.candidateBestCostGeneration = 1
+    this.state.candidateBestCostByHopId instanceof Map
+      ? this.state.candidateBestCostByHopId.clear()
+      : this.state.candidateBestCostByHopId.fill(0)
+    this.state.candidateBestCostGenerationByHopId instanceof Map
+      ? this.state.candidateBestCostGenerationByHopId.clear()
+      : this.state.candidateBestCostGenerationByHopId.fill(0)
+    this.state.goalPortId = -1
+    this.state.ripCount = 0
+    this.state.regionCongestionCost.fill(0)
+    this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
+    this.bestSolvedStateSnapshot = undefined
+    this.bestSolvedStateSummary = undefined
+    this.hasLoggedNeverSuccessfullyRoutedRoutes = false
+    this.staticallyUnroutableRoutes = []
+    this.candidateOverflowBestCost?.clear()
+    this.solved = false
+    this.failed = false
+    this.iterations = 0
+    this.progress = 0
+    this.error = null
+    this.activeSubSolver = undefined
+    this.failedSubSolvers = undefined
+    this.timeToSolve = undefined
+    this.stats = {}
+    this._setupDone = false
+  }
+
   get problemSetup(): TinyHyperGraphProblemSetup {
     if (!this._problemSetup) {
       this._problemSetup = this.computeProblemSetup()
