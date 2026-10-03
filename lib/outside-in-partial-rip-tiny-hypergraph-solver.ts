@@ -1041,7 +1041,23 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     if (!qualityBaseline) {
       return this.compareRegionCostSummaries(summary, bestSummary) < 0
     }
-    const selectionBaseline = this.firstCompletedRoundSummary ?? qualityBaseline
+    const isEligible = this.isWithinComplexitySelectionQualityEnvelope(summary)
+    const isBestEligible =
+      this.isWithinComplexitySelectionQualityEnvelope(bestSummary)
+
+    if (isEligible !== isBestEligible) return isEligible
+    if (isEligible && summary.segmentCount !== bestSummary.segmentCount) {
+      return summary.segmentCount < bestSummary.segmentCount
+    }
+    return this.compareRegionCostSummaries(summary, bestSummary) < 0
+  }
+
+  private isWithinComplexitySelectionQualityEnvelope(
+    summary: RegionCostSummary,
+  ): boolean {
+    const selectionBaseline =
+      this.firstCompletedRoundSummary ?? this.partialRipQualityBaselineSummary
+    if (!selectionBaseline) return true
 
     const maxRegionCostCeiling =
       selectionBaseline.maxRegionCost *
@@ -1049,18 +1065,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     const totalRegionCostCeiling =
       selectionBaseline.totalRegionCost *
       (1 + Math.max(0, this.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO))
-    const isEligible =
+
+    return (
       summary.maxRegionCost <= maxRegionCostCeiling &&
       summary.totalRegionCost <= totalRegionCostCeiling
-    const isBestEligible =
-      bestSummary.maxRegionCost <= maxRegionCostCeiling &&
-      bestSummary.totalRegionCost <= totalRegionCostCeiling
-
-    if (isEligible !== isBestEligible) return isEligible
-    if (isEligible && summary.segmentCount !== bestSummary.segmentCount) {
-      return summary.segmentCount < bestSummary.segmentCount
-    }
-    return this.compareRegionCostSummaries(summary, bestSummary) < 0
+    )
   }
 
   override onAllRoutesRouted(): void {
@@ -1135,6 +1144,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
     const firstRound = this.firstCompletedRoundSummary
     const qualityBaseline = this.partialRipQualityBaselineSummary ?? firstRound
+    const candidateRejectedByQualityEnvelope =
+      this.useComplexityAwareSelection &&
+      state.ripCount > qualityBaseline.ripCount &&
+      !this.isWithinComplexitySelectionQualityEnvelope(completedRoundSummary)
+
     const targetImprovementRatio = Math.max(
       0,
       this.PARTIAL_RIP_TARGET_MAX_COST_IMPROVEMENT_RATIO,
@@ -1193,12 +1207,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       partialRipMaxRegionCostGrowthRatio:
         this.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO,
       partialRipTargetReached: this.partialRipTargetReached,
+      partialRipQualityRejected: candidateRejectedByQualityEnvelope,
     }
     this.publishPartialRipStats()
 
     if (
       hotRegionIds.length === 0 ||
       targetReached ||
+      candidateRejectedByQualityEnvelope ||
       state.ripCount >= maxRipAttempts
     ) {
       this.restoreBestSolvedState()
