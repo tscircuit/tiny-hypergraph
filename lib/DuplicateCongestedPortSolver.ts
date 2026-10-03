@@ -343,14 +343,19 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       problem.portPenalty = undefined
     }
     const portUseCounts = new Map<string, number>()
+    let routeSolver: TinyHyperGraphSolver | undefined
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
-        topology,
-        routeProblem,
-        this.getIndividualRouteSolveOptions(),
-      )
+      if (routeSolver) {
+        routeSolver.resetForProblem(routeProblem)
+      } else {
+        routeSolver = new TinyHyperGraphSolver(
+          topology,
+          routeProblem,
+          this.getIndividualRouteSolveOptions(),
+        )
+      }
       routeSolver.solve()
 
       if (!routeSolver.solved || routeSolver.failed) {
