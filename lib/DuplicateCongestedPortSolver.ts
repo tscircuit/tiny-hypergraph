@@ -77,6 +77,22 @@ const getBoundaryKey = (
   port: Pick<SerializedPort, "region1Id" | "region2Id">,
 ) => [port.region1Id, port.region2Id].sort().join("\u0000")
 
+const groupPortsByBoundary = (ports: SerializedPort[]) => {
+  const portsByBoundary = new Map<string, SerializedPort[]>()
+
+  for (const port of ports) {
+    const boundaryKey = getBoundaryKey(port)
+    const boundaryPorts = portsByBoundary.get(boundaryKey)
+    if (boundaryPorts) {
+      boundaryPorts.push(port)
+    } else {
+      portsByBoundary.set(boundaryKey, [port])
+    }
+  }
+
+  return portsByBoundary
+}
+
 const getDistance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
 
 const normalize = (point: Point): Point | undefined => {
@@ -152,16 +168,14 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
 
 const findNearestPortOnSameBoundary = (
   sourcePort: SerializedPort,
-  ports: SerializedPort[],
+  boundaryPorts: SerializedPort[],
 ): SerializedPort | undefined => {
-  const sourceBoundaryKey = getBoundaryKey(sourcePort)
   const sourcePoint = getPortPoint(sourcePort)
   let nearestPort: SerializedPort | undefined
   let nearestDistance = Number.POSITIVE_INFINITY
 
-  for (const port of ports) {
+  for (const port of boundaryPorts) {
     if (port.portId === sourcePort.portId) continue
-    if (getBoundaryKey(port) !== sourceBoundaryKey) continue
 
     const distance = getDistance(sourcePoint, getPortPoint(port))
     if (distance <= EPSILON || distance >= nearestDistance) continue
@@ -263,7 +277,7 @@ const createSingleRouteProblem = (
   routeId: RouteId,
 ): TinyHyperGraphProblem => ({
   routeCount: 1,
-  portSectionMask: new Int8Array(problem.portSectionMask),
+  portSectionMask: problem.portSectionMask,
   routeMetadata:
     problem.routeMetadata === undefined
       ? undefined
@@ -271,11 +285,8 @@ const createSingleRouteProblem = (
   routeStartPort: Int32Array.from([problem.routeStartPort[routeId]]),
   routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
   routeNet: Int32Array.from([problem.routeNet[routeId]]),
-  regionNetId: new Int32Array(problem.regionNetId),
-  portPenalty:
-    problem.portPenalty === undefined
-      ? undefined
-      : new Float64Array(problem.portPenalty),
+  regionNetId: problem.regionNetId,
+  portPenalty: problem.portPenalty,
 })
 
 const getUsedPortIdsForSolvedRoute = (
@@ -332,14 +343,19 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       problem.portPenalty = undefined
     }
     const portUseCounts = new Map<string, number>()
+    let routeSolver: TinyHyperGraphSolver | undefined
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
-        topology,
-        routeProblem,
-        this.getIndividualRouteSolveOptions(),
-      )
+      if (routeSolver) {
+        routeSolver.resetForProblem(routeProblem)
+      } else {
+        routeSolver = new TinyHyperGraphSolver(
+          topology,
+          routeProblem,
+          this.getIndividualRouteSolveOptions(),
+        )
+      }
       routeSolver.solve()
 
       if (!routeSolver.solved || routeSolver.failed) {
@@ -362,7 +378,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     return portUseCounts
   }
 
-  private duplicateCongestedPorts(
+  protected duplicateCongestedPorts(
     portUseCounts: Map<string, number>,
   ): SerializedHyperGraph {
     const duplicatePortProximity = this.getDuplicatePortProximity()
@@ -391,6 +407,9 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const sourcePortById = new Map(
       ports.map((port) => [port.portId, port] as const),
     )
+    const portsByBoundary = groupPortsByBoundary(
+      this.serializedHyperGraph.ports,
+    )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
 
@@ -403,9 +422,13 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       if (!sourcePort) continue
 
       const duplicateCount = useCount - 1
+      const boundaryPorts = portsByBoundary.get(getBoundaryKey(sourcePort))
+      if (!boundaryPorts) {
+        throw new Error(`No boundary ports found for "${sourcePortId}"`)
+      }
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
-        this.serializedHyperGraph.ports,
+        boundaryPorts,
       )
       const duplicateDirection = getDuplicateDirection(
         sourcePort,

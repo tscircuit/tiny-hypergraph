@@ -1,5 +1,15 @@
 import type { DynamicAnglePair, DynamicAnglePairArrays } from "./types"
 
+export type MutableIntersectionCount = {
+  netId: number
+  lesserAngle: number
+  greaterAngle: number
+  layerMask: number
+  entryExitLayerChanges: number
+  sameLayerIntersectionCount: number
+  crossingLayerIntersectionCount: number
+}
+
 export const createDynamicAnglePairArrays = (
   anglePairs: Array<DynamicAnglePair>,
 ): DynamicAnglePairArrays => {
@@ -32,33 +42,54 @@ export const countNewIntersectionsWithValues = (
   newLayerMask: number,
   entryExitLayerChanges: number,
 ): [number, number, number] => {
+  const intersectionCount: MutableIntersectionCount = {
+    netId: newNet,
+    lesserAngle: newLesserAngle,
+    greaterAngle: newGreaterAngle,
+    layerMask: newLayerMask,
+    entryExitLayerChanges,
+    sameLayerIntersectionCount: 0,
+    crossingLayerIntersectionCount: 0,
+  }
+  setNewIntersectionCounts(existingPairs, intersectionCount)
+
+  return [
+    intersectionCount.sameLayerIntersectionCount,
+    intersectionCount.crossingLayerIntersectionCount,
+    intersectionCount.entryExitLayerChanges,
+  ]
+}
+
+export const setNewIntersectionCounts = (
+  existingPairs: DynamicAnglePairArrays,
+  intersectionCount: MutableIntersectionCount,
+): void => {
   const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
+  const { netId, lesserAngle, greaterAngle, layerMask } = intersectionCount
 
   let sameLayerIntersectionCount = 0
   let crossingLayerIntersectionCount = 0
 
   for (let i = 0; i < netIds.length; i++) {
-    if (newNet === netIds[i]) continue
+    if (netId === netIds[i]) continue
 
     const lesserAngleIsInsideInterval =
-      newLesserAngle < lesserAngles[i] && lesserAngles[i] < newGreaterAngle
+      lesserAngle < lesserAngles[i] && lesserAngles[i] < greaterAngle
     const greaterAngleIsInsideInterval =
-      newLesserAngle < greaterAngles[i] && greaterAngles[i] < newGreaterAngle
+      lesserAngle < greaterAngles[i] && greaterAngles[i] < greaterAngle
 
     if (lesserAngleIsInsideInterval === greaterAngleIsInsideInterval) continue
 
-    if ((newLayerMask & layerMasks[i]) !== 0) {
+    if ((layerMask & layerMasks[i]) !== 0) {
       sameLayerIntersectionCount++
     } else {
       crossingLayerIntersectionCount++
     }
   }
 
-  return [
-    sameLayerIntersectionCount,
-    crossingLayerIntersectionCount,
-    entryExitLayerChanges,
-  ]
+  intersectionCount.sameLayerIntersectionCount = sameLayerIntersectionCount
+  intersectionCount.crossingLayerIntersectionCount =
+    crossingLayerIntersectionCount
 }
 
 export const countNewIntersections = (
