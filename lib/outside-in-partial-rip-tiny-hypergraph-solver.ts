@@ -1145,6 +1145,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     const firstRound = this.firstCompletedRoundSummary
     const qualityBaseline = this.partialRipQualityBaselineSummary ?? firstRound
     const candidateRejectedByQualityEnvelope =
+      this.PARTIAL_RIP_STOP_ON_QUALITY_REJECTION &&
       this.useComplexityAwareSelection &&
       state.ripCount > qualityBaseline.ripCount &&
       !this.isWithinComplexitySelectionQualityEnvelope(completedRoundSummary)

@@ -265,6 +265,7 @@ test("complexity selection stops when a rerip exceeds the first solution cost en
       PARTIAL_RIP_COMPLEXITY_SELECTION_MIN_ROUTE_COUNT: 100,
       PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO: 0.2,
       PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO: 0.1,
+      PARTIAL_RIP_STOP_ON_QUALITY_REJECTION: true,
     },
     100,
   )
