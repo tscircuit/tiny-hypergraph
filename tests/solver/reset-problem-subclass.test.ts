@@ -10,8 +10,14 @@ test("workspace reset rejects subclasses before changing their routing state", (
   const topology: TinyHyperGraphTopology = {
     portCount: 2,
     regionCount: 2,
-    regionIncidentPorts: [[0, 1], [0, 1]],
-    incidentPortRegion: [[0, 1], [0, 1]],
+    regionIncidentPorts: [
+      [0, 1],
+      [0, 1],
+    ],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 1],
+    ],
     regionWidth: new Float64Array([10, 10]),
     regionHeight: new Float64Array([10, 10]),
     regionCenterX: new Float64Array(2),

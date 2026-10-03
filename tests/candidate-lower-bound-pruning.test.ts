@@ -30,11 +30,7 @@ test("skips candidate scoring when its lower bound cannot improve the hop", () =
     portCount: 3,
     regionCount: 3,
     regionIncidentPorts: [[0, 1], [1], [0, 2]],
-    incidentPortRegion: [
-      [0, 2],
-      [0, 1],
-      [2],
-    ],
+    incidentPortRegion: [[0, 2], [0, 1], [2]],
     regionWidth: new Float64Array([10, 10, 10]),
     regionHeight: new Float64Array([10, 10, 10]),
     regionCenterX: new Float64Array(3),

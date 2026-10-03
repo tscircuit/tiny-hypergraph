@@ -135,9 +135,7 @@ export class IndexedCandidateHeap {
 
   private getQueuedHopIndex(hopId: number): number | undefined {
     if (hopId >= 0 && this.hopStateGeneration) {
-      if (
-        this.hopStateGeneration[hopId] !== this.currentHopStateGeneration
-      ) {
+      if (this.hopStateGeneration[hopId] !== this.currentHopStateGeneration) {
         return undefined
       }
       const index = this.hopIndexOrClosed![hopId]!

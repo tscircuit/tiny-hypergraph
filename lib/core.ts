@@ -790,10 +790,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
-      const startingHopId = this.getHopId(
-        startingPortId,
-        startingNextRegionId,
-      )
+      const startingHopId = this.getHopId(startingPortId, startingNextRegionId)
       this.setCandidateBestCost(startingHopId, 0)
       state.candidateQueue.queue({
         hopId: startingHopId,
@@ -1118,8 +1115,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       port2Id,
     )
     setNewIntersectionCounts(regionCache, segmentGeometry)
-    const newSameLayerIntersections =
-      segmentGeometry.sameLayerIntersectionCount
+    const newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
     const newCrossLayerIntersections =
       segmentGeometry.crossingLayerIntersectionCount
     const newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges

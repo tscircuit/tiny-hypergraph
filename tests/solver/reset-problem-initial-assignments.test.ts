@@ -9,8 +9,18 @@ test("resetting an independent problem preserves constructor initial assignments
   const topology: TinyHyperGraphTopology = {
     portCount: 4,
     regionCount: 4,
-    regionIncidentPorts: [[0, 1], [2, 3], [0, 1], [2, 3]],
-    incidentPortRegion: [[0, 2], [0, 2], [1, 3], [1, 3]],
+    regionIncidentPorts: [
+      [0, 1],
+      [2, 3],
+      [0, 1],
+      [2, 3],
+    ],
+    incidentPortRegion: [
+      [0, 2],
+      [0, 2],
+      [1, 3],
+      [1, 3],
+    ],
     regionWidth: new Float64Array([10, 10, 10, 10]),
     regionHeight: new Float64Array([10, 10, 10, 10]),
     regionCenterX: new Float64Array([0, 20, 0, 20]),
@@ -35,7 +45,9 @@ test("resetting an independent problem preserves constructor initial assignments
     routeEndPort: new Int32Array([1, 3]),
     routeNet: new Int32Array([7, 11]),
     regionNetId: new Int32Array([-1, -1, -1, -1]),
-    initialAssignments: [{ routeId: 0, regionId: 0, fromPortId: 0, toPortId: 1 }],
+    initialAssignments: [
+      { routeId: 0, regionId: 0, fromPortId: 0, toPortId: 1 },
+    ],
   }
   const options = {
     STATIC_REACHABILITY_PRECHECK: false,
