@@ -75,7 +75,7 @@ const getFocusedRouteSearchGraphics = (
 
   return {
     ...graphics,
-    title: `${routeLabel}: one-ended search after 30,000 expansions`,
+    title: `${routeLabel}: exact bidirectional route after ${solver.iterations.toLocaleString()} iterations`,
     points,
     lines: (graphics.lines ?? []).filter(
       (line: GraphicsItem) => !line.label || line.label.includes(routeLabel),
@@ -126,6 +126,7 @@ test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
     PARTIAL_RIP_ENABLED: false,
     OUTSIDE_IN_ROUTING: false,
     USE_SPARSE_CANDIDATE_STORAGE: false,
+    EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD: 10_000,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
     MAX_ITERATIONS: 2_000_000,
     STATIC_REACHABILITY_PRECHECK: true,
@@ -151,9 +152,20 @@ test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
   expect(topology.portCount).toBe(137_226)
   expect(topology.regionCount).toBe(29_691)
   expect(problem.routeCount).toBe(458)
-  expect(solver.state.currentRouteId).toBe(routeSearchState.targetRouteId)
-  expect(solver.solved).toBe(false)
-  expect(solver.state.candidateQueue.length).toBeGreaterThan(1_000)
+  expect(solver.solved).toBe(true)
+  expect(solver.iterations).toBeLessThan(SEARCH_ITERATION_BUDGET)
+  expect(solver.state.currentRouteId).toBeUndefined()
+  expect(solver.stats.exactBidirectionalForwardExpansionCount).toBeGreaterThan(
+    0,
+  )
+  expect(solver.stats.exactBidirectionalReverseExpansionCount).toBeGreaterThan(
+    0,
+  )
+  expect(
+    solver.state.regionSegments
+      .flat()
+      .filter(([routeId]) => routeId === routeSearchState.targetRouteId),
+  ).not.toHaveLength(0)
   expect(
     getSvgFromGraphicsObject(
       getFocusedRouteSearchGraphics(solver, routeLabel),

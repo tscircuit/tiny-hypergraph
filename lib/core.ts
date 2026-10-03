@@ -14,6 +14,7 @@ import {
   applyInitialAssignments,
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
+import { ExactBidirectionalRouteSearch } from "./exact-bidirectional-route-search"
 import { MinHeap } from "./MinHeap"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
@@ -264,6 +265,8 @@ export interface TinyHyperGraphSolverOptions {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
+  /** Restart a stalled route with exact bidirectional search. */
+  EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD?: number
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
@@ -311,6 +314,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
+  EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD?: number
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
@@ -370,6 +374,10 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.USE_SPARSE_CANDIDATE_STORAGE !== undefined) {
     solver.USE_SPARSE_CANDIDATE_STORAGE = options.USE_SPARSE_CANDIDATE_STORAGE
+  }
+  if (options.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD !== undefined) {
+    solver.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD =
+      options.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -450,6 +458,8 @@ export const getTinyHyperGraphSolverOptions = (
   TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
+  EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD:
+    solver.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -493,6 +503,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   /** Rare fallback for callers that construct a non-incident directed hop. */
   private candidateOverflowBestCost?: Map<HopId, number>
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private exactBidirectionalRouteSearch?: ExactBidirectionalRouteSearch
+  private currentRouteSearchExpansionCount = 0
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -521,6 +533,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   TRACE_DENSITY_COST_FACTOR = 0
   USE_LAZY_ROUTE_HEURISTIC = false
   USE_SPARSE_CANDIDATE_STORAGE = false
+  EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD = Number.POSITIVE_INFINITY
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -622,6 +635,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     this.problem = problem
     this._problemSetup = undefined
+    this.exactBidirectionalRouteSearch = undefined
+    this.currentRouteSearchExpansionCount = 0
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
       regionSegments.length = 0
@@ -764,6 +779,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   override _step() {
+    if (this.exactBidirectionalRouteSearch) {
+      this.stepExactBidirectionalRouteSearch()
+      return
+    }
+
     const { problem, topology, state } = this
 
     if (state.currentRouteId === undefined) {
@@ -774,6 +794,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       state.currentRouteId = state.unroutedRoutes.shift()
       state.currentRouteNetId = problem.routeNet[state.currentRouteId!]
+      this.currentRouteSearchExpansionCount = 0
       this.routeAttemptCountByRouteId[state.currentRouteId!] += 1
 
       this.resetCandidateBestCosts()
@@ -803,12 +824,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
+    if (
+      this.currentRouteSearchExpansionCount >=
+      this.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD
+    ) {
+      this.startExactBidirectionalRouteSearch()
+      this.stepExactBidirectionalRouteSearch()
+      return
+    }
+
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
       this.onOutOfCandidates()
       return
     }
+    this.currentRouteSearchExpansionCount += 1
 
     const currentCandidateHopId =
       currentCandidate.hopId ??
@@ -904,6 +935,52 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
+    }
+  }
+
+  private startExactBidirectionalRouteSearch(): void {
+    const { problem, state } = this
+    const routeId = state.currentRouteId
+    if (routeId === undefined) return
+    const startPortId = this.getRouteStartPortId(routeId)
+    const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
+    if (startRegionId === undefined) {
+      this.failed = true
+      this.error = `Start port ${startPortId} has no incident regions`
+      return
+    }
+
+    state.currentRouteNetId = problem.routeNet[routeId]!
+    state.goalPortId = this.getRouteEndPortId(routeId)
+    state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.exactBidirectionalRouteSearch = new ExactBidirectionalRouteSearch({
+      solver: this,
+      startPortId,
+      endPortId: state.goalPortId,
+      startRegionId,
+    })
+  }
+
+  private stepExactBidirectionalRouteSearch(): void {
+    const search = this.exactBidirectionalRouteSearch
+    if (!search) return
+    const searchStep = search.step()
+    if (searchStep.status === "searching") return
+
+    this.stats = {
+      ...this.stats,
+      exactBidirectionalFallbackExpansionThreshold:
+        this.EXACT_BIDIRECTIONAL_FALLBACK_EXPANSION_THRESHOLD,
+      exactBidirectionalForwardExpansionCount: search.forwardExpansionCount,
+      exactBidirectionalReverseExpansionCount: search.reverseExpansionCount,
+    }
+    this.exactBidirectionalRouteSearch = undefined
+    this.currentRouteSearchExpansionCount = 0
+    if (searchStep.status === "found") {
+      this.onPathFound(searchStep.finalCandidate)
+    } else {
+      this.onOutOfCandidates()
     }
   }
 
@@ -1208,6 +1285,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
 
+    this.exactBidirectionalRouteSearch = undefined
+    this.currentRouteSearchExpansionCount = 0
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
       { length: topology.regionCount },
@@ -1416,6 +1495,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return
     }
 
+    this.exactBidirectionalRouteSearch = undefined
+    this.currentRouteSearchExpansionCount = 0
     const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
     this.state.portAssignment = snapshot.portAssignment
     this.state.regionSegments = snapshot.regionSegments
@@ -1705,6 +1786,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     state.candidateQueue.clear()
+    this.exactBidirectionalRouteSearch = undefined
+    this.currentRouteSearchExpansionCount = 0
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
   }
@@ -1844,6 +1927,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const dy =
       this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
     return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+  }
+
+  getRoutingDistanceCostScale(): number {
+    return this.ADD_SEGMENT_DISTANCE_TO_G ? this.DISTANCE_TO_COST : 0
   }
 
   override visualize(): GraphicsObject {

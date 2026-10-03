@@ -1,163 +1,150 @@
-<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="53.91380124,70.40740045999999 76.09139721999999,70.39559962" data-type="line" data-label="source_net_altium_pcb_57_mst4
-z: 0" points="204.41629530151818,354.1169101761933 420.18990550170724,354.23172468776124" fill="none" stroke="hsla(343, 70%, 50%, 0.8)" stroke-width="1px" stroke-dasharray="10 5"/></g><g><polyline data-points="53.91380124,70.40740045999999 54.263801810000004,70.40740045999999 54.28380181,69.96063249999999 54.28380181,69.40889824999998 54.78770174,68.66966399999997 55.445901600000006,67.75779999999999 55.633401600000006,67.50779974999999 56.233400400000015,67.50779974999999 56.43340127000001,67.25779999999999 57.23340094000002,67.07029999999999 65.34780097,65.17915714285714 73.46220099999998,63.0690196 83.19966799999997,60.2108 83.52603399999998,60.2108" data-type="line" data-label="" points="204.41629530151818,354.1169101761933 207.8215736116258,354.1169101761933 208.01616062673304,358.46367236529215 208.01616062673304,363.83168840729036 212.91877979130686,371.02395771591955 219.3226370963789,379.8958024131093 221.1468903630099,382.3281425342883 226.98448914100788,382.3281425342883 228.93036775661608,384.7604777907918 236.71384515022226,386.5847310574227 315.6616892114349,404.9843232430684 394.6095332726477,425.5145915395891 489.34876518443787,453.32321256384773 492.5240944730633,453.32321256384773" fill="none" stroke="hsla(343, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><rect data-type="rect" data-label="region: region-239
-net: free
-cost: 0.015
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 4" data-x="42.045701405" data-y="62.320899999999995" x="40.00000000000003" y="385.1982985747832" width="97.89477841423121" height="95.19002192033838" fill="rgba(202, 195, 248, 0.121)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-805
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="43.07690139999999" data-y="68.0309995" x="96.91280706518978" y="369.76366626582313" width="4.134977184422382" height="14.948164771191728" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-1313
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="50.52240086" data-y="84.32799999999999" x="165.23423739961657" y="213.57060537999644" width="12.371868106007923" height="10.215818293132997" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-1456
-net: free
-cost: 0.071
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 1" data-x="51.66535344999999" data-y="85.94179899999999" x="170.97456757719874" y="192.87045817158366" width="23.13158104056879" height="20.213679670644524" fill="rgba(207, 184, 232, 0.174)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-8648
-net: free
-cost: 0.083
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 3" data-x="58.91909949999999" data-y="91.196199" x="239.19870245820158" y="130.0519223551443" width="27.831790500147576" height="43.606950085545236" fill="rgba(208, 181, 229, 0.185)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-8922
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="61.87439977" data-y="89.91179930999999" x="267.5169604961173" y="155.04467254332803" width="28.70158025282501" height="18.61419989736146" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-8923
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="61.87439977" data-y="89.91179930999999" x="267.5169604961173" y="155.04467254332803" width="28.70158025282501" height="18.61419989736146" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-10296
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="73.38529849999999" data-y="87.62669899999999" x="386.71510888169246" y="181.25165777017634" width="14.292425988981904" height="10.665314298030694" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-10398
-net: free
-cost: 0.020
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 3" data-x="78.73105049999998" data-y="63.7166995" x="394.65818002642465" y="385.1516074205081" width="102.42767621790347" height="68.12295838956277" fill="rgba(202, 194, 247, 0.127)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-10399
-net: free
-cost: 0.030
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 5" data-x="89.30874949999998" data-y="63.7166995" x="497.5723237820965" y="385.1516074205081" width="102.42767621790347" height="68.12295838956277" fill="rgba(203, 192, 243, 0.137)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-10810
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="74.70359932" data-y="87.62669899999999" x="401.4940024084428" y="181.25165777017634" width="10.387061093211628" height="10.665314298030694" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-14731
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="85.540600875" data-y="57.278297755" x="484.3978293829585" y="453.7610333478391" width="55.45338567423835" height="56.18704429701688" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-14741
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="85.540600875" data-y="58.078297424999995" x="484.3978293829585" y="453.76103334783915" width="55.45338567423835" height="40.62008950980464" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-14742
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="85.540600875" data-y="58.078297424999995" x="484.3978293829585" y="453.76103334783915" width="55.45338567423835" height="40.62008950980464" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><rect data-type="rect" data-label="region: region-14747
-net: free
-cost: 0.000
-congestion: 0.000
-same layer X: 0
-trans X: 0
-entry exit X: 0" data-x="85.3913905" data-y="59.478297" x="490.1194659751737" y="453.76103334783915" width="41.10667234037908" height="13.377915664731177" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.10278178114285709"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="53.91380124,70.40740045999999 54.263801810000004,70.40740045999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-4807
+z: 0" points="40,356.0552055935 48.64131757869609,356.0552055935" fill="none" stroke="hsla(343, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="54.47130181000001,71.62660099999998 55.16652708,72.12659999999998" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-4911
+z: 4" points="53.764376085656295,325.9538287350065 70.92909769397988,313.6091341305653" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="55.16652708,72.12659999999998 55.6080016,72.31409999999998" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-4916
+z: 4" points="70.92909769397988,313.6091341305653 81.82885574358056,308.9798643953602" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="54.263801810000004,70.40740045999999 54.47130181000001,71.62660099999998" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-4969
+z: 0 -&gt; 4" points="48.64131757869609,356.0552055935 53.764376085656295,325.9538287350065" fill="none" stroke="rgba(22, 160, 133, 0.95)" stroke-width="1px" stroke-dasharray="2 4 2"/></g><g><polyline data-points="55.6080016,72.31409999999998 56.20800040000001,72.6270005" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-7370
+z: 4" points="81.82885574358056,308.9798643953602 96.64248926891037,301.25452671653056" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="56.20800040000001,72.6270005 56.60800214,72.93990099999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8084
+z: 4" points="96.64248926891037,301.25452671653056 106.51830766363742,293.52918903770137" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="56.90800154000001,73.12740099999999 57.23340094000002,73.3274005" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8094
+z: 4" points="113.92512442630232,288.8999193024963 121.95905292909629,283.96204392966365" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="56.60800214,72.93990099999999 56.90800154000001,73.12740099999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8112
+z: 4" points="106.51830766363742,293.52918903770137 113.92512442630232,288.8999193024963" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="58.89489899999999,72.7212 59.08239899999999,72.5337" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8531
+z: 4" points="162.9805072451477,298.9287939462829 167.60977698035254,303.55806368148774" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="57.23340094000002,73.3274005 57.49235394000001,73.33989999999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8535
+z: 4" points="121.95905292909629,283.96204392966365 128.3524571197122,283.65343829203607" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="57.49235394000001,73.33989999999999 58.89489899999999,72.7212" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8649
+z: 4" points="128.3524571197122,283.65343829203607 162.9805072451477,298.9287939462829" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="59.08239899999999,72.5337 60.61409885,72.7212" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8731
+z: 4" points="167.60977698035254,303.55806368148774 205.42658636180863,298.9287939462829" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="60.61409885,72.7212 62.342099999999995,72.9087" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8877
+z: 4" points="205.42658636180863,298.9287939462829 248.08996463431185,294.2995242110778" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="62.342099999999995,72.9087 64.95739869999998,72.77020039499997" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-8942
+z: 4" points="248.08996463431185,294.2995242110778 312.6602212766097,297.71900170315485" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="64.95739869999998,72.77020039499997 65.38159902,72.77020039499997" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-9190
+z: 4" points="312.6602212766097,297.71900170315485 323.13348902615803,297.71900170315485" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="65.38159902,72.77020039499997 68.08159870000001,72.9577002" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-9205
+z: 4" points="323.13348902615803,297.71900170315485 389.7949653124897,293.08973678238976" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="68.08159870000001,72.9577002 68.81439499999998,73.05755742142857" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-9433
+z: 4" points="389.7949653124897,293.08973678238976 407.88729455867633,290.6243180463848" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="68.81439499999998,73.05755742142857 70.01139798999999,72.9781" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-9499
+z: 4" points="407.88729455867633,290.6243180463848 437.44062636964645,292.58607717308746" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="70.01139798999999,72.9781 72.76139756999997,72.9781" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-9719
+z: 4" points="437.44062636964645,292.58607717308746 505.33657211642117,292.58607717308746" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="72.76139756999997,72.9781 74.124601,72.9781" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-10344
+z: 4" points="505.33657211642117,292.58607717308746 538.9932994840303,292.58607717308746" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="74.124601,72.9781 75.51139699999997,72.89276349999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-10699
+z: 4" points="538.9932994840303,292.58607717308746 573.2325141597807,294.69298744913203" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="75.91210093999997,72.61992699999999 76.27389778999996,72.61992699999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11414
+z: 4" points="583.125669478284,301.4291674603812 592.0582305876037,301.4291674603812" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="75.51139699999997,72.89276349999999 75.72460093999997,72.80742699999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11415
+z: 4" points="573.2325141597807,294.69298744913203 578.4963997430791,296.7998977251764" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="75.72460093999997,72.80742699999999 75.91210093999997,72.61992699999999" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11446
+z: 4" points="578.4963997430791,296.7998977251764 583.125669478284,301.4291674603812" fill="none" stroke="rgba(52, 152, 219, 0.95)" stroke-width="1px" stroke-dasharray="3 2"/></g><g><polyline data-points="76.27389778999996,72.61992699999999 76.59556445666664,72.59992699999998" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11446
+z: 4 -&gt; 0" points="592.0582305876037,301.4291674603812 600,301.9229562321366" fill="none" stroke="rgba(22, 160, 133, 0.95)" stroke-width="1px" stroke-dasharray="2 4 2"/></g><g><polyline data-points="76.44139778999997,70.39559962 76.09139721999999,70.39559962" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11576
+z: 0" points="596.1937115510536,356.3465617079637 587.5523939723582,356.3465617079637" fill="none" stroke="hsla(343, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="76.59556445666664,72.59992699999998 76.44139778999997,70.39559962" data-type="line" data-label="route: source_net_altium_pcb_57_mst4
+region: region-11925
+z: 0" points="600,301.9229562321366 596.1937115510536,356.3465617079637" fill="none" stroke="hsla(343, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
 net: 9
 endpoint: start
 port: tiny-terminal:start-port:source_net_altium_pcb_57_mst4
-z: 0" data-x="53.91380124" data-y="70.40740045999999" cx="204.41629530151818" cy="354.1169101761933" r="3" fill="hsla(343, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+z: 0" data-x="53.91380124" data-y="70.40740045999999" cx="40" cy="356.0552055935" r="3" fill="hsla(343, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
 net: 9
 endpoint: end
 port: tiny-terminal:end-port:source_net_altium_pcb_57_mst4
-z: 0" data-x="76.09139721999999" data-y="70.39559962" cx="420.18990550170724" cy="354.23172468776124" r="3" fill="hsla(343, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="port: ce32210_pp2_z4::4
-connects: region-10398 &lt;-&gt; region-14742
+z: 0" data-x="76.09139721999999" data-y="70.39559962" cx="587.5523939723582" cy="356.3465617079637" r="3" fill="hsla(343, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: tiny-terminal:start-port:source_net_altium_pcb_57_mst4
 net: 9
-z: 4
-g: 1.72
-h: 0.63
-f: 2.35" data-x="83.52603399999998" data-y="60.2108" cx="492.5240944730633" cy="453.32321256384773" r="3" fill="green"/></g><g><circle data-type="point" data-label="port: ce32209_pp2_z1::1
-connects: region-10398 &lt;-&gt; region-14741
+z: 0" data-x="53.91380124" data-y="70.40740045999999" cx="40" cy="356.0552055935" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce15593_pp0_z0::0
 net: 9
-z: 1
-g: 1.72
-h: 0.63
-f: 2.35" data-x="83.51103399999998" data-y="60.1958" cx="492.37815421173286" cy="453.4691528251782" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce32208_pp2_z3::3
-connects: region-10398 &lt;-&gt; region-14731
+z: 0" data-x="54.263801810000004" data-y="70.40740045999999" cx="48.64131757869609" cy="356.0552055935" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce15864_pp0_z4::4
 net: 9
-z: 3
-g: 1.72
-h: 0.63
-f: 2.35" data-x="83.52103399999999" data-y="60.205799999999996" cx="492.47544771928654" cy="453.3718593176245" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce31839_pp1_z0::0
-connects: region-10296 &lt;-&gt; region-10810
+z: 4" data-x="54.47130181000001" data-y="71.62660099999998" cx="53.764376085656295" cy="325.9538287350065" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce15863_pp4_z4::4
 net: 9
-z: 0
-g: 1.49
-h: 0.86
-f: 2.35" data-x="74.144799" data-y="87.49816566666665" cx="401.2507686395585" cy="187.83486080294801" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce26615_pp0_z1::1
-connects: region-8648 &lt;-&gt; region-8922
+z: 4" data-x="55.16652708" data-y="72.12659999999998" cx="70.92909769397988" cy="313.6091341305653" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce15884_pp0_z4::4
 net: 9
-z: 1
-g: 1.13
-h: 1.22
-f: 2.35" data-x="60.3794" data-y="89.12269899999998" cx="267.3223734810101" cy="172.02920618916596" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce26616_pp0_z2::2
-connects: region-8648 &lt;-&gt; region-8923
+z: 4" data-x="55.6080016" data-y="72.31409999999998" cx="81.82885574358056" cy="308.9798643953602" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce23263_pp1_z4::4
 net: 9
-z: 2
-g: 1.13
-h: 1.22
-f: 2.35" data-x="60.38439999999999" data-y="89.12769899999999" cx="267.3710202347869" cy="171.98055943538907" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce4619_pp1_z3::3
-connects: region-1313 &lt;-&gt; region-1456
+z: 4" data-x="56.20800040000001" data-y="72.6270005" cx="96.64248926891037" cy="301.25452671653056" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce24932_pp2_z4::4
 net: 9
-z: 3
-g: 0.90
-h: 1.45
-f: 2.35" data-x="51.010702179999996" data-y="84.89299999999999" cx="176.17102626920814" cy="213.18143134978186" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce32212_pp0_z0::0
-connects: region-10398 &lt;-&gt; region-14747
+z: 4" data-x="56.60800214" data-y="72.93990099999999" cx="106.51830766363742" cy="293.52918903770137" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce24965_pp0_z4::4
 net: 9
-z: 0
-g: 1.72
-h: 0.63
-f: 2.35" data-x="83.441382" data-y="60.190799999999996" cx="491.7004854729204" cy="453.5177995789551" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce32218_pp1_z5::5
-connects: region-10398 &lt;-&gt; region-10399
+z: 4" data-x="56.90800154000001" data-y="73.12740099999999" cx="113.92512442630232" cy="288.8999193024963" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce24967_pp0_z4::4
 net: 9
-z: 5
-g: 1.74
-h: 0.61
-f: 2.35" data-x="84.04489999999998" data-y="61.0709799" cx="497.57232378209653" cy="444.954220604033" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: ce1104_pp0_z5::5
-connects: region-239 &lt;-&gt; region-805
+z: 4" data-x="57.23340094000002" data-y="73.3274005" cx="121.95905292909629" cy="283.96204392966365" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce26245_pp4_z4::4
 net: 9
-z: 5
-g: 0.70
-h: 1.66
-f: 2.35" data-x="43.10190139999999" data-y="67.2628" cx="99.2235294262851" cy="384.7118310370149" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+z: 4" data-x="58.89489899999999" data-y="72.7212" cx="162.9805072451477" cy="298.9287939462829" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce26252_pp2_z4::4
+net: 9
+z: 4" data-x="59.08239899999999" data-y="72.5337" cx="167.60977698035254" cy="303.55806368148774" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce26257_pp1_z4::4
+net: 9
+z: 4" data-x="57.49235394000001" data-y="73.33989999999999" cx="128.3524571197122" cy="283.65343829203607" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce26878_pp3_z4::4
+net: 9
+z: 4" data-x="60.61409885" data-y="72.7212" cx="205.42658636180863" cy="298.9287939462829" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce27246_pp0_z4::4
+net: 9
+z: 4" data-x="62.342099999999995" data-y="72.9087" cx="248.08996463431185" cy="294.2995242110778" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce27607_pp3_z4::4
+net: 9
+z: 4" data-x="64.95739869999998" data-y="72.77020039499997" cx="312.6602212766097" cy="297.71900170315485" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce28299_pp3_z4::4
+net: 9
+z: 4" data-x="65.38159902" data-y="72.77020039499997" cx="323.13348902615803" cy="297.71900170315485" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce28400_pp3_z4::4
+net: 9
+z: 4" data-x="68.08159870000001" data-y="72.9577002" cx="389.7949653124897" cy="293.08973678238976" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce29084_pp5_z4::4
+net: 9
+z: 4" data-x="68.81439499999998" data-y="73.05755742142857" cx="407.88729455867633" cy="290.6243180463848" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce29321_pp4_z4::4
+net: 9
+z: 4" data-x="70.01139798999999" data-y="72.9781" cx="437.44062636964645" cy="292.58607717308746" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce30053_pp1_z4::4
+net: 9
+z: 4" data-x="72.76139756999997" data-y="72.9781" cx="505.33657211642117" cy="292.58607717308746" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce31947_pp1_z4::4
+net: 9
+z: 4" data-x="74.124601" data-y="72.9781" cx="538.9932994840303" cy="292.58607717308746" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce33178_pp0_z4::4
+net: 9
+z: 4" data-x="75.51139699999997" data-y="72.89276349999999" cx="573.2325141597807" cy="294.69298744913203" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce35449_pp0_z4::4
+net: 9
+z: 4" data-x="75.91210093999997" data-y="72.61992699999999" cx="583.125669478284" cy="301.4291674603812" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce35449_pp1_z4::4
+net: 9
+z: 4" data-x="76.27389778999996" data-y="72.61992699999999" cx="592.0582305876037" cy="301.4291674603812" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce35455_pp0_z4::4
+net: 9
+z: 4" data-x="75.72460093999997" data-y="72.80742699999999" cx="578.4963997430791" cy="296.7998977251764" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce35580_pp0_z0::0::dup2
+net: 9
+z: 0" data-x="76.59556445666664" data-y="72.59992699999998" cx="600" cy="301.9229562321366" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: ce36073_pp0_z0::0
+net: 9
+z: 0" data-x="76.44139778999997" data-y="70.39559962" cx="596.1937115510536" cy="356.3465617079637" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: source_net_altium_pcb_57_mst4
+port: tiny-terminal:end-port:source_net_altium_pcb_57_mst4
+net: 9
+z: 0" data-x="76.09139721999999" data-y="70.39559962" cx="587.5523939723582" cy="356.3465617079637" r="3" fill="hsla(343, 70%, 50%, 1)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
               document.currentScript.parentElement.addEventListener('mousemove', (e) => {
                 const svg = e.currentTarget;
                 const rect = svg.getBoundingClientRect();
@@ -179,7 +166,7 @@ f: 2.35" data-x="43.10190139999999" data-y="67.2628" cx="99.2235294262851" cy="3
                 v.setAttribute('y2', '640');
 
                 // Calculate real coordinates using inverse transformation
-                const matrix = {"a":9.729350755364838,"c":0,"e":-320.12998751746557,"b":0,"d":-9.729350755364838,"f":1039.1352050249689};
+                const matrix = {"a":24.689438587759792,"c":0,"e":-1291.1014847476677,"b":0,"d":-24.689438587759792,"f":2094.37439537448};
                 // Manually invert and apply the affine transform
                 // Since we only use translate and scale, we can directly compute:
                 // x' = (x - tx) / sx
