@@ -311,6 +311,8 @@ export interface TinyHyperGraphSolverOptions {
   PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO?: number
   /** Maximum total region-cost growth allowed for an early-stop candidate. */
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO?: number
+  /** Stop and restore the best route when a refinement leaves the quality envelope. */
+  PARTIAL_RIP_STOP_ON_QUALITY_REJECTION?: boolean
   /** Search from both active route ends instead of only the start end. */
   OUTSIDE_IN_ROUTING?: boolean
   /** Maximum geometric distance explored by either outside-in frontier. */
@@ -345,6 +347,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   PARTIAL_RIP_TARGET_MAX_COST_IMPROVEMENT_RATIO?: number
   PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO?: number
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO?: number
+  PARTIAL_RIP_STOP_ON_QUALITY_REJECTION?: boolean
   OUTSIDE_IN_ROUTING?: boolean
   OUTSIDE_IN_MAX_DISTANCE?: number
 }
@@ -450,6 +453,10 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO =
       options.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO
   }
+  if (options.PARTIAL_RIP_STOP_ON_QUALITY_REJECTION !== undefined) {
+    solver.PARTIAL_RIP_STOP_ON_QUALITY_REJECTION =
+      options.PARTIAL_RIP_STOP_ON_QUALITY_REJECTION
+  }
   if (options.OUTSIDE_IN_ROUTING !== undefined) {
     solver.OUTSIDE_IN_ROUTING = options.OUTSIDE_IN_ROUTING
   }
@@ -494,6 +501,8 @@ export const getTinyHyperGraphSolverOptions = (
     solver.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO,
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO:
     solver.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO,
+  PARTIAL_RIP_STOP_ON_QUALITY_REJECTION:
+    solver.PARTIAL_RIP_STOP_ON_QUALITY_REJECTION,
   OUTSIDE_IN_ROUTING: solver.OUTSIDE_IN_ROUTING,
   OUTSIDE_IN_MAX_DISTANCE: solver.OUTSIDE_IN_MAX_DISTANCE,
 })
@@ -561,6 +570,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   PARTIAL_RIP_TARGET_MAX_COST_IMPROVEMENT_RATIO = 0
   PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO = 0.2
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO = 0.1
+  PARTIAL_RIP_STOP_ON_QUALITY_REJECTION = false
   OUTSIDE_IN_ROUTING = false
   OUTSIDE_IN_MAX_DISTANCE = 24
 

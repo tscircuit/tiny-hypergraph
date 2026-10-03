@@ -257,14 +257,15 @@ test("complexity-aware selection activates only at its route-count gate", () => 
   expect(atGateSolver.stats.partialRipComplexityAwareSelection).toBe(true)
 })
 
-test("complexity selection cannot exceed the first solution cost envelope", () => {
+test("complexity selection stops when a rerip exceeds the first solution cost envelope", () => {
   const solver = createLinearSolver(
     24,
     {
-      PARTIAL_RIP_MAX_ATTEMPTS: 1,
+      PARTIAL_RIP_MAX_ATTEMPTS: 7,
       PARTIAL_RIP_COMPLEXITY_SELECTION_MIN_ROUTE_COUNT: 100,
       PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO: 0.2,
       PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO: 0.1,
+      PARTIAL_RIP_STOP_ON_QUALITY_REJECTION: true,
     },
     100,
   )
@@ -289,6 +290,8 @@ test("complexity selection cannot exceed the first solution cost envelope", () =
   solver.onAllRoutesRouted()
 
   expect(solver.solved).toBe(true)
+  expect(solver.stats.partialRipQualityRejected).toBe(true)
+  expect(solver.stats.ripCount).toBe(1)
   expect(solver.stats.bestMaxRegionCost).toBe(1)
   expect(solver.state.regionIntersectionCaches[3]!.existingRegionCost).toBe(1)
 })
