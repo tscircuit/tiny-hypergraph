@@ -12,7 +12,17 @@ import { PolyHyperGraphSolver } from "../../lib/poly"
 import type { PolyHyperGraphTopology } from "../../lib/poly-types"
 
 type CostArgs = [number, number, number, number]
-type ScalarArgs = [number, number, number, number, number, number, number, number, number]
+type ScalarArgs = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+]
 
 class CostProbe extends TinyHyperGraphSolver {
   regionCost(args: CostArgs, regionId = 0): number {
@@ -93,7 +103,8 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
     for (const value of values) {
       const args: ScalarArgs = [3, 7, 2, 3, 4, 5, 15, 0.3, 0]
       args[field] = value
-      const [width, height, same, cross, changes, count, mask, via, factor] = args
+      const [width, height, same, cross, changes, count, mask, via, factor] =
+        args
       solver.topology.regionWidth[0] = width
       solver.topology.regionHeight[0] = height
       solver.topology.regionAvailableZMask![0] = mask
@@ -112,7 +123,9 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
       ]
       const expected = computeRegionCost(...actualArgs)
       for (let repeat = 0; repeat < 3; repeat++) {
-        expect(Object.is(solver.regionCost([same, cross, changes, count]), expected)).toBe(true)
+        expect(
+          Object.is(solver.regionCost([same, cross, changes, count]), expected),
+        ).toBe(true)
       }
     }
   }
@@ -131,8 +144,18 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
   const frozen = new FrozenCostProbe(makeTopology(), makeProblem())
   const args: CostArgs = [2, 3, 4, 5]
   const compare = (regionId = 0): void => {
-    expect(Object.is(live.regionCost(args, regionId), frozen.regionCost(args, regionId))).toBe(true)
-    expect(Object.is(live.regionCost(args, regionId), frozen.regionCost(args, regionId))).toBe(true)
+    expect(
+      Object.is(
+        live.regionCost(args, regionId),
+        frozen.regionCost(args, regionId),
+      ),
+    ).toBe(true)
+    expect(
+      Object.is(
+        live.regionCost(args, regionId),
+        frozen.regionCost(args, regionId),
+      ),
+    ).toBe(true)
   }
   compare()
   for (const instance of [live, frozen]) {
@@ -180,7 +203,10 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
         return topology
       },
     })
-    for (const name of ["minViaPadDiameter", "TRACE_DENSITY_COST_FACTOR"] as const) {
+    for (const name of [
+      "minViaPadDiameter",
+      "TRACE_DENSITY_COST_FACTOR",
+    ] as const) {
       const value = instance[name]
       Object.defineProperty(instance, name, {
         get: (): number => {
@@ -208,9 +234,15 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
         },
       } as unknown as number
     }
-    instance.topology.regionWidth = [coercer("width", 3)] as unknown as Float64Array
-    instance.topology.regionHeight = [coercer("height", 7)] as unknown as Float64Array
-    instance.topology.regionAvailableZMask = [coercer("mask", 15)] as unknown as Int32Array
+    instance.topology.regionWidth = [
+      coercer("width", 3),
+    ] as unknown as Float64Array
+    instance.topology.regionHeight = [
+      coercer("height", 7),
+    ] as unknown as Float64Array
+    instance.topology.regionAvailableZMask = [
+      coercer("mask", 15),
+    ] as unknown as Int32Array
     instance.minViaPadDiameter = coercer("via", 0.3)
     instance.TRACE_DENSITY_COST_FACTOR = coercer("density", 0)
     const coercionArgs: CostArgs = [
@@ -290,13 +322,22 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
     }
     const original = methods.computeRegionCostForRegion
     let calls = 0
-    methods.computeRegionCostForRegion = function (regionId, same, cross, changes, count): number {
+    methods.computeRegionCostForRegion = function (
+      regionId,
+      same,
+      cross,
+      changes,
+      count,
+    ): number {
       calls++
       instance.topology.regionWidth[regionId] += 1
-      return original.call(instance, regionId, same, cross, changes, count) + calls
+      return (
+        original.call(instance, regionId, same, cross, changes, count) + calls
+      )
     }
     const results: number[] = []
-    for (let index = 0; index < 3; index++) results.push(instance.regionCost(args))
+    for (let index = 0; index < 3; index++)
+      results.push(instance.regionCost(args))
     results.push(calls)
     return results
   }
@@ -343,7 +384,9 @@ test("region cost memo preserves live inputs, dispatch and coercion", (): void =
     new FrozenCostProbe(makeTopology(), makeProblem()),
   ]) {
     instance.regionCost(args)
-    instance.topology.regionWidth = [Symbol("invalid-width")] as unknown as Float64Array
+    instance.topology.regionWidth = [
+      Symbol("invalid-width"),
+    ] as unknown as Float64Array
     expect(() => instance.regionCost(args)).toThrow(TypeError)
     expect(() => instance.regionCost(args)).toThrow(TypeError)
   }
