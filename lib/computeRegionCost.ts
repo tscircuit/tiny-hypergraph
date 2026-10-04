@@ -64,7 +64,7 @@ export const computeRegionCostForArea = (
     traceCount >= -MAX_FINITE_SQUARED_TRACE_COUNT &&
     traceCount <= MAX_FINITE_SQUARED_TRACE_COUNT &&
     typeof regionAvailableZMask === "number" &&
-    (regionAvailableZMask === 0 || (regionAvailableZMask >>> 0) !== 0)
+    (regionAvailableZMask === 0 || regionAvailableZMask >>> 0 !== 0)
       ? (traceDensityCostFactor * traceWidth ** 2) / area
       : (traceDensityCostFactor *
           (traceCount / countAvailableLayers(regionAvailableZMask)) ** 2 *
