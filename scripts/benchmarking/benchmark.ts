@@ -162,6 +162,7 @@ type BenchmarkReport = {
     avgDurationMs: number
     p50DurationMs: number
     p95DurationMs: number
+    peakRssBytes: number
   }
   samples: BenchmarkSampleResult[]
 }
@@ -207,6 +208,7 @@ Summary metrics:
   - improved rate
   - zero-final-max-region-cost rate
   - total / avg / P50 / P95 completion time and per-stage timing
+  - peak resident set size (RSS) for the benchmark process
   - avg baseline/final max region cost and avg delta
   - iterations, route hops/rips, and generated/attempted/duplicate candidates
 `
@@ -425,6 +427,9 @@ const formatPercent = (numerator: number, denominator: number) =>
 const formatDuration = (durationMs: number) =>
   `${(durationMs / 1000).toFixed(3)}s`
 
+const formatMemory = (byteCount: number) =>
+  `${(byteCount / (1024 * 1024)).toFixed(1)} MiB`
+
 const percentile = (values: number[], p: number) => {
   if (values.length === 0) return 0
 
@@ -528,6 +533,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     ["Avg duration", formatDuration(report.summary.avgDurationMs)],
     ["P50 duration", formatDuration(report.summary.p50DurationMs)],
     ["P95 duration", formatDuration(report.summary.p95DurationMs)],
+    ["Peak RSS", formatMemory(report.summary.peakRssBytes)],
   ]
 
   const sampleRows = report.samples.map((sample) => [
@@ -1350,6 +1356,7 @@ const main = async () => {
       avgDurationMs: average(durations),
       p50DurationMs: percentile(durations, 50),
       p95DurationMs: percentile(durations, 95),
+      peakRssBytes: process.resourceUsage().maxRSS * 1024,
     },
     samples: results,
   }
