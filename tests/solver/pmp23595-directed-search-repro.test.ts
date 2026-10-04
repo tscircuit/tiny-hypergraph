@@ -57,7 +57,7 @@ const addAutorouterPortPenalties = (graph: SerializedHyperGraph): void => {
   }
 }
 
-const getFocusedRouteSearchGraphics = (
+const getFocusedRouteGraphics = (
   solver: SelectiveReripTinyHyperGraphSolver,
   routeLabel: string,
 ) => {
@@ -75,7 +75,7 @@ const getFocusedRouteSearchGraphics = (
 
   return {
     ...graphics,
-    title: `${routeLabel}: one-ended search after 30,000 expansions`,
+    title: `${routeLabel}: routed toward the lower-fanout endpoint`,
     points,
     lines: (graphics.lines ?? []).filter(
       (line: GraphicsItem) => !line.label || line.label.includes(routeLabel),
@@ -89,7 +89,7 @@ const getFocusedRouteSearchGraphics = (
 
 const SEARCH_ITERATION_BUDGET = 30_000
 
-test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
+test("PMP23595 route 298 searches toward its lower-fanout endpoint", () => {
   const fixture = readCompressedJson<Pmp23595Fixture>(
     new URL(
       "../fixtures/pmp23595-congested-ports-repro.json.gz",
@@ -129,6 +129,7 @@ test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
     RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
     MAX_ITERATIONS: 2_000_000,
     STATIC_REACHABILITY_PRECHECK: true,
+    ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT: true,
   })
   solver.state.unroutedRoutes = [routeSearchState.targetRouteId]
 
@@ -152,12 +153,13 @@ test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
   expect(topology.regionCount).toBe(29_691)
   expect(problem.routeCount).toBe(458)
   expect(solver.problemSetup.portHCostToEndOfRoute).toBeUndefined()
-  expect(solver.state.currentRouteId).toBe(routeSearchState.targetRouteId)
-  expect(solver.solved).toBe(false)
-  expect(solver.state.candidateQueue.length).toBeGreaterThan(1_000)
+  expect(solver.problemSetup.routeSearchReversed[298]).toBe(1)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
+  expect(solver.iterations).toBeLessThan(10_000)
   expect(
     getSvgFromGraphicsObject(
-      getFocusedRouteSearchGraphics(solver, routeLabel),
+      getFocusedRouteGraphics(solver, routeLabel),
       { backgroundColor: "white" },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
