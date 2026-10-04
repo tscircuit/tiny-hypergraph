@@ -412,17 +412,17 @@ jobs:
 
             const renderSummaryRows = (label, report) => {
               if (!report) {
-                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
+                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
               }
 
               return [
-                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.routeCompletionRate ?? 'n/a'} | ${formatNumber(report.summary?.avgFinalMaxRegionCost)} | ${formatNumber(report.summary?.avgRouteHops)} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} | ${formatMemory(report.summary?.peakRssBytes)} |`,
+                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.routeCompletionRate ?? 'n/a'} | ${formatNumber(report.summary?.avgFinalMaxRegionCost)} | ${formatNumber(report.summary?.avgRouteHops)} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} | ${formatMemory(report.summary?.p50RssBytes)} | ${formatMemory(report.summary?.p80RssBytes)} | ${formatMemory(report.summary?.p90RssBytes)} |`,
               ]
             }
 
             const renderComparison = (baseReport, prReport) => [
-              '| Run | Dataset | Solver | Families | Success | Routes | Final Cost | Avg Hops | P50 | P95 | Peak RSS |',
-              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+              '| Run | Dataset | Solver | Families | Success | Routes | Final Cost | Avg Hops | Time P50 | Time P95 | RSS P50 | RSS P80 | RSS P90 |',
+              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
               ...renderSummaryRows('Base', baseReport),
               ...renderSummaryRows('PR', prReport),
             ]
@@ -485,7 +485,9 @@ jobs:
                 `| Avg duration | ${formatTime(report.summary?.avgDurationMs)} |`,
                 `| P50 duration | ${formatTime(report.summary?.p50DurationMs)} |`,
                 `| P95 duration | ${formatTime(report.summary?.p95DurationMs)} |`,
-                `| Peak RSS | ${formatMemory(report.summary?.peakRssBytes)} |`,
+                `| P50 RSS | ${formatMemory(report.summary?.p50RssBytes)} |`,
+                `| P80 RSS | ${formatMemory(report.summary?.p80RssBytes)} |`,
+                `| P90 RSS | ${formatMemory(report.summary?.p90RssBytes)} |`,
                 '',
                 ...renderSamples(report, options),
               ]

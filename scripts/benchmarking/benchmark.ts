@@ -9,6 +9,7 @@ import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { Worker } from "node:worker_threads"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import { applyInitialAssignments } from "../../lib/initialAssignments"
 import {
@@ -162,7 +163,9 @@ type BenchmarkReport = {
     avgDurationMs: number
     p50DurationMs: number
     p95DurationMs: number
-    peakRssBytes: number
+    p50RssBytes: number
+    p80RssBytes: number
+    p90RssBytes: number
   }
   samples: BenchmarkSampleResult[]
 }
@@ -208,7 +211,7 @@ Summary metrics:
   - improved rate
   - zero-final-max-region-cost rate
   - total / avg / P50 / P95 completion time and per-stage timing
-  - peak resident set size (RSS) for the benchmark process
+  - P50 / P80 / P90 resident set size (RSS) over the benchmark run
   - avg baseline/final max region cost and avg delta
   - iterations, route hops/rips, and generated/attempted/duplicate candidates
 `
@@ -533,7 +536,9 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     ["Avg duration", formatDuration(report.summary.avgDurationMs)],
     ["P50 duration", formatDuration(report.summary.p50DurationMs)],
     ["P95 duration", formatDuration(report.summary.p95DurationMs)],
-    ["Peak RSS", formatMemory(report.summary.peakRssBytes)],
+    ["P50 RSS", formatMemory(report.summary.p50RssBytes)],
+    ["P80 RSS", formatMemory(report.summary.p80RssBytes)],
+    ["P90 RSS", formatMemory(report.summary.p90RssBytes)],
   ]
 
   const sampleRows = report.samples.map((sample) => [
@@ -1008,6 +1013,10 @@ const createPipelineSolver = ({
 
 const main = async () => {
   const cwd = process.cwd()
+  const memorySampler = new Worker(
+    fileURLToPath(new URL("./sample-process-rss.worker.ts", import.meta.url)),
+  )
+  memorySampler.unref()
   const {
     limit,
     sampleName,
@@ -1318,6 +1327,13 @@ const main = async () => {
     (result) => result.zeroFinalCost,
   ).length
 
+  const rssMeasurements = await new Promise<number[]>((resolve, reject) => {
+    memorySampler.once("message", resolve)
+    memorySampler.once("error", reject)
+    memorySampler.postMessage("stop")
+  })
+  await memorySampler.terminate()
+
   const report: BenchmarkReport = {
     version: 1,
     datasetName: datasetKey,
@@ -1356,7 +1372,9 @@ const main = async () => {
       avgDurationMs: average(durations),
       p50DurationMs: percentile(durations, 50),
       p95DurationMs: percentile(durations, 95),
-      peakRssBytes: process.resourceUsage().maxRSS * 1024,
+      p50RssBytes: percentile(rssMeasurements, 50),
+      p80RssBytes: percentile(rssMeasurements, 80),
+      p90RssBytes: percentile(rssMeasurements, 90),
     },
     samples: results,
   }
