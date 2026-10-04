@@ -482,6 +482,19 @@ const compareCandidatesByF = (left: Candidate, right: Candidate) =>
 
 type SegmentGeometryScratch = MutableIntersectionCount
 
+type ScalarRegionCostMemo = {
+  regionWidth: number
+  regionHeight: number
+  numSameLayerIntersections: number
+  numCrossLayerIntersections: number
+  numEntryExitChanges: number
+  traceCount: number
+  regionAvailableZMask: number
+  minViaPadDiameter: number
+  traceDensityCostFactor: number
+  cost: number
+}
+
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   /** Number of incident-region slots reserved for each port. */
@@ -493,6 +506,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   /** Rare fallback for callers that construct a non-incident directed hop. */
   private candidateOverflowBestCost?: Map<HopId, number>
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private scalarRegionCostMemo?: ScalarRegionCostMemo
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -1051,17 +1065,78 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
-    return computeRegionCost(
-      this.topology.regionWidth[regionId],
-      this.topology.regionHeight[regionId],
+    const regionWidth = this.topology.regionWidth[regionId]
+    const regionHeight = this.topology.regionHeight[regionId]
+    const regionAvailableZMask =
+      this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const minViaPadDiameter = this.minViaPadDiameter
+    const traceDensityCostFactor = this.TRACE_DENSITY_COST_FACTOR
+    const memo = this.scalarRegionCostMemo
+    if (
+      memo &&
+      Object.is(regionWidth, memo.regionWidth) &&
+      Object.is(regionHeight, memo.regionHeight) &&
+      Object.is(numSameLayerIntersections, memo.numSameLayerIntersections) &&
+      Object.is(numCrossLayerIntersections, memo.numCrossLayerIntersections) &&
+      Object.is(numEntryExitChanges, memo.numEntryExitChanges) &&
+      Object.is(traceCount, memo.traceCount) &&
+      Object.is(regionAvailableZMask, memo.regionAvailableZMask) &&
+      Object.is(minViaPadDiameter, memo.minViaPadDiameter) &&
+      Object.is(traceDensityCostFactor, memo.traceDensityCostFactor)
+    ) {
+      return memo.cost
+    }
+
+    const cost = computeRegionCost(
+      regionWidth,
+      regionHeight,
       numSameLayerIntersections,
       numCrossLayerIntersections,
       numEntryExitChanges,
       traceCount,
-      this.topology.regionAvailableZMask?.[regionId] ?? 0,
-      this.minViaPadDiameter,
-      this.TRACE_DENSITY_COST_FACTOR,
+      regionAvailableZMask,
+      minViaPadDiameter,
+      traceDensityCostFactor,
     )
+    // Only primitive inputs can reuse pure arithmetic without skipping coercion.
+    if (
+      typeof regionWidth === "number" &&
+      typeof regionHeight === "number" &&
+      typeof numSameLayerIntersections === "number" &&
+      typeof numCrossLayerIntersections === "number" &&
+      typeof numEntryExitChanges === "number" &&
+      typeof traceCount === "number" &&
+      typeof regionAvailableZMask === "number" &&
+      typeof minViaPadDiameter === "number" &&
+      typeof traceDensityCostFactor === "number"
+    ) {
+      if (memo) {
+        memo.regionWidth = regionWidth
+        memo.regionHeight = regionHeight
+        memo.numSameLayerIntersections = numSameLayerIntersections
+        memo.numCrossLayerIntersections = numCrossLayerIntersections
+        memo.numEntryExitChanges = numEntryExitChanges
+        memo.traceCount = traceCount
+        memo.regionAvailableZMask = regionAvailableZMask
+        memo.minViaPadDiameter = minViaPadDiameter
+        memo.traceDensityCostFactor = traceDensityCostFactor
+        memo.cost = cost
+      } else {
+        this.scalarRegionCostMemo = {
+          regionWidth,
+          regionHeight,
+          numSameLayerIntersections,
+          numCrossLayerIntersections,
+          numEntryExitChanges,
+          traceCount,
+          regionAvailableZMask,
+          minViaPadDiameter,
+          traceDensityCostFactor,
+          cost,
+        }
+      }
+    }
+    return cost
   }
 
   populateSegmentGeometryScratch(
