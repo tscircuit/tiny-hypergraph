@@ -211,7 +211,7 @@ Summary metrics:
   - improved rate
   - zero-final-max-region-cost rate
   - total / avg / P50 / P95 completion time and per-stage timing
-  - P50 / P80 / P90 resident set size (RSS) over the benchmark run
+  - P50 / P80 / P90 memory usage over the benchmark run
   - avg baseline/final max region cost and avg delta
   - iterations, route hops/rips, and generated/attempted/duplicate candidates
 `
@@ -536,9 +536,9 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     ["Avg duration", formatDuration(report.summary.avgDurationMs)],
     ["P50 duration", formatDuration(report.summary.p50DurationMs)],
     ["P95 duration", formatDuration(report.summary.p95DurationMs)],
-    ["P50 RSS", formatMemory(report.summary.p50RssBytes)],
-    ["P80 RSS", formatMemory(report.summary.p80RssBytes)],
-    ["P90 RSS", formatMemory(report.summary.p90RssBytes)],
+    ["Memory P50", formatMemory(report.summary.p50RssBytes)],
+    ["Memory P80", formatMemory(report.summary.p80RssBytes)],
+    ["Memory P90", formatMemory(report.summary.p90RssBytes)],
   ]
 
   const sampleRows = report.samples.map((sample) => [
