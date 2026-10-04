@@ -182,13 +182,13 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return super.getStartingNextRegionId(routeId, endingPortId)
   }
 
-  override computeH(neighborPortId: PortId): number {
+  override computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
     if (!this.PARTIAL_RIP_ENABLED) {
-      return super.computeH(neighborPortId)
+      return super.computeH(neighborPortId, nextRegionId)
     }
     const routeId = this.state.currentRouteId
     if (routeId === undefined || !this.partialRipRoutePlans.has(routeId)) {
-      return super.computeH(neighborPortId)
+      return super.computeH(neighborPortId, nextRegionId)
     }
 
     const endPortId = this.getRouteEndPortId(routeId)
