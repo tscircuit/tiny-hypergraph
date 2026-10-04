@@ -2116,9 +2116,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   }
 
   private getRouteHeuristic(routeId: RouteId, portId: PortId) {
-    return this.problemSetup.portHCostToEndOfRoute[
-      portId * this.problem.routeCount + routeId
-    ]
+    return this.computeRouteHeuristic(routeId, portId)
   }
 
   private computeCenterHeuristic(portId: PortId, nextRegionId?: RegionId) {
