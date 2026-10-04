@@ -161,6 +161,8 @@ export interface TinyHyperGraphProblem {
 export interface TinyHyperGraphProblemSetup {
   // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
   portHCostToEndOfRoute?: Float64Array
+  /** 1 when search starts at the stored end port so the lower-fanout endpoint is the target. */
+  routeSearchReversed: Uint8Array
   portEndpointNetIds: Array<Set<NetId> | undefined>
   /** -1 for no endpoint, -2 for endpoints from multiple nets, otherwise the sole endpoint net. */
   portEndpointReservationNetId: Int32Array
@@ -264,6 +266,8 @@ export interface TinyHyperGraphSolverOptions {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
+  /** Search cost-symmetric routes toward the endpoint in the lower-fanout region. */
+  ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
@@ -311,6 +315,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
+  ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
@@ -370,6 +375,10 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.USE_SPARSE_CANDIDATE_STORAGE !== undefined) {
     solver.USE_SPARSE_CANDIDATE_STORAGE = options.USE_SPARSE_CANDIDATE_STORAGE
+  }
+  if (options.ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT !== undefined) {
+    solver.ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT =
+      options.ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -450,6 +459,8 @@ export const getTinyHyperGraphSolverOptions = (
   TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
+  ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT:
+    solver.ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -521,6 +532,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   TRACE_DENSITY_COST_FACTOR = 0
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
+  ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT = false
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -695,6 +707,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const portEndpointReservationNetId = new Int32Array(
       topology.portCount,
     ).fill(-1)
+    const routeSearchReversed = new Uint8Array(problem.routeCount)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
       const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
       endpointNetIds.add(netId)
@@ -709,11 +722,37 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const routeNetId = problem.routeNet[routeId]!
-      recordEndpointNet(problem.routeStartPort[routeId]!, routeNetId)
-      recordEndpointNet(problem.routeEndPort[routeId]!, routeNetId)
+      const originalStartPortId = problem.routeStartPort[routeId]!
+      const originalEndPortId = problem.routeEndPort[routeId]!
+      recordEndpointNet(originalStartPortId, routeNetId)
+      recordEndpointNet(originalEndPortId, routeNetId)
+
+      const startRegionId = this.getRouteEndpointRegionId(
+        routeId,
+        originalStartPortId,
+      )
+      const endRegionId = this.getRouteEndpointRegionId(
+        routeId,
+        originalEndPortId,
+      )
+      const endpointPenaltiesMatch =
+        (problem.portPenalty?.[originalStartPortId] ?? 0) ===
+        (problem.portPenalty?.[originalEndPortId] ?? 0)
+      if (
+        this.ORIENT_ROUTE_SEARCH_BY_TARGET_FANOUT &&
+        endpointPenaltiesMatch &&
+        startRegionId !== undefined &&
+        endRegionId !== undefined &&
+        (topology.regionIncidentPorts[startRegionId]?.length ?? 0) <
+          (topology.regionIncidentPorts[endRegionId]?.length ?? 0)
+      ) {
+        routeSearchReversed[routeId] = 1
+      }
 
       if (portHCostToEndOfRoute) {
-        const endPortId = problem.routeEndPort[routeId]
+        const endPortId = routeSearchReversed[routeId]
+          ? originalStartPortId
+          : originalEndPortId
         const endX = portX[endPortId]
         const endY = portY[endPortId]
 
@@ -728,6 +767,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     return {
       portHCostToEndOfRoute,
+      routeSearchReversed,
       portEndpointNetIds,
       portEndpointReservationNetId,
     }
@@ -999,8 +1039,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
     routeId: RouteId,
     startingPortId: PortId,
   ): RegionId | undefined {
+    return this.getRouteEndpointRegionId(routeId, startingPortId)
+  }
+
+  private getRouteEndpointRegionId(
+    routeId: RouteId,
+    endpointPortId: PortId,
+  ): RegionId | undefined {
     const startingIncidentRegions =
-      this.topology.incidentPortRegion[startingPortId] ?? []
+      this.topology.incidentPortRegion[endpointPortId] ?? []
     const currentRouteNetId = this.problem.routeNet[routeId]
 
     return (
@@ -1015,11 +1062,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   protected getRouteStartPortId(routeId: RouteId): PortId {
-    return this.problem.routeStartPort[routeId]!
+    return this.problemSetup.routeSearchReversed[routeId]
+      ? this.problem.routeEndPort[routeId]!
+      : this.problem.routeStartPort[routeId]!
   }
 
   protected getRouteEndPortId(routeId: RouteId): PortId {
-    return this.problem.routeEndPort[routeId]!
+    return this.problemSetup.routeSearchReversed[routeId]
+      ? this.problem.routeStartPort[routeId]!
+      : this.problem.routeEndPort[routeId]!
   }
 
   isPortReservedForDifferentNet(portId: PortId): boolean {
