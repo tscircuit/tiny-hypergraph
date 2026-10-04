@@ -117,6 +117,7 @@ type BenchmarkSampleResult = {
   solveGraphMs: number
   sectionSearchMs: number
   optimizeSectionMs: number
+  optimizeCongestionMs: number
   selectedCandidateLabel: string | null
   selectedCandidateFamily: string | null
   error: string | null
@@ -134,6 +135,7 @@ type BenchmarkReport = {
   datasetRevision: string | null
   sampleSelection: string
   solverVariant: SolverVariant
+  optimizeCongestion: boolean
   candidateFamilies: string
   concurrency: number
   sampleCount: number
@@ -183,6 +185,7 @@ Options:
   --concurrency N Benchmark concurrency value, or "auto". Defaults to BENCHMARK_CONCURRENCY or CPU count.
   --families LIST Override hg07 candidate families. Use a preset (default, default+deep, all)
                   or a comma-separated list such as self-touch,onehop-all,twohop-touch.
+  --optimize-congestion  Try four additional single-route reroutes (core solver only).
   --help          Show this help text.
 
 Examples:
@@ -286,6 +289,7 @@ const parseArgs = () => {
   let solverVariant: SolverVariant = "core"
   let datasetKey: DatasetKey = "hg07"
   let concurrency = getDefaultConcurrency()
+  let optimizeCongestion = false
 
   for (let index = 0; index < process.argv.length; index += 1) {
     const arg = process.argv[index]
@@ -293,6 +297,11 @@ const parseArgs = () => {
     if (arg === "--help" || arg === "-h") {
       console.log(HELP_TEXT)
       process.exit(0)
+    }
+
+    if (arg === "--optimize-congestion") {
+      optimizeCongestion = true
+      continue
     }
 
     if (arg === "--limit") {
@@ -389,6 +398,7 @@ const parseArgs = () => {
     solverVariant,
     datasetKey,
     concurrency,
+    optimizeCongestion,
   }
 }
 
@@ -569,6 +579,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     `Revision: ${report.datasetRevision ?? "n/a"}`,
     `Samples: ${report.sampleSelection}`,
     `Solver: ${report.solverVariant}`,
+    `Congestion rerouting: ${report.optimizeCongestion ? "enabled" : "disabled"}`,
     `Families: ${report.candidateFamilies}`,
     `Concurrency: ${report.concurrency}`,
     `Sample count: ${report.sampleCount}`,
@@ -964,18 +975,21 @@ const createPipelineSolver = ({
   serializedHyperGraph,
   candidateFamilies,
   benchmarkCase,
+  optimizeCongestion,
 }: {
   datasetKey: DatasetKey
   solverVariant: SolverVariant
   serializedHyperGraph: SerializedHyperGraph
   candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null
   benchmarkCase: Srj18BenchmarkCase | undefined
+  optimizeCongestion: boolean
 }) => {
   const input = getPipelineInput(
     serializedHyperGraph,
     candidateFamilies,
     benchmarkCase,
   )
+  if (optimizeCongestion) input.congestionSolverOptions = {}
   const pipelineSolver =
     solverVariant === "poly"
       ? new PolyHyperGraphSectionPipelineSolver(input)
@@ -1009,12 +1023,16 @@ const main = async () => {
     solverVariant,
     datasetKey,
     concurrency,
+    optimizeCongestion,
   } = parseArgs()
   if (datasetKey === "srj18" && solverVariant !== "core") {
     usageError("SRJ18 Pipeline7 cases require --solver core")
   }
   if (datasetKey === "srj18" && candidateFamilies !== null) {
     usageError("SRJ18 Pipeline7 cases use the committed all-zero section mask")
+  }
+  if (optimizeCongestion && solverVariant !== "core") {
+    usageError("--optimize-congestion requires --solver core")
   }
   const loadedDataset = await loadDataset(datasetKey, cwd, limit, sampleName)
   const { datasetModule, srj18Cases } = loadedDataset
@@ -1025,7 +1043,7 @@ const main = async () => {
   const results: BenchmarkSampleResult[] = []
 
   console.log(
-    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency}`,
+    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency} optimizeCongestion=${optimizeCongestion}`,
   )
 
   for (const sampleMeta of sampleMetas) {
@@ -1044,6 +1062,7 @@ const main = async () => {
         serializedHyperGraph,
         candidateFamilies,
         benchmarkCase,
+        optimizeCongestion,
       })
       pipelineSolver.solve()
       pipelineIterations = pipelineSolver.iterations
@@ -1063,8 +1082,10 @@ const main = async () => {
         throw new Error("pipeline did not produce both stage outputs")
       }
 
+      const finalOutput = pipelineSolver.getOutput() ?? optimizeSectionOutput
+
       assertAllConnectionsSolved(
-        optimizeSectionOutput,
+        finalOutput,
         `${sampleMeta.sampleName} optimized output`,
       )
 
@@ -1073,7 +1094,7 @@ const main = async () => {
         solverVariant,
       )
       const finalMaxRegionCost = getSerializedOutputMaxRegionCost(
-        optimizeSectionOutput,
+        finalOutput,
         solverVariant,
       )
       const delta = baselineMaxRegionCost - finalMaxRegionCost
@@ -1094,7 +1115,7 @@ const main = async () => {
       const optimizeSectionMs = Number(
         stageStats.optimizeSection?.timeSpent ?? 0,
       )
-      const finalRouteMetrics = getRouteMetrics(optimizeSectionOutput)
+      const finalRouteMetrics = getRouteMetrics(finalOutput)
 
       const result: BenchmarkSampleResult = {
         sampleName: sampleMeta.sampleName,
@@ -1121,6 +1142,9 @@ const main = async () => {
         solveGraphMs,
         sectionSearchMs,
         optimizeSectionMs,
+        optimizeCongestionMs: Number(
+          stageStats.optimizeCongestion?.timeSpent ?? 0,
+        ),
         selectedCandidateLabel:
           pipelineSolver.selectedSectionCandidateLabel ?? null,
         selectedCandidateFamily:
@@ -1170,6 +1194,7 @@ const main = async () => {
           serializedHyperGraph,
           candidateFamilies,
           benchmarkCase,
+          optimizeCongestion,
         })
         const png = await getSnapshotPng(pipelineSolver)
         await writeFile(snapshotPath, png)
@@ -1222,6 +1247,7 @@ const main = async () => {
         solveGraphMs: 0,
         sectionSearchMs: 0,
         optimizeSectionMs: 0,
+        optimizeCongestionMs: 0,
         selectedCandidateLabel: null,
         selectedCandidateFamily: null,
         error: errorMessage,
@@ -1319,6 +1345,7 @@ const main = async () => {
     datasetRevision: loadedDataset.datasetRevision,
     sampleSelection: loadedDataset.sampleSelection,
     solverVariant,
+    optimizeCongestion,
     candidateFamilies: candidateFamilies?.join(",") ?? "default",
     concurrency,
     sampleCount: results.length,
