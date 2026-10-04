@@ -395,9 +395,9 @@ jobs:
                 ? `${(value / 1000).toFixed(3)}s`
                 : 'n/a'
 
-            const formatMemory = (value) =>
-              typeof value === 'number' && Number.isFinite(value)
-                ? `${(value / (1024 * 1024)).toFixed(1)} MiB`
+            const formatMemory = (byteCount) =>
+              typeof byteCount === 'number' && Number.isFinite(byteCount)
+                ? `${(byteCount / (1024 * 1024)).toFixed(1)} MiB`
                 : 'n/a'
 
             const formatValue = (value) =>
