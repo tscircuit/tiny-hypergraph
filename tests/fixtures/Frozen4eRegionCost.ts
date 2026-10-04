@@ -2,9 +2,8 @@ export const DEFAULT_MIN_VIA_PAD_DIAMETER = 0.3
 export const TRACE_VIA_MARGIN = 0.15
 const traceWidth = 0.1
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
-const MAX_FINITE_SQUARED_TRACE_COUNT = 1e154
 
-export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
+export const isKnownSingleLayerMask = (regionAvailableZMask: number): boolean =>
   regionAvailableZMask > 0 &&
   (regionAvailableZMask & (regionAvailableZMask - 1)) === 0
 
@@ -18,7 +17,7 @@ export const computeRegionCost = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
-) => {
+): number => {
   const area = regionWidth * regionHeight
 
   return computeRegionCostForArea(
@@ -42,7 +41,7 @@ export const computeRegionCostForArea = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
-) => {
+): number => {
   const estViasRequired =
     numSameLayerIntersections * 2 +
     numCrossLayerIntersections * 1 +
@@ -56,20 +55,12 @@ export const computeRegionCostForArea = (
   )
     ? numSameLayerIntersections * IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST
     : 0
-  // A finite squared trace count makes a zero factor the same signed zero.
-  // Invalid masks and overflowing counts retain the full arithmetic below.
+  const layerCount = countAvailableLayers(regionAvailableZMask)
   const traceDensityCost =
-    traceDensityCostFactor === 0 &&
-    typeof traceCount === "number" &&
-    traceCount >= -MAX_FINITE_SQUARED_TRACE_COUNT &&
-    traceCount <= MAX_FINITE_SQUARED_TRACE_COUNT &&
-    typeof regionAvailableZMask === "number" &&
-    (regionAvailableZMask === 0 || (regionAvailableZMask >>> 0) !== 0)
-      ? (traceDensityCostFactor * traceWidth ** 2) / area
-      : (traceDensityCostFactor *
-          (traceCount / countAvailableLayers(regionAvailableZMask)) ** 2 *
-          traceWidth ** 2) /
-        area
+    (traceDensityCostFactor *
+      (traceCount / layerCount) ** 2 *
+      traceWidth ** 2) /
+    area
 
   return (
     (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
@@ -78,7 +69,7 @@ export const computeRegionCostForArea = (
   )
 }
 
-const countAvailableLayers = (regionAvailableZMask: number) => {
+const countAvailableLayers = (regionAvailableZMask: number): number => {
   if (regionAvailableZMask === 0) return 2
 
   let mask = regionAvailableZMask >>> 0
