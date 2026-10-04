@@ -265,6 +265,7 @@ test("constructor options override snake-case hyperparameters before setup", () 
     PARTIAL_RIP_MAX_ATTEMPTS: 3,
     OUTSIDE_IN_ROUTING: true,
     OUTSIDE_IN_MAX_DISTANCE: 18,
+    USE_LAZY_ROUTE_HEURISTIC: false,
   })
 
   expect(solver.DISTANCE_TO_COST).toBe(0.25)
@@ -281,5 +282,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.PARTIAL_RIP_MAX_ATTEMPTS).toBe(3)
   expect(solver.OUTSIDE_IN_ROUTING).toBe(true)
   expect(solver.OUTSIDE_IN_MAX_DISTANCE).toBe(18)
-  expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
+  expect(solver.USE_LAZY_ROUTE_HEURISTIC).toBe(false)
+  expect(solver.problemSetup.portHCostToEndOfRoute?.[0]).toBe(0.25)
 })

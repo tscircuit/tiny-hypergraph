@@ -151,6 +151,7 @@ test("PMP23595 route 298 exhaustively explores from one endpoint", () => {
   expect(topology.portCount).toBe(137_226)
   expect(topology.regionCount).toBe(29_691)
   expect(problem.routeCount).toBe(458)
+  expect(solver.problemSetup.portHCostToEndOfRoute).toBeUndefined()
   expect(solver.state.currentRouteId).toBe(routeSearchState.targetRouteId)
   expect(solver.solved).toBe(false)
   expect(solver.state.candidateQueue.length).toBeGreaterThan(1_000)
