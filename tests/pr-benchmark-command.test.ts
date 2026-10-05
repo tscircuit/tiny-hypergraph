@@ -43,6 +43,7 @@ test("PR benchmark commands always dispatch a paired same-machine comparison", (
   expect(workflow).toContain("report.summary?.p50RssBytes")
   expect(workflow).toContain("report.summary?.p80RssBytes")
   expect(workflow).toContain("report.summary?.p90RssBytes")
+  expect(workflow).toContain("renderBenchmarkComparison")
   expect(workflow).toContain("runner.name")
   expect(workflow).toContain("Same Machine Benchmark Results")
   expect(workflow).not.toContain("Download main branch benchmark result")

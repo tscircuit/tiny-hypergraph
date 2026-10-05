@@ -359,6 +359,11 @@ jobs:
           github-token: ${{ secrets.TSCIRCUIT_BOT_GITHUB_TOKEN || github.token }}
           script: |
             const fs = require('node:fs')
+            const { pathToFileURL } = require('node:url')
+            const rendererUrl = pathToFileURL(
+              `${process.env.GITHUB_WORKSPACE}/benchmark-controller/scripts/benchmarking/render-pr-comparison.js`,
+            ).href
+            const { renderBenchmarkComparison } = await import(rendererUrl)
             const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
             const jobStatus = '${{ job.status }}'
             const baseSha = '${{ steps.parse.outputs.base_sha }}'
@@ -409,23 +414,6 @@ jobs:
               const text = String(value ?? '')
               return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`
             }
-
-            const renderSummaryRows = (label, report) => {
-              if (!report) {
-                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
-              }
-
-              return [
-                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.routeCompletionRate ?? 'n/a'} | ${formatNumber(report.summary?.avgFinalMaxRegionCost)} | ${formatNumber(report.summary?.avgRouteHops)} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} | ${formatMemory(report.summary?.p50RssBytes)} | ${formatMemory(report.summary?.p80RssBytes)} | ${formatMemory(report.summary?.p90RssBytes)} |`,
-              ]
-            }
-
-            const renderComparison = (baseReport, prReport) => [
-              '| Run | Dataset | Solver | Families | Success | Routes | Final Cost | Avg Hops | Time P50 | Time P95 | Memory P50 | Memory P80 | Memory P90 |',
-              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
-              ...renderSummaryRows('Base', baseReport),
-              ...renderSummaryRows('PR', prReport),
-            ]
 
             const renderSamples = (report, options = {}) => {
               if (!Array.isArray(report?.samples) || report.samples.length === 0) {
@@ -538,6 +526,7 @@ jobs:
             const baseFallbackText = baseReport
               ? baseText
               : getMissingBaseMessage(rawBaseReport, prReport)
+            const comparisonReport = prReport ?? baseReport
             const title = jobStatus === 'success'
               ? '## Tiny Hypergraph Same Machine Benchmark Results'
               : '## Tiny Hypergraph Same Machine Benchmark Failed'
@@ -547,7 +536,9 @@ jobs:
               '',
               `Base \`${baseSha.slice(0, 7)}\` and PR \`${prSha.slice(0, 7)}\` ran sequentially on \`${runnerName}\` with identical arguments.`,
               '',
-              ...renderComparison(baseReport, prReport),
+              `Dataset: \`${formatValue(comparisonReport?.datasetName)}\` · Samples: ${comparisonReport?.sampleCount ?? 'n/a'} · Families: \`${formatValue(comparisonReport?.candidateFamilies)}\``,
+              '',
+              ...renderBenchmarkComparison(baseReport, prReport).split('\n'),
               '',
               ...renderDetails('PR Base Details', renderReport(baseReport, baseFallbackText, options)),
               '',
