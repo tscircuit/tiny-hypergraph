@@ -160,7 +160,7 @@ export interface TinyHyperGraphProblem {
 
 export interface TinyHyperGraphProblemSetup {
   // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
-  portHCostToEndOfRoute: Float64Array
+  portHCostToEndOfRoute?: Float64Array
   portEndpointNetIds: Array<Set<NetId> | undefined>
   /** -1 for no endpoint, -2 for endpoints from multiple nets, otherwise the sole endpoint net. */
   portEndpointReservationNetId: Int32Array
@@ -519,7 +519,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
   TRACE_DENSITY_COST_FACTOR = 0
-  USE_LAZY_ROUTE_HEURISTIC = false
+  USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
 
   override MAX_ITERATIONS = 1e6
@@ -727,7 +727,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     return {
-      portHCostToEndOfRoute: portHCostToEndOfRoute as Float64Array,
+      portHCostToEndOfRoute,
       portEndpointNetIds,
       portEndpointReservationNetId,
     }
@@ -1830,20 +1830,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.logNeverSuccessfullyRoutedRoutes()
   }
 
-  computeH(neighborPortId: PortId): number {
+  protected computeRouteHeuristic(routeId: RouteId, portId: PortId): number {
     const precomputedHCost = this.problemSetup.portHCostToEndOfRoute
     if (precomputedHCost) {
       return precomputedHCost[
-        neighborPortId * this.problem.routeCount + this.state.currentRouteId!
+        portId * this.problem.routeCount + routeId
       ]
     }
 
-    const endPortId = this.getRouteEndPortId(this.state.currentRouteId!)
+    const endPortId = this.getRouteEndPortId(routeId)
     const dx =
-      this.topology.portX[neighborPortId] - this.topology.portX[endPortId]
+      this.topology.portX[portId] - this.topology.portX[endPortId]
     const dy =
-      this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
+      this.topology.portY[portId] - this.topology.portY[endPortId]
     return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+  }
+
+  computeH(neighborPortId: PortId): number {
+    return this.computeRouteHeuristic(
+      this.state.currentRouteId!,
+      neighborPortId,
+    )
   }
 
   override visualize(): GraphicsObject {
