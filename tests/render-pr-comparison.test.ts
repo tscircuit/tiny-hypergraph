@@ -30,6 +30,10 @@ test("PR comparison renders metrics as rows", () => {
   )
 
   expect(markdown).toContain("| Solver | Metric | Base | PR | Delta |")
+  expect(markdown).toContain("| core | Completion | 100.0% | 100.0% | 0.0 pp |")
+  expect(markdown).toContain(
+    "| core | Route completion | 100.0% | 100.0% | 0.0 pp |",
+  )
   expect(markdown).toContain("| core | P50 time | 1.000s | 0.900s | -10.0% |")
   expect(markdown).toContain(
     "| core | Memory P90 | 140.0 MiB | 112.0 MiB | -20.0% |",

@@ -52,15 +52,15 @@ export const renderBenchmarkComparison = (baseReport, prReport) => {
   const rows = [
     "| Solver | Metric | Base | PR | Delta |",
     "| --- | --- | ---: | ---: | ---: |",
-    `| ${solver} | Success | ${baseSummary?.successRate ?? "n/a"} | ${prSummary?.successRate ?? "n/a"} | ${formatPercentPointDelta(baseSummary?.successRate, prSummary?.successRate)} |`,
-    `| ${solver} | Routes | ${baseSummary?.routeCompletionRate ?? "n/a"} | ${prSummary?.routeCompletionRate ?? "n/a"} | ${formatPercentPointDelta(baseSummary?.routeCompletionRate, prSummary?.routeCompletionRate)} |`,
-    `| ${solver} | Final cost | ${formatNumber(baseSummary?.avgFinalMaxRegionCost)} | ${formatNumber(prSummary?.avgFinalMaxRegionCost)} | ${formatRelativeDelta(baseSummary?.avgFinalMaxRegionCost, prSummary?.avgFinalMaxRegionCost)} |`,
-    `| ${solver} | Avg hops | ${formatNumber(baseSummary?.avgRouteHops)} | ${formatNumber(prSummary?.avgRouteHops)} | ${formatRelativeDelta(baseSummary?.avgRouteHops, prSummary?.avgRouteHops)} |`,
+    `| ${solver} | Completion | ${baseSummary?.successRate ?? "n/a"} | ${prSummary?.successRate ?? "n/a"} | ${formatPercentPointDelta(baseSummary?.successRate, prSummary?.successRate)} |`,
+    `| ${solver} | Route completion | ${baseSummary?.routeCompletionRate ?? "n/a"} | ${prSummary?.routeCompletionRate ?? "n/a"} | ${formatPercentPointDelta(baseSummary?.routeCompletionRate, prSummary?.routeCompletionRate)} |`,
     `| ${solver} | P50 time | ${formatTime(baseSummary?.p50DurationMs)} | ${formatTime(prSummary?.p50DurationMs)} | ${formatRelativeDelta(baseSummary?.p50DurationMs, prSummary?.p50DurationMs)} |`,
     `| ${solver} | P95 time | ${formatTime(baseSummary?.p95DurationMs)} | ${formatTime(prSummary?.p95DurationMs)} | ${formatRelativeDelta(baseSummary?.p95DurationMs, prSummary?.p95DurationMs)} |`,
     `| ${solver} | Memory P50 | ${formatMemory(baseSummary?.p50RssBytes)} | ${formatMemory(prSummary?.p50RssBytes)} | ${formatRelativeDelta(baseSummary?.p50RssBytes, prSummary?.p50RssBytes)} |`,
     `| ${solver} | Memory P80 | ${formatMemory(baseSummary?.p80RssBytes)} | ${formatMemory(prSummary?.p80RssBytes)} | ${formatRelativeDelta(baseSummary?.p80RssBytes, prSummary?.p80RssBytes)} |`,
     `| ${solver} | Memory P90 | ${formatMemory(baseSummary?.p90RssBytes)} | ${formatMemory(prSummary?.p90RssBytes)} | ${formatRelativeDelta(baseSummary?.p90RssBytes, prSummary?.p90RssBytes)} |`,
+    `| ${solver} | Final cost | ${formatNumber(baseSummary?.avgFinalMaxRegionCost)} | ${formatNumber(prSummary?.avgFinalMaxRegionCost)} | ${formatRelativeDelta(baseSummary?.avgFinalMaxRegionCost, prSummary?.avgFinalMaxRegionCost)} |`,
+    `| ${solver} | Avg hops | ${formatNumber(baseSummary?.avgRouteHops)} | ${formatNumber(prSummary?.avgRouteHops)} | ${formatRelativeDelta(baseSummary?.avgRouteHops, prSummary?.avgRouteHops)} |`,
   ]
 
   return rows.join("\n")
