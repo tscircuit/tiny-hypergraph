@@ -86,7 +86,7 @@ jobs:
             let benchmarkArgs = []
             let ref = context.sha
             let statusCommentId = ''
-            let mainSha = ''
+            let baseSha = ''
             let prSha = ''
 
             if (context.eventName === 'issue_comment') {
@@ -103,12 +103,7 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: context.issue.number,
               })
-              const main = await github.rest.repos.getBranch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                branch: context.payload.repository.default_branch,
-              })
-              mainSha = main.data.commit.sha
+              baseSha = pr.data.base.sha
               prSha = pr.data.head.sha
               ref = prSha
 
@@ -117,7 +112,7 @@ jobs:
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   issue_number: context.issue.number,
-                  body: `## Tiny Hypergraph Same Machine Benchmark\n\nQueued current main \`${mainSha.slice(0, 7)}\` and PR head \`${prSha.slice(0, 7)}\`. Both revisions will run sequentially in this Blacksmith job.\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+                  body: `## Tiny Hypergraph Same Machine Benchmark\n\nQueued PR base \`${baseSha.slice(0, 7)}\` and PR head \`${prSha.slice(0, 7)}\`. Both revisions will run sequentially in this Blacksmith job.\n\nWorkflow: [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
                 })
 
                 statusCommentId = String(statusComment.data.id)
@@ -151,7 +146,7 @@ jobs:
 
             core.setOutput('benchmark_args_json', JSON.stringify(benchmarkArgs))
             core.setOutput('ref', ref)
-            core.setOutput('main_sha', mainSha)
+            core.setOutput('base_sha', baseSha)
             core.setOutput('pr_sha', prSha)
             core.setOutput('status_comment_id', statusCommentId)
 
@@ -162,12 +157,12 @@ jobs:
           ref: ${{ steps.parse.outputs.ref }}
           persist-credentials: false
 
-      - name: Checkout current main
+      - name: Checkout PR base
         if: github.event_name == 'issue_comment'
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.parse.outputs.main_sha }}
-          path: same-machine-main
+          ref: ${{ steps.parse.outputs.base_sha }}
+          path: same-machine-base
           persist-credentials: false
 
       - name: Checkout PR head
@@ -187,9 +182,9 @@ jobs:
         if: github.event_name != 'issue_comment'
         run: bun install
 
-      - name: Install main dependencies
+      - name: Install base dependencies
         if: github.event_name == 'issue_comment'
-        working-directory: same-machine-main
+        working-directory: same-machine-base
         run: bun install
 
       - name: Install PR dependencies
@@ -336,9 +331,9 @@ jobs:
             return result.status ?? 1
           }
 
-          const mainStatus = runRevision('main')
+          const baseStatus = runRevision('base')
           const prStatus = runRevision('pr')
-          process.exit(mainStatus !== 0 ? mainStatus : prStatus)
+          process.exit(baseStatus !== 0 ? baseStatus : prStatus)
           NODE
 
       - name: Upload benchmark artifacts
@@ -351,8 +346,8 @@ jobs:
             benchmark-result.json
             benchmark-result-pr.txt
             benchmark-result-pr.json
-            benchmark-result-main.txt
-            benchmark-result-main.json
+            benchmark-result-base.txt
+            benchmark-result-base.json
             same-machine-results/**
             results/**
           if-no-files-found: ignore
@@ -364,9 +359,14 @@ jobs:
           github-token: ${{ secrets.TSCIRCUIT_BOT_GITHUB_TOKEN || github.token }}
           script: |
             const fs = require('node:fs')
+            const { pathToFileURL } = require('node:url')
+            const rendererUrl = pathToFileURL(
+              `${process.env.GITHUB_WORKSPACE}/benchmark-controller/scripts/benchmarking/render-pr-comparison.js`,
+            ).href
+            const { renderBenchmarkComparison } = await import(rendererUrl)
             const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
             const jobStatus = '${{ job.status }}'
-            const mainSha = '${{ steps.parse.outputs.main_sha }}'
+            const baseSha = '${{ steps.parse.outputs.base_sha }}'
             const prSha = '${{ steps.parse.outputs.pr_sha }}'
             const runnerName = '${{ runner.name }}'
             const maxLength = 60000
@@ -400,6 +400,11 @@ jobs:
                 ? `${(value / 1000).toFixed(3)}s`
                 : 'n/a'
 
+            const formatMemory = (byteCount) =>
+              typeof byteCount === 'number' && Number.isFinite(byteCount)
+                ? `${(byteCount / (1024 * 1024)).toFixed(1)} MiB`
+                : 'n/a'
+
             const formatValue = (value) =>
               value === null || value === undefined || value === ''
                 ? 'n/a'
@@ -409,23 +414,6 @@ jobs:
               const text = String(value ?? '')
               return text.length <= maxLength ? text : `${text.slice(0, maxLength - 3)}...`
             }
-
-            const renderSummaryRows = (label, report) => {
-              if (!report) {
-                return [`| ${label} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`]
-              }
-
-              return [
-                `| ${label} | ${formatValue(report.datasetName)} | ${formatValue(report.solverVariant)} | ${formatValue(report.candidateFamilies)} | ${report.summary?.successRate ?? 'n/a'} | ${report.summary?.routeCompletionRate ?? 'n/a'} | ${formatNumber(report.summary?.avgFinalMaxRegionCost)} | ${formatNumber(report.summary?.avgRouteHops)} | ${formatTime(report.summary?.p50DurationMs)} | ${formatTime(report.summary?.p95DurationMs)} |`,
-              ]
-            }
-
-            const renderComparison = (mainReport, prReport) => [
-              '| Run | Dataset | Solver | Families | Success | Routes | Final Cost | Avg Hops | P50 | P95 |',
-              '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
-              ...renderSummaryRows('Main', mainReport),
-              ...renderSummaryRows('PR', prReport),
-            ]
 
             const renderSamples = (report, options = {}) => {
               if (!Array.isArray(report?.samples) || report.samples.length === 0) {
@@ -484,7 +472,11 @@ jobs:
                 `| Avg optimizeSection time | ${formatTime(report.summary?.avgOptimizeSectionMs)} |`,
                 `| Avg duration | ${formatTime(report.summary?.avgDurationMs)} |`,
                 `| P50 duration | ${formatTime(report.summary?.p50DurationMs)} |`,
+                `| P80 duration | ${formatTime(report.summary?.p80DurationMs)} |`,
                 `| P95 duration | ${formatTime(report.summary?.p95DurationMs)} |`,
+                `| Memory P50 | ${formatMemory(report.summary?.p50RssBytes)} |`,
+                `| Memory P80 | ${formatMemory(report.summary?.p80RssBytes)} |`,
+                `| Memory P90 | ${formatMemory(report.summary?.p90RssBytes)} |`,
                 '',
                 ...renderSamples(report, options),
               ]
@@ -506,8 +498,8 @@ jobs:
               return report ? [report] : []
             }
 
-            const selectMainReportForPr = (mainReport, prReport) => {
-              const reports = getBenchmarkReports(mainReport)
+            const selectBaseReportForPr = (baseReport, prReport) => {
+              const reports = getBenchmarkReports(baseReport)
               if (reports.length === 0) return null
 
               const prDatasetName = prReport?.datasetName
@@ -516,25 +508,26 @@ jobs:
               return reports.find((report) => report?.datasetName === prDatasetName) ?? null
             }
 
-            const getMissingMainMessage = (mainReport, prReport) => {
+            const getMissingBaseMessage = (baseReport, prReport) => {
               const prDatasetName = prReport?.datasetName
-              if (!prDatasetName) return '(the paired benchmark did not produce a main report)'
-              const reports = getBenchmarkReports(mainReport)
+              if (!prDatasetName) return '(the paired benchmark did not produce a base report)'
+              const reports = getBenchmarkReports(baseReport)
               if (reports.length === 0) {
-                return `(the same-machine main benchmark did not produce a report for dataset ${prDatasetName})`
+                return `(the same-machine base benchmark did not produce a report for dataset ${prDatasetName})`
               }
               const availableDatasets = reports.map((report) => report?.datasetName).filter(Boolean).join(', ')
-              return `(the same-machine main report did not match dataset ${prDatasetName}; available datasets: ${availableDatasets || 'none'})`
+              return `(the same-machine base report did not match dataset ${prDatasetName}; available datasets: ${availableDatasets || 'none'})`
             }
 
-            const mainText = readText('benchmark-result-main.txt')
+            const baseText = readText('benchmark-result-base.txt')
             const prText = readText('benchmark-result-pr.txt') || readText('benchmark-result.txt')
-            const rawMainReport = readJson('benchmark-result-main.json')
+            const rawBaseReport = readJson('benchmark-result-base.json')
             const prReport = readJson('benchmark-result-pr.json') || readJson('benchmark-result.json')
-            const mainReport = selectMainReportForPr(rawMainReport, prReport)
-            const mainFallbackText = mainReport
-              ? mainText
-              : getMissingMainMessage(rawMainReport, prReport)
+            const baseReport = selectBaseReportForPr(rawBaseReport, prReport)
+            const baseFallbackText = baseReport
+              ? baseText
+              : getMissingBaseMessage(rawBaseReport, prReport)
+            const comparisonReport = prReport ?? baseReport
             const title = jobStatus === 'success'
               ? '## Tiny Hypergraph Same Machine Benchmark Results'
               : '## Tiny Hypergraph Same Machine Benchmark Failed'
@@ -542,11 +535,13 @@ jobs:
             const renderBody = (options = {}) => [
               title,
               '',
-              `Main \`${mainSha.slice(0, 7)}\` and PR \`${prSha.slice(0, 7)}\` ran sequentially on \`${runnerName}\` with identical arguments.`,
+              `Base \`${baseSha.slice(0, 7)}\` and PR \`${prSha.slice(0, 7)}\` ran sequentially on \`${runnerName}\` with identical arguments.`,
               '',
-              ...renderComparison(mainReport, prReport),
+              `Dataset: \`${formatValue(comparisonReport?.datasetName)}\` · Samples: ${comparisonReport?.sampleCount ?? 'n/a'} · Families: \`${formatValue(comparisonReport?.candidateFamilies)}\``,
               '',
-              ...renderDetails('Main Branch Details', renderReport(mainReport, mainFallbackText, options)),
+              ...renderBenchmarkComparison(baseReport, prReport).split('\n'),
+              '',
+              ...renderDetails('PR Base Details', renderReport(baseReport, baseFallbackText, options)),
               '',
               ...renderDetails('PR Details', renderReport(prReport, prText, options), true),
               '',

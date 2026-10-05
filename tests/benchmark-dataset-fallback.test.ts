@@ -25,6 +25,13 @@ test("benchmark skips legacy local SRJ18 datasets without a manifest", async () 
     expect(report.sampleCount).toBe(1)
     expect(report.successCount).toBe(1)
     expect(report.samples[0].sampleName).toBe("sample001")
+    expect(report.summary.p50RssBytes).toBeGreaterThan(0)
+    expect(report.summary.p80RssBytes).toBeGreaterThanOrEqual(
+      report.summary.p50RssBytes,
+    )
+    expect(report.summary.p90RssBytes).toBeGreaterThanOrEqual(
+      report.summary.p80RssBytes,
+    )
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }
