@@ -29,7 +29,6 @@ test("PMP23595 reuses one solver workspace while finding congested ports", () =>
         USE_SPARSE_CANDIDATE_STORAGE: false,
         ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
         GREEDY_FINAL_ROUTE_ITERS: 4,
-        USE_LAZY_ROUTE_HEURISTIC: true,
         MAX_ITERATIONS: 2_000_000,
         RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
         STATIC_REACHABILITY_PRECHECK: true,

@@ -210,7 +210,6 @@ const getSolverOptions = (
 
   return {
     MAX_ITERATIONS: maxIterations,
-    USE_LAZY_ROUTE_HEURISTIC: true,
     USE_SPARSE_CANDIDATE_STORAGE: true,
     ...(Number.isFinite(minViaPadDiameter) && minViaPadDiameter > 0
       ? { minViaPadDiameter }
