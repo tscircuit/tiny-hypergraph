@@ -10,6 +10,7 @@ test("PR comparison renders metrics as rows", () => {
       avgFinalMaxRegionCost: 2,
       avgRouteHops: 5,
       p50DurationMs: 1_000,
+      p80DurationMs: 1_500,
       p95DurationMs: 2_000,
       p50RssBytes: 100 * 1024 * 1024,
       p80RssBytes: 120 * 1024 * 1024,
@@ -22,6 +23,7 @@ test("PR comparison renders metrics as rows", () => {
     makeReport({}),
     makeReport({
       p50DurationMs: 900,
+      p80DurationMs: 1_200,
       p95DurationMs: 1_800,
       p50RssBytes: 80 * 1024 * 1024,
       p80RssBytes: 96 * 1024 * 1024,
@@ -35,6 +37,7 @@ test("PR comparison renders metrics as rows", () => {
     "| core | Route completion | 100.0% | 100.0% | 0.0 pp |",
   )
   expect(markdown).toContain("| core | P50 time | 1.000s | 0.900s | -10.0% |")
+  expect(markdown).toContain("| core | P80 time | 1.500s | 1.200s | -20.0% |")
   expect(markdown).toContain(
     "| core | Memory P90 | 140.0 MiB | 112.0 MiB | -20.0% |",
   )

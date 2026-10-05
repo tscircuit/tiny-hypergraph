@@ -162,6 +162,7 @@ type BenchmarkReport = {
     avgOptimizeSectionMs: number
     avgDurationMs: number
     p50DurationMs: number
+    p80DurationMs: number
     p95DurationMs: number
     p50RssBytes: number
     p80RssBytes: number
@@ -535,6 +536,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     ],
     ["Avg duration", formatDuration(report.summary.avgDurationMs)],
     ["P50 duration", formatDuration(report.summary.p50DurationMs)],
+    ["P80 duration", formatDuration(report.summary.p80DurationMs)],
     ["P95 duration", formatDuration(report.summary.p95DurationMs)],
     ["Memory P50", formatMemory(report.summary.p50RssBytes)],
     ["Memory P80", formatMemory(report.summary.p80RssBytes)],
@@ -1371,6 +1373,7 @@ const main = async () => {
       avgOptimizeSectionMs: average(optimizeSectionTimes),
       avgDurationMs: average(durations),
       p50DurationMs: percentile(durations, 50),
+      p80DurationMs: percentile(durations, 80),
       p95DurationMs: percentile(durations, 95),
       p50RssBytes: percentile(rssMeasurements, 50),
       p80RssBytes: percentile(rssMeasurements, 80),

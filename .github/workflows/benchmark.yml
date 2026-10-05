@@ -472,6 +472,7 @@ jobs:
                 `| Avg optimizeSection time | ${formatTime(report.summary?.avgOptimizeSectionMs)} |`,
                 `| Avg duration | ${formatTime(report.summary?.avgDurationMs)} |`,
                 `| P50 duration | ${formatTime(report.summary?.p50DurationMs)} |`,
+                `| P80 duration | ${formatTime(report.summary?.p80DurationMs)} |`,
                 `| P95 duration | ${formatTime(report.summary?.p95DurationMs)} |`,
                 `| Memory P50 | ${formatMemory(report.summary?.p50RssBytes)} |`,
                 `| Memory P80 | ${formatMemory(report.summary?.p80RssBytes)} |`,
