@@ -159,8 +159,6 @@ export interface TinyHyperGraphProblem {
 }
 
 export interface TinyHyperGraphProblemSetup {
-  // portHCostToEndOfRoute[portId * routeCount + routeId] = distance from port to end of route
-  portHCostToEndOfRoute: Float64Array
   portEndpointNetIds: Array<Set<NetId> | undefined>
   /** -1 for no endpoint, -2 for endpoints from multiple nets, otherwise the sole endpoint net. */
   portEndpointReservationNetId: Int32Array
@@ -262,7 +260,6 @@ export interface TinyHyperGraphSolverOptions {
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   /** Opt-in quadratic penalty for concentrating traces in low-capacity regions. */
   TRACE_DENSITY_COST_FACTOR?: number
-  USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
@@ -309,7 +306,6 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   TRACE_DENSITY_COST_FACTOR?: number
-  USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
@@ -364,9 +360,6 @@ export const applyTinyHyperGraphSolverOptions = (
       0,
       options.TRACE_DENSITY_COST_FACTOR,
     )
-  }
-  if (options.USE_LAZY_ROUTE_HEURISTIC !== undefined) {
-    solver.USE_LAZY_ROUTE_HEURISTIC = options.USE_LAZY_ROUTE_HEURISTIC
   }
   if (options.USE_SPARSE_CANDIDATE_STORAGE !== undefined) {
     solver.USE_SPARSE_CANDIDATE_STORAGE = options.USE_SPARSE_CANDIDATE_STORAGE
@@ -448,7 +441,6 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
-  USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
@@ -493,6 +485,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   /** Rare fallback for callers that construct a non-incident directed hop. */
   private candidateOverflowBestCost?: Map<HopId, number>
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private readonly hCostByPortId: Float64Array
+  private readonly hCostRouteIdByPortId: Int32Array
+  private hCostEndRouteId: RouteId | undefined
+  private hCostEndX = 0
+  private hCostEndY = 0
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -519,7 +516,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
   TRACE_DENSITY_COST_FACTOR = 0
-  USE_LAZY_ROUTE_HEURISTIC = false
   USE_SPARSE_CANDIDATE_STORAGE = false
 
   override MAX_ITERATIONS = 1e6
@@ -567,6 +563,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.candidateHopSlotStride = candidateHopSlotStride
     this.candidateFirstRegionByPortId = candidateFirstRegionByPortId
     this.candidateSecondRegionByPortId = candidateSecondRegionByPortId
+    this.hCostByPortId = new Float64Array(topology.portCount)
+    this.hCostRouteIdByPortId = new Int32Array(topology.portCount).fill(-1)
     const candidateHopCapacity = topology.portCount * candidateHopSlotStride
     this.candidateHopCapacity = candidateHopCapacity
     this.state = {
@@ -622,6 +620,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     this.problem = problem
     this._problemSetup = undefined
+    this.hCostEndRouteId = undefined
+    this.hCostRouteIdByPortId.fill(-1)
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
       regionSegments.length = 0
@@ -686,11 +686,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   computeProblemSetup(): TinyHyperGraphProblemSetup {
     const { topology, problem } = this
-    const portHCostToEndOfRoute = this.USE_LAZY_ROUTE_HEURISTIC
-      ? undefined
-      : new Float64Array(topology.portCount * problem.routeCount)
-    const portX = topology.portX as unknown as ArrayLike<number>
-    const portY = topology.portY as unknown as ArrayLike<number>
     const portEndpointNetIds: Array<Set<NetId> | undefined> = []
     const portEndpointReservationNetId = new Int32Array(
       topology.portCount,
@@ -711,23 +706,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const routeNetId = problem.routeNet[routeId]!
       recordEndpointNet(problem.routeStartPort[routeId]!, routeNetId)
       recordEndpointNet(problem.routeEndPort[routeId]!, routeNetId)
-
-      if (portHCostToEndOfRoute) {
-        const endPortId = problem.routeEndPort[routeId]
-        const endX = portX[endPortId]
-        const endY = portY[endPortId]
-
-        for (let portId = 0; portId < topology.portCount; portId++) {
-          const dx = portX[portId] - endX
-          const dy = portY[portId] - endY
-          portHCostToEndOfRoute[portId * problem.routeCount + routeId] =
-            Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
-        }
-      }
     }
 
     return {
-      portHCostToEndOfRoute: portHCostToEndOfRoute as Float64Array,
       portEndpointNetIds,
       portEndpointReservationNetId,
     }
@@ -1830,20 +1811,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.logNeverSuccessfullyRoutedRoutes()
   }
 
-  computeH(neighborPortId: PortId): number {
-    const precomputedHCost = this.problemSetup.portHCostToEndOfRoute
-    if (precomputedHCost) {
-      return precomputedHCost[
-        neighborPortId * this.problem.routeCount + this.state.currentRouteId!
-      ]
+  protected getRouteHeuristic(routeId: RouteId, portId: PortId): number {
+    if (this.hCostEndRouteId !== routeId) {
+      this.hCostEndRouteId = routeId
+      const endPortId = this.getRouteEndPortId(routeId)
+      this.hCostEndX = this.topology.portX[endPortId]!
+      this.hCostEndY = this.topology.portY[endPortId]!
     }
 
-    const endPortId = this.getRouteEndPortId(this.state.currentRouteId!)
-    const dx =
-      this.topology.portX[neighborPortId] - this.topology.portX[endPortId]
-    const dy =
-      this.topology.portY[neighborPortId] - this.topology.portY[endPortId]
-    return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+    if (this.hCostRouteIdByPortId[portId] !== routeId) {
+      const dx = this.topology.portX[portId]! - this.hCostEndX
+      const dy = this.topology.portY[portId]! - this.hCostEndY
+      this.hCostByPortId[portId] =
+        Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+      this.hCostRouteIdByPortId[portId] = routeId
+    }
+
+    return this.hCostByPortId[portId]!
+  }
+
+  computeH(neighborPortId: PortId): number {
+    return this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId)
   }
 
   override visualize(): GraphicsObject {

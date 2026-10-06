@@ -281,5 +281,6 @@ test("constructor options override snake-case hyperparameters before setup", () 
   expect(solver.PARTIAL_RIP_MAX_ATTEMPTS).toBe(3)
   expect(solver.OUTSIDE_IN_ROUTING).toBe(true)
   expect(solver.OUTSIDE_IN_MAX_DISTANCE).toBe(18)
-  expect(solver.problemSetup.portHCostToEndOfRoute[0]).toBe(0.25)
+  solver.state.currentRouteId = 0
+  expect(solver.computeH(0)).toBe(0.25)
 })
