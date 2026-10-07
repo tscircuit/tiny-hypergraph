@@ -5,9 +5,13 @@ import {
   selectOwnerRouteIdsToRip,
 } from "lib/selective-rerip-tiny-hyper-graph-solver"
 
-test("tries bounded greedy completion before reripping a whole-route remainder", () => {
+test("tries bounded greedy completion once every whole route has succeeded", () => {
   class SolverWithInspectableGreedyCompletion extends SelectiveReripTinyHyperGraphSolver {
     greedyCompletionAttemptCount?: number
+
+    override getNeverSuccessfullyRoutedRoutes() {
+      return []
+    }
 
     protected override tryGreedyFinalRouteAcceptance(): boolean {
       this.greedyCompletionAttemptCount =

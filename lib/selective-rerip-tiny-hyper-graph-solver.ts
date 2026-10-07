@@ -196,7 +196,10 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       this.onOutOfCandidatesWithDistinctOwnerSearch()
       return
     }
-    if (!this.hasAttemptedWholeRouteGreedyCompletion) {
+    if (
+      !this.hasAttemptedWholeRouteGreedyCompletion &&
+      this.getNeverSuccessfullyRoutedRoutes().length === 0
+    ) {
       this.hasAttemptedWholeRouteGreedyCompletion = true
       if (this.tryGreedyFinalRouteAcceptance()) return
     }
