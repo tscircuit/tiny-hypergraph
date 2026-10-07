@@ -5,14 +5,13 @@ import {
   selectOwnerRouteIdsToRip,
 } from "lib/selective-rerip-tiny-hyper-graph-solver"
 
-test("selects alternate owners and rejects a failed route as its only blocker", () => {
+test("selects committed blockers and rejects the failed route as its only blocker", () => {
   expect([
     ...selectOwnerRouteIdsToRip({
       failedRouteId: 1,
       directOwnerRouteIds: [1, 2],
-      alternateOwnerRouteIds: [3, 4],
     }),
-  ]).toEqual([3, 4])
+  ]).toEqual([2])
 
   expect(() =>
     selectOwnerRouteIdsToRip({

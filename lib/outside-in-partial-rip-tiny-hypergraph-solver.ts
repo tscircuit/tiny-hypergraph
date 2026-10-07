@@ -73,9 +73,9 @@ const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
  * as a normal route with temporary endpoints, so all existing cost and hard
  * constraint checks continue to apply.
  *
- * Outside-in frontier search is implemented by this class separately from the
- * partial-rip state transition. Initial whole routes retain the established
- * one-ended search; the bounded two-ended search applies to reopened spans.
+ * Outside-in frontier search applies to reopened spans and can be enabled for
+ * initial whole routes. Only reopened spans use the local distance bound;
+ * whole routes are bounded by the solver's iteration budget.
  */
 export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
   protected partialRipRoutePlans = new Map<RouteId, PartialRipRoutePlan>()
@@ -122,7 +122,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       problem.routeCount > Math.max(0, this.PARTIAL_RIP_MAX_ROUTE_COUNT)
     ) {
       this.PARTIAL_RIP_ENABLED = false
-      this.OUTSIDE_IN_ROUTING = false
+      if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+        this.OUTSIDE_IN_ROUTING = false
+      }
     }
     this.useComplexityAwareSelection =
       problem.routeCount >=
@@ -729,10 +731,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         connectorDx * connectorDx + connectorDy * connectorDy,
       )
       if (
+        this.state.currentRouteId !== undefined &&
+        this.partialRipRoutePlans.has(this.state.currentRouteId) &&
         forwardCandidate.travelDistance +
           reverseCandidate.travelDistance +
           connectorDistance >
-        this.OUTSIDE_IN_MAX_DISTANCE * 2
+          this.OUTSIDE_IN_MAX_DISTANCE * 2
       ) {
         return undefined
       }
@@ -884,7 +888,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         segmentDx * segmentDx + segmentDy * segmentDy,
       )
       const travelDistance = candidate.travelDistance + segmentDistance
-      if (travelDistance > this.OUTSIDE_IN_MAX_DISTANCE) {
+      if (
+        this.partialRipRoutePlans.has(search.routeId) &&
+        travelDistance > this.OUTSIDE_IN_MAX_DISTANCE
+      ) {
         search.distanceLimitHit = true
         this.outsideInDistancePruneCount += 1
         continue
@@ -906,12 +913,17 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
       if (candidate.g >= previousBestCost) continue
 
-      const g = this.computeG(
+      const directionalG = this.computeG(
         candidate,
         neighborPortId,
-        previousBestCost,
+        expandingForward ? previousBestCost : Number.POSITIVE_INFINITY,
         segmentDistance,
       )
+      const g = expandingForward
+        ? directionalG
+        : directionalG -
+          (this.problem.portPenalty?.[neighborPortId] ?? 0) +
+          (this.problem.portPenalty?.[candidate.portId] ?? 0)
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       frontier.bestCostByHopId.set(hopId, g)
       const heuristicDx =
@@ -963,7 +975,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       this.state.currentRouteId ?? this.state.unroutedRoutes[0]
     if (
       routeIdToAdvance !== undefined &&
-      !this.partialRipRoutePlans.has(routeIdToAdvance)
+      !this.partialRipRoutePlans.has(routeIdToAdvance) &&
+      !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
     ) {
       super._step()
       return
@@ -1011,10 +1024,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       }
     }
 
+    const forwardExhausted = search.forward.queue.length === 0
+    const reverseExhausted = search.reverse.queue.length === 0
     if (
-      !expanded &&
-      search.forward.queue.length === 0 &&
-      search.reverse.queue.length === 0
+      (!search.distanceLimitHit && (forwardExhausted || reverseExhausted)) ||
+      (!expanded && forwardExhausted && reverseExhausted)
     ) {
       if (this.commitBestOutsideInJoin()) return
       this.outsideInRouteSearch = undefined
