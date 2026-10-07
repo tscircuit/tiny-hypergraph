@@ -160,6 +160,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
   private selectiveReripCongestionUpdateCount = 0
+  private hasAttemptedWholeRouteGreedyCompletion = false
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -194,6 +195,10 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
       this.onOutOfCandidatesWithDistinctOwnerSearch()
       return
+    }
+    if (!this.hasAttemptedWholeRouteGreedyCompletion) {
+      this.hasAttemptedWholeRouteGreedyCompletion = true
+      if (this.tryGreedyFinalRouteAcceptance()) return
     }
     this.onOutOfCandidatesWithBlockerAwareSearch()
   }

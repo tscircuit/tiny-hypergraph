@@ -5,6 +5,28 @@ import {
   selectOwnerRouteIdsToRip,
 } from "lib/selective-rerip-tiny-hyper-graph-solver"
 
+test("tries bounded greedy completion before reripping a whole-route remainder", () => {
+  class SolverWithInspectableGreedyCompletion extends SelectiveReripTinyHyperGraphSolver {
+    greedyCompletionAttemptCount?: number
+
+    protected override tryGreedyFinalRouteAcceptance(): boolean {
+      this.greedyCompletionAttemptCount =
+        (this.greedyCompletionAttemptCount ?? 0) + 1
+      this.solved = true
+      return true
+    }
+  }
+  const solver = Object.create(
+    SolverWithInspectableGreedyCompletion.prototype,
+  ) as SolverWithInspectableGreedyCompletion
+  solver.WHOLE_ROUTE_OUTSIDE_IN_ROUTING = true
+
+  solver.onOutOfCandidates()
+
+  expect(solver.greedyCompletionAttemptCount).toBe(1)
+  expect(solver.solved).toBe(true)
+})
+
 test("selects alternate owners and rejects a failed route as its only blocker", () => {
   expect([
     ...selectOwnerRouteIdsToRip({
