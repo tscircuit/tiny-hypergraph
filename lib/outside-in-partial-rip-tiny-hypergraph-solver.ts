@@ -888,8 +888,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         segmentDx * segmentDx + segmentDy * segmentDy,
       )
       const travelDistance = candidate.travelDistance + segmentDistance
+      const isPartialRipRoute = this.partialRipRoutePlans.has(search.routeId)
       if (
-        this.partialRipRoutePlans.has(search.routeId) &&
+        isPartialRipRoute &&
         travelDistance > this.OUTSIDE_IN_MAX_DISTANCE
       ) {
         search.distanceLimitHit = true
@@ -916,10 +917,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const directionalG = this.computeG(
         candidate,
         neighborPortId,
-        expandingForward ? previousBestCost : Number.POSITIVE_INFINITY,
+        !isPartialRipRoute && !expandingForward
+          ? Number.POSITIVE_INFINITY
+          : previousBestCost,
         segmentDistance,
       )
-      const g = expandingForward
+      const g = isPartialRipRoute || expandingForward
         ? directionalG
         : directionalG -
           (this.problem.portPenalty?.[neighborPortId] ?? 0) +
@@ -1026,8 +1029,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
     const forwardExhausted = search.forward.queue.length === 0
     const reverseExhausted = search.reverse.queue.length === 0
+    const isPartialRipRoute = this.partialRipRoutePlans.has(search.routeId)
     if (
-      (!search.distanceLimitHit && (forwardExhausted || reverseExhausted)) ||
+      (!isPartialRipRoute &&
+        !search.distanceLimitHit &&
+        (forwardExhausted || reverseExhausted)) ||
       (!expanded && forwardExhausted && reverseExhausted)
     ) {
       if (this.commitBestOutsideInJoin()) return
