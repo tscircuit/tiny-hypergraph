@@ -889,10 +889,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       )
       const travelDistance = candidate.travelDistance + segmentDistance
       const isPartialRipRoute = this.partialRipRoutePlans.has(search.routeId)
-      if (
-        isPartialRipRoute &&
-        travelDistance > this.OUTSIDE_IN_MAX_DISTANCE
-      ) {
+      if (isPartialRipRoute && travelDistance > this.OUTSIDE_IN_MAX_DISTANCE) {
         search.distanceLimitHit = true
         this.outsideInDistancePruneCount += 1
         continue
@@ -922,11 +919,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
           : previousBestCost,
         segmentDistance,
       )
-      const g = isPartialRipRoute || expandingForward
-        ? directionalG
-        : directionalG -
-          (this.problem.portPenalty?.[neighborPortId] ?? 0) +
-          (this.problem.portPenalty?.[candidate.portId] ?? 0)
+      const g =
+        isPartialRipRoute || expandingForward
+          ? directionalG
+          : directionalG -
+            (this.problem.portPenalty?.[neighborPortId] ?? 0) +
+            (this.problem.portPenalty?.[candidate.portId] ?? 0)
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       frontier.bestCostByHopId.set(hopId, g)
       const heuristicDx =
