@@ -4,6 +4,7 @@ import { renderBenchmarkComparison } from "../scripts/benchmarking/render-pr-com
 test("PR comparison renders metrics as rows", () => {
   const makeReport = (overrides: Record<string, unknown>) => ({
     solverVariant: "core",
+    memoryMeasurement: "isolated-sample-peak" as const,
     summary: {
       successRate: "100.0%",
       routeCompletionRate: "100.0%",
@@ -40,5 +41,13 @@ test("PR comparison renders metrics as rows", () => {
   expect(markdown).toContain("| core | P80 time | 1.500s | 1.200s | -20.0% |")
   expect(markdown).toContain(
     "| core | Memory P90 | 140.0 MiB | 112.0 MiB | -20.0% |",
+  )
+
+  const changedMeasurementMarkdown = renderBenchmarkComparison(
+    { ...makeReport({}), memoryMeasurement: undefined },
+    makeReport({}),
+  )
+  expect(changedMeasurementMarkdown).toContain(
+    "| core | Memory P50 | 100.0 MiB | 100.0 MiB | n/a (measurement changed) |",
   )
 })

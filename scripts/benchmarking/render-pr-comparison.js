@@ -45,6 +45,11 @@ const formatRelativeDelta = (baseValue, prValue) => {
   return formatSigned(((prValue - baseValue) / baseValue) * 100, "%")
 }
 
+const formatMemoryDelta = (baseReport, prReport, baseValue, prValue) =>
+  baseReport?.memoryMeasurement === prReport?.memoryMeasurement
+    ? formatRelativeDelta(baseValue, prValue)
+    : "n/a (measurement changed)"
+
 const getDurationPercentile = (report, summaryKey, percentile) => {
   const summaryValue = report?.summary?.[summaryKey]
   if (typeof summaryValue === "number" && Number.isFinite(summaryValue)) {
@@ -95,9 +100,9 @@ export const renderBenchmarkComparison = (baseReport, prReport) => {
     `| ${solver} | P50 time | ${formatTime(baseP50DurationMs)} | ${formatTime(prP50DurationMs)} | ${formatRelativeDelta(baseP50DurationMs, prP50DurationMs)} |`,
     `| ${solver} | P80 time | ${formatTime(baseP80DurationMs)} | ${formatTime(prP80DurationMs)} | ${formatRelativeDelta(baseP80DurationMs, prP80DurationMs)} |`,
     `| ${solver} | P95 time | ${formatTime(baseP95DurationMs)} | ${formatTime(prP95DurationMs)} | ${formatRelativeDelta(baseP95DurationMs, prP95DurationMs)} |`,
-    `| ${solver} | Memory P50 | ${formatMemory(baseSummary?.p50RssBytes)} | ${formatMemory(prSummary?.p50RssBytes)} | ${formatRelativeDelta(baseSummary?.p50RssBytes, prSummary?.p50RssBytes)} |`,
-    `| ${solver} | Memory P80 | ${formatMemory(baseSummary?.p80RssBytes)} | ${formatMemory(prSummary?.p80RssBytes)} | ${formatRelativeDelta(baseSummary?.p80RssBytes, prSummary?.p80RssBytes)} |`,
-    `| ${solver} | Memory P90 | ${formatMemory(baseSummary?.p90RssBytes)} | ${formatMemory(prSummary?.p90RssBytes)} | ${formatRelativeDelta(baseSummary?.p90RssBytes, prSummary?.p90RssBytes)} |`,
+    `| ${solver} | Memory P50 | ${formatMemory(baseSummary?.p50RssBytes)} | ${formatMemory(prSummary?.p50RssBytes)} | ${formatMemoryDelta(baseReport, prReport, baseSummary?.p50RssBytes, prSummary?.p50RssBytes)} |`,
+    `| ${solver} | Memory P80 | ${formatMemory(baseSummary?.p80RssBytes)} | ${formatMemory(prSummary?.p80RssBytes)} | ${formatMemoryDelta(baseReport, prReport, baseSummary?.p80RssBytes, prSummary?.p80RssBytes)} |`,
+    `| ${solver} | Memory P90 | ${formatMemory(baseSummary?.p90RssBytes)} | ${formatMemory(prSummary?.p90RssBytes)} | ${formatMemoryDelta(baseReport, prReport, baseSummary?.p90RssBytes, prSummary?.p90RssBytes)} |`,
     `| ${solver} | Final cost | ${formatNumber(baseSummary?.avgFinalMaxRegionCost)} | ${formatNumber(prSummary?.avgFinalMaxRegionCost)} | ${formatRelativeDelta(baseSummary?.avgFinalMaxRegionCost, prSummary?.avgFinalMaxRegionCost)} |`,
     `| ${solver} | Avg hops | ${formatNumber(baseSummary?.avgRouteHops)} | ${formatNumber(prSummary?.avgRouteHops)} | ${formatRelativeDelta(baseSummary?.avgRouteHops, prSummary?.avgRouteHops)} |`,
   ]

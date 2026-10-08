@@ -1,5 +1,6 @@
 export type BenchmarkComparisonReport = {
   solverVariant?: string
+  memoryMeasurement?: "isolated-sample-peak"
   summary?: {
     successRate?: string
     routeCompletionRate?: string
