@@ -5,11 +5,18 @@ import {
   type GraphicsObject,
 } from "graphics-debug"
 import { createHash } from "node:crypto"
-import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises"
-import { availableParallelism } from "node:os"
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises"
+import { availableParallelism, tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { Worker } from "node:worker_threads"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import { applyInitialAssignments } from "../../lib/initialAssignments"
 import {
@@ -126,6 +133,7 @@ type BenchmarkSampleResult = {
   referenceCompletionTimeMs: number | null
   referenceViaCount: number | null
   referenceRelaxedDrcPassed: boolean | null
+  peakMemoryBytes: number
 }
 
 type BenchmarkReport = {
@@ -137,6 +145,7 @@ type BenchmarkReport = {
   solverVariant: SolverVariant
   candidateFamilies: string
   concurrency: number
+  memoryMeasurement: "isolated-sample-peak"
   sampleCount: number
   successCount: number
   failedCount: number
@@ -212,7 +221,7 @@ Summary metrics:
   - improved rate
   - zero-final-max-region-cost rate
   - total / avg / P50 / P95 completion time and per-stage timing
-  - P50 / P80 / P90 memory usage over the benchmark run
+  - P50 / P80 / P90 of the isolated per-sample peak memory usage
   - avg baseline/final max region cost and avg delta
   - iterations, route hops/rips, and generated/attempted/duplicate candidates
 `
@@ -555,6 +564,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     String(sample.candidateCount),
     String(sample.iterations),
     formatDuration(sample.durationMs),
+    formatMemory(sample.peakMemoryBytes),
     sample.referenceCompletionTimeMs === null
       ? "n/a"
       : formatDuration(sample.referenceCompletionTimeMs),
@@ -584,6 +594,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
     `Solver: ${report.solverVariant}`,
     `Families: ${report.candidateFamilies}`,
     `Concurrency: ${report.concurrency}`,
+    `Memory: isolated per-sample peak`,
     `Sample count: ${report.sampleCount}`,
     "",
     ...renderMarkdownTable(["Metric", "Value"], metricRows, ["left", "right"]),
@@ -601,6 +612,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
         "Attempts",
         "Iterations",
         "Duration",
+        "Peak Memory",
         "Pipeline7 Ref",
         "Ref Vias",
         "Ref DRC",
@@ -610,6 +622,7 @@ const formatBenchmarkReportText = (report: BenchmarkReport) => {
       [
         "left",
         "left",
+        "right",
         "right",
         "right",
         "right",
@@ -1013,37 +1026,27 @@ const createPipelineSolver = ({
   return pipelineSolver
 }
 
-const main = async () => {
-  const cwd = process.cwd()
-  const memorySampler = new Worker(
-    fileURLToPath(new URL("./sample-process-rss.worker.ts", import.meta.url)),
-  )
-  memorySampler.unref()
-  const {
-    limit,
-    sampleName,
-    candidateFamilies,
-    solverVariant,
-    datasetKey,
-    concurrency,
-  } = parseArgs()
-  if (datasetKey === "srj18" && solverVariant !== "core") {
-    usageError("SRJ18 Pipeline7 cases require --solver core")
-  }
-  if (datasetKey === "srj18" && candidateFamilies !== null) {
-    usageError("SRJ18 Pipeline7 cases use the committed all-zero section mask")
-  }
-  const loadedDataset = await loadDataset(datasetKey, cwd, limit, sampleName)
+const runSamplesInCurrentProcess = async ({
+  cwd,
+  loadedDataset,
+  sampleMetas,
+  runName,
+  candidateFamilies,
+  solverVariant,
+  datasetKey,
+}: {
+  cwd: string
+  loadedDataset: LoadedDataset
+  sampleMetas: DatasetSampleMeta[]
+  runName: string
+  candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null
+  solverVariant: SolverVariant
+  datasetKey: DatasetKey
+}) => {
   const { datasetModule, srj18Cases } = loadedDataset
   const resultsDir = path.join(cwd, "results")
-  const { runName } = await getNextRunDirectory(resultsDir)
   const runDir = path.join(resultsDir, runName)
-  const sampleMetas = getSelectedSamples(datasetModule, limit, sampleName)
   const results: BenchmarkSampleResult[] = []
-
-  console.log(
-    `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency}`,
-  )
 
   for (const sampleMeta of sampleMetas) {
     const sampleStart = performance.now()
@@ -1150,6 +1153,7 @@ const main = async () => {
         referenceViaCount: benchmarkCase?.source.viaCount ?? null,
         referenceRelaxedDrcPassed:
           benchmarkCase?.source.relaxedDrcPassed ?? null,
+        peakMemoryBytes: 0,
       }
       results.push(result)
 
@@ -1249,6 +1253,7 @@ const main = async () => {
         referenceViaCount: benchmarkCase?.source.viaCount ?? null,
         referenceRelaxedDrcPassed:
           benchmarkCase?.source.relaxedDrcPassed ?? null,
+        peakMemoryBytes: 0,
       }
       results.push(result)
 
@@ -1276,6 +1281,29 @@ const main = async () => {
     }
   }
 
+  const peakMemoryBytes = process.resourceUsage().maxRSS * 1024
+  for (const result of results) {
+    result.peakMemoryBytes = peakMemoryBytes
+  }
+
+  return results
+}
+
+const createBenchmarkReport = ({
+  loadedDataset,
+  results,
+  solverVariant,
+  candidateFamilies,
+  concurrency,
+  datasetKey,
+}: {
+  loadedDataset: LoadedDataset
+  results: BenchmarkSampleResult[]
+  solverVariant: SolverVariant
+  candidateFamilies: TinyHyperGraphSectionCandidateFamily[] | null
+  concurrency: number
+  datasetKey: DatasetKey
+}): BenchmarkReport => {
   const successfulResults = results.filter(
     (result) => result.status === "success",
   )
@@ -1328,15 +1356,9 @@ const main = async () => {
   const zeroFinalCostCount = successfulResults.filter(
     (result) => result.zeroFinalCost,
   ).length
+  const peakMemoryMeasurements = results.map((result) => result.peakMemoryBytes)
 
-  const rssMeasurements = await new Promise<number[]>((resolve, reject) => {
-    memorySampler.once("message", resolve)
-    memorySampler.once("error", reject)
-    memorySampler.postMessage("stop")
-  })
-  await memorySampler.terminate()
-
-  const report: BenchmarkReport = {
+  return {
     version: 1,
     datasetName: datasetKey,
     datasetSource: loadedDataset.datasetSource,
@@ -1345,6 +1367,7 @@ const main = async () => {
     solverVariant,
     candidateFamilies: candidateFamilies?.join(",") ?? "default",
     concurrency,
+    memoryMeasurement: "isolated-sample-peak",
     sampleCount: results.length,
     successCount,
     failedCount: results.length - successCount,
@@ -1375,14 +1398,156 @@ const main = async () => {
       p50DurationMs: percentile(durations, 50),
       p80DurationMs: percentile(durations, 80),
       p95DurationMs: percentile(durations, 95),
-      p50RssBytes: percentile(rssMeasurements, 50),
-      p80RssBytes: percentile(rssMeasurements, 80),
-      p90RssBytes: percentile(rssMeasurements, 90),
+      p50RssBytes: percentile(peakMemoryMeasurements, 50),
+      p80RssBytes: percentile(peakMemoryMeasurements, 80),
+      p90RssBytes: percentile(peakMemoryMeasurements, 90),
     },
     samples: results,
   }
+}
+
+const getArgsForSample = (benchmarkArgs: string[], sampleName: string) => {
+  const args: string[] = []
+
+  for (let index = 0; index < benchmarkArgs.length; index += 1) {
+    const arg = benchmarkArgs[index]
+    if (arg === "--limit" || arg === "--sample") {
+      index += 1
+      continue
+    }
+    args.push(arg)
+  }
+
+  return [...args, "--sample", sampleName]
+}
+
+const runSamplesInIsolatedProcesses = async ({
+  cwd,
+  sampleMetas,
+  runName,
+}: {
+  cwd: string
+  sampleMetas: DatasetSampleMeta[]
+  runName: string
+}) => {
+  const outputDir = await mkdtemp(
+    path.join(tmpdir(), "tiny-hypergraph-benchmark-"),
+  )
+  const results: BenchmarkSampleResult[] = []
+
+  try {
+    for (const sampleMeta of sampleMetas) {
+      const outputPath = path.join(outputDir, `${sampleMeta.sampleName}.json`)
+      const sampleProcess = Bun.spawn({
+        cmd: [
+          process.execPath,
+          "run",
+          fileURLToPath(import.meta.url),
+          ...getArgsForSample(process.argv.slice(2), sampleMeta.sampleName),
+        ],
+        cwd,
+        env: {
+          ...process.env,
+          BENCHMARK_ISOLATED_SAMPLE: "1",
+          BENCHMARK_ISOLATED_SAMPLE_OUTPUT: outputPath,
+          BENCHMARK_RUN_NAME: runName,
+        },
+        stdout: "inherit",
+        stderr: "inherit",
+      })
+      const exitCode = await sampleProcess.exited
+
+      if (exitCode !== 0) {
+        throw new Error(
+          `Benchmark process for ${sampleMeta.sampleName} exited with code ${exitCode}`,
+        )
+      }
+
+      const sampleReport = JSON.parse(
+        await readFile(outputPath, "utf8"),
+      ) as BenchmarkReport
+      const sampleResult = sampleReport.samples[0]
+      if (!sampleResult) {
+        throw new Error(
+          `Benchmark process for ${sampleMeta.sampleName} did not return a sample result`,
+        )
+      }
+      if (sampleResult.sampleName !== sampleMeta.sampleName) {
+        throw new Error(
+          `Benchmark process for ${sampleMeta.sampleName} returned ${sampleResult.sampleName}`,
+        )
+      }
+      results.push(sampleResult)
+    }
+  } finally {
+    await rm(outputDir, { recursive: true, force: true })
+  }
+
+  return results
+}
+
+const main = async () => {
+  const cwd = process.cwd()
+  const {
+    limit,
+    sampleName,
+    candidateFamilies,
+    solverVariant,
+    datasetKey,
+    concurrency,
+  } = parseArgs()
+  if (datasetKey === "srj18" && solverVariant !== "core") {
+    usageError("SRJ18 Pipeline7 cases require --solver core")
+  }
+  if (datasetKey === "srj18" && candidateFamilies !== null) {
+    usageError("SRJ18 Pipeline7 cases use the committed all-zero section mask")
+  }
+
+  const loadedDataset = await loadDataset(datasetKey, cwd, limit, sampleName)
+  const { datasetModule } = loadedDataset
+  const sampleMetas = getSelectedSamples(datasetModule, limit, sampleName)
+  const runName =
+    process.env.BENCHMARK_RUN_NAME ??
+    (await getNextRunDirectory(path.join(cwd, "results"))).runName
+  const isIsolatedSample = process.env.BENCHMARK_ISOLATED_SAMPLE === "1"
+
+  if (!isIsolatedSample) {
+    console.log(
+      `dataset=${datasetKey} samples=${sampleMetas.length}/${datasetModule.manifest.sampleCount} run=${runName} solver=${solverVariant} families=${candidateFamilies?.join(",") ?? "default"} concurrency=${concurrency}`,
+    )
+  }
+
+  const results = isIsolatedSample
+    ? await runSamplesInCurrentProcess({
+        cwd,
+        loadedDataset,
+        sampleMetas,
+        runName,
+        candidateFamilies,
+        solverVariant,
+        datasetKey,
+      })
+    : await runSamplesInIsolatedProcesses({ cwd, sampleMetas, runName })
+
+  const report = createBenchmarkReport({
+    loadedDataset,
+    results,
+    solverVariant,
+    candidateFamilies,
+    concurrency,
+    datasetKey,
+  })
 
   const reportText = formatBenchmarkReportText(report)
+
+  if (isIsolatedSample) {
+    const outputPath = process.env.BENCHMARK_ISOLATED_SAMPLE_OUTPUT
+    if (!outputPath) {
+      throw new Error("Missing BENCHMARK_ISOLATED_SAMPLE_OUTPUT")
+    }
+    await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`)
+    return
+  }
 
   console.log("")
   console.log(reportText.trimEnd())

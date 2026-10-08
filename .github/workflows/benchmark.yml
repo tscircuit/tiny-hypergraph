@@ -423,12 +423,12 @@ jobs:
               const samples = options.limit ? report.samples.slice(0, options.limit) : report.samples
               const omittedCount = report.samples.length - samples.length
               return [
-                '| Sample | Status | Routes | Baseline | Final | Delta | Hops | Rips | Attempts | Iterations | Duration | Error |',
-                '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
+                '| Sample | Status | Routes | Baseline | Final | Delta | Hops | Rips | Attempts | Iterations | Duration | Peak Memory | Error |',
+                '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
                 ...samples.map((sample) => {
                   const firstErrorLine = sample.error ? String(sample.error).split('\n')[0] : ''
                   const routes = `${sample.solvedRouteCount ?? 0}/${sample.connectionCount ?? 0}`
-                  return `| ${escapeHtml(sample.sampleName)} | ${escapeHtml(sample.status)} | ${routes} | ${formatNumber(sample.baselineMaxRegionCost)} | ${formatNumber(sample.finalMaxRegionCost)} | ${formatNumber(sample.delta)} | ${formatNumber(sample.avgRouteHops)} | ${sample.requiredRipRouteCount ?? 0} | ${sample.candidateCount ?? 0} | ${sample.iterations ?? 0} | ${formatTime(sample.durationMs)} | ${escapeHtml(truncate(firstErrorLine))} |`
+                  return `| ${escapeHtml(sample.sampleName)} | ${escapeHtml(sample.status)} | ${routes} | ${formatNumber(sample.baselineMaxRegionCost)} | ${formatNumber(sample.finalMaxRegionCost)} | ${formatNumber(sample.delta)} | ${formatNumber(sample.avgRouteHops)} | ${sample.requiredRipRouteCount ?? 0} | ${sample.candidateCount ?? 0} | ${sample.iterations ?? 0} | ${formatTime(sample.durationMs)} | ${formatMemory(sample.peakMemoryBytes)} | ${escapeHtml(truncate(firstErrorLine))} |`
                 }),
                 ...(omittedCount > 0
                   ? ['', `_${omittedCount} additional sample${omittedCount === 1 ? '' : 's'} omitted to keep the comment compact._`]
@@ -452,6 +452,7 @@ jobs:
                 `| Sample selection | ${formatValue(report.sampleSelection)} |`,
                 `| Solver | ${formatValue(report.solverVariant)} |`,
                 `| Families | ${formatValue(report.candidateFamilies)} |`,
+                `| Memory measurement | ${report.memoryMeasurement === 'isolated-sample-peak' ? 'isolated per-sample peak' : 'legacy process samples'} |`,
                 `| Samples | ${report.sampleCount ?? 'n/a'} |`,
                 `| Success rate | ${report.summary?.successRate ?? 'n/a'} |`,
                 `| Solved-route completion rate | ${report.summary?.routeCompletionRate ?? 'n/a'} |`,
