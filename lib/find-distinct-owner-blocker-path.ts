@@ -60,6 +60,25 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   active: boolean
 }
 
+const isOwnerSubsetOfUnion = <TOwner>({
+  possibleSubset,
+  existingOwners,
+  addedOwners,
+}: {
+  possibleSubset: ReadonlySet<TOwner>
+  existingOwners: ReadonlySet<TOwner>
+  addedOwners: readonly TOwner[]
+}): boolean => {
+  if (possibleSubset === existingOwners) return true
+  if (possibleSubset.size > existingOwners.size + addedOwners.length) {
+    return false
+  }
+  for (const owner of possibleSubset) {
+    if (!existingOwners.has(owner) && !addedOwners.includes(owner)) return false
+  }
+  return true
+}
+
 const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
@@ -295,25 +314,45 @@ export const findDistinctOwnerBlockerPath = <
         )
       }
 
-      const owners = new Set(current.owners)
-      for (const owner of hop.owners ?? []) owners.add(owner)
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
         throw new Error("Distinct-owner blocker path distance overflowed")
       }
+      const stateKey = options.getStateKey(hop.state)
+      const queueOrder = nextQueueOrder++
+      const existingLabels = labelsByStateKey.get(stateKey) ?? []
+      const addedOwners = hop.owners ?? []
+      let isDominated = false
+      for (const label of existingLabels) {
+        if (
+          label.distance <= distance &&
+          isOwnerSubsetOfUnion({
+            possibleSubset: label.owners,
+            existingOwners: current.owners,
+            addedOwners,
+          })
+        ) {
+          isDominated = true
+          break
+        }
+      }
+      if (isDominated) continue
+
+      let owners = current.owners
+      for (const owner of addedOwners) {
+        if (owners.has(owner)) continue
+        if (owners === current.owners) owners = new Set(current.owners)
+        owners.add(owner)
+      }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
-        stateKey: options.getStateKey(hop.state),
+        stateKey,
         owners,
         distance,
         parent: current,
         incomingHop: hop,
-        queueOrder: nextQueueOrder++,
+        queueOrder,
         active: true,
-      }
-      const existingLabels = labelsByStateKey.get(candidate.stateKey) ?? []
-      if (existingLabels.some((label) => labelDominates(label, candidate))) {
-        continue
       }
 
       const survivingLabels: Array<
