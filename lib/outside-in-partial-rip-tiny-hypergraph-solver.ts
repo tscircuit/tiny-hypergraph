@@ -3,6 +3,7 @@ import {
   createEmptyRegionIntersectionCache,
   type RegionCostSummary,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
@@ -597,6 +598,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       outsideInDistancePruneCount: this.outsideInDistancePruneCount,
       outsideInMaxDistance: this.OUTSIDE_IN_MAX_DISTANCE,
     }
+  }
+
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+  ): TinyHyperGraphSolver {
+    return new OutsideInGreedyFinalRouteSolver(
+      this.topology,
+      this.problem,
+      options,
+    )
   }
 
   private createOutsideInFrontier(
@@ -1257,5 +1268,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       reripMode,
       partialRouteCount: usedPartialRip ? this.partialRipRoutePlans.size : 0,
     })
+  }
+}
+
+class OutsideInGreedyFinalRouteSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  override computeG(
+    currentCandidate: Candidate,
+    _neighborPortId: PortId,
+  ): number {
+    return currentCandidate.g
   }
 }
