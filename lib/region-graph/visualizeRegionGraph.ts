@@ -4,9 +4,14 @@ import type {
   RegionPathCandidate,
   RegionPathSolver,
 } from "./region-path-solver"
-import type { RegionId, RouteId } from "../types"
+import type { NetId, RegionId, RouteId } from "../types"
 
 const REGION_RECT_GAP = 0.05
+
+interface RegionPathUsage {
+  regionUsage: Int32Array
+  edgeUsage: Int32Array
+}
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
@@ -117,10 +122,51 @@ const getRouteColor = (
   return `hsla(${hue}, 70%, 50%, ${alpha})`
 }
 
-const getRegionFill = (solver: RegionPathSolver, regionId: RegionId) => {
-  const usage = solver.state.regionUsage[regionId]
+const getRegionPathUsage = (solver: RegionPathSolver): RegionPathUsage => {
+  const regionAssignedNets = Array.from(
+    { length: solver.regionGraph.regionCount },
+    () => new Set<NetId>(),
+  )
+  const edgeAssignedNets = Array.from(
+    { length: solver.regionGraph.edgeCount },
+    () => new Set<NetId>(),
+  )
+  const edgeIdByNeighbor = Array.from(
+    { length: solver.regionGraph.regionCount },
+    () => new Map<RegionId, number>(),
+  )
+
+  for (const edge of solver.regionGraph.edges) {
+    edgeIdByNeighbor[edge.regionIdA]!.set(edge.regionIdB, edge.edgeId)
+    edgeIdByNeighbor[edge.regionIdB]!.set(edge.regionIdA, edge.edgeId)
+  }
+  solver.state.solvedRouteRegionIds.forEach((regionPath, routeId) => {
+    const netId = solver.regionProblem.routeNet[routeId]!
+    for (const regionId of regionPath) {
+      regionAssignedNets[regionId]!.add(netId)
+    }
+    for (let pathIndex = 1; pathIndex < regionPath.length; pathIndex++) {
+      const previousRegionId = regionPath[pathIndex - 1]!
+      const regionId = regionPath[pathIndex]!
+      const edgeId = edgeIdByNeighbor[previousRegionId]!.get(regionId)
+      if (edgeId !== undefined) edgeAssignedNets[edgeId]!.add(netId)
+    }
+  })
+
+  return {
+    regionUsage: Int32Array.from(regionAssignedNets, (nets) => nets.size),
+    edgeUsage: Int32Array.from(edgeAssignedNets, (nets) => nets.size),
+  }
+}
+
+const getRegionFill = (
+  solver: RegionPathSolver,
+  usage: RegionPathUsage,
+  regionId: RegionId,
+) => {
+  const regionUsage = usage.regionUsage[regionId]
   const capacity = solver.regionGraph.regionCapacity[regionId]
-  const utilization = clamp01(usage / capacity)
+  const utilization = clamp01(regionUsage / capacity)
   const red = Math.round(216 + (239 - 216) * utilization)
   const green = Math.round(240 - 112 * utilization)
   const blue = Math.round(254 - 180 * utilization)
@@ -129,23 +175,104 @@ const getRegionFill = (solver: RegionPathSolver, regionId: RegionId) => {
   return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`
 }
 
-const getRegionLabel = (solver: RegionPathSolver, regionId: RegionId) => {
-  const usage = solver.state.regionUsage[regionId]
+const getRegionLabel = (
+  solver: RegionPathSolver,
+  usage: RegionPathUsage,
+  regionId: RegionId,
+) => {
+  const regionUsage = usage.regionUsage[regionId]
   const capacity = solver.regionGraph.regionCapacity[regionId]
-  const utilization = usage / capacity
+  const utilization = regionUsage / capacity
   const reservedNetId = solver.regionProblem.regionNetId[regionId]
   const assignedRoutes = solver.state.regionAssignedRoutes[regionId]
 
   return formatLabel(
     `region: ${getSerializedRegionId(solver.regionGraph, regionId)}`,
     `capacity: ${capacity.toFixed(3)}`,
-    `usage: ${usage}`,
+    `usage: ${regionUsage}`,
     `fill: ${(utilization * 100).toFixed(1)}%`,
     `net: ${reservedNetId === -1 ? "free" : reservedNetId.toString()}`,
     assignedRoutes.length > 0
       ? `routes: ${assignedRoutes.map((routeId) => getRouteLabel(solver, routeId)).join(", ")}`
       : undefined,
   )
+}
+
+const pushRegionEdges = (
+  solver: RegionPathSolver,
+  graphics: Required<GraphicsObject>,
+  usage: RegionPathUsage,
+) => {
+  for (const edge of solver.regionGraph.edges) {
+    const capacity = edge.portIds.length
+    const edgeUsage = usage.edgeUsage[edge.edgeId]
+    const isOverCapacity = edgeUsage > capacity
+    graphics.lines.push({
+      points: [
+        getRegionCenter(solver, edge.regionIdA),
+        getRegionCenter(solver, edge.regionIdB),
+      ],
+      strokeColor: isOverCapacity
+        ? "rgba(220, 38, 38, 0.95)"
+        : "rgba(100, 116, 139, 0.45)",
+      strokeWidth: isOverCapacity ? 0.06 : 0.025,
+      layer: getRegionLayer(solver, edge.regionIdA),
+      label: formatLabel(
+        `boundary: ${getSerializedRegionId(solver.regionGraph, edge.regionIdA)} ↔ ${getSerializedRegionId(solver.regionGraph, edge.regionIdB)}`,
+        `lane capacity: ${capacity}`,
+        `distinct-net demand: ${edgeUsage}`,
+        `status: ${isOverCapacity ? "overbooked" : "within capacity"}`,
+      ),
+    })
+    if (solver.regionGraph.regionCount <= 32) {
+      const start = getRegionCenter(solver, edge.regionIdA)
+      const end = getRegionCenter(solver, edge.regionIdB)
+      graphics.texts.push({
+        x: (start.x + end.x) / 2,
+        y: (start.y + end.y) / 2 + 0.12,
+        text: `${edgeUsage}/${capacity} nets`,
+        fontSize: 0.1,
+        color: isOverCapacity ? "rgb(185, 28, 28)" : "rgb(71, 85, 105)",
+        anchorSide: "bottom_center",
+        layer: getRegionLayer(solver, edge.regionIdA),
+      })
+    }
+  }
+}
+
+const pushSmallGraphRegionLabels = (
+  solver: RegionPathSolver,
+  graphics: Required<GraphicsObject>,
+  usage: RegionPathUsage,
+) => {
+  if (solver.regionGraph.regionCount > 32) return
+  for (
+    let regionId = 0;
+    regionId < solver.regionGraph.regionCount;
+    regionId++
+  ) {
+    const center = getRegionCenter(solver, regionId)
+    graphics.texts.push(
+      {
+        x: center.x,
+        y: center.y + solver.regionGraph.regionHeight[regionId] / 2 + 0.12,
+        text: getSerializedRegionId(solver.regionGraph, regionId),
+        fontSize: 0.12,
+        color: "rgb(15, 23, 42)",
+        anchorSide: "bottom_center",
+        layer: getRegionLayer(solver, regionId),
+      },
+      {
+        x: center.x,
+        y: center.y,
+        text: `${usage.regionUsage[regionId]}/${solver.regionGraph.regionCapacity[regionId]} nets`,
+        fontSize: 0.11,
+        color: "rgb(15, 23, 42)",
+        anchorSide: "center",
+        layer: getRegionLayer(solver, regionId),
+      },
+    )
+  }
 }
 
 const pushRouteHints = (
@@ -258,6 +385,7 @@ const pushActiveFrontier = (
 export const visualizeRegionGraph = (
   solver: RegionPathSolver,
 ): GraphicsObject => {
+  const usage = getRegionPathUsage(solver)
   const graphics: Required<GraphicsObject> = {
     arrows: [],
     circles: [],
@@ -282,7 +410,7 @@ export const visualizeRegionGraph = (
       center,
       width: Math.max(0.05, bounds.maxX - bounds.minX - REGION_RECT_GAP),
       height: Math.max(0.05, bounds.maxY - bounds.minY - REGION_RECT_GAP),
-      fill: getRegionFill(solver, regionId),
+      fill: getRegionFill(solver, usage, regionId),
       stroke:
         solver.state.currentRouteId !== undefined &&
         (solver.regionProblem.routeStartRegion[solver.state.currentRouteId] ===
@@ -292,13 +420,15 @@ export const visualizeRegionGraph = (
           ? "rgba(17, 24, 39, 0.9)"
           : "rgba(148, 163, 184, 0.5)",
       layer: getRegionLayer(solver, regionId),
-      label: getRegionLabel(solver, regionId),
+      label: getRegionLabel(solver, usage, regionId),
     })
   }
 
+  pushRegionEdges(solver, graphics, usage)
   pushRouteHints(solver, graphics)
   pushSolvedRoutes(solver, graphics)
   pushRouteEndpoints(solver, graphics)
+  pushSmallGraphRegionLabels(solver, graphics, usage)
 
   if (solver.state.currentRouteId !== undefined) {
     pushActiveFrontier(solver, graphics)

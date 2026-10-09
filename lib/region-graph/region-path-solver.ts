@@ -16,6 +16,8 @@ import { visualizeRegionGraph } from "./visualizeRegionGraph"
 export interface RegionPathSolverOptions {
   MM_COST_FOR_FULL_REGION?: number
   MAX_ITERATIONS?: number
+  /** Enables topology-derived capacity in implementations that support it. */
+  USE_TOPOLOGY_CAPACITY?: boolean
 }
 
 export interface RegionPathCandidate {
@@ -65,6 +67,7 @@ export class RegionPathSolver extends BaseSolver {
 
   MM_COST_FOR_FULL_REGION = 20
   override MAX_ITERATIONS = 1e6
+  USE_TOPOLOGY_CAPACITY = false
 
   state: RegionPathWorkingState
 
@@ -83,6 +86,9 @@ export class RegionPathSolver extends BaseSolver {
     }
     if (options?.MAX_ITERATIONS !== undefined) {
       this.MAX_ITERATIONS = options.MAX_ITERATIONS
+    }
+    if (options?.USE_TOPOLOGY_CAPACITY !== undefined) {
+      this.USE_TOPOLOGY_CAPACITY = options.USE_TOPOLOGY_CAPACITY
     }
 
     this.state = {
