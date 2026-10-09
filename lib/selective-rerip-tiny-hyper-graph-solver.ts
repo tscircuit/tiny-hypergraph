@@ -9,6 +9,7 @@ import {
   findDistinctOwnerBlockerPath,
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
+import { findBlockerAwarePath } from "./find-blocker-aware-path"
 import type { PortId, RegionId, RouteId } from "./types"
 
 type RelaxedSearchState = {
@@ -159,6 +160,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
   private selectiveReripCongestionUpdateCount = 0
+  private hasAttemptedWholeRouteGreedyCompletion = false
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -190,6 +192,115 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+      this.onOutOfCandidatesWithDistinctOwnerSearch()
+      return
+    }
+    if (
+      !this.hasAttemptedWholeRouteGreedyCompletion &&
+      this.getNeverSuccessfullyRoutedRoutes().length === 0
+    ) {
+      this.hasAttemptedWholeRouteGreedyCompletion = true
+      if (this.tryGreedyFinalRouteAcceptance()) return
+    }
+    this.onOutOfCandidatesWithBlockerAwareSearch()
+  }
+
+  private onOutOfCandidatesWithBlockerAwareSearch(): void {
+    const failedRouteId = this.state.currentRouteId
+    if (failedRouteId === undefined) {
+      throw new Error(
+        "SelectiveReripTinyHyperGraphSolver: candidate search exhausted without a current route",
+      )
+    }
+
+    const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
+    if (!directPath.found || directPath.owners.size === 0) {
+      this.selectiveReripStats.globalReripCount += 1
+      this.selectiveReripStats.globalReripReason = !directPath.found
+        ? directPath.reason
+        : "no_blocker_path"
+      this.selectiveReripStats.lastFailedRouteId = failedRouteId
+      this.selectiveReripStats.lastDirectOwnerRouteIds = []
+      this.selectiveReripStats.lastRepeatedOwnerRouteIds = []
+      this.selectiveReripStats.lastRippedRouteIds = []
+      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
+        directPath.expandedLabelCount
+      this.failedOwnerPairCounts.clear()
+      super.onOutOfCandidates()
+      this.publishSelectiveReripStats()
+      return
+    }
+
+    const directOwnerRouteIds = [...directPath.owners]
+    const repeatedOwnerRouteIds: RouteId[] = []
+    for (const ownerRouteId of directOwnerRouteIds) {
+      const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+      if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
+    }
+    const pendingRouteIds = new Set(this.state.unroutedRoutes)
+    const failedOwnerCycleRouteIds = new Set<RouteId>()
+    const cyclicOwnerRouteIds: RouteId[] = []
+    for (const ownerRouteId of directOwnerRouteIds) {
+      const failedOwnerPath = this.getCurrentFailedOwnerPath({
+        fromRouteId: ownerRouteId,
+        targetRouteId: failedRouteId,
+        pendingRouteIds,
+      })
+      if (!failedOwnerPath) continue
+      cyclicOwnerRouteIds.push(ownerRouteId)
+      for (const routeId of failedOwnerPath) {
+        failedOwnerCycleRouteIds.add(routeId)
+      }
+    }
+    const conflictingOwnerRouteIds = new Set([
+      ...repeatedOwnerRouteIds,
+      ...cyclicOwnerRouteIds,
+    ])
+    const rippedRouteIds = selectOwnerRouteIdsToRip({
+      failedRouteId,
+      directOwnerRouteIds,
+    })
+    if (conflictingOwnerRouteIds.size > 0) {
+      for (const routeId of failedOwnerCycleRouteIds) {
+        if (routeId !== failedRouteId) rippedRouteIds.add(routeId)
+      }
+    }
+    this.clearPartialRipPlans(rippedRouteIds)
+    if (conflictingOwnerRouteIds.size > 0) {
+      this.addCongestionCostForRoutes(conflictingOwnerRouteIds)
+    } else if (
+      this.selectiveReripCongestionUpdateCount <
+      MAX_SELECTIVE_RERIP_CONGESTION_UPDATES
+    ) {
+      this.addCongestionCostForSelectiveRerip()
+      this.selectiveReripCongestionUpdateCount += 1
+    }
+    this.rebuildCommittedState(rippedRouteIds)
+    this.state.ripCount += 1
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.unroutedRoutes = orderRoutesAfterSelectiveRerip({
+      failedRouteId,
+      pendingRouteIds: this.state.unroutedRoutes,
+      rippedRouteIds,
+    })
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.goalPortId = -1
+
+    this.selectiveReripStats.selectiveRipCount += 1
+    this.selectiveReripStats.selectivelyRippedRouteCount += rippedRouteIds.size
+    this.selectiveReripStats.lastFailedRouteId = failedRouteId
+    this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
+    this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
+    this.selectiveReripStats.lastRippedRouteIds = [...rippedRouteIds]
+    this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
+      directPath.expandedLabelCount
+    this.publishSelectiveReripStats()
+  }
+
+  private onOutOfCandidatesWithDistinctOwnerSearch(): void {
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
@@ -332,6 +443,17 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
   }
 
+  private addCongestionCostForRoutes(routeIds: ReadonlySet<RouteId>): void {
+    for (let regionId = 0; regionId < this.topology.regionCount; regionId++) {
+      const selectedRouteSegmentCount = this.state.regionSegments[
+        regionId
+      ]!.reduce((count, [routeId]) => count + Number(routeIds.has(routeId)), 0)
+      if (!selectedRouteSegmentCount) continue
+      this.state.regionCongestionCost[regionId] +=
+        selectedRouteSegmentCount * this.RIP_CONGESTION_REGION_COST_FACTOR
+    }
+  }
+
   protected findRelaxedBlockerPath(
     forbiddenOwnerRouteIds: ReadonlySet<RouteId> = new Set<RouteId>(),
   ): DistinctOwnerBlockerSearchResult<
@@ -357,11 +479,40 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
-    return findDistinctOwnerBlockerPath({
+    if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+      return findDistinctOwnerBlockerPath({
+        start: { portId: startPortId, nextRegionId: startRegionId },
+        getStateKey: ({ portId, nextRegionId }): number =>
+          this.getHopId(portId, nextRegionId),
+        isGoal: ({ portId }): boolean => portId === goalPortId,
+        getHops: (state) =>
+          this.getRelaxedSearchHops({
+            state,
+            goalPortId,
+            routeNetId,
+            portOwners,
+            forbiddenOwnerRouteIds,
+          }),
+        maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
+        checkReachability: true,
+      })
+    }
+
+    const endpointDistance = Math.hypot(
+      this.topology.portX[startPortId]! - this.topology.portX[goalPortId]!,
+      this.topology.portY[startPortId]! - this.topology.portY[goalPortId]!,
+    )
+    return findBlockerAwarePath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
+      getDistanceHeuristic: ({ portId }): number =>
+        Math.hypot(
+          this.topology.portX[portId]! - this.topology.portX[goalPortId]!,
+          this.topology.portY[portId]! - this.topology.portY[goalPortId]!,
+        ),
+      blockerCrossingPenalty: endpointDistance,
       getHops: (state) =>
         this.getRelaxedSearchHops({
           state,
@@ -371,7 +522,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           forbiddenOwnerRouteIds,
         }),
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
-      checkReachability: true,
     })
   }
 
@@ -406,6 +556,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     let incidentHopCount = 0
     for (const incidentRegions of this.topology.incidentPortRegion) {
       incidentHopCount += incidentRegions.length
+    }
+    if (this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+      return Math.max(4096, incidentHopCount)
     }
     const ownerScale = Math.max(
       4,
@@ -687,6 +840,29 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
     return false
+  }
+
+  private getCurrentFailedOwnerPath(params: {
+    fromRouteId: RouteId
+    targetRouteId: RouteId
+    pendingRouteIds: ReadonlySet<RouteId>
+  }): RouteId[] | undefined {
+    const routePathsToVisit: RouteId[][] = [[params.fromRouteId]]
+    const visitedRouteIds = new Set<RouteId>()
+    while (routePathsToVisit.length > 0) {
+      const routePath = routePathsToVisit.pop()!
+      const routeId = routePath[routePath.length - 1]!
+      if (routeId === params.targetRouteId) return routePath
+      if (params.pendingRouteIds.has(routeId)) continue
+      if (visitedRouteIds.has(routeId)) continue
+      visitedRouteIds.add(routeId)
+      for (const ownerRouteId of this.failedOwnerPairCounts
+        .get(routeId)
+        ?.keys() ?? []) {
+        routePathsToVisit.push([...routePath, ownerRouteId])
+      }
+    }
+    return undefined
   }
 
   private publishSelectiveReripStats(): void {

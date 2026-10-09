@@ -294,6 +294,8 @@ export interface TinyHyperGraphSolverOptions {
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO?: number
   /** Search from both active route ends instead of only the start end. */
   OUTSIDE_IN_ROUTING?: boolean
+  /** Apply outside-in search to initial whole routes as well as partial spans. */
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING?: boolean
   /** Maximum geometric distance explored by either outside-in frontier. */
   OUTSIDE_IN_MAX_DISTANCE?: number
 }
@@ -325,6 +327,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO?: number
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO?: number
   OUTSIDE_IN_ROUTING?: boolean
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING?: boolean
   OUTSIDE_IN_MAX_DISTANCE?: number
 }
 
@@ -426,6 +429,10 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.OUTSIDE_IN_ROUTING !== undefined) {
     solver.OUTSIDE_IN_ROUTING = options.OUTSIDE_IN_ROUTING
   }
+  if (options.WHOLE_ROUTE_OUTSIDE_IN_ROUTING !== undefined) {
+    solver.WHOLE_ROUTE_OUTSIDE_IN_ROUTING =
+      options.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
+  }
   if (options.OUTSIDE_IN_MAX_DISTANCE !== undefined) {
     solver.OUTSIDE_IN_MAX_DISTANCE = options.OUTSIDE_IN_MAX_DISTANCE
   }
@@ -466,6 +473,7 @@ export const getTinyHyperGraphSolverOptions = (
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO:
     solver.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO,
   OUTSIDE_IN_ROUTING: solver.OUTSIDE_IN_ROUTING,
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING: solver.WHOLE_ROUTE_OUTSIDE_IN_ROUTING,
   OUTSIDE_IN_MAX_DISTANCE: solver.OUTSIDE_IN_MAX_DISTANCE,
 })
 
@@ -536,6 +544,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO = 0.2
   PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO = 0.1
   OUTSIDE_IN_ROUTING = false
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING = false
   OUTSIDE_IN_MAX_DISTANCE = 24
 
   constructor(
