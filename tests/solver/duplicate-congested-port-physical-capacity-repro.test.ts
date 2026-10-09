@@ -2,9 +2,9 @@ import "bun-match-svg"
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import {
+  type GraphicsObject,
   getSvgFromGraphicsObject,
   stackGraphicsVertically,
-  type GraphicsObject,
 } from "graphics-debug"
 import { DuplicateCongestedPortSolver } from "lib/index"
 
@@ -33,7 +33,12 @@ const createPort = (
   d: { x, y, z: 0 },
 })
 
-const createSample4BoundaryFixture = (): SerializedHyperGraph => {
+const TRACE_WIDTH = 0.1524
+const TRACE_CLEARANCE = 0.15
+const SHARED_EDGE_HEIGHT = 0.14008921839080485
+const SHARED_PORT_Y = -SHARED_EDGE_HEIGHT / 2
+
+const createPmp22650BoundaryFixture = (): SerializedHyperGraph => {
   const connections = Array.from({ length: 7 }, (_, index) => ({
     connectionId: `route-${index}`,
     startRegionId: `start-${index}`,
@@ -41,52 +46,67 @@ const createSample4BoundaryFixture = (): SerializedHyperGraph => {
     mutuallyConnectedNetworkId: `net-${index}`,
   }))
   const startPorts = connections.map((_, index) =>
-    createPort(`start-port-${index}`, `start-${index}`, "left", -0.3, 0),
+    createPort(
+      `start-port-${index}`,
+      `start-${index}`,
+      "left",
+      -0.3999992,
+      0.94560191247129,
+    ),
   )
   const endPorts = connections.map((_, index) =>
-    createPort(`end-port-${index}`, "right", `end-${index}`, 0.3, 0),
+    createPort(`end-port-${index}`, "right", `end-${index}`, 0.02360041, 0),
   )
 
   return {
     regions: [
       ...connections.map((_, index) =>
-        createRegion(`start-${index}`, { x: -0.4, y: 0 }, 0.1, 0.1, [
-          `start-port-${index}`,
-        ]),
+        createRegion(
+          `start-${index}`,
+          { x: -0.45, y: 0.94560191247129 },
+          0.1,
+          0.1,
+          [`start-port-${index}`],
+        ),
       ),
-      // Exact sample 4 shared opening: 0.396 mm tall with a 0.05 mm gap.
-      createRegion("left", { x: -0.127, y: 0 }, 0.204, 0.396, [
-        ...startPorts.map((port) => port.portId),
-        "sample4-opening",
-      ]),
-      createRegion("right", { x: 0.103, y: 0 }, 0.156, 0.396, [
-        "sample4-opening",
-        ...endPorts.map((port) => port.portId),
-      ]),
+      createRegion(
+        "left",
+        { x: -0.1999996, y: 0.94560191247129 },
+        0.3999992,
+        2.0312937233333295,
+        [...startPorts.map((port) => port.portId), "pmp22650-opening"],
+      ),
+      createRegion(
+        "right",
+        { x: 0.011800205, y: 0 },
+        0.02360041,
+        SHARED_EDGE_HEIGHT,
+        ["pmp22650-opening", ...endPorts.map((port) => port.portId)],
+      ),
       ...connections.map((_, index) =>
-        createRegion(`end-${index}`, { x: 0.4, y: 0 }, 0.1, 0.1, [
+        createRegion(`end-${index}`, { x: 0.07360041, y: 0 }, 0.1, 0.1, [
           `end-port-${index}`,
         ]),
       ),
     ],
     ports: [
       ...startPorts,
-      createPort("sample4-opening", "left", "right", 0, 0),
+      createPort("pmp22650-opening", "left", "right", 0, SHARED_PORT_Y),
       ...endPorts,
     ],
     connections,
   }
 }
 
-test("visualizes the physical capacity of a real sample 4 opening", () => {
+test("visualizes the physical capacity of the PMP22650 narrow opening", () => {
   const solver = new DuplicateCongestedPortSolver(
-    createSample4BoundaryFixture(),
+    createPmp22650BoundaryFixture(),
     {
       duplicatePortProximity: 0.05,
       // Older implementations ignore these options, which is the issue this
       // snapshot reproduces.
-      minimumDuplicatePortSpacing: 0.2,
-      duplicatePortWidth: 0.1,
+      minimumDuplicatePortSpacing: TRACE_WIDTH + TRACE_CLEARANCE,
+      duplicatePortWidth: TRACE_WIDTH,
     } as any,
   )
   solver.solve()
@@ -95,24 +115,24 @@ test("visualizes the physical capacity of a real sample 4 opening", () => {
   const lanes = output.ports
     .filter(
       (port) =>
-        port.portId === "sample4-opening" ||
-        port.d?.duplicatedFromPortId === "sample4-opening",
+        port.portId === "pmp22650-opening" ||
+        port.d?.duplicatedFromPortId === "pmp22650-opening",
     )
     .sort((a, b) => Number(a.d?.y) - Number(b.d?.y))
   const graphics: GraphicsObject = {
     rects: [
       {
-        center: { x: -0.127, y: 0 },
-        width: 0.204,
-        height: 0.396,
+        center: { x: -0.1999996, y: 0.94560191247129 },
+        width: 0.3999992,
+        height: 2.0312937233333295,
         fill: "rgba(80, 140, 220, 0.16)",
         stroke: "rgb(80, 140, 220)",
         label: "left region",
       },
       {
-        center: { x: 0.103, y: 0 },
-        width: 0.156,
-        height: 0.396,
+        center: { x: 0.011800205, y: 0 },
+        width: 0.02360041,
+        height: SHARED_EDGE_HEIGHT,
         fill: "rgba(80, 140, 220, 0.16)",
         stroke: "rgb(80, 140, 220)",
         label: "right region",
@@ -121,20 +141,20 @@ test("visualizes the physical capacity of a real sample 4 opening", () => {
     lines: lanes.flatMap((port, index) => [
       {
         points: [
-          { x: -0.16, y: Number(port.d?.y) },
-          { x: 0.16, y: Number(port.d?.y) },
+          { x: -0.1, y: Number(port.d?.y) },
+          { x: 0.05, y: Number(port.d?.y) },
         ],
         strokeColor: "rgba(255, 120, 0, 0.2)",
-        strokeWidth: 0.2,
-        label: `lane ${index + 1}: 0.1 mm trace + 0.1 mm clearance`,
+        strokeWidth: TRACE_WIDTH + TRACE_CLEARANCE,
+        label: `lane ${index + 1}: trace and clearance`,
       },
       {
         points: [
-          { x: -0.16, y: Number(port.d?.y) },
-          { x: 0.16, y: Number(port.d?.y) },
+          { x: -0.1, y: Number(port.d?.y) },
+          { x: 0.05, y: Number(port.d?.y) },
         ],
         strokeColor: "rgb(210, 45, 45)",
-        strokeWidth: 0.1,
+        strokeWidth: TRACE_WIDTH,
         label: `lane ${index + 1}: physical trace`,
       },
     ]),
@@ -149,7 +169,9 @@ test("visualizes the physical capacity of a real sample 4 opening", () => {
 
   const svg = getSvgFromGraphicsObject(
     stackGraphicsVertically([graphics], {
-      titles: [`Sample 4 opening: ${lanes.length} lanes / 2 physical capacity`],
+      titles: [
+        `PMP22650 opening: ${lanes.length} graph lanes / 1 physical lane`,
+      ],
     }),
   )
   expect(svg).toMatchSvgSnapshot(import.meta.path)
