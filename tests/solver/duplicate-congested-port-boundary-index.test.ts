@@ -77,17 +77,17 @@ test("indexes only ports on the same unordered region boundary", () => {
   expect(
     duplicateSourcePort([source, foreign, reversedBoundary, fartherOnBoundary])
       ?.d,
-  ).toMatchObject({ x: 0, y: -0.1 })
+  ).toMatchObject({ x: 0, y: 0.1 })
 
   expect(
     duplicateSourcePort([source, foreign, fartherOnBoundary, reversedBoundary])
       ?.d,
-  ).toMatchObject({ x: 0, y: -0.1 })
+  ).toMatchObject({ x: 0, y: 0.1 })
 
   const belowSource = createPort({ portId: "below", x: 0, y: -1 })
   expect(
     duplicateSourcePort([source, reversedBoundary, belowSource])?.d,
-  ).toMatchObject({ x: 0, y: -0.1 })
+  ).toMatchObject({ x: 0, y: 0.1 })
   expect(
     duplicateSourcePort([source, belowSource, reversedBoundary])?.d,
   ).toMatchObject({ x: 0, y: 0.1 })

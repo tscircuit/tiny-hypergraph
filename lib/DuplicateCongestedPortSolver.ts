@@ -2,8 +2,8 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
-  TinyHyperGraphSolver,
   type TinyHyperGraphProblem,
+  TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
@@ -102,6 +102,17 @@ const normalize = (point: Point): Point | undefined => {
     x: point.x / length,
     y: point.y / length,
   }
+}
+
+const orientAlongPositiveBoundaryAxis = (direction: Point): Point => {
+  // Matching duplicate indexes must have the same geometric order on every
+  // boundary or downstream uniform spacing turns them into crossed pairs.
+  const shouldReverse =
+    Math.abs(direction.x) >= Math.abs(direction.y)
+      ? direction.x < 0
+      : direction.y < 0
+
+  return shouldReverse ? { x: -direction.x, y: -direction.y } : direction
 }
 
 const getRegionBounds = (
@@ -214,10 +225,12 @@ const getDuplicateDirection = (
       x: sourcePoint.x - nearestPoint.x,
       y: sourcePoint.y - nearestPoint.y,
     })
-    if (awayFromNearest) return awayFromNearest
+    if (awayFromNearest) return orientAlongPositiveBoundaryAxis(awayFromNearest)
   }
 
-  return getFallbackBoundaryDirection(sourcePort, regionById)
+  return orientAlongPositiveBoundaryAxis(
+    getFallbackBoundaryDirection(sourcePort, regionById),
+  )
 }
 
 const createDuplicatePortId = (
