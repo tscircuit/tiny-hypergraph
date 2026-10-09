@@ -57,10 +57,12 @@ export const computeRegionCostForArea = (
     : 0
   const layerCount = countAvailableLayers(regionAvailableZMask)
   const traceDensityCost =
-    (traceDensityCostFactor *
-      (traceCount / layerCount) ** 2 *
-      traceWidth ** 2) /
-    area
+    traceDensityCostFactor === 0
+      ? 0
+      : (traceDensityCostFactor *
+          (traceCount / layerCount) ** 2 *
+          traceWidth ** 2) /
+        area
 
   return (
     (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
