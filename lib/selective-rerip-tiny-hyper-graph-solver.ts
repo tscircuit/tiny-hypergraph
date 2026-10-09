@@ -202,16 +202,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     options: TinyHyperGraphSolverOptions,
     attempt: number,
   ): TinyHyperGraphSolver {
-    if (attempt >= 0) return super.createGreedyFinalRouteSolver(options, attempt)
+    if (attempt >= 0)
+      return super.createGreedyFinalRouteSolver(options, attempt)
     // Finishing a congested board still needs route costs and blocker rerips.
     // Zero-cost greedy paths can complete the graph but overwhelm detailed routing.
-    const solver = new CongestionAwareFinalRouteSolver(this.topology, this.problem, {
-      ...options,
-      MAX_ITERATIONS: Math.max(
-        options.MAX_ITERATIONS ?? 50_000,
-        this.MAX_ITERATIONS * 2,
-      ),
-    })
+    const solver = new CongestionAwareFinalRouteSolver(
+      this.topology,
+      this.problem,
+      {
+        ...options,
+        MAX_ITERATIONS: Math.max(
+          options.MAX_ITERATIONS ?? 50_000,
+          this.MAX_ITERATIONS * 2,
+        ),
+      },
+    )
     solver.remainingReripBudget =
       this.costAwareFinalReripBudget - this.state.ripCount
     return solver

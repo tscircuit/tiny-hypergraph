@@ -1494,11 +1494,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options: TinyHyperGraphSolverOptions,
     _attempt: number,
   ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(
-      this.topology,
-      this.problem,
-      options,
-    )
+    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
   }
 
   protected tryGreedyFinalRouteAcceptance(): boolean {
@@ -1863,9 +1859,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected getRouteHeuristic(routeId: RouteId, portId: PortId): number {
     const precomputedHCost = this.problemSetup.portHCostToEndOfRoute
     if (precomputedHCost) {
-      return precomputedHCost[
-        portId * this.problem.routeCount + routeId
-      ]
+      return precomputedHCost[portId * this.problem.routeCount + routeId]
     }
 
     if (this.hCostEndRouteId !== routeId) {

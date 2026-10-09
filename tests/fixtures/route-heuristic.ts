@@ -1,7 +1,4 @@
-import type {
-  TinyHyperGraphProblem,
-  TinyHyperGraphTopology,
-} from "lib/core"
+import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "lib/core"
 
 export const createRouteHeuristicFixture = (): {
   topology: TinyHyperGraphTopology
