@@ -12,6 +12,7 @@ export interface TinyHyperGraphBusSolverOptions
   BUS_REMAINDER_SIDE_WEIGHT?: number
   CENTER_GREEDY_HEURISTIC_MULTIPLIER?: number
   CENTER_PORT_OPTIONS_PER_EDGE?: number
+  BUS_TRACE_LENGTH_MARGIN?: number
   QUEUE_ALL_CANDIDATES?: boolean
   VISUALIZE_UNASSIGNED_PORTS?: boolean
 }
