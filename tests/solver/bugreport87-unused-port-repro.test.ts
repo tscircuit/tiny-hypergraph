@@ -36,6 +36,9 @@ test(
     }
 
     expect(solver.solved).toBe(true)
+    const stats = solver.getSelectiveReripStats()
+    expect(stats.selectiveRipCount).toBeGreaterThan(0)
+    expect(stats.lastRelaxedSearchExpandedLabelCount).toBeGreaterThan(0)
     expect(getSvgFromGraphicsObject(solver.visualize())).toMatchSvgSnapshot(
       import.meta.path,
     )

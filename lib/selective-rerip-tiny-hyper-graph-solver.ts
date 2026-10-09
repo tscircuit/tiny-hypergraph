@@ -454,9 +454,10 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         routeNetId,
         portOwners: params.portOwners,
       })
-      const owners = [
-        ...new Set(resources.flatMap((resource) => resource.owners)),
-      ]
+      const owners =
+        resources.length === 0
+          ? []
+          : [...new Set(resources.flatMap((resource) => resource.owners))]
       if (
         owners.some((ownerRouteId) =>
           params.forbiddenOwnerRouteIds.has(ownerRouteId),

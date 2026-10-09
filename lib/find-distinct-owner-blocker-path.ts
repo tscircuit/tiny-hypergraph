@@ -60,6 +60,25 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   active: boolean
 }
 
+const areLabelOwnersSubsetOfCurrentAndHopOwners = <TOwner>({
+  labelOwners,
+  currentOwners,
+  hopOwners,
+}: {
+  labelOwners: ReadonlySet<TOwner>
+  currentOwners: ReadonlySet<TOwner>
+  hopOwners: readonly TOwner[]
+}): boolean => {
+  if (labelOwners === currentOwners) return true
+  if (labelOwners.size > currentOwners.size + hopOwners.length) {
+    return false
+  }
+  for (const owner of labelOwners) {
+    if (!currentOwners.has(owner) && !hopOwners.includes(owner)) return false
+  }
+  return true
+}
+
 const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
@@ -295,39 +314,62 @@ export const findDistinctOwnerBlockerPath = <
         )
       }
 
-      const owners = new Set(current.owners)
-      for (const owner of hop.owners ?? []) owners.add(owner)
       const distance = current.distance + hop.distance
       if (!Number.isFinite(distance)) {
         throw new Error("Distinct-owner blocker path distance overflowed")
       }
+      const stateKey = options.getStateKey(hop.state)
+      // Dominated candidates consumed an order before this early-pruning path.
+      // Reserve it here so surviving labels retain the same tie-break order.
+      const queueOrder = nextQueueOrder++
+      const existingLabels = labelsByStateKey.get(stateKey) ?? []
+      const hopOwners = hop.owners ?? []
+      let isDominated = false
+      for (const label of existingLabels) {
+        if (
+          label.distance <= distance &&
+          areLabelOwnersSubsetOfCurrentAndHopOwners({
+            labelOwners: label.owners,
+            currentOwners: current.owners,
+            hopOwners,
+          })
+        ) {
+          isDominated = true
+          break
+        }
+      }
+      if (isDominated) continue
+
+      let owners = current.owners
+      for (const owner of hopOwners) {
+        if (owners.has(owner)) continue
+        if (owners === current.owners) owners = new Set(current.owners)
+        owners.add(owner)
+      }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
-        stateKey: options.getStateKey(hop.state),
+        stateKey,
         owners,
         distance,
         parent: current,
         incomingHop: hop,
-        queueOrder: nextQueueOrder++,
+        queueOrder,
         active: true,
       }
-      const existingLabels = labelsByStateKey.get(candidate.stateKey) ?? []
-      if (existingLabels.some((label) => labelDominates(label, candidate))) {
-        continue
-      }
 
-      const survivingLabels: Array<
-        SearchLabel<TState, TStateKey, TOwner, THopData>
-      > = []
+      // The map exclusively owns this state's label array, so it is safe to
+      // compact the array in place before storing it back under the same key.
+      let survivingLabelCount = 0
       for (const label of existingLabels) {
         if (labelDominates(candidate, label)) {
           label.active = false
         } else {
-          survivingLabels.push(label)
+          existingLabels[survivingLabelCount++] = label
         }
       }
-      survivingLabels.push(candidate)
-      labelsByStateKey.set(candidate.stateKey, survivingLabels)
+      existingLabels.length = survivingLabelCount
+      existingLabels.push(candidate)
+      labelsByStateKey.set(candidate.stateKey, existingLabels)
       queue.push(candidate)
     }
   }
