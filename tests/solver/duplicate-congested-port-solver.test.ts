@@ -151,6 +151,10 @@ test("duplicate congested port solver duplicates independently reused ports in l
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   expect(solver.report.portUseCounts["shared-choke"]).toBe(2)
+  expect(solver.report.routeCongestionScoreByConnectionId).toEqual({
+    "connection-a": 1,
+    "connection-b": 1,
+  })
   expect(solver.report.duplicatedPorts).toContainEqual({
     sourcePortId: "shared-choke",
     duplicatePortIds: ["shared-choke::dup1"],

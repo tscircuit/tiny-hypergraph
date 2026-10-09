@@ -2,12 +2,12 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
+  type Candidate,
   TinyHyperGraphSolver,
-  type TinyHyperGraphProblem,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import type { PortId, RouteId } from "./types"
+import type { PortId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
@@ -30,6 +30,12 @@ export interface DuplicatedPortSummary {
 export interface DuplicateCongestedPortSolverReport {
   portUseCounts: Record<string, number>
   duplicatedPorts: DuplicatedPortSummary[]
+  routeCongestionScoreByConnectionId: Record<string, number>
+}
+
+type PortUseAnalysis = {
+  portUseCounts: Map<string, number>
+  routePortIdsByConnectionId: Map<string, string[]>
 }
 
 interface Point {
@@ -272,44 +278,33 @@ const getSerializedPortId = (
   return `port-${portId}`
 }
 
-const createSingleRouteProblem = (
-  problem: TinyHyperGraphProblem,
-  routeId: RouteId,
-): TinyHyperGraphProblem => ({
-  routeCount: 1,
-  portSectionMask: new Int8Array(problem.portSectionMask),
-  routeMetadata:
-    problem.routeMetadata === undefined
-      ? undefined
-      : [problem.routeMetadata[routeId]],
-  routeStartPort: Int32Array.from([problem.routeStartPort[routeId]]),
-  routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
-  routeNet: Int32Array.from([problem.routeNet[routeId]]),
-  regionNetId: new Int32Array(problem.regionNetId),
-  portPenalty:
-    problem.portPenalty === undefined
-      ? undefined
-      : new Float64Array(problem.portPenalty),
-})
+class IndependentRoutePortUseSolver extends TinyHyperGraphSolver {
+  readonly usedPortIdsByRouteId: Array<Set<PortId> | undefined> = []
 
-const getUsedPortIdsForSolvedRoute = (
-  solver: TinyHyperGraphSolver,
-): Set<PortId> => {
-  const usedPortIds = new Set<PortId>()
+  override isPortReservedForDifferentNet(_portId: PortId): boolean {
+    return false
+  }
 
-  for (const regionSegments of solver.state.regionSegments) {
-    for (const [, fromPortId, toPortId] of regionSegments) {
+  override onPathFound(finalCandidate: Candidate): void {
+    const currentRouteId = this.state.currentRouteId
+    if (currentRouteId === undefined) return
+
+    const usedPortIds = new Set<PortId>()
+    for (const { fromPortId, toPortId } of
+      this.getSolvedPathSegments(finalCandidate)) {
       usedPortIds.add(fromPortId)
       usedPortIds.add(toPortId)
     }
+    if (usedPortIds.size === 0) {
+      usedPortIds.add(this.problem.routeStartPort[currentRouteId]!)
+      usedPortIds.add(this.problem.routeEndPort[currentRouteId]!)
+    }
+    this.usedPortIdsByRouteId[currentRouteId] = usedPortIds
+    this.routeSuccessCountByRouteId[currentRouteId] += 1
+    this.state.candidateQueue.clear()
+    this.state.currentRouteNetId = undefined
+    this.state.currentRouteId = undefined
   }
-
-  if (usedPortIds.size === 0 && solver.problem.routeCount === 1) {
-    usedPortIds.add(solver.problem.routeStartPort[0])
-    usedPortIds.add(solver.problem.routeEndPort[0])
-  }
-
-  return usedPortIds
 }
 
 export class DuplicateCongestedPortSolver extends BaseSolver {
@@ -317,6 +312,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
   report: DuplicateCongestedPortSolverReport = {
     portUseCounts: {},
     duplicatedPorts: [],
+    routeCongestionScoreByConnectionId: {},
   }
 
   constructor(
@@ -338,7 +334,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  private getPortUseCounts(): Map<string, number> {
+  private getPortUseAnalysis(): PortUseAnalysis {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
@@ -346,34 +342,48 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       problem.portPenalty = undefined
     }
     const portUseCounts = new Map<string, number>()
+    const routePortIdsByConnectionId = new Map<string, string[]>()
+    const routeSolver = new IndependentRoutePortUseSolver(topology, problem, {
+      ...this.getIndividualRouteSolveOptions(),
+      STATIC_REACHABILITY_PRECHECK: false,
+      USE_LAZY_ROUTE_HEURISTIC: true,
+    })
+    routeSolver.MAX_ITERATIONS *= Math.max(problem.routeCount, 1)
+    routeSolver.solve()
+
+    if (!routeSolver.solved || routeSolver.failed) {
+      throw new Error(
+        `Routes could not be solved independently: ${
+          routeSolver.error ?? "unknown error"
+        }`,
+      )
+    }
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
-      const routeProblem = createSingleRouteProblem(problem, routeId)
-      const routeSolver = new TinyHyperGraphSolver(
-        topology,
-        routeProblem,
-        this.getIndividualRouteSolveOptions(),
-      )
-      routeSolver.solve()
-
-      if (!routeSolver.solved || routeSolver.failed) {
-        throw new Error(
-          `Route ${routeId} could not be solved independently: ${
-            routeSolver.error ?? "unknown error"
-          }`,
-        )
+      const usedPortIds = routeSolver.usedPortIdsByRouteId[routeId]
+      if (!usedPortIds) {
+        throw new Error(`Route ${routeId} is missing its independent path`)
       }
-
-      for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
-        const serializedPortId = getSerializedPortId(topology, portId)
+      const serializedPortIds = [...usedPortIds].map((portId) =>
+        getSerializedPortId(topology, portId),
+      )
+      for (const serializedPortId of serializedPortIds) {
         portUseCounts.set(
           serializedPortId,
           (portUseCounts.get(serializedPortId) ?? 0) + 1,
         )
       }
+      const routeMetadata = problem.routeMetadata?.[routeId]
+      const connectionId = isRecord(routeMetadata)
+        ? routeMetadata.connectionId
+        : undefined
+      if (typeof connectionId !== "string") {
+        throw new Error(`Route ${routeId} is missing its connection id`)
+      }
+      routePortIdsByConnectionId.set(connectionId, serializedPortIds)
     }
 
-    return portUseCounts
+    return { portUseCounts, routePortIdsByConnectionId }
   }
 
   protected duplicateCongestedPorts(
@@ -487,6 +497,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     this.report = {
       portUseCounts: Object.fromEntries([...portUseCounts.entries()].sort()),
       duplicatedPorts,
+      routeCongestionScoreByConnectionId: {},
     }
 
     return {
@@ -502,9 +513,20 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
   override _setup() {
     try {
-      const portUseCounts = this.getPortUseCounts()
+      const { portUseCounts, routePortIdsByConnectionId } =
+        this.getPortUseAnalysis()
       this.revisedSerializedHyperGraph =
         this.duplicateCongestedPorts(portUseCounts)
+      this.report.routeCongestionScoreByConnectionId = Object.fromEntries(
+        [...routePortIdsByConnectionId].map(([connectionId, portIds]) => [
+          connectionId,
+          portIds.reduce(
+            (score, portId) =>
+              score + Math.max(0, (portUseCounts.get(portId) ?? 1) - 1),
+            0,
+          ),
+        ]),
+      )
       this.stats = {
         ...this.stats,
         duplicateSourcePortCount: this.report.duplicatedPorts.length,
