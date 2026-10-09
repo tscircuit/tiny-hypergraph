@@ -219,3 +219,74 @@ test("duplicate congested port solver can preserve legacy port-use estimation", 
   expect(penaltyAwareSolver.report.portUseCounts["shared-neighbor"]).toBe(2)
   expect(compatibilitySolver.report.portUseCounts["shared-choke"]).toBe(2)
 })
+
+test.each([
+  { horizontal: false, coordinate: 0, hasNeighbor: false },
+  { horizontal: true, coordinate: 0, hasNeighbor: false },
+  { horizontal: false, coordinate: -0.01, hasNeighbor: true },
+  { horizontal: true, coordinate: 0.01, hasNeighbor: true },
+])(
+  "duplicate ports stay on the finite shared edge: %j",
+  ({ horizontal, coordinate, hasNeighbor }) => {
+    const graph = createDuplicatePortFixture()
+    const left = graph.regions.find((region) => region.regionId === "left")!
+    const right = graph.regions.find((region) => region.regionId === "right")!
+    left.d = { bounds: { minX: -3, maxX: 0, minY: -1, maxY: 0.01 } }
+    right.d = { bounds: { minX: 0, maxX: 3, minY: -0.01, maxY: 2 } }
+    for (const port of graph.ports) {
+      if (port.portId === "shared-choke") port.d!.y = coordinate
+      if (port.portId === "shared-neighbor") {
+        port.d!.y = 0.005
+        port.d!.tinyHypergraphPortPenalty = 1_000
+      }
+    }
+    if (!hasNeighbor) {
+      graph.ports = graph.ports.filter(
+        (port) => port.portId !== "shared-neighbor",
+      )
+      for (const region of graph.regions) {
+        region.pointIds = region.pointIds.filter(
+          (portId) => portId !== "shared-neighbor",
+        )
+      }
+    }
+    if (horizontal) {
+      for (const port of graph.ports) {
+        ;[port.d!.x, port.d!.y] = [port.d!.y, port.d!.x]
+      }
+      for (const region of graph.regions) {
+        const bounds = region.d?.bounds
+        if (bounds) {
+          region.d!.bounds = {
+            minX: bounds.minY,
+            minY: bounds.minX,
+            maxX: bounds.maxY,
+            maxY: bounds.maxX,
+          }
+        } else {
+          const { center, width, height } = region.d!
+          region.d = {
+            ...region.d,
+            center: { x: center.y, y: center.x },
+            width: height,
+            height: width,
+          }
+        }
+      }
+    }
+
+    const solver = new DuplicateCongestedPortSolver(graph)
+    solver.solve()
+    expect(solver.failed).toBe(false)
+    expect(solver.report.portUseCounts["shared-choke"]).toBe(2)
+    const duplicate = solver
+      .getOutput()
+      .ports.find((port) => port.portId === "shared-choke::dup1")!
+    const fixedAxis = horizontal ? "y" : "x"
+    const sharedAxis = horizontal ? "x" : "y"
+    expect(duplicate.d![fixedAxis]).toBe(0)
+    expect(duplicate.d![sharedAxis]).toBeGreaterThan(-0.01)
+    expect(duplicate.d![sharedAxis]).toBeLessThan(0.01)
+    expect(duplicate.d![sharedAxis]).not.toBe(coordinate)
+  },
+)
