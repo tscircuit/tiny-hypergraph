@@ -813,7 +813,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
           continue
         }
         this.onPathFound(currentCandidate)
-        return
+        if (state.currentRouteId === undefined) return
+        continue
       }
       if (neighborPortId === currentCandidate.portId) continue
       if (problem.portSectionMask[neighborPortId] === 0) continue
