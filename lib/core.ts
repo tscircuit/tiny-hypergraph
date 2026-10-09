@@ -867,6 +867,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       const h = this.computeH(neighborPortId)
 
+      const g = this.computeG(currentCandidate, neighborPortId)
+      if (!Number.isFinite(g)) continue
+
+      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      if (g >= this.getCandidateBestCost(candidateHopId)) continue
+
+      const h = this.computeH(neighborPortId)
       const newCandidate = {
         hopId: candidateHopId,
         prevRegionId: currentCandidate.nextRegionId,
