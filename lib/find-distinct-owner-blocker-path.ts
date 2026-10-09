@@ -355,18 +355,17 @@ export const findDistinctOwnerBlockerPath = <
         active: true,
       }
 
-      const survivingLabels: Array<
-        SearchLabel<TState, TStateKey, TOwner, THopData>
-      > = []
+      let survivingLabelCount = 0
       for (const label of existingLabels) {
         if (labelDominates(candidate, label)) {
           label.active = false
         } else {
-          survivingLabels.push(label)
+          existingLabels[survivingLabelCount++] = label
         }
       }
-      survivingLabels.push(candidate)
-      labelsByStateKey.set(candidate.stateKey, survivingLabels)
+      existingLabels.length = survivingLabelCount
+      existingLabels.push(candidate)
+      labelsByStateKey.set(candidate.stateKey, existingLabels)
       queue.push(candidate)
     }
   }
