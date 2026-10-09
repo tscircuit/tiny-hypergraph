@@ -764,8 +764,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        const routeId = state.currentRouteId
         this.onPathFound(currentCandidate)
-        return
+        if (state.currentRouteId !== routeId) return
+        continue
       }
       if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
         continue
