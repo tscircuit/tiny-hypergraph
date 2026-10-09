@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --pretty false",
     "benchmark1": "bun run --cpu-prof-md scripts/profiling/hg07-first10.ts",
     "benchmark:bus": "./benchmark-bus.sh",
+    "benchmark:srj18-pipeline7": "./benchmark-srj18-pipeline7.sh",
     "benchmark:srj13": "./benchmark-srj13.sh",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
