@@ -111,6 +111,9 @@ export interface TinyHyperGraphTopology {
    */
   regionAvailableZMask?: Int32Array
 
+  /** Layers joined by existing copper, such as a plated through-hole pad. */
+  regionConnectedZMask?: Int32Array
+
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
 
@@ -1095,7 +1098,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
-      this.TRACE_DENSITY_COST_FACTOR,
+      this.topology.regionConnectedZMask?.[regionId]
+        ? 0
+        : this.TRACE_DENSITY_COST_FACTOR,
       this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
       0,
     )
@@ -1107,6 +1112,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
     port2Id: PortId,
   ): SegmentGeometryScratch {
     return this.populateBaseSegmentGeometryScratch(regionId, port1Id, port2Id)
+  }
+
+  getEntryExitLayerChanges(
+    regionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ): number {
+    const z1 = this.topology.portZ[port1Id]!
+    const z2 = this.topology.portZ[port2Id]!
+    const layers = (1 << z1) | (1 << z2)
+    const connected = this.topology.regionConnectedZMask?.[regionId] ?? 0
+    return z1 === z2 || (connected & layers) === layers ? 0 : 1
   }
 
   private populateBaseSegmentGeometryScratch(
@@ -1133,7 +1150,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
     scratch.greaterAngle = angle1 < angle2 ? angle2 : angle1
     scratch.layerMask = (1 << z1) | (1 << z2)
-    scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.entryExitLayerChanges = this.getEntryExitLayerChanges(
+      regionId,
+      port1Id,
+      port2Id,
+    )
     scratch.netId = state.currentRouteNetId!
 
     return scratch
@@ -1799,10 +1820,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     let newSameLayerIntersections = 0
     let newCrossLayerIntersections = 0
-    let newEntryExitLayerChanges =
-      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
-        ? 1
-        : 0
+    let newEntryExitLayerChanges = this.getEntryExitLayerChanges(
+      nextRegionId,
+      currentCandidate.portId,
+      neighborPortId,
+    )
     if (regionCache.existingSegmentCount > 0) {
       // Candidate scoring uses topology angles even when a subclass supplies
       // different geometry for inserting completed segments.

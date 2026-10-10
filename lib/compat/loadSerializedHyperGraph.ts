@@ -367,6 +367,7 @@ export const loadSerializedHyperGraph = (
   const regionCenterX = new Float64Array(regionCount)
   const regionCenterY = new Float64Array(regionCount)
   const regionAvailableZMask = new Int32Array(regionCount)
+  const regionConnectedZMask = new Int32Array(regionCount)
   const regionNetId = new Int32Array(regionCount).fill(-1)
   const hasSerializedRegionNetId = new Int8Array(regionCount)
 
@@ -377,6 +378,31 @@ export const loadSerializedHyperGraph = (
     regionCenterX[regionIndex] = geometry.centerX
     regionCenterY[regionIndex] = geometry.centerY
     regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
+    const connectedZ = region.d?.connectedZ
+    if (Array.isArray(connectedZ)) {
+      for (const z of connectedZ) {
+        if (!Number.isInteger(z) || z < 0 || z > 30) {
+          throw new Error(
+            `Region "${region.regionId}" has invalid connected layer ${z}`,
+          )
+        }
+        regionConnectedZMask[regionIndex] |= 1 << z
+      }
+      if (
+        (regionConnectedZMask[regionIndex] & regionAvailableZMask[regionIndex]) !==
+        regionConnectedZMask[regionIndex]
+      ) {
+        throw new Error(
+          `Region "${region.regionId}" connects unavailable layers`,
+        )
+      }
+      const connectedNetId = getSerializedRegionNetId(region)
+      if (connectedNetId === undefined || connectedNetId === -1) {
+        throw new Error(
+          `Region "${region.regionId}" has connected copper without a net`,
+        )
+      }
+    }
 
     const serializedRegionNetId = getSerializedRegionNetId(region)
     if (serializedRegionNetId !== undefined) {
@@ -555,6 +581,7 @@ export const loadSerializedHyperGraph = (
     regionCenterX,
     regionCenterY,
     regionAvailableZMask,
+    regionConnectedZMask,
     regionMetadata,
     portAngleForRegion1,
     portAngleForRegion2,
