@@ -5,8 +5,11 @@ import {
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/core"
-import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
 import type { OwnedRelaxedHyperedgeRow } from "lib/owned-relaxed-hyperedge-types"
+import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
+
+type Row = OwnedRelaxedHyperedgeRow<number>
+type Hop = Row["templates"][number]
 
 class InheritedSelectiveSolver extends SelectiveReripTinyHyperGraphSolver {
   search(forbidden: ReadonlySet<number> = new Set()) {
@@ -59,6 +62,231 @@ const create = (owned: boolean, singleLayer = false) => {
   return solver
 }
 
+const rowKey = (sourcePortId: number, regionId: number): string =>
+  `${sourcePortId}:${regionId}`
+
+const captureNativeRows = (solver: InheritedSelectiveSolver): Row[] => {
+  const rows: Row[] = []
+  const inspectable = solver as unknown as {
+    getOwnedRelaxedSearchRow: (...args: unknown[]) => Row
+  }
+  const native = inspectable.getOwnedRelaxedSearchRow
+  inspectable.getOwnedRelaxedSearchRow = function (...args) {
+    const row = Reflect.apply(native, this, args) as Row
+    rows.push(row)
+    return row
+  }
+  return rows
+}
+
+const captureLegacyRows = (
+  solver: InheritedSelectiveSolver,
+): Map<string, readonly Hop[]> => {
+  const rows = new Map<string, readonly Hop[]>()
+  type Params = {
+    state: { portId: number; nextRegionId: number }
+    buildRegionTemplates?: boolean
+  }
+  const inspectable = solver as unknown as {
+    getRelaxedSearchHops: (params: Params) => Hop[]
+  }
+  const native = inspectable.getRelaxedSearchHops
+  inspectable.getRelaxedSearchHops = function (params) {
+    const hops = Reflect.apply(native, this, [params]) as Hop[]
+    if (!params.buildRegionTemplates) {
+      rows.set(rowKey(params.state.portId, params.state.nextRegionId), hops)
+    }
+    return hops
+  }
+  return rows
+}
+
+const checkNativeDistanceMemo = () => {
+  const cases = [
+    {
+      x: [0, 2, 5, 9, 2, 5],
+      y: [0, 1, 0, 2, 1, 1],
+      positive: true,
+      zero: false,
+    },
+    {
+      x: [0, -0, 0, -0, 1, 2],
+      y: [-0, 0, -0, 0, 0, 0],
+      positive: false,
+      zero: true,
+    },
+    {
+      x: [
+        0,
+        Number.MIN_VALUE,
+        2 * Number.MIN_VALUE,
+        5 * Number.MIN_VALUE,
+        1,
+        2,
+      ],
+      y: [0, 0, Number.MIN_VALUE, 2 * Number.MIN_VALUE, 0, 0],
+      positive: true,
+      zero: false,
+    },
+    {
+      x: [
+        1,
+        1 + Number.EPSILON,
+        1 + 2 * Number.EPSILON,
+        1 + 4 * Number.EPSILON,
+        0,
+        2,
+      ],
+      y: [0, Number.EPSILON, 0, Number.EPSILON, 0, 0],
+      positive: true,
+      zero: false,
+    },
+  ]
+  for (const coordinates of cases) {
+    const old = create(false)
+    const current = create(true)
+    for (const solver of [old, current]) {
+      solver.topology.portX.set(coordinates.x)
+      solver.topology.portY.set(coordinates.y)
+      solver.topology.regionIncidentPorts[0] = [0, 1, 1]
+      solver.topology.regionIncidentPorts[1] = [1, 2, 4, 5, 2]
+      solver.topology.regionIncidentPorts[2] = [2, 3, 3]
+    }
+    const rows = captureNativeRows(current)
+    const legacyRows = captureLegacyRows(old)
+    const connected = current.search()
+    expect(connected).toEqual(old.search())
+    expect(connected.found).toBe(true)
+    // A second, disconnected search prepares native reachability rows without
+    // running weighted relaxation. Its positive raw occurrences start cold.
+    for (const solver of [old, current]) {
+      solver.topology.regionIncidentPorts[2] = [2]
+    }
+    rows.length = 0
+    legacyRows.clear()
+    const disconnected = current.search()
+    expect(disconnected).toEqual(old.search())
+    expect(disconnected.found).toBe(false)
+    const sharedRows = rows.filter((row) => row.getHopDistance !== undefined)
+    expect(sharedRows.length).toBeGreaterThan(0)
+
+    const hypot = Object.getOwnPropertyDescriptor(Math, "hypot")!
+    const nativeHypot = hypot.value as typeof Math.hypot
+    const float64Array = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "Float64Array",
+    )!
+    const nativeFloat64Array = Float64Array
+    let calculations = 0
+    let allocations = 0
+    let positiveQueries = 0
+    let zeroQueries = 0
+    let duplicatedRows = 0
+    try {
+      // Search has completed with the native guard active. Count only direct
+      // row calculations, never search requests or independent oracle calls.
+      Object.defineProperty(Math, "hypot", {
+        ...hypot,
+        value: (...values: number[]) => {
+          calculations++
+          return Reflect.apply(nativeHypot, Math, values) as number
+        },
+      })
+      Object.defineProperty(globalThis, "Float64Array", {
+        ...float64Array,
+        value: new Proxy(nativeFloat64Array, {
+          construct(target, args, newTarget): Float64Array {
+            allocations++
+            return Reflect.construct(target, args, newTarget) as Float64Array
+          },
+        }),
+      })
+      for (const row of sharedRows) {
+        const beforeRow = allocations
+        const legacyHops = legacyRows.get(
+          rowKey(row.sourcePortId, row.regionId),
+        )!
+        expect(legacyHops).toBeDefined()
+        const destinations = new Set<number>()
+        const queries: Array<{ index: number; distance: number }> = []
+        let duplicate = false
+        let yieldedIndex = 0
+        for (let index = 0; index < row.templates.length; index++) {
+          if (row.excludedTemplateIndices.includes(index)) continue
+          const template = row.templates[index]!
+          duplicate ||= destinations.has(template.state.portId)
+          destinations.add(template.state.portId)
+          const legacyHop = legacyHops[yieldedIndex]!
+          const expected = Reflect.apply(nativeHypot, Math, [
+            current.topology.portX[row.sourcePortId]! -
+              current.topology.portX[template.state.portId]!,
+            current.topology.portY[row.sourcePortId]! -
+              current.topology.portY[template.state.portId]!,
+          ]) as number
+          queries.push({ index, distance: expected })
+          expect(Object.is(legacyHop.distance, expected)).toBe(true)
+          const beforeFirst = calculations
+          const first = row.getHopDistance!(index)
+          expect(Object.is(first, expected)).toBe(true)
+          expect(calculations - beforeFirst).toBe(1)
+          if (expected > 0) positiveQueries++
+          else zeroQueries++
+          for (let repeat = 0; repeat < 3; repeat++) {
+            const beforeRepeat = calculations
+            expect(Object.is(row.getHopDistance!(index), expected)).toBe(true)
+            expect(calculations - beforeRepeat).toBe(expected > 0 ? 0 : 1)
+          }
+          const beforeMaterialization = calculations
+          const explicit = row.getHop(index, yieldedIndex, expected)
+          expect(calculations).toBe(beforeMaterialization)
+          const implicit = row.getHop(index, yieldedIndex)
+          expect(calculations - beforeMaterialization).toBe(
+            expected > 0 ? 0 : 1,
+          )
+          for (const hop of [explicit, implicit]) {
+            expect(hop).toEqual(legacyHop)
+            expect(Object.is(hop.distance, expected)).toBe(true)
+            expect(hop.state).toBe(template.state)
+            expect(hop.owners).toBe(template.owners)
+            expect(hop.data).toBe(template.data)
+          }
+          expect(explicit).not.toBe(implicit)
+          yieldedIndex++
+        }
+        expect(yieldedIndex).toBe(legacyHops.length)
+        expect(allocations).toBe(beforeRow)
+        const previousLastIndex = queries.at(-1)?.index
+        // The second distinct-index scan fills the buffer; the previous last
+        // positive occurrence is seeded without recalculating its distance.
+        for (let pass = 0; pass < 2; pass++) {
+          for (const { index, distance: expected } of queries) {
+            const before = calculations
+            expect(Object.is(row.getHopDistance!(index), expected)).toBe(true)
+            const firstRepeatMiss = pass === 0 && index !== previousLastIndex
+            expect(calculations - before).toBe(
+              expected > 0 ? (firstRepeatMiss ? 1 : 0) : 1,
+            )
+          }
+        }
+        expect(allocations - beforeRow).toBe(queries.length > 1 ? 1 : 0)
+        for (const { index, distance: expected } of [...queries].reverse()) {
+          const before = calculations
+          expect(Object.is(row.getHopDistance!(index), expected)).toBe(true)
+          expect(calculations - before).toBe(expected > 0 ? 0 : 1)
+        }
+        expect(allocations - beforeRow).toBe(queries.length > 1 ? 1 : 0)
+        if (duplicate) duplicatedRows++
+      }
+    } finally {
+      Object.defineProperty(Math, "hypot", hypot)
+      Object.defineProperty(globalThis, "Float64Array", float64Array)
+    }
+    expect(positiveQueries > 0).toBe(coordinates.positive)
+    expect(zeroQueries > 0).toBe(coordinates.zero)
+    expect(duplicatedRows).toBeGreaterThan(0)
+  }
+}
+
 test("owned solvers retain legacy routes and fall back before hook effects", () => {
   const old = create(false)
   const current = create(true)
@@ -69,27 +297,12 @@ test("owned solvers retain legacy routes and fall back before hook effects", () 
     getTinyHyperGraphSolverOptions(old).OWNED_RELAXED_HYPEREDGE_SEARCH,
   ).toBe(false)
 
-  let ownedRows = 0
-  const capturedRows: OwnedRelaxedHyperedgeRow<number>[] = []
-  const inspectable = current as unknown as {
-    getOwnedRelaxedSearchRow: (...args: unknown[]) => unknown
-  }
-  const nativeRow = inspectable.getOwnedRelaxedSearchRow
-  inspectable.getOwnedRelaxedSearchRow = function (...args) {
-    ownedRows++
-    const row = Reflect.apply(
-      nativeRow,
-      this,
-      args,
-    ) as OwnedRelaxedHyperedgeRow<number>
-    capturedRows.push(row)
-    return row
-  }
+  const ownedRows = captureNativeRows(current)
   for (const forbidden of [new Set<number>(), new Set([1])]) {
     expect(current.search(forbidden)).toEqual(old.search(forbidden))
   }
-  expect(ownedRows).toBeGreaterThan(0)
-  const lazyRows = capturedRows.filter((row) => row.hyperedgeId !== undefined)
+  expect(ownedRows.length).toBeGreaterThan(0)
+  const lazyRows = ownedRows.filter((row) => row.hyperedgeId !== undefined)
   expect(lazyRows.length).toBeGreaterThan(1)
   const firstLazyRow = lazyRows[0]!
   for (const row of lazyRows) {
@@ -113,14 +326,34 @@ test("owned solvers retain legacy routes and fall back before hook effects", () 
       expect(hop.data).toBe(template.data)
       expect(hop.distance).toBe(distance)
       expect(Object.keys(hop)).toEqual(["state", "owners", "data", "distance"])
-      const supplied = row.getHop(index, 0, -0)
-      expect(Object.is(supplied.distance, -0)).toBe(true)
+      const supplied = row.getHop(index, 0, distance)
+      expect(Object.is(supplied.distance, distance)).toBe(true)
       expect(supplied).not.toBe(hop)
+      const signedZero = row.getHop(index, 0, -0)
+      expect(Object.is(signedZero.distance, -0)).toBe(true)
     }
   }
+  const previousRow = ownedRows.find(
+    (row) => row.regionId === 1 && row.sourcePortId === 1,
+  )!
+  const previousIndex = previousRow.templates.findIndex(
+    (hop) => hop.state.portId === 2,
+  )
+  const previousDistance = previousRow.getHopDistance!(previousIndex)
+  const nextSearchRowStart = ownedRows.length
   current.topology.portY[2] = 2
   old.topology.portY[2] = 2
   expect(current.search()).toEqual(old.search())
+  const nextRow = ownedRows
+    .slice(nextSearchRowStart)
+    .find((row) => row.regionId === 1 && row.sourcePortId === 1)!
+  expect(nextRow).not.toBe(previousRow)
+  const nextIndex = nextRow.templates.findIndex((hop) => hop.state.portId === 2)
+  const nextDistance = nextRow.getHopDistance!(nextIndex)
+  expect(nextDistance).toBe(Math.hypot(1 - 2, 0 - 2))
+  expect(nextDistance).not.toBe(previousDistance)
+
+  checkNativeDistanceMemo()
 
   for (const method of [
     "getHopId",

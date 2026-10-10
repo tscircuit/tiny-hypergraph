@@ -80,6 +80,9 @@ class NativeOwnedRelaxedHyperedgeRow
   readonly templates: RelaxedSearchHop[]
   readonly excludedTemplateIndices: readonly number[]
   readonly maxHopDistance: number
+  private lastIndex = -1
+  private lastDistance = 0
+  private hopDistances: Float64Array | undefined = undefined
 
   constructor(
     private readonly topology: TinyHyperGraphTopology,
@@ -97,13 +100,35 @@ class NativeOwnedRelaxedHyperedgeRow
   }
 
   getHopDistance(index: number): number {
+    if (index === this.lastIndex && this.lastDistance > 0) {
+      return this.lastDistance
+    }
+    let distances = this.hopDistances
+    // Native scans increase raw indices. A backward request marks a repeat.
+    if (distances === undefined && index < this.lastIndex) {
+      distances = this.hopDistances = new Float64Array(this.templates.length)
+      if (this.lastDistance > 0) distances[this.lastIndex] = this.lastDistance
+    }
+    const cachedDistance = distances?.[index] ?? 0
+    if (cachedDistance > 0) {
+      this.lastIndex = index
+      this.lastDistance = cachedDistance
+      return cachedDistance
+    }
     const template = this.templates[index]!
-    return Math.hypot(
+    const distance = Math.hypot(
       this.topology.portX[this.sourceState.portId]! -
         this.topology.portX[template.state.portId]!,
       this.topology.portY[this.sourceState.portId]! -
         this.topology.portY[template.state.portId]!,
     )
+    this.lastIndex = index
+    // Zero and invalid distances remain uncached, including signed zero.
+    this.lastDistance = distance > 0 && Number.isFinite(distance) ? distance : 0
+    if (distances !== undefined && this.lastDistance > 0) {
+      distances[index] = this.lastDistance
+    }
+    return distance
   }
 
   getHop(
