@@ -667,9 +667,15 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   }
 
   captureBestState(summary: RegionCostSummary) {
+    const eligible = this.VIA_COST <= 0 ||
+      this.isWithinRegionCostEnvelope(summary, this.baselineSummary)
+    const bestEligible = this.bestSummary === undefined || this.VIA_COST <= 0 ||
+      this.isWithinRegionCostEnvelope(this.bestSummary, this.baselineSummary)
     if (
       this.bestSummary &&
-      compareRegionCostSummaries(summary, this.bestSummary) >= 0
+      (eligible !== bestEligible
+        ? !eligible
+        : compareRegionCostSummaries(summary, this.bestSummary) >= 0)
     ) {
       return
     }
@@ -1070,6 +1076,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       ),
     )
     const optimized =
+      (this.VIA_COST <= 0 ||
+        candidateSolver.isWithinRegionCostEnvelope(candidateSummary, this.baselineSummary)) &&
       compareRegionCostSummaries(candidateSummary, this.baselineSummary) < 0
 
     this.optimizedSolver = optimized ? candidateSolver : this.baselineSolver

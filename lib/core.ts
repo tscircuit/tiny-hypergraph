@@ -1499,6 +1499,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  isWithinRegionCostEnvelope(
+    summary: RegionCostSummary,
+    baseline: RegionCostSummary,
+  ): boolean {
+    return summary.maxRegionCost <= baseline.maxRegionCost *
+      (1 + Math.max(0, this.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO)) &&
+      summary.totalRegionCost <= baseline.totalRegionCost *
+      (1 + Math.max(0, this.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO))
+  }
+
   protected captureBestSolvedState(summary: RegionCostSummary) {
     if (
       this.bestSolvedStateSummary &&
