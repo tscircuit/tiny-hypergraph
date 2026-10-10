@@ -679,7 +679,7 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       this.minViaPadDiameter,
       0,
       this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
-      this.VIA_COST,
+      0,
     )
   }
 

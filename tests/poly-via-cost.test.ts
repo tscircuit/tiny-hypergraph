@@ -56,7 +56,7 @@ test("poly routing applies fixed via cost using polygon area for congestion", ()
   solver.appendSegmentToRegionCache(0, 0, 1)
   expect(
     solver.state.regionIntersectionCaches[0].existingRegionCost,
-  ).toBeCloseTo(0.543)
+  ).toBeCloseTo(0.243)
 
   const crossing = new PolyHyperGraphSolver(topology, problem, {
     CROSS_LAYER_INTERSECTION_COST_FACTOR: 0,

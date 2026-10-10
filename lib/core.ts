@@ -184,6 +184,8 @@ export interface TinyHyperGraphSolution {
 export interface RegionCostSummary {
   maxRegionCost: number
   totalRegionCost: number
+  /** Completed-state energy in the same units as computeG when VIA_COST > 0. */
+  pathEnergy?: number
 }
 
 interface SolvedStateSnapshot {
@@ -1439,12 +1441,61 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected compareRegionCostSummaries(
     left: RegionCostSummary,
     right: RegionCostSummary,
-  ) {
+  ): number {
+    if (this.VIA_COST > 0) {
+      if (left.pathEnergy === undefined || right.pathEnergy === undefined) {
+        throw new Error("Physical-via objective requires completed path energy")
+      }
+      if (left.pathEnergy !== right.pathEnergy) {
+        return left.pathEnergy - right.pathEnergy
+      }
+    }
     if (left.maxRegionCost !== right.maxRegionCost) {
       return left.maxRegionCost - right.maxRegionCost
     }
 
     return left.totalRegionCost - right.totalRegionCost
+  }
+
+  /**
+   * Sum the same pressure, via estimate, distance and port costs as computeG.
+   * Cached crossing counts make this independent of route insertion order.
+   * Negotiated regionCongestionCost prices change between rip rounds and are
+   * search guidance, so they do not contribute to completed-state energy.
+   */
+  withPathEnergy<T extends RegionCostSummary>(
+    summary: T,
+    regionIds?: readonly RegionId[],
+  ): T & RegionCostSummary {
+    if (this.VIA_COST <= 0) return summary
+
+    let estimatedViaCount = 0
+    let segmentDistance = 0
+    let portPenaltyCost = 0
+    for (const regionId of regionIds ?? range(this.topology.regionCount)) {
+      const cache = this.state.regionIntersectionCaches[regionId]!
+      estimatedViaCount +=
+        2 * cache.existingSameLayerIntersections +
+        cache.existingEntryExitLayerChanges
+      for (const [, fromPortId, toPortId] of this.state.regionSegments[regionId]!) {
+        portPenaltyCost += this.problem.portPenalty?.[toPortId] ?? 0
+        if (this.ADD_SEGMENT_DISTANCE_TO_G) {
+          segmentDistance += Math.hypot(
+            this.topology.portX[fromPortId]! - this.topology.portX[toPortId]!,
+            this.topology.portY[fromPortId]! - this.topology.portY[toPortId]!,
+          )
+        }
+      }
+    }
+
+    return {
+      ...summary,
+      pathEnergy:
+        summary.totalRegionCost +
+        this.VIA_COST * estimatedViaCount +
+        this.DISTANCE_TO_COST * segmentDistance +
+        portPenaltyCost,
+    }
   }
 
   protected captureBestSolvedState(summary: RegionCostSummary) {
@@ -1532,10 +1583,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       totalRegionCost += regionCost
     }
 
-    return {
+    return solver.withPathEnergy({
       maxRegionCost,
       totalRegionCost,
-    }
+    })
   }
 
   protected createGreedyFinalRouteSolver(
@@ -1676,7 +1727,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    const summary = { maxRegionCost, totalRegionCost }
+    const summary = this.withPathEnergy({ maxRegionCost, totalRegionCost })
     const shouldFinish =
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS

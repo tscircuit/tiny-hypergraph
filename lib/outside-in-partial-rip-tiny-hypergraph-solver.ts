@@ -1033,7 +1033,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   ): boolean {
     const bestSummary = this.bestSolvedRoundSummary
     if (!bestSummary) return true
-    if (!this.useComplexityAwareSelection) {
+    if (!this.useComplexityAwareSelection && this.VIA_COST === 0) {
       return this.compareRegionCostSummaries(summary, bestSummary) < 0
     }
 
@@ -1057,6 +1057,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       bestSummary.totalRegionCost <= totalRegionCostCeiling
 
     if (isEligible !== isBestEligible) return isEligible
+    if (this.VIA_COST > 0) {
+      return this.compareRegionCostSummaries(summary, bestSummary) < 0
+    }
     if (isEligible && summary.segmentCount !== bestSummary.segmentCount) {
       return summary.segmentCount < bestSummary.segmentCount
     }
@@ -1109,7 +1112,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       if (regionCost > currentRipThreshold) hotRegionIds.push(regionId)
     }
 
-    const summary: RegionCostSummary = { maxRegionCost, totalRegionCost }
+    const summary = this.withPathEnergy({ maxRegionCost, totalRegionCost })
     const completedRoundSummary: CompletedRoundSummary = {
       ...summary,
       ripCount: state.ripCount,
