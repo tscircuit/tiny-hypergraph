@@ -133,6 +133,7 @@ const isOwnerSubset = <TOwner>(
   possibleSubset: ReadonlySet<TOwner>,
   possibleSuperset: ReadonlySet<TOwner>,
 ): boolean => {
+  if (possibleSubset === possibleSuperset) return true
   if (possibleSubset.size > possibleSuperset.size) return false
   for (const owner of possibleSubset) {
     if (!possibleSuperset.has(owner)) return false
