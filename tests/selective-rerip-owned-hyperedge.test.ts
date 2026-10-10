@@ -130,8 +130,9 @@ test("owned solvers retain legacy routes and fall back before hook effects", () 
   try {
     const pair = [create(false), create(true)]
     TinyHyperGraphSolver.prototype.getHopId = function (...args) {
-      prototypeTrace[pair.indexOf(this as InheritedSelectiveSolver)]!
-        .push("key")
+      prototypeTrace[pair.indexOf(this as InheritedSelectiveSolver)]!.push(
+        "key",
+      )
       return Reflect.apply(canonical, this, args)
     }
     expect(pair[1]!.search()).toEqual(pair[0]!.search())
