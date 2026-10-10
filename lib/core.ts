@@ -528,6 +528,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
+  protected firstSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
@@ -1446,6 +1447,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (left.pathEnergy === undefined || right.pathEnergy === undefined) {
         throw new Error("Physical-via objective requires completed path energy")
       }
+      if (this.firstSolvedStateSummary) {
+        const leftEligible = this.isWithinRegionCostEnvelope(left, this.firstSolvedStateSummary)
+        const rightEligible = this.isWithinRegionCostEnvelope(right, this.firstSolvedStateSummary)
+        if (leftEligible !== rightEligible) return leftEligible ? -1 : 1
+      }
       if (left.pathEnergy !== right.pathEnergy) {
         return left.pathEnergy - right.pathEnergy
       }
@@ -1739,6 +1745,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const summary = this.withPathEnergy({ maxRegionCost, totalRegionCost })
+    this.firstSolvedStateSummary ??= summary
     const shouldFinish =
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS

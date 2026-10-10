@@ -83,6 +83,13 @@ test("physical path energy telescopes and selects completed rounds within the pr
   expect(selection.shouldReplaceBestSolvedState(round(1, 5, 1.051))).toBe(false)
   expect(forward.solver.isWithinRegionCostEnvelope(round(8, 25, 1.04, 10.5), round(10, 20))).toBe(true)
   expect(forward.solver.isWithinRegionCostEnvelope(round(1, 5, 1.051), round(10, 20))).toBe(false)
+  const ordinary = new TinyHyperGraphSolver(topology, problem, options) as unknown as {
+    firstSolvedStateSummary: RegionCostSummary
+    compareRegionCostSummaries(left: RegionCostSummary, right: RegionCostSummary): number
+  }
+  ordinary.firstSolvedStateSummary = round(10, 20)
+  expect(ordinary.compareRegionCostSummaries(round(1, 5, 1.051), round(10, 20))).toBeGreaterThan(0)
+  expect(ordinary.compareRegionCostSummaries(round(8, 25, 1.04, 10.5), round(10, 20))).toBeLessThan(0)
 
   const legacy = new OutsideInPartialRipTinyHyperGraphSolver(topology, problem, { ...options, VIA_COST: 0 })
   const legacySelection = legacy as unknown as SelectionAccess
