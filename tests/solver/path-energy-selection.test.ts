@@ -173,9 +173,9 @@ test("physical path energy telescopes and selects completed rounds within the pr
     legacySelection.firstCompletedRoundSummary
   legacySelection.bestSolvedRoundSummary =
     legacySelection.firstCompletedRoundSummary
-  expect(legacySelection.shouldReplaceBestSolvedState(round(20, 10, 0.99))).toBe(
-    true,
-  )
+  expect(
+    legacySelection.shouldReplaceBestSolvedState(round(20, 10, 0.99)),
+  ).toBe(true)
   expect(
     legacy.withPathEnergy({ maxRegionCost: 1, totalRegionCost: 10 }).pathEnergy,
   ).toBeUndefined()
