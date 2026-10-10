@@ -262,6 +262,13 @@ export interface TinyHyperGraphSolverOptions {
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   /** Opt-in quadratic penalty for concentrating traces in low-capacity regions. */
   TRACE_DENSITY_COST_FACTOR?: number
+  /** Congestion weight for intersections between traces on disjoint layers. */
+  CROSS_LAYER_INTERSECTION_COST_FACTOR?: number
+  /**
+   * Fixed cost per estimated physical via, independent of region area:
+   * two per same-layer crossing and one per entry/exit layer change.
+   */
+  VIA_COST?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS?: number
@@ -309,6 +316,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   TRACE_DENSITY_COST_FACTOR?: number
+  CROSS_LAYER_INTERSECTION_COST_FACTOR?: number
+  VIA_COST?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   MAX_ITERATIONS: number
@@ -364,6 +373,15 @@ export const applyTinyHyperGraphSolverOptions = (
       0,
       options.TRACE_DENSITY_COST_FACTOR,
     )
+  }
+  if (options.CROSS_LAYER_INTERSECTION_COST_FACTOR !== undefined) {
+    solver.CROSS_LAYER_INTERSECTION_COST_FACTOR = Math.max(
+      0,
+      options.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+    )
+  }
+  if (options.VIA_COST !== undefined) {
+    solver.VIA_COST = Math.max(0, options.VIA_COST)
   }
   if (options.USE_LAZY_ROUTE_HEURISTIC !== undefined) {
     solver.USE_LAZY_ROUTE_HEURISTIC = options.USE_LAZY_ROUTE_HEURISTIC
@@ -448,6 +466,9 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
+  CROSS_LAYER_INTERSECTION_COST_FACTOR:
+    solver.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+  VIA_COST: solver.VIA_COST,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
@@ -525,6 +546,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
   TRACE_DENSITY_COST_FACTOR = 0
+  CROSS_LAYER_INTERSECTION_COST_FACTOR = 1
+  VIA_COST = 0
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
 
@@ -1071,6 +1094,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
       this.TRACE_DENSITY_COST_FACTOR,
+      this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+      this.VIA_COST,
     )
   }
 

@@ -673,6 +673,9 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
+      0,
+      this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+      this.VIA_COST,
     )
   }
 
