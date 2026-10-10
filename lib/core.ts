@@ -1421,12 +1421,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     })
   }
 
-  protected restoreBestSolvedState() {
-    if (!this.bestSolvedStateSnapshot) {
-      return
-    }
-
-    const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+  protected adoptSolvedState(snapshot: SolvedStateSnapshot) {
     this.state.portAssignment = snapshot.portAssignment
     this.state.regionSegments = snapshot.regionSegments
     this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
@@ -1438,6 +1433,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     this.state.goalPortId = -1
+  }
+
+  protected restoreBestSolvedState() {
+    if (!this.bestSolvedStateSnapshot) {
+      return
+    }
+
+    const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+    this.adoptSolvedState(snapshot)
   }
 
   protected getRemainingRouteIdsForGreedyFinalRoute(): RouteId[] {
@@ -1511,13 +1515,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
+    const startingSnapshot: SolvedStateSnapshot = {
       portAssignment: this.state.portAssignment,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
       regionCongestionCost: this.state.regionCongestionCost,
       ripCount: this.state.ripCount,
-    })
+    }
 
     let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
     // Do not reset the rerip budget by opening a new cost-aware search after
@@ -1562,15 +1566,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
-      this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
+      this.bestSolvedStateSnapshot = undefined
+      this.bestSolvedStateSummary = this.summarizeSolvedState(greedySolver)
+      this.adoptSolvedState({
         portAssignment: greedySolver.state.portAssignment,
         regionSegments: greedySolver.state.regionSegments,
         regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
         regionCongestionCost: greedySolver.state.regionCongestionCost,
         ripCount: greedySolver.state.ripCount,
       })
-      this.bestSolvedStateSummary = this.summarizeSolvedState(greedySolver)
-      this.restoreBestSolvedState()
       this.stats = {
         ...this.stats,
         acceptedGreedyFinalRouteOnTimeout: true,
