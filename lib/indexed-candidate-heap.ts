@@ -240,13 +240,11 @@ const nativeHeapDescriptors = new Map<string, unknown>(
     "closeHop",
     "siftUp",
     "siftDown",
-  ].map(
-    (name): [string, unknown] => [
-      name,
-      Object.getOwnPropertyDescriptor(IndexedCandidateHeap.prototype, name)!
-        .value,
-    ],
-  ),
+  ].map((name): [string, unknown] => [
+    name,
+    Object.getOwnPropertyDescriptor(IndexedCandidateHeap.prototype, name)!
+      .value,
+  ]),
 )
 const nativeClosureEpochGetter = Object.getOwnPropertyDescriptor(
   IndexedCandidateHeap.prototype,

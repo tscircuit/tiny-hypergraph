@@ -819,7 +819,6 @@ registerRegionalHopFrontierMethods(
   SelectiveReripTinyHyperGraphSolver.prototype,
   ["onOutOfCandidates"],
 )
-registerRegionalHopFrontierMethods(
-  CongestionAwareFinalRouteSolver.prototype,
-  ["onOutOfCandidates"],
-)
+registerRegionalHopFrontierMethods(CongestionAwareFinalRouteSolver.prototype, [
+  "onOutOfCandidates",
+])

@@ -36,7 +36,9 @@ const makeTopology = (): TinyHyperGraphTopology => ({
   regionCenterX: new Float64Array(5),
   regionCenterY: new Float64Array(5),
   portAngleForRegion1: Int32Array.from([0, 1000, 2000, 3000, 4000, 5000, 6000]),
-  portAngleForRegion2: Int32Array.from([9000, 8000, 7000, 6000, 5000, 4000, 3000]),
+  portAngleForRegion2: Int32Array.from([
+    9000, 8000, 7000, 6000, 5000, 4000, 3000,
+  ]),
   portX: Float64Array.from([0, 1, 2, 3, 4, 5, 6]),
   portY: Float64Array.from([0, 1, -1, 0, 2, 0, 1]),
   portZ: new Int32Array(7),
@@ -201,11 +203,7 @@ const makeManual = (
 ) => {
   const topology = makeTopology()
   topology.regionIncidentPorts[0] = [0, 1, 2, 1, 3]
-  const solver = new Solver(
-    topology,
-    problem,
-    makeOptions(owned, !compact),
-  )
+  const solver = new Solver(topology, problem, makeOptions(owned, !compact))
   solver._setup()
   const heap = makeHeap(topology, compact)
   solver.state.candidateQueue = heap
@@ -272,9 +270,10 @@ test("owned regional frontier retains legacy routing and hook order", () => {
             }
             return { states, error: undefined }
           }
-          expect(run(true), `${Solver.name}/${goal}/${variant}/${budget}`).toEqual(
-            run(false),
-          )
+          expect(
+            run(true),
+            `${Solver.name}/${goal}/${variant}/${budget}`,
+          ).toEqual(run(false))
         }
       }
     }
@@ -352,12 +351,7 @@ test("owned regional frontier retains legacy routing and hook order", () => {
       problem.routeStartPort = Int32Array.from([0, 0])
       problem.routeEndPort = Int32Array.from([5, 5])
       problem.routeNet = Int32Array.from([7, boundary === "route" ? 7 : 8])
-      return makeManual(
-        owned,
-        true,
-        DistanceAwareTinyHyperGraphSolver,
-        problem,
-      )
+      return makeManual(owned, true, DistanceAwareTinyHyperGraphSolver, problem)
     }
     const original = prepare(false)
     const optimized = prepare(true)
@@ -445,7 +439,8 @@ test("owned regional frontier retains legacy routing and hook order", () => {
     }
     const original = run(false)
     expect(run(true), variant).toEqual(original)
-    if (variant === "invalid-first") expect(original.error?.name).toBe("TypeError")
+    if (variant === "invalid-first")
+      expect(original.error?.name).toBe("TypeError")
     else if (variant === "earlier-score-error") {
       expect(original.error?.message).toBe("earlier scoring failure")
     } else {
