@@ -8,7 +8,7 @@ import {
 } from "lib/core"
 import { TinyHyperGraphSectionSolver } from "lib/section-solver"
 
-test("via policy options propagate through section solvers and cached candidate costs", (): void => {
+test("via policy options propagate while physical preference stays out of rip congestion", (): void => {
   const topology: TinyHyperGraphTopology = {
     portCount: 4,
     regionCount: 2,
@@ -80,5 +80,8 @@ test("via policy options propagate through section solvers and cached candidate 
   transition.appendSegmentToRegionCache(0, 0, 1)
   expect(
     transition.state.regionIntersectionCaches[0].existingRegionCost,
-  ).toBeCloseTo(0.327)
+  ).toBeCloseTo(0.027)
+  expect(
+    transition.state.regionIntersectionCaches[0].existingRegionCost,
+  ).toBeLessThan(transition.RIP_THRESHOLD_START)
 })

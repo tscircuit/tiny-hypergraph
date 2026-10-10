@@ -1084,6 +1084,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
+    // Rip thresholds and peak-cost comparisons measure routing capacity.
+    // Physical via preference is charged separately when extending a path.
     return computeRegionCost(
       this.topology.regionWidth[regionId],
       this.topology.regionHeight[regionId],
@@ -1095,7 +1097,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.minViaPadDiameter,
       this.TRACE_DENSITY_COST_FACTOR,
       this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
-      this.VIA_COST,
+      0,
     )
   }
 
@@ -1836,6 +1838,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
+      this.VIA_COST *
+        (2 * newSameLayerIntersections + newEntryExitLayerChanges) +
       regionCongestionCost +
       neighborPortPenalty +
       segmentDistanceCost
