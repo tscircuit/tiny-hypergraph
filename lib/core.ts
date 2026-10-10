@@ -1764,7 +1764,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const shouldFinish =
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
-    if (shouldFinish) {
+    if (this.VIA_COST > 0) {
+      this.captureBestSolvedState(summary)
+      if (shouldFinish) {
+        this.restoreBestSolvedState()
+        maxRegionCost = this.bestSolvedStateSummary!.maxRegionCost
+        totalRegionCost = this.bestSolvedStateSummary!.totalRegionCost
+        regionIdsOverCostThreshold.length = 0
+        for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+          if (state.regionIntersectionCaches[regionId]!.existingRegionCost > currentRipThreshold) {
+            regionIdsOverCostThreshold.push(regionId)
+          }
+        }
+      }
+    } else if (shouldFinish) {
       if (
         !this.bestSolvedStateSummary ||
         this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) <
