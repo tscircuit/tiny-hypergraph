@@ -15,6 +15,7 @@ import {
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
+import { orderRoutesByCrossingDegree } from "./orderRoutesByCrossingDegree"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
@@ -1268,6 +1269,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
+    const shuffledRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    // Learn crossing groups only from a completed round. Route failures still
+    // use the existing reseed order, and the legacy via-free policy is unchanged.
+    const routeOrder =
+      this.VIA_COST > 0 &&
+      state.currentRouteId === undefined &&
+      state.unroutedRoutes.length === 0
+        ? orderRoutesByCrossingDegree(
+            topology,
+            state.regionSegments,
+            problem.routeNet,
+            shuffledRoutes,
+          )
+        : shuffledRoutes
 
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
@@ -1280,7 +1295,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    state.unroutedRoutes = routeOrder
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
