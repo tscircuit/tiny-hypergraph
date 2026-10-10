@@ -1,3 +1,5 @@
+// Frozen oracle from tiny-hypergraph 474f5222e799b54348da41d96a0da0694509fab8.
+// Original SHA256: 6cbc4cb2622a7e547f3c1c16dca37bd4aabdf5ff1bdade575b9a346f34119918
 export type DistinctOwnerBlockerHop<TState, TOwner, THopData = unknown> = {
   state: TState
   distance: number
@@ -84,13 +86,15 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
 
     while (index > 0) {
       const parentIndex = Math.floor((index - 1) / 2)
-      if (compareLabels(this.heap[parentIndex]!, label) <= 0) {
+      if (compareLabels(this.heap[parentIndex]!, this.heap[index]!) <= 0) {
         break
       }
-      this.heap[index] = this.heap[parentIndex]!
+      ;[this.heap[parentIndex], this.heap[index]] = [
+        this.heap[index]!,
+        this.heap[parentIndex]!,
+      ]
       index = parentIndex
     }
-    this.heap[index] = label
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
@@ -99,6 +103,7 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
     if (!first || !last) return null
     if (this.heap.length === 0) return first
 
+    this.heap[0] = last
     let index = 0
     while (true) {
       const leftIndex = index * 2 + 1
@@ -106,24 +111,23 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
       let bestIndex = index
       if (
         leftIndex < this.heap.length &&
-        compareLabels(this.heap[leftIndex]!, last) < 0
+        compareLabels(this.heap[leftIndex]!, this.heap[bestIndex]!) < 0
       ) {
         bestIndex = leftIndex
       }
       if (
         rightIndex < this.heap.length &&
-        compareLabels(
-          this.heap[rightIndex]!,
-          bestIndex === index ? last : this.heap[bestIndex]!,
-        ) < 0
+        compareLabels(this.heap[rightIndex]!, this.heap[bestIndex]!) < 0
       ) {
         bestIndex = rightIndex
       }
       if (bestIndex === index) break
-      this.heap[index] = this.heap[bestIndex]!
+      ;[this.heap[index], this.heap[bestIndex]] = [
+        this.heap[bestIndex]!,
+        this.heap[index]!,
+      ]
       index = bestIndex
     }
-    this.heap[index] = last
 
     return first
   }
@@ -239,7 +243,7 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
   }
 }
 
-export const findDistinctOwnerBlockerPath = <
+export const legacyFindDistinctOwnerBlockerPath = <
   TState,
   TStateKey,
   TOwner,
