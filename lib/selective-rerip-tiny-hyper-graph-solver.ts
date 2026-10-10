@@ -1,3 +1,4 @@
+import { registerRegionalHopFrontierMethods } from "./regional-hop-frontier-native-methods"
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
@@ -813,3 +814,11 @@ class CongestionAwareFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver
     }
   }
 }
+
+registerRegionalHopFrontierMethods(
+  SelectiveReripTinyHyperGraphSolver.prototype,
+  ["onOutOfCandidates"],
+)
+registerRegionalHopFrontierMethods(CongestionAwareFinalRouteSolver.prototype, [
+  "onOutOfCandidates",
+])

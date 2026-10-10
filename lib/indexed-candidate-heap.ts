@@ -16,6 +16,8 @@ export interface CompactCandidateHopIndex {
  * existing entry in place, and a dequeued hop is closed until the queue is
  * cleared for the next route search.
  */
+const nativeIndexedCandidateHeaps = new WeakSet<object>()
+
 export class IndexedCandidateHeap {
   private items: Candidate[] = []
   private indexByHopId = new Map<number, number>()
@@ -23,15 +25,24 @@ export class IndexedCandidateHeap {
   private hopStateGeneration?: Uint32Array
   private hopIndexOrClosed?: Int32Array
   private currentHopStateGeneration = 1
+  private closureEpochToken: object = {}
 
   constructor(
     private readonly regionCount: number,
     private readonly compactHopIndex?: CompactCandidateHopIndex,
   ) {
+    if (new.target === IndexedCandidateHeap) {
+      nativeIndexedCandidateHeaps.add(this)
+    }
     if (compactHopIndex) {
       this.hopStateGeneration = new Uint32Array(compactHopIndex.hopCapacity)
       this.hopIndexOrClosed = new Int32Array(compactHopIndex.hopCapacity)
     }
+  }
+
+  /** Changes on every clear, including Map storage and generation wrap. */
+  get closureEpoch(): object {
+    return this.closureEpochToken
   }
 
   get length(): number {
@@ -43,6 +54,7 @@ export class IndexedCandidateHeap {
   }
 
   clear(): void {
+    this.closureEpochToken = {}
     this.items.length = 0
     this.indexByHopId.clear()
     this.closedHopIds.clear()
@@ -210,4 +222,56 @@ export class IndexedCandidateHeap {
     this.items[index] = candidate
     this.setQueuedHopIndex(this.getHopId(candidate), index)
   }
+}
+
+const nativeHeapDescriptors = new Map<string, unknown>(
+  [
+    "queue",
+    "dequeue",
+    "clear",
+    "isClosedHopId",
+    "isClosedHop",
+    "toArray",
+    "getHopId",
+    "getHopIdFromValues",
+    "getQueuedHopIndex",
+    "isHopClosed",
+    "setQueuedHopIndex",
+    "closeHop",
+    "siftUp",
+    "siftDown",
+  ].map((name): [string, unknown] => [
+    name,
+    Object.getOwnPropertyDescriptor(IndexedCandidateHeap.prototype, name)!
+      .value,
+  ]),
+)
+const nativeClosureEpochGetter = Object.getOwnPropertyDescriptor(
+  IndexedCandidateHeap.prototype,
+  "closureEpoch",
+)!.get
+
+/** Reject custom queues without invoking their public method accessors. */
+export const isNativeIndexedCandidateHeap = (
+  queue: object,
+): queue is IndexedCandidateHeap => {
+  if (!nativeIndexedCandidateHeaps.has(queue)) return false
+  for (const [name, method] of nativeHeapDescriptors) {
+    let receiver: object | null = queue
+    let descriptor: PropertyDescriptor | undefined
+    while (receiver !== null) {
+      descriptor = Object.getOwnPropertyDescriptor(receiver, name)
+      if (descriptor) break
+      receiver = Object.getPrototypeOf(receiver)
+    }
+    if (!descriptor || !("value" in descriptor)) return false
+    if (descriptor.value !== method) return false
+  }
+  let receiver: object | null = queue
+  while (receiver !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(receiver, "closureEpoch")
+    if (descriptor) return descriptor.get === nativeClosureEpochGetter
+    receiver = Object.getPrototypeOf(receiver)
+  }
+  return false
 }

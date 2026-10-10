@@ -1,3 +1,4 @@
+import { registerRegionalHopFrontierMethods } from "./regional-hop-frontier-native-methods"
 import {
   type Candidate,
   createEmptyRegionIntersectionCache,
@@ -1241,3 +1242,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     })
   }
 }
+
+registerRegionalHopFrontierMethods(
+  OutsideInPartialRipTinyHyperGraphSolver.prototype,
+  [
+    "computeH",
+    "getRouteStartPortId",
+    "getRouteEndPortId",
+    "getStartingNextRegionId",
+    "onPathFound",
+  ],
+)
