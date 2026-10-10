@@ -1175,13 +1175,17 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       qualityBaseline.maxRegionCost * (1 - targetImprovementRatio)
     const maxTargetTotalRegionCost =
       qualityBaseline.totalRegionCost * (1 + maxTotalCostGrowthRatio)
+    // The early-stop target must hold for the physical solution we return,
+    // rather than a lower-pressure round rejected by the energy selector.
+    const targetSummary =
+      this.VIA_COST > 0 ? this.bestSolvedRoundSummary! : completedRoundSummary
     const targetReached =
       this.useComplexityAwareSelection &&
       state.ripCount > qualityBaseline.ripCount &&
       targetImprovementRatio > 0 &&
-      maxRegionCost <= targetMaxRegionCost &&
-      totalRegionCost <= maxTargetTotalRegionCost &&
-      segmentCount <= qualityBaseline.segmentCount
+      targetSummary.maxRegionCost <= targetMaxRegionCost &&
+      targetSummary.totalRegionCost <= maxTargetTotalRegionCost &&
+      targetSummary.segmentCount <= qualityBaseline.segmentCount
     if (targetReached) this.partialRipTargetReached = true
     this.stats = {
       ...this.stats,
