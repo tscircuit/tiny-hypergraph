@@ -1177,7 +1177,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       port1Id,
       port2Id,
     )
-    setNewIntersectionCounts(regionCache, segmentGeometry)
+    // The physical objective needs insertion-independent crossings. Keep the
+    // existing capacity-only search unchanged when no via objective is used.
+    setNewIntersectionCounts(regionCache, segmentGeometry, this.VIA_COST > 0)
     const newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
     const newCrossLayerIntersections =
       segmentGeometry.crossingLayerIntersectionCount
@@ -1950,7 +1952,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         currentCandidate.portId,
         neighborPortId,
       )
-      setNewIntersectionCounts(regionCache, segmentGeometry)
+      setNewIntersectionCounts(regionCache, segmentGeometry, this.VIA_COST > 0)
       newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
       newCrossLayerIntersections =
         segmentGeometry.crossingLayerIntersectionCount

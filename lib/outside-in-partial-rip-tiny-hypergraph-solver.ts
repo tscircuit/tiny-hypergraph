@@ -711,9 +711,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     maximumCost: number,
     segmentDistance: number,
   ): number {
-    // Reverse edges pay the port they will enter in the completed forward
-    // path. Adjust the pruning bound too, before computeG applies its bound.
-    const penaltyCorrection = expandingForward
+    // The physical objective uses forward target-port costs in both search
+    // directions. Keep the previous capacity-only search when VIA_COST is 0.
+    // Adjust the bound before computeG prunes the physical candidate.
+    const penaltyCorrection = expandingForward || this.VIA_COST === 0
       ? 0
       : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
         (this.problem.portPenalty?.[neighborPortId] ?? 0)

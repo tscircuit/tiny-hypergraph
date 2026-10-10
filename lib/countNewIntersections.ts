@@ -63,6 +63,7 @@ export const countNewIntersectionsWithValues = (
 export const setNewIntersectionCounts = (
   existingPairs: DynamicAnglePairArrays,
   intersectionCount: MutableIntersectionCount,
+  excludeSharedEndpointCrossings = true,
 ): void => {
   const { netIds, lesserAngles, greaterAngles, layerMasks } = existingPairs
   const { netId, lesserAngle, greaterAngle, layerMask } = intersectionCount
@@ -75,10 +76,11 @@ export const setNewIntersectionCounts = (
     // Proper boundary-chord crossings require four distinct endpoints.
     // Counting a shared angle would otherwise depend on insertion order.
     if (
-      lesserAngle === lesserAngles[i] ||
-      lesserAngle === greaterAngles[i] ||
-      greaterAngle === lesserAngles[i] ||
-      greaterAngle === greaterAngles[i]
+      excludeSharedEndpointCrossings &&
+      (lesserAngle === lesserAngles[i] ||
+        lesserAngle === greaterAngles[i] ||
+        greaterAngle === lesserAngles[i] ||
+        greaterAngle === greaterAngles[i])
     )
       continue
 
