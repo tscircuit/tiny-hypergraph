@@ -714,10 +714,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     // The physical objective uses forward target-port costs in both search
     // directions. Keep the previous capacity-only search when VIA_COST is 0.
     // Adjust the bound before computeG prunes the physical candidate.
-    const penaltyCorrection = expandingForward || this.VIA_COST === 0
-      ? 0
-      : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
-        (this.problem.portPenalty?.[neighborPortId] ?? 0)
+    const penaltyCorrection =
+      expandingForward || this.VIA_COST === 0
+        ? 0
+        : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
+          (this.problem.portPenalty?.[neighborPortId] ?? 0)
     return (
       this.computeG(
         candidate,
