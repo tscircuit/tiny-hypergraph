@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { RegionCostSummary, TinyHyperGraphProblem, TinyHyperGraphTopology } from "lib/core"
+import { TinyHyperGraphSolver, type RegionCostSummary, type TinyHyperGraphProblem, type TinyHyperGraphTopology } from "lib/core"
 import { OutsideInPartialRipTinyHyperGraphSolver } from "lib/outside-in-partial-rip-tiny-hypergraph-solver"
 import { TinyHyperGraphSectionSolver } from "lib/section-solver"
 
@@ -66,6 +66,10 @@ test("physical path energy telescopes and selects completed rounds within the pr
   }
   const forward = build(false)
   expect(build(true).summary.pathEnergy).toBeCloseTo(forward.summary.pathEnergy!)
+  const greedy = new TinyHyperGraphSolver(topology, problem, options)
+  greedy.state = forward.solver.state
+  const parentSummary = (forward.solver as unknown as { summarizeSolvedState(solver: TinyHyperGraphSolver): RegionCostSummary }).summarizeSolvedState(greedy)
+  expect(parentSummary.pathEnergy).toBeCloseTo(forward.summary.pathEnergy!)
   const round = (pathEnergy: number, segmentCount: number, maxRegionCost = 1, totalRegionCost = 10): RoundSummary => ({
     pathEnergy, segmentCount, maxRegionCost, totalRegionCost,
     ripCount: 1, maxRegionSegmentCount: segmentCount, squaredRegionSegmentCount: segmentCount * segmentCount,

@@ -1466,6 +1466,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   withPathEnergy<T extends RegionCostSummary>(
     summary: T,
     regionIds?: readonly RegionId[],
+    sourceState: TinyHyperGraphWorkingState = this.state,
   ): T & RegionCostSummary {
     if (this.VIA_COST <= 0) return summary
 
@@ -1473,11 +1474,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     let segmentDistance = 0
     let portPenaltyCost = 0
     for (const regionId of regionIds ?? range(this.topology.regionCount)) {
-      const cache = this.state.regionIntersectionCaches[regionId]!
+      const cache = sourceState.regionIntersectionCaches[regionId]!
       estimatedViaCount +=
         2 * cache.existingSameLayerIntersections +
         cache.existingEntryExitLayerChanges
-      for (const [, fromPortId, toPortId] of this.state.regionSegments[regionId]!) {
+      for (const [, fromPortId, toPortId] of sourceState.regionSegments[regionId]!) {
         portPenaltyCost += this.problem.portPenalty?.[toPortId] ?? 0
         if (this.ADD_SEGMENT_DISTANCE_TO_G) {
           segmentDistance += Math.hypot(
@@ -1583,10 +1584,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       totalRegionCost += regionCost
     }
 
-    return solver.withPathEnergy({
+    return this.withPathEnergy({
       maxRegionCost,
       totalRegionCost,
-    })
+    }, undefined, solver.state)
   }
 
   protected createGreedyFinalRouteSolver(
