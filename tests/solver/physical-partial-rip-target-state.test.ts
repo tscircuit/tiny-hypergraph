@@ -4,9 +4,7 @@ import {
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/core"
-import {
-  OutsideInPartialRipTinyHyperGraphSolver,
-} from "lib/outside-in-partial-rip-tiny-hypergraph-solver"
+import { OutsideInPartialRipTinyHyperGraphSolver } from "lib/outside-in-partial-rip-tiny-hypergraph-solver"
 
 test("physical rerip targets use the selected output", (): void => {
   const topology: TinyHyperGraphTopology = {
