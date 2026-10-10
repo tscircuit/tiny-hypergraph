@@ -389,7 +389,8 @@ export const loadSerializedHyperGraph = (
         regionConnectedZMask[regionIndex] |= 1 << z
       }
       if (
-        (regionConnectedZMask[regionIndex] & regionAvailableZMask[regionIndex]) !==
+        (regionConnectedZMask[regionIndex] &
+          regionAvailableZMask[regionIndex]) !==
         regionConnectedZMask[regionIndex]
       ) {
         throw new Error(

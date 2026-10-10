@@ -25,8 +25,12 @@ test("loads connected copper layers only when a net and available layers prove t
     Array.from(loadSerializedHyperGraph(graph).topology.regionConnectedZMask!),
   ).toEqual([3])
   graph.regions[0]!.d.netId = -1
-  expect(() => loadSerializedHyperGraph(graph)).toThrow("connected copper without a net")
+  expect(() => loadSerializedHyperGraph(graph)).toThrow(
+    "connected copper without a net",
+  )
   graph.regions[0]!.d.netId = 0
   graph.regions[0]!.d.connectedZ = [0, 2]
-  expect(() => loadSerializedHyperGraph(graph)).toThrow("connects unavailable layers")
+  expect(() => loadSerializedHyperGraph(graph)).toThrow(
+    "connects unavailable layers",
+  )
 })

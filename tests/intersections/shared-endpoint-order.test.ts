@@ -1,30 +1,61 @@
 import { expect, test } from "bun:test"
-import { TinyHyperGraphSolver, type TinyHyperGraphProblem, type TinyHyperGraphTopology } from "lib/core"
+import {
+  TinyHyperGraphSolver,
+  type TinyHyperGraphProblem,
+  type TinyHyperGraphTopology,
+} from "lib/core"
 import { countIntersectionsFromAnglePairsDynamic } from "lib/countIntersectionsFromAnglePairsDynamic"
-import { countNewIntersections, createDynamicAnglePairArrays } from "lib/countNewIntersections"
+import {
+  countNewIntersections,
+  createDynamicAnglePairArrays,
+} from "lib/countNewIntersections"
 import type { DynamicAnglePair } from "lib/types"
 
 test("shared boundary angles preserve proper crossing counts and cache energy in every insertion order", () => {
-  const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
+  const orders = [
+    [0, 1, 2],
+    [0, 2, 1],
+    [1, 0, 2],
+    [1, 2, 0],
+    [2, 0, 1],
+    [2, 1, 0],
+  ]
   for (const layer of [0, 1]) {
-    const pairs: DynamicAnglePair[] = [[0, 0, 0, 9000, 0], [1, 0, 0, 18000, 0], [2, 4500, layer, 13500, layer]]
-    const expected: [number, number, number] = layer === 0 ? [1, 0, 0] : [0, 1, 0]
+    const pairs: DynamicAnglePair[] = [
+      [0, 0, 0, 9000, 0],
+      [1, 0, 0, 18000, 0],
+      [2, 4500, layer, 13500, layer],
+    ]
+    const expected: [number, number, number] =
+      layer === 0 ? [1, 0, 0] : [0, 1, 0]
     for (const order of orders) {
       const ordered = order.map((index) => pairs[index]!)
       expect(countIntersectionsFromAnglePairsDynamic(ordered)).toEqual(expected)
       const incremental = [0, 0, 0]
       for (let index = 0; index < ordered.length; index++) {
-        const delta = countNewIntersections(createDynamicAnglePairArrays(ordered.slice(0, index)), ordered[index]!)
-        for (let field = 0; field < 3; field++) incremental[field]! += delta[field]!
+        const delta = countNewIntersections(
+          createDynamicAnglePairArrays(ordered.slice(0, index)),
+          ordered[index]!,
+        )
+        for (let field = 0; field < 3; field++)
+          incremental[field]! += delta[field]!
       }
       expect(incremental).toEqual(expected)
     }
   }
-  for (const [a, b] of [[0, 18000], [9000, 18000], [0, 9000]]) {
+  for (const [a, b] of [
+    [0, 18000],
+    [9000, 18000],
+    [0, 9000],
+  ]) {
     const first: DynamicAnglePair = [0, 0, 0, 9000, 0]
     const tied: DynamicAnglePair = [1, a!, 1, b!, 1]
-    expect(countNewIntersections(createDynamicAnglePairArrays([first]), tied)).toEqual([0, 0, 0])
-    expect(countNewIntersections(createDynamicAnglePairArrays([tied]), first)).toEqual([0, 0, 0])
+    expect(
+      countNewIntersections(createDynamicAnglePairArrays([first]), tied),
+    ).toEqual([0, 0, 0])
+    expect(
+      countNewIntersections(createDynamicAnglePairArrays([tied]), first),
+    ).toEqual([0, 0, 0])
   }
   const topology: TinyHyperGraphTopology = {
     portCount: 6,
@@ -51,7 +82,9 @@ test("shared boundary angles preserve proper crossing counts and cache energy in
   }
   let firstEnergy: number | undefined
   for (const order of orders) {
-    const solver = new TinyHyperGraphSolver(topology, problem, { VIA_COST: 0.6 })
+    const solver = new TinyHyperGraphSolver(topology, problem, {
+      VIA_COST: 0.6,
+    })
     for (const routeId of order) {
       const from = problem.routeStartPort[routeId]!
       const to = problem.routeEndPort[routeId]!
@@ -61,7 +94,10 @@ test("shared boundary angles preserve proper crossing counts and cache energy in
     }
     const cache = solver.state.regionIntersectionCaches[0]!
     expect(cache.existingSameLayerIntersections).toBe(1)
-    const energy = solver.withPathEnergy({ maxRegionCost: cache.existingRegionCost, totalRegionCost: cache.existingRegionCost }).pathEnergy!
+    const energy = solver.withPathEnergy({
+      maxRegionCost: cache.existingRegionCost,
+      totalRegionCost: cache.existingRegionCost,
+    }).pathEnergy!
     firstEnergy ??= energy
     expect(energy).toBeCloseTo(firstEnergy)
   }

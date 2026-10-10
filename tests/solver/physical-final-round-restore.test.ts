@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test"
-import { createEmptyRegionIntersectionCache, TinyHyperGraphSolver, type TinyHyperGraphProblem, type TinyHyperGraphTopology } from "lib/core"
+import {
+  createEmptyRegionIntersectionCache,
+  TinyHyperGraphSolver,
+  type TinyHyperGraphProblem,
+  type TinyHyperGraphTopology,
+} from "lib/core"
 import { DistanceAwareTinyHyperGraphSolver } from "lib/distance-aware-tiny-hypergraph-solver"
 
 test("ordinary physical-via solvers emit the best completed path when the final round is worse", () => {
@@ -7,7 +12,12 @@ test("ordinary physical-via solvers emit the best completed path when the final 
     portCount: 4,
     regionCount: 2,
     regionIncidentPorts: [[0, 1, 2, 3], []],
-    incidentPortRegion: [[0, 1], [0, 1], [0, 1], [0, 1]],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 1],
+      [0, 1],
+      [0, 1],
+    ],
     regionWidth: Float64Array.of(10, 1),
     regionHeight: Float64Array.of(10, 1),
     regionCenterX: new Float64Array(2),
@@ -28,10 +38,16 @@ test("ordinary physical-via solvers emit the best completed path when the final 
   }
   const complete = (solver: TinyHyperGraphSolver, middle: number) => {
     solver.state.regionSegments = [[], []]
-    solver.state.regionIntersectionCaches = Array.from({ length: 2 }, createEmptyRegionIntersectionCache)
+    solver.state.regionIntersectionCaches = Array.from(
+      { length: 2 },
+      createEmptyRegionIntersectionCache,
+    )
     solver.state.currentRouteNetId = 0
     solver.state.portAssignment.fill(-1)
-    for (const [from, to] of [[0, middle], [middle, 3]]) {
+    for (const [from, to] of [
+      [0, middle],
+      [middle, 3],
+    ]) {
       solver.state.regionSegments[0]!.push([0, from!, to!])
       solver.state.portAssignment[from!] = 0
       solver.state.portAssignment[to!] = 0
@@ -41,7 +57,10 @@ test("ordinary physical-via solvers emit the best completed path when the final 
     solver.state.unroutedRoutes = []
     solver.onAllRoutesRouted()
   }
-  for (const Solver of [TinyHyperGraphSolver, DistanceAwareTinyHyperGraphSolver]) {
+  for (const Solver of [
+    TinyHyperGraphSolver,
+    DistanceAwareTinyHyperGraphSolver,
+  ]) {
     for (const viaCost of [0, 0.6]) {
       const solver = new Solver(topology, problem, {
         VIA_COST: viaCost,
@@ -55,13 +74,23 @@ test("ordinary physical-via solvers emit the best completed path when the final 
       complete(solver, 1)
       expect(solver.solved).toBe(true)
       const expectedMiddle = viaCost > 0 ? 2 : 1
-      expect(solver.state.regionSegments[0]).toEqual([[0, 0, expectedMiddle], [0, expectedMiddle, 3]])
-      const path = solver.getOutput().solvedRoutes![0]!.path.map((candidate) => candidate.portId)
+      expect(solver.state.regionSegments[0]).toEqual([
+        [0, 0, expectedMiddle],
+        [0, expectedMiddle, 3],
+      ])
+      const path = solver
+        .getOutput()
+        .solvedRoutes![0]!.path.map((candidate) => candidate.portId)
       expect(path).toEqual(["port-0", `port-${expectedMiddle}`, "port-3"])
       if (viaCost > 0) {
-        expect(solver.state.regionIntersectionCaches[0]!.existingEntryExitLayerChanges).toBe(0)
+        expect(
+          solver.state.regionIntersectionCaches[0]!
+            .existingEntryExitLayerChanges,
+        ).toBe(0)
         expect(solver.stats.maxRegionCost).toBe(solver.stats.bestMaxRegionCost)
-        expect(solver.stats.totalRegionCost).toBe(solver.stats.bestTotalRegionCost)
+        expect(solver.stats.totalRegionCost).toBe(
+          solver.stats.bestTotalRegionCost,
+        )
       }
     }
   }

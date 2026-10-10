@@ -717,12 +717,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       ? 0
       : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
         (this.problem.portPenalty?.[neighborPortId] ?? 0)
-    return this.computeG(
-      candidate,
-      neighborPortId,
-      maximumCost - penaltyCorrection,
-      segmentDistance,
-    ) + penaltyCorrection
+    return (
+      this.computeG(
+        candidate,
+        neighborPortId,
+        maximumCost - penaltyCorrection,
+        segmentDistance,
+      ) + penaltyCorrection
+    )
   }
 
   private buildJoinedCandidate(

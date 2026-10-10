@@ -31,7 +31,8 @@ export const orderRoutesByCrossingDegree = (
       const dx = portX[secondPort] - startX
       const dy = portY[secondPort] - startY
       for (let previousIndex = 0; previousIndex < index; previousIndex++) {
-        const [otherRouteId, otherFirstPort, otherSecondPort] = segments[previousIndex]
+        const [otherRouteId, otherFirstPort, otherSecondPort] =
+          segments[previousIndex]
         if (routeNetIds[otherRouteId] === netId) continue
         const otherLayerMask =
           (1 << portZ[otherFirstPort]) | (1 << portZ[otherSecondPort])
@@ -44,7 +45,12 @@ export const orderRoutesByCrossingDegree = (
         const offsetY = portY[otherFirstPort] - startY
         const position = (offsetX * otherDy - offsetY * otherDx) / denominator
         const otherPosition = (offsetX * dy - offsetY * dx) / denominator
-        if (position <= 0 || position >= 1 || otherPosition <= 0 || otherPosition >= 1) {
+        if (
+          position <= 0 ||
+          position >= 1 ||
+          otherPosition <= 0 ||
+          otherPosition >= 1
+        ) {
           continue
         }
         degrees[routeId] += 1
@@ -53,6 +59,8 @@ export const orderRoutesByCrossingDegree = (
     }
   }
   const orderedRoutes = [...routeOrder]
-  orderedRoutes.sort((first, second): number => degrees[first] - degrees[second])
+  orderedRoutes.sort(
+    (first, second): number => degrees[first] - degrees[second],
+  )
   return orderedRoutes
 }

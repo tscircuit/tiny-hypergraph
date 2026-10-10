@@ -667,9 +667,12 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   }
 
   captureBestState(summary: RegionCostSummary) {
-    const eligible = this.VIA_COST <= 0 ||
+    const eligible =
+      this.VIA_COST <= 0 ||
       this.isWithinRegionCostEnvelope(summary, this.baselineSummary)
-    const bestEligible = this.bestSummary === undefined || this.VIA_COST <= 0 ||
+    const bestEligible =
+      this.bestSummary === undefined ||
+      this.VIA_COST <= 0 ||
       this.isWithinRegionCostEnvelope(this.bestSummary, this.baselineSummary)
     if (
       this.bestSummary &&
@@ -775,10 +778,13 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     const totalRegionCost =
       this.immutableRegionSummary.totalRegionCost + mutableTotalRegionCost
 
-    const summary = this.withPathEnergy({
-      maxRegionCost,
-      totalRegionCost,
-    }, this.mutableRegionIds)
+    const summary = this.withPathEnergy(
+      {
+        maxRegionCost,
+        totalRegionCost,
+      },
+      this.mutableRegionIds,
+    )
     if (summary.pathEnergy !== undefined) {
       if (this.immutableRegionSummary.pathEnergy === undefined) {
         throw new Error("Physical-via objective requires immutable path energy")
@@ -964,18 +970,17 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       ),
       this.sectionRegionIds,
     )
-    this.outsideSectionBaselineSummary =
-      this.baselineSolver.withPathEnergy(
-        summarizeRegionIntersectionCachesExcludingRegionIds(
-          this.baselineSolver.state.regionIntersectionCaches,
-          this.sectionRegionIds,
-        ),
-        this.VIA_COST > 0
-          ? range(topology.regionCount).filter(
-              (regionId) => !sectionRegionIdSet.has(regionId),
-            )
-          : undefined,
-      )
+    this.outsideSectionBaselineSummary = this.baselineSolver.withPathEnergy(
+      summarizeRegionIntersectionCachesExcludingRegionIds(
+        this.baselineSolver.state.regionIntersectionCaches,
+        this.sectionRegionIds,
+      ),
+      this.VIA_COST > 0
+        ? range(topology.regionCount).filter(
+            (regionId) => !sectionRegionIdSet.has(regionId),
+          )
+        : undefined,
+    )
     this.applySectionRipPolicy()
   }
 
@@ -1077,7 +1082,10 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     )
     const optimized =
       (this.VIA_COST <= 0 ||
-        candidateSolver.isWithinRegionCostEnvelope(candidateSummary, this.baselineSummary)) &&
+        candidateSolver.isWithinRegionCostEnvelope(
+          candidateSummary,
+          this.baselineSummary,
+        )) &&
       compareRegionCostSummaries(candidateSummary, this.baselineSummary) < 0
 
     this.optimizedSolver = optimized ? candidateSolver : this.baselineSolver

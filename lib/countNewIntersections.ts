@@ -79,7 +79,8 @@ export const setNewIntersectionCounts = (
       lesserAngle === greaterAngles[i] ||
       greaterAngle === lesserAngles[i] ||
       greaterAngle === greaterAngles[i]
-    ) continue
+    )
+      continue
 
     const lesserAngleIsInsideInterval =
       lesserAngle < lesserAngles[i] && lesserAngles[i] < greaterAngle
