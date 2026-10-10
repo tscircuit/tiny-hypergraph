@@ -704,6 +704,27 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return path
   }
 
+  private computeOutsideInG(
+    candidate: Candidate,
+    neighborPortId: PortId,
+    expandingForward: boolean,
+    maximumCost: number,
+    segmentDistance: number,
+  ): number {
+    // Reverse edges pay the port they will enter in the completed forward
+    // path. Adjust the pruning bound too, before computeG applies its bound.
+    const penaltyCorrection = expandingForward
+      ? 0
+      : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
+        (this.problem.portPenalty?.[neighborPortId] ?? 0)
+    return this.computeG(
+      candidate,
+      neighborPortId,
+      maximumCost - penaltyCorrection,
+      segmentDistance,
+    ) + penaltyCorrection
+  }
+
   private buildJoinedCandidate(
     forwardCandidate: OutsideInCandidate,
     reverseCandidate: OutsideInCandidate,
@@ -906,9 +927,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
       if (candidate.g >= previousBestCost) continue
 
-      const g = this.computeG(
+      const g = this.computeOutsideInG(
         candidate,
         neighborPortId,
+        expandingForward,
         previousBestCost,
         segmentDistance,
       )
