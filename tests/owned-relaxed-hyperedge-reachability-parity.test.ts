@@ -108,9 +108,7 @@ const makeSearch = (fixture: Fixture) => {
       excludedTemplateIndices,
       getHop(index, yieldedIndex): Hop {
         if (ordinary) {
-          ordinaryHopCalls.push(
-            `${stateName(state)}:${index}:${yieldedIndex}`,
-          )
+          ordinaryHopCalls.push(`${stateName(state)}:${index}:${yieldedIndex}`)
         }
         const captured = capturedHops.get(index)
         if (captured !== undefined) return captured
@@ -192,20 +190,17 @@ test("owned reachability retains original directed-state results", () => {
               original.options,
               budget,
             )
-            const optimizedResult =
-              findDisconnectedOwnedRelaxedHyperedgeSearch(
-                optimized.options,
-                budget,
-              )
+            const optimizedResult = findDisconnectedOwnedRelaxedHyperedgeSearch(
+              optimized.options,
+              budget,
+            )
             expect(optimizedResult).toEqual(originalResult)
             expect(optimized.goalPops).toEqual(original.goalPops)
             expect(optimized.rowRequests).toEqual(original.rowRequests)
             expect(optimized.ordinaryHopCalls).toEqual(
               original.ordinaryHopCalls,
             )
-            expect(optimized.cacheSnapshot()).toEqual(
-              original.cacheSnapshot(),
-            )
+            expect(optimized.cacheSnapshot()).toEqual(original.cacheSnapshot())
           }
         }
       }

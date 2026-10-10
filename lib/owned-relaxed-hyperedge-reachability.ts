@@ -1,6 +1,4 @@
-import type {
-  DistinctOwnerBlockerSearchFailure,
-} from "./find-distinct-owner-blocker-path"
+import type { DistinctOwnerBlockerSearchFailure } from "./find-distinct-owner-blocker-path"
 import type {
   OwnedRelaxedHyperedgeRow,
   OwnedRelaxedHyperedgeSearchOptions,

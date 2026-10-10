@@ -15,8 +15,10 @@ import type { PortId, RegionId, RouteId } from "./types"
 import { getOwnedHyperedgeDistanceBound } from "./owned-relaxed-hyperedge-distance"
 import type { OwnedRelaxedHyperedgeRow } from "./owned-relaxed-hyperedge-types"
 
-const NATIVE_RELAXED_HYPOT = Object.getOwnPropertyDescriptor(Math, "hypot")
-  ?.value
+const NATIVE_RELAXED_HYPOT = Object.getOwnPropertyDescriptor(
+  Math,
+  "hypot",
+)?.value
 
 const hasInheritedDataMethod = (
   instance: object,
@@ -984,13 +986,10 @@ const NATIVE_OWNED_RELAXED_METHODS: readonly (readonly [string, unknown])[] = [
     "isRegionReservedForDifferentNet",
     "isPortReservedForDifferentNet",
     "populateSegmentGeometryScratch",
-  ].map(
-    (key): readonly [string, unknown] => [
-      key,
-      Object.getOwnPropertyDescriptor(TinyHyperGraphSolver.prototype, key)!
-        .value,
-    ],
-  ),
+  ].map((key): readonly [string, unknown] => [
+    key,
+    Object.getOwnPropertyDescriptor(TinyHyperGraphSolver.prototype, key)!.value,
+  ]),
   [
     "getRelaxedSearchExpansionLimit",
     Object.getOwnPropertyDescriptor(

@@ -48,19 +48,21 @@ export type OwnedRelaxedHyperedgeRow<TOwner, THopData = unknown> = {
   maxHopDistance?: number
 }
 
-export type OwnedRelaxedHyperedgeSearchOptions<TOwner, THopData = unknown> =
-  Omit<
-    DistinctOwnerBlockerSearchOptions<
-      OwnedRelaxedSearchState,
-      number,
-      TOwner,
-      THopData
-    >,
-    "getHops"
-  > & {
-    getRow: (
-      state: OwnedRelaxedSearchState,
-    ) => OwnedRelaxedHyperedgeRow<TOwner, THopData>
-    /** The caller has certified all cumulative native distances finite. */
-    finiteCumulativeDistances: boolean
-  }
+export type OwnedRelaxedHyperedgeSearchOptions<
+  TOwner,
+  THopData = unknown,
+> = Omit<
+  DistinctOwnerBlockerSearchOptions<
+    OwnedRelaxedSearchState,
+    number,
+    TOwner,
+    THopData
+  >,
+  "getHops"
+> & {
+  getRow: (
+    state: OwnedRelaxedSearchState,
+  ) => OwnedRelaxedHyperedgeRow<TOwner, THopData>
+  /** The caller has certified all cumulative native distances finite. */
+  finiteCumulativeDistances: boolean
+}

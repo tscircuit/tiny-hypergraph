@@ -541,10 +541,7 @@ export const findDistinctOwnerBlockerPathWithOwnedHyperedges = <
   }
   if (options.checkReachability) {
     const disconnected = options.finiteCumulativeDistances
-      ? findDisconnectedOwnedRelaxedHyperedgeSearch(
-          options,
-          maxExpandedLabels,
-        )
+      ? findDisconnectedOwnedRelaxedHyperedgeSearch(options, maxExpandedLabels)
       : findDisconnectedSearch(
           {
             ...options,
@@ -561,12 +558,7 @@ export const findDistinctOwnerBlockerPathWithOwnedHyperedges = <
     if (disconnected) return disconnected
   }
 
-  type Label = SearchLabel<
-    OwnedRelaxedSearchState,
-    number,
-    TOwner,
-    THopData
-  >
+  type Label = SearchLabel<OwnedRelaxedSearchState, number, TOwner, THopData>
   const labelsByStateKey = new Map<number, Label[]>()
   const queue = new SearchLabelQueue<
     OwnedRelaxedSearchState,
@@ -622,9 +614,7 @@ export const findDistinctOwnerBlockerPathWithOwnedHyperedges = <
           : undefined
       const metadata = hop ?? row.templates[templateIndex]!
       const hopDistance =
-        hop === undefined
-          ? row.getHopDistance!(templateIndex)
-          : hop.distance
+        hop === undefined ? row.getHopDistance!(templateIndex) : hop.distance
       if (!Number.isFinite(hopDistance) || hopDistance < 0) {
         throw new Error(
           "Distinct-owner blocker hops require finite distances >= 0",
@@ -663,8 +653,7 @@ export const findDistinctOwnerBlockerPathWithOwnedHyperedges = <
         owners,
         distance,
         parent: current,
-        incomingHop:
-          hop ?? row.getHop(templateIndex, hopIndex, hopDistance),
+        incomingHop: hop ?? row.getHop(templateIndex, hopIndex, hopDistance),
         queueOrder,
         active: true,
       }

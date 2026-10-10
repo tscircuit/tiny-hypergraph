@@ -58,105 +58,102 @@ const create = (owned: boolean, singleLayer = false) => {
   return solver
 }
 
-test(
-  "owned solvers retain legacy routes and fall back before hook effects",
-  () => {
-    const old = create(false)
-    const current = create(true)
-    expect(
-      getTinyHyperGraphSolverOptions(current).OWNED_RELAXED_HYPEREDGE_SEARCH,
-    ).toBe(true)
-    expect(
-      getTinyHyperGraphSolverOptions(old).OWNED_RELAXED_HYPEREDGE_SEARCH,
-    ).toBe(false)
+test("owned solvers retain legacy routes and fall back before hook effects", () => {
+  const old = create(false)
+  const current = create(true)
+  expect(
+    getTinyHyperGraphSolverOptions(current).OWNED_RELAXED_HYPEREDGE_SEARCH,
+  ).toBe(true)
+  expect(
+    getTinyHyperGraphSolverOptions(old).OWNED_RELAXED_HYPEREDGE_SEARCH,
+  ).toBe(false)
 
-    let ownedRows = 0
-    const inspectable = current as unknown as {
-      getOwnedRelaxedSearchRow: (...args: unknown[]) => unknown
-    }
-    const nativeRow = inspectable.getOwnedRelaxedSearchRow
-    inspectable.getOwnedRelaxedSearchRow = function (...args) {
-      ownedRows++
-      return Reflect.apply(nativeRow, this, args)
-    }
-    for (const forbidden of [new Set<number>(), new Set([1])]) {
-      expect(current.search(forbidden)).toEqual(old.search(forbidden))
-    }
-    expect(ownedRows).toBeGreaterThan(0)
-    current.topology.portY[2] = 2
-    old.topology.portY[2] = 2
-    expect(current.search()).toEqual(old.search())
+  let ownedRows = 0
+  const inspectable = current as unknown as {
+    getOwnedRelaxedSearchRow: (...args: unknown[]) => unknown
+  }
+  const nativeRow = inspectable.getOwnedRelaxedSearchRow
+  inspectable.getOwnedRelaxedSearchRow = function (...args) {
+    ownedRows++
+    return Reflect.apply(nativeRow, this, args)
+  }
+  for (const forbidden of [new Set<number>(), new Set([1])]) {
+    expect(current.search(forbidden)).toEqual(old.search(forbidden))
+  }
+  expect(ownedRows).toBeGreaterThan(0)
+  current.topology.portY[2] = 2
+  old.topology.portY[2] = 2
+  expect(current.search()).toEqual(old.search())
 
-    for (const method of [
-      "getHopId",
-      "isKnownSingleLayerRegion",
-      "isRegionReservedForDifferentNet",
-      "isPortReservedForDifferentNet",
-      "populateSegmentGeometryScratch",
-    ] as const) {
-      const traces: unknown[][] = [[], []]
-      const pair = [create(false, true), create(true, true)]
-      for (let index = 0; index < pair.length; index++) {
-        const solver = pair[index]!
-        const native = solver[method]
-        Object.defineProperty(solver, method, {
-          configurable: true,
-          value: function (...args: unknown[]) {
-            traces[index]!.push(args)
-            return Reflect.apply(native, this, args)
-          },
-        })
-      }
-      expect(pair[1]!.search()).toEqual(pair[0]!.search())
-      expect(traces[1]).toEqual(traces[0])
-      expect(traces[1]!.length).toBeGreaterThan(0)
-    }
-
-    const accessorTraces: string[][] = [[], []]
-    const accessorPair = [create(false), create(true)]
-    for (let index = 0; index < accessorPair.length; index++) {
-      const solver = accessorPair[index]!
-      const native = solver.getHopId
-      Object.defineProperty(solver, "getHopId", {
-        get() {
-          accessorTraces[index]!.push("get")
-          return native
+  for (const method of [
+    "getHopId",
+    "isKnownSingleLayerRegion",
+    "isRegionReservedForDifferentNet",
+    "isPortReservedForDifferentNet",
+    "populateSegmentGeometryScratch",
+  ] as const) {
+    const traces: unknown[][] = [[], []]
+    const pair = [create(false, true), create(true, true)]
+    for (let index = 0; index < pair.length; index++) {
+      const solver = pair[index]!
+      const native = solver[method]
+      Object.defineProperty(solver, method, {
+        configurable: true,
+        value: function (...args: unknown[]) {
+          traces[index]!.push(args)
+          return Reflect.apply(native, this, args)
         },
       })
     }
-    expect(accessorPair[1]!.search()).toEqual(accessorPair[0]!.search())
-    expect(accessorTraces[1]).toEqual(accessorTraces[0])
+    expect(pair[1]!.search()).toEqual(pair[0]!.search())
+    expect(traces[1]).toEqual(traces[0])
+    expect(traces[1]!.length).toBeGreaterThan(0)
+  }
 
-    const canonical = TinyHyperGraphSolver.prototype.getHopId
-    const prototypeTrace: string[][] = [[], []]
-    try {
-      const pair = [create(false), create(true)]
-      TinyHyperGraphSolver.prototype.getHopId = function (...args) {
-        prototypeTrace[pair.indexOf(this as InheritedSelectiveSolver)]!
-          .push("key")
-        return Reflect.apply(canonical, this, args)
-      }
-      expect(pair[1]!.search()).toEqual(pair[0]!.search())
-      expect(prototypeTrace[1]).toEqual(prototypeTrace[0])
-    } finally {
-      TinyHyperGraphSolver.prototype.getHopId = canonical
+  const accessorTraces: string[][] = [[], []]
+  const accessorPair = [create(false), create(true)]
+  for (let index = 0; index < accessorPair.length; index++) {
+    const solver = accessorPair[index]!
+    const native = solver.getHopId
+    Object.defineProperty(solver, "getHopId", {
+      get() {
+        accessorTraces[index]!.push("get")
+        return native
+      },
+    })
+  }
+  expect(accessorPair[1]!.search()).toEqual(accessorPair[0]!.search())
+  expect(accessorTraces[1]).toEqual(accessorTraces[0])
+
+  const canonical = TinyHyperGraphSolver.prototype.getHopId
+  const prototypeTrace: string[][] = [[], []]
+  try {
+    const pair = [create(false), create(true)]
+    TinyHyperGraphSolver.prototype.getHopId = function (...args) {
+      prototypeTrace[pair.indexOf(this as InheritedSelectiveSolver)]!
+        .push("key")
+      return Reflect.apply(canonical, this, args)
     }
+    expect(pair[1]!.search()).toEqual(pair[0]!.search())
+    expect(prototypeTrace[1]).toEqual(prototypeTrace[0])
+  } finally {
+    TinyHyperGraphSolver.prototype.getHopId = canonical
+  }
 
-    const unsafe = [create(false), create(true)]
-    for (const solver of unsafe) solver.topology.portX[1] = Number.MAX_VALUE
-    expect(() => unsafe[0]!.search()).toThrow("distance overflowed")
-    expect(() => unsafe[1]!.search()).toThrow("distance overflowed")
+  const unsafe = [create(false), create(true)]
+  for (const solver of unsafe) solver.topology.portX[1] = Number.MAX_VALUE
+  expect(() => unsafe[0]!.search()).toThrow("distance overflowed")
+  expect(() => unsafe[1]!.search()).toThrow("distance overflowed")
 
-    const hypot = Object.getOwnPropertyDescriptor(Math, "hypot")!
-    try {
-      Object.defineProperty(Math, "hypot", {
-        ...hypot,
-        value: () => Number.NaN,
-      })
-      expect(() => create(false).search()).toThrow("finite distances >= 0")
-      expect(() => create(true).search()).toThrow("finite distances >= 0")
-    } finally {
-      Object.defineProperty(Math, "hypot", hypot)
-    }
-  },
-)
+  const hypot = Object.getOwnPropertyDescriptor(Math, "hypot")!
+  try {
+    Object.defineProperty(Math, "hypot", {
+      ...hypot,
+      value: () => Number.NaN,
+    })
+    expect(() => create(false).search()).toThrow("finite distances >= 0")
+    expect(() => create(true).search()).toThrow("finite distances >= 0")
+  } finally {
+    Object.defineProperty(Math, "hypot", hypot)
+  }
+})
