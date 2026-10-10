@@ -652,7 +652,11 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     scratch.lesserAngle = position1 < position2 ? position1 : position2
     scratch.greaterAngle = position1 < position2 ? position2 : position1
     scratch.layerMask = (1 << z1) | (1 << z2)
-    scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.entryExitLayerChanges = this.getEntryExitLayerChanges(
+      regionId,
+      port1Id,
+      port2Id,
+    )
     scratch.netId = state.currentRouteNetId!
 
     return scratch
@@ -673,6 +677,9 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
+      0,
+      this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+      0,
     )
   }
 
