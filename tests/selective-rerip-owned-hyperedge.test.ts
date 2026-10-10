@@ -6,6 +6,7 @@ import {
   type TinyHyperGraphTopology,
 } from "lib/core"
 import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
+import type { OwnedRelaxedHyperedgeRow } from "lib/owned-relaxed-hyperedge-types"
 
 class InheritedSelectiveSolver extends SelectiveReripTinyHyperGraphSolver {
   search(forbidden: ReadonlySet<number> = new Set()) {
@@ -69,18 +70,54 @@ test("owned solvers retain legacy routes and fall back before hook effects", () 
   ).toBe(false)
 
   let ownedRows = 0
+  const capturedRows: OwnedRelaxedHyperedgeRow<number>[] = []
   const inspectable = current as unknown as {
     getOwnedRelaxedSearchRow: (...args: unknown[]) => unknown
   }
   const nativeRow = inspectable.getOwnedRelaxedSearchRow
   inspectable.getOwnedRelaxedSearchRow = function (...args) {
     ownedRows++
-    return Reflect.apply(nativeRow, this, args)
+    const row = Reflect.apply(
+      nativeRow,
+      this,
+      args,
+    ) as OwnedRelaxedHyperedgeRow<number>
+    capturedRows.push(row)
+    return row
   }
   for (const forbidden of [new Set<number>(), new Set([1])]) {
     expect(current.search(forbidden)).toEqual(old.search(forbidden))
   }
   expect(ownedRows).toBeGreaterThan(0)
+  const lazyRows = capturedRows.filter((row) => row.hyperedgeId !== undefined)
+  expect(lazyRows.length).toBeGreaterThan(1)
+  const firstLazyRow = lazyRows[0]!
+  for (const row of lazyRows) {
+    expect(Object.hasOwn(row, "getHopDistance")).toBe(false)
+    expect(Object.hasOwn(row, "getHop")).toBe(false)
+    expect(row.getHopDistance).toBe(firstLazyRow.getHopDistance)
+    expect(row.getHop).toBe(firstLazyRow.getHop)
+    expect(row.hyperedgeId).toBe(row.templates)
+    for (let index = 0; index < row.templates.length; index++) {
+      const template = row.templates[index]!
+      const distance = Math.hypot(
+        current.topology.portX[row.sourcePortId]! -
+          current.topology.portX[template.state.portId]!,
+        current.topology.portY[row.sourcePortId]! -
+          current.topology.portY[template.state.portId]!,
+      )
+      expect(row.getHopDistance!(index)).toBe(distance)
+      const hop = row.getHop(index, 0)
+      expect(hop.state).toBe(template.state)
+      expect(hop.owners).toBe(template.owners)
+      expect(hop.data).toBe(template.data)
+      expect(hop.distance).toBe(distance)
+      expect(Object.keys(hop)).toEqual(["state", "owners", "data", "distance"])
+      const supplied = row.getHop(index, 0, -0)
+      expect(Object.is(supplied.distance, -0)).toBe(true)
+      expect(supplied).not.toBe(hop)
+    }
+  }
   current.topology.portY[2] = 2
   old.topology.portY[2] = 2
   expect(current.search()).toEqual(old.search())

@@ -70,6 +70,57 @@ type RelaxedSearchHop = {
   data: RelaxedSearchHopData
 }
 
+/** Shares row methods for the stable, caller-owned synchronous search. */
+class NativeOwnedRelaxedHyperedgeRow
+  implements OwnedRelaxedHyperedgeRow<RouteId, RelaxedSearchHopData>
+{
+  readonly hyperedgeId: RelaxedSearchHop[]
+  readonly regionId: RegionId
+  readonly sourcePortId: PortId
+  readonly templates: RelaxedSearchHop[]
+  readonly excludedTemplateIndices: readonly number[]
+  readonly maxHopDistance: number
+
+  constructor(
+    private readonly topology: TinyHyperGraphTopology,
+    private readonly sourceState: RelaxedSearchState,
+    templates: RelaxedSearchHop[],
+    excludedTemplateIndices: readonly number[],
+    maxHopDistance: number,
+  ) {
+    this.hyperedgeId = templates
+    this.regionId = sourceState.nextRegionId
+    this.sourcePortId = sourceState.portId
+    this.templates = templates
+    this.excludedTemplateIndices = excludedTemplateIndices
+    this.maxHopDistance = maxHopDistance
+  }
+
+  getHopDistance(index: number): number {
+    const template = this.templates[index]!
+    return Math.hypot(
+      this.topology.portX[this.sourceState.portId]! -
+        this.topology.portX[template.state.portId]!,
+      this.topology.portY[this.sourceState.portId]! -
+        this.topology.portY[template.state.portId]!,
+    )
+  }
+
+  getHop(
+    index: number,
+    _yieldedIndex: number,
+    distance?: number,
+  ): RelaxedSearchHop {
+    const template = this.templates[index]!
+    return {
+      state: template.state,
+      owners: template.owners,
+      data: template.data,
+      distance: distance ?? this.getHopDistance(index),
+    }
+  }
+}
+
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
 
 export type FailedOwnerPairCount = {
@@ -596,33 +647,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       }
       params.exclusionsByTemplates.set(templates, exclusions)
     }
-    const getHopDistance = (index: number): number => {
-      const template = templates[index]!
-      return Math.hypot(
-        this.topology.portX[state.portId]! -
-          this.topology.portX[template.state.portId]!,
-        this.topology.portY[state.portId]! -
-          this.topology.portY[template.state.portId]!,
-      )
-    }
-    return {
-      hyperedgeId: templates,
-      regionId: state.nextRegionId,
-      sourcePortId: state.portId,
+    return new NativeOwnedRelaxedHyperedgeRow(
+      this.topology,
+      state,
       templates,
-      excludedTemplateIndices: exclusions.get(state.portId) ?? [],
-      maxHopDistance: params.maxHopDistance,
-      getHopDistance,
-      getHop: (index, _yieldedIndex, distance) => {
-        const template = templates[index]!
-        return {
-          state: template.state,
-          owners: template.owners,
-          data: template.data,
-          distance: distance ?? getHopDistance(index),
-        }
-      },
-    }
+      exclusions.get(state.portId) ?? [],
+      params.maxHopDistance,
+    )
   }
 
   private getRelaxedSearchHops(params: {
