@@ -267,6 +267,12 @@ export interface TinyHyperGraphSolverOptions {
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
+  /**
+   * The caller owns stable, ordinary topology/state arrays and supplies no
+   * observable hooks during synchronous relaxed blocker searches. Numeric
+   * geometry uses the native JavaScript builtins.
+   */
+  OWNED_RELAXED_HYPEREDGE_SEARCH?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
@@ -314,6 +320,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
+  OWNED_RELAXED_HYPEREDGE_SEARCH?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
@@ -379,6 +386,10 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.STATIC_REACHABILITY_PRECHECK !== undefined) {
     solver.STATIC_REACHABILITY_PRECHECK = options.STATIC_REACHABILITY_PRECHECK
+  }
+  if (options.OWNED_RELAXED_HYPEREDGE_SEARCH !== undefined) {
+    solver.OWNED_RELAXED_HYPEREDGE_SEARCH =
+      options.OWNED_RELAXED_HYPEREDGE_SEARCH
   }
   if (options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS !== undefined) {
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
@@ -453,6 +464,7 @@ export const getTinyHyperGraphSolverOptions = (
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
+  OWNED_RELAXED_HYPEREDGE_SEARCH: solver.OWNED_RELAXED_HYPEREDGE_SEARCH,
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
@@ -531,6 +543,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
+  OWNED_RELAXED_HYPEREDGE_SEARCH = false
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4

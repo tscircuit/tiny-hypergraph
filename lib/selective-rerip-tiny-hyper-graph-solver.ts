@@ -1,16 +1,38 @@
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
-  type TinyHyperGraphSolver,
+  TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import {
   findDistinctOwnerBlockerPath,
+  findDistinctOwnerBlockerPathWithOwnedHyperedges,
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
 import type { PortId, RegionId, RouteId } from "./types"
+import { getOwnedHyperedgeDistanceBound } from "./owned-relaxed-hyperedge-distance"
+import type { OwnedRelaxedHyperedgeRow } from "./owned-relaxed-hyperedge-types"
+
+const NATIVE_RELAXED_HYPOT = Object.getOwnPropertyDescriptor(Math, "hypot")
+  ?.value
+
+const hasInheritedDataMethod = (
+  instance: object,
+  key: string,
+  expected: unknown,
+): boolean => {
+  let owner: object | null = instance
+  while (owner !== null) {
+    const descriptor = Object.getOwnPropertyDescriptor(owner, key)
+    if (descriptor !== undefined) {
+      return "value" in descriptor && descriptor.value === expected
+    }
+    owner = Object.getPrototypeOf(owner)
+  }
+  return false
+}
 
 type RelaxedSearchState = {
   portId: PortId
@@ -395,6 +417,58 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
+    let ownedMaxExpandedLabels: number | undefined
+    if (
+      this.OWNED_RELAXED_HYPEREDGE_SEARCH &&
+      this.hasNativeOwnedRelaxedSearchMethods()
+    ) {
+      const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
+      ownedMaxExpandedLabels = maxExpandedLabels
+      const maxHopDistance = getOwnedHyperedgeDistanceBound(
+        this.topology,
+        maxExpandedLabels,
+        startPortId,
+        startRegionId,
+        goalPortId,
+      )
+      if (maxHopDistance !== undefined) {
+        const rowsByState = new Map<
+          number,
+          OwnedRelaxedHyperedgeRow<RouteId, RelaxedSearchHopData>
+        >()
+        const exclusionsByTemplates = new Map<
+          RelaxedSearchHop[],
+          Map<PortId, number[]>
+        >()
+        return findDistinctOwnerBlockerPathWithOwnedHyperedges({
+          start: { portId: startPortId, nextRegionId: startRegionId },
+          getStateKey: ({ portId, nextRegionId }): number =>
+            this.getHopId(portId, nextRegionId),
+          isGoal: ({ portId }): boolean => portId === goalPortId,
+          getRow: (state) => {
+            const key = this.getHopId(state.portId, state.nextRegionId)
+            const cached = rowsByState.get(key)
+            if (cached !== undefined) return cached
+            const row = this.getOwnedRelaxedSearchRow({
+              state,
+              goalPortId,
+              routeNetId,
+              portOwners,
+              portResources,
+              hopTemplatesByRegion,
+              forbiddenOwnerRouteIds,
+              exclusionsByTemplates,
+              maxHopDistance,
+            })
+            rowsByState.set(key, row)
+            return row
+          },
+          maxExpandedLabels,
+          checkReachability: true,
+          finiteCumulativeDistances: true,
+        })
+      }
+    }
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
@@ -416,7 +490,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         hopsByState.set(key, hops)
         return hops
       },
-      maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
+      maxExpandedLabels:
+        ownedMaxExpandedLabels ?? this.getRelaxedSearchExpansionLimit(),
       checkReachability: true,
     })
   }
@@ -458,6 +533,94 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       Math.ceil(Math.log2(this.problem.routeCount + 1)),
     )
     return Math.max(4096, incidentHopCount * ownerScale * 4)
+  }
+
+  private hasNativeOwnedRelaxedSearchMethods(): boolean {
+    return (
+      Object.getOwnPropertyDescriptor(Math, "hypot")?.value ===
+        NATIVE_RELAXED_HYPOT &&
+      NATIVE_OWNED_RELAXED_METHODS.every(([key, expected]) =>
+        hasInheritedDataMethod(this, key, expected),
+      )
+    )
+  }
+
+  private getOwnedRelaxedSearchRow(params: {
+    state: RelaxedSearchState
+    goalPortId: PortId
+    routeNetId: number
+    portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+    portResources: Map<PortId, PortBlockerResource>
+    forbiddenOwnerRouteIds: ReadonlySet<RouteId>
+    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
+    exclusionsByTemplates: Map<RelaxedSearchHop[], Map<PortId, number[]>>
+    maxHopDistance: number
+  }): OwnedRelaxedHyperedgeRow<RouteId, RelaxedSearchHopData> {
+    const { state } = params
+    if (
+      this.isRegionReservedForDifferentNet(state.nextRegionId) ||
+      this.isKnownSingleLayerRegion(state.nextRegionId)
+    ) {
+      const hops = this.getRelaxedSearchHops(params)
+      return {
+        regionId: state.nextRegionId,
+        sourcePortId: state.portId,
+        templates: hops,
+        excludedTemplateIndices: [],
+        eagerHops: hops,
+        maxHopDistance: params.maxHopDistance,
+        getHop: (index) => hops[index]!,
+      }
+    }
+    let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
+    if (templates === undefined) {
+      templates = this.getRelaxedSearchHops({
+        ...params,
+        buildRegionTemplates: true,
+      })
+      params.hopTemplatesByRegion.set(state.nextRegionId, templates)
+    }
+    let exclusions = params.exclusionsByTemplates.get(templates)
+    if (exclusions === undefined) {
+      exclusions = new Map<PortId, number[]>()
+      for (let index = 0; index < templates.length; index++) {
+        const portId = templates[index]!.state.portId
+        let indices = exclusions.get(portId)
+        if (indices === undefined) {
+          indices = []
+          exclusions.set(portId, indices)
+        }
+        indices.push(index)
+      }
+      params.exclusionsByTemplates.set(templates, exclusions)
+    }
+    const getHopDistance = (index: number): number => {
+      const template = templates[index]!
+      return Math.hypot(
+        this.topology.portX[state.portId]! -
+          this.topology.portX[template.state.portId]!,
+        this.topology.portY[state.portId]! -
+          this.topology.portY[template.state.portId]!,
+      )
+    }
+    return {
+      hyperedgeId: templates,
+      regionId: state.nextRegionId,
+      sourcePortId: state.portId,
+      templates,
+      excludedTemplateIndices: exclusions.get(state.portId) ?? [],
+      maxHopDistance: params.maxHopDistance,
+      getHopDistance,
+      getHop: (index, _yieldedIndex, distance) => {
+        const template = templates[index]!
+        return {
+          state: template.state,
+          owners: template.owners,
+          data: template.data,
+          distance: distance ?? getHopDistance(index),
+        }
+      },
+    }
   }
 
   private getRelaxedSearchHops(params: {
@@ -813,3 +976,26 @@ class CongestionAwareFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver
     }
   }
 }
+
+const NATIVE_OWNED_RELAXED_METHODS: readonly (readonly [string, unknown])[] = [
+  ...[
+    "getHopId",
+    "isKnownSingleLayerRegion",
+    "isRegionReservedForDifferentNet",
+    "isPortReservedForDifferentNet",
+    "populateSegmentGeometryScratch",
+  ].map(
+    (key): readonly [string, unknown] => [
+      key,
+      Object.getOwnPropertyDescriptor(TinyHyperGraphSolver.prototype, key)!
+        .value,
+    ],
+  ),
+  [
+    "getRelaxedSearchExpansionLimit",
+    Object.getOwnPropertyDescriptor(
+      SelectiveReripTinyHyperGraphSolver.prototype,
+      "getRelaxedSearchExpansionLimit",
+    )!.value,
+  ],
+]
