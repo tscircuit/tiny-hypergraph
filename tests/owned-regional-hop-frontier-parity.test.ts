@@ -18,7 +18,7 @@ type SolverConstructor = new (
   options?: TinyHyperGraphSolverOptions,
 ) => TinyHyperGraphSolver
 
-class InheritedNativeSolver extends SelectiveReripTinyHyperGraphSolver {}
+class InheritedSolver extends SelectiveReripTinyHyperGraphSolver {}
 
 const makeTopology = (): TinyHyperGraphTopology => ({
   portCount: 7,
@@ -54,7 +54,7 @@ const makeProblem = (goalPortId = 5): TinyHyperGraphProblem => ({
 })
 
 const makeOptions = (
-  owned: boolean,
+  owned: boolean | undefined,
   sparse = false,
 ): TinyHyperGraphSolverOptions => ({
   OWNED_REGIONAL_HOP_FRONTIER: owned,
@@ -79,8 +79,8 @@ const candidateSnapshot = (candidate: Candidate): unknown => ({
     : undefined,
 })
 
-// Observe decisions without replacing the pure native methods required by the
-// optimization. Every budget compares a prefix of the original flag-off loop.
+// Observe decisions without changing routing methods or mutating search state.
+// Every budget compares a prefix of the original flag-off loop.
 const snapshot = (solver: TinyHyperGraphSolver) => ({
   route: solver.state.currentRouteId,
   net: solver.state.currentRouteNetId,
@@ -196,7 +196,7 @@ const seed = (
 }
 
 const makeManual = (
-  owned: boolean,
+  owned: boolean | undefined,
   compact: boolean,
   Solver: SolverConstructor = DistanceAwareTinyHyperGraphSolver,
   problem = makeProblem(),
@@ -228,12 +228,12 @@ const makeManual = (
   return { solver, heap, closedHopId }
 }
 
-test("owned regional frontier retains legacy routing and hook order", () => {
+test("owned regional frontier preserves routing and search invalidation", () => {
   for (const Solver of [
     DistanceAwareTinyHyperGraphSolver,
     OutsideInPartialRipTinyHyperGraphSolver,
     SelectiveReripTinyHyperGraphSolver,
-    InheritedNativeSolver,
+    InheritedSolver,
   ]) {
     for (const goal of [0, 5, 6]) {
       for (const variant of [
@@ -286,7 +286,7 @@ test("owned regional frontier retains legacy routing and hook order", () => {
       DistanceAwareTinyHyperGraphSolver,
       OutsideInPartialRipTinyHyperGraphSolver,
       SelectiveReripTinyHyperGraphSolver,
-      InheritedNativeSolver,
+      InheritedSolver,
     ]) {
       const original = makeManual(false, compact, Solver)
       const optimized = makeManual(true, compact, Solver)
@@ -314,7 +314,10 @@ test("owned regional frontier retains legacy routing and hook order", () => {
       for (const { solver, heap } of [original, optimized]) {
         if (transition === "clear" || transition === "clear-wrap") {
           if (transition === "clear-wrap" && compact) {
-            Reflect.set(heap, "currentHopStateGeneration", 0xffffffff)
+            const heapState = heap as unknown as {
+              currentHopStateGeneration: number
+            }
+            heapState.currentHopStateGeneration = 0xffffffff
           }
           const oldEpoch = heap.closureEpoch
           heap.clear()
@@ -449,135 +452,61 @@ test("owned regional frontier retains legacy routing and hook order", () => {
     }
   }
 
-  // These hooks are observable, so neither method identity inherited from a
-  // native class nor native heap branding permits the owned branch. Clearing
-  // on port 2's second callback reopens the later duplicate of port 1 during
-  // the same scan and makes an incorrect optimization observably different.
-  for (const hook of [
-    "getHopId",
-    "computeG",
-    "computeH",
-    "port-reservation",
-    "region-reservation",
-    "accessor",
-    "queue-id",
-    "queue-hop",
-    "heap-private",
-    "onPathFound",
-  ]) {
+  // Custom queue objects keep the original callback schedule even when the
+  // caller enables the frontier. Only IndexedCandidateHeap supplies its epoch.
+  for (const useHopId of [false, true]) {
     const run = (owned: boolean) => {
       const { solver, heap, closedHopId } = makeManual(owned, true)
-      const calls: string[] = []
-      let triggerCount = 0
-      const trigger = (name: string, portOrRegion: number) => {
-        calls.push(`${name}:${portOrRegion}`)
-        if (portOrRegion === (name === "region" ? 1 : 2)) {
-          triggerCount++
-          if (triggerCount === 2) heap.clear()
-        }
+      const calls: number[] = []
+      let targetQueries = 0
+      const isClosed = (hopId: number): boolean => {
+        calls.push(hopId)
+        if (hopId !== closedHopId) return heap.isClosedHopId(hopId)
+        targetQueries++
+        // Only literal true rejects a candidate in the original loop.
+        if (targetQueries % 3 === 1) return undefined as unknown as boolean
+        return targetQueries % 3 === 2
       }
-      if (hook === "getHopId") {
-        const native = solver.getHopId.bind(solver)
-        solver.getHopId = (portId, regionId) => {
-          trigger("key", portId)
-          return native(portId, regionId)
-        }
-      } else if (hook === "computeG") {
-        const native = solver.computeG.bind(solver)
-        solver.computeG = (candidate, portId, maximum, distance) => {
-          trigger("g", portId)
-          return native(candidate, portId, maximum, distance)
-        }
-      } else if (hook === "computeH") {
-        const native = solver.computeH.bind(solver)
-        solver.computeH = (portId) => {
-          trigger("h", portId)
-          return native(portId)
-        }
-      } else if (hook === "port-reservation") {
-        const native = solver.isPortReservedForDifferentNet.bind(solver)
-        solver.isPortReservedForDifferentNet = (portId) => {
-          trigger("port", portId)
-          return native(portId)
-        }
-      } else if (hook === "region-reservation") {
-        const native = solver.isRegionReservedForDifferentNet.bind(solver)
-        solver.isRegionReservedForDifferentNet = (regionId) => {
-          trigger("region", regionId)
-          return native(regionId)
-        }
-      } else if (hook === "accessor") {
-        const native = solver.getHopId.bind(solver)
-        Object.defineProperty(solver, "getHopId", {
-          configurable: true,
-          get() {
-            calls.push("get-key-method")
-            return native
-          },
-        })
-      } else if (hook === "queue-id" || hook === "queue-hop") {
-        let targetQueries = 0
-        const isClosed = (hopId: number): boolean => {
-          calls.push(`closed:${hopId}`)
-          if (hopId !== closedHopId) return heap.isClosedHopId(hopId)
-          targetQueries++
-          // Runtime custom hooks may be indeterminate; only literal true
-          // closes a branch in the original engine.
-          if (targetQueries % 3 === 1) return undefined as unknown as boolean
-          return targetQueries % 3 === 2
-        }
-        const queue: TinyHyperGraphCandidateQueue = {
-          get length() {
-            return heap.length
-          },
-          toArray: () => heap.toArray(),
-          clear: () => heap.clear(),
-          queue: (candidate) => heap.queue(candidate),
-          dequeue: () => heap.dequeue(),
-          isClosedHopId: isClosed,
-        }
-        if (hook === "queue-hop") {
-          delete queue.isClosedHopId
-          queue.isClosedHop = (portId, regionId) =>
-            isClosed(solver.getHopId(portId, regionId))
-        }
-        solver.state.candidateQueue = queue
-      } else if (hook === "heap-private") {
-        const native = Reflect.get(heap, "isHopClosed") as (
-          hopId: number,
-        ) => boolean
-        Reflect.set(heap, "isHopClosed", (hopId: number) => {
-          calls.push(`private-closed:${hopId}`)
-          return native.call(heap, hopId)
-        })
+      const queue: TinyHyperGraphCandidateQueue = {
+        get length() {
+          return heap.length
+        },
+        toArray: () => heap.toArray(),
+        clear: () => heap.clear(),
+        queue: (candidate) => heap.queue(candidate),
+        dequeue: () => heap.dequeue(),
+      }
+      if (useHopId) {
+        queue.isClosedHopId = isClosed
       } else {
-        const native = solver.onPathFound.bind(solver)
-        solver.onPathFound = (candidate) => {
-          calls.push(`goal:${candidate.portId}`)
-          native(candidate)
-        }
-        solver.state.goalPortId = 2
+        queue.isClosedHop = (portId, regionId) =>
+          isClosed(solver.getHopId(portId, regionId))
       }
+      solver.state.candidateQueue = queue
       const states = [step(solver), step(solver)]
       return { states, calls, frontierCount: frontierCount(solver) }
     }
     const original = run(false)
-    const optimized = run(true)
-    expect(optimized, hook).toEqual(original)
-    expect(optimized.calls.length, hook).toBeGreaterThan(0)
-    expect(optimized.frontierCount, hook).toBe(0)
-    if (
-      [
-        "getHopId",
-        "computeG",
-        "computeH",
-        "port-reservation",
-        "region-reservation",
-      ].includes(hook)
-    ) {
-      expect(original.states[1]!.state.queue).toEqual(
-        expect.arrayContaining([expect.objectContaining({ portId: 1 })]),
-      )
-    }
+    expect(run(true)).toEqual(original)
+    expect(original.calls.length).toBeGreaterThan(0)
+    expect(original.frontierCount).toBe(0)
   }
+
+  // Ownership is opt-in. A custom key hook that clears the heap during a scan
+  // must leave it disabled so the later duplicate observes the reopened hop.
+  const { solver, heap } = makeManual(undefined, true)
+  const originalGetHopId = solver.getHopId.bind(solver)
+  const keyQueries: number[] = []
+  let sourceQueries = 0
+  solver.getHopId = (portId, regionId) => {
+    keyQueries.push(portId)
+    if (portId === 2 && ++sourceQueries === 2) heap.clear()
+    return originalGetHopId(portId, regionId)
+  }
+  step(solver)
+  step(solver)
+  expect(solver.OWNED_REGIONAL_HOP_FRONTIER).toBe(false)
+  expect(frontierCount(solver)).toBe(0)
+  expect(keyQueries.filter((portId) => portId === 1)).toHaveLength(4)
+  expect(heap.toArray().map((candidate) => candidate.portId)).toContain(1)
 })

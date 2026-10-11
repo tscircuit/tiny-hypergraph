@@ -15,15 +15,7 @@ import {
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
-import {
-  IndexedCandidateHeap,
-  isNativeIndexedCandidateHeap,
-} from "./indexed-candidate-heap"
-import {
-  hasNativeRegionalHopFrontierMethods,
-  registerRegionalHopFrontierMethods,
-  registerRegionalHopFrontierSolver,
-} from "./regional-hop-frontier-native-methods"
+import { IndexedCandidateHeap } from "./indexed-candidate-heap"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
@@ -276,12 +268,16 @@ export interface TinyHyperGraphSolverOptions {
   /**
    * Retain ordered regional occurrences after observing their native hop closed.
    * The caller owns ordinary topology/problem/state and plain native queued
-   * candidates for the entire queue epoch. Key mappings, method descriptors and
-   * metadata remain fixed between steps; no external candidate injection,
-   * queued-reference mutation or observable hook mutation is allowed. Standard
-   * native builtins are required. Read-only observation is allowed. Native
-   * clear, queue replacement, goal changes and neighbor-array replacement
-   * invalidate retention. Custom heaps and hooks use the original search.
+   * candidates for the entire queue epoch. Key mappings and metadata remain
+   * fixed between steps, and IndexedCandidateHeap methods retain their standard
+   * key and closure behavior. No external candidate injection or mutation of
+   * queued references is allowed. Pure scoring overrides are allowed when they
+   * preserve this contract.
+   * This flag does not detect custom methods: leave it disabled for observable
+   * key/closure hooks or mutation during expansion. Standard native builtins are
+   * required. Read-only observation is allowed. Clear, queue replacement, goal
+   * changes and neighbor-array replacement invalidate retention. Other queue
+   * implementations use the original search.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS?: number
@@ -524,12 +520,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   /** Rare fallback for callers that construct a non-incident directed hop. */
   private candidateOverflowBestCost?: Map<HopId, number>
   private regionalHopFrontierQueue?: TinyHyperGraphCandidateQueue
-  private regionalHopFrontierNativeQueue?: IndexedCandidateHeap
   private regionalHopFrontierEpoch?: object
   private regionalHopFrontierGoalPortId?: PortId
   private regionalHopFrontierRouteId?: RouteId
   private regionalHopFrontierNetId?: NetId
-  private regionalHopFrontierEligible = false
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
@@ -594,7 +588,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
-    registerRegionalHopFrontierSolver(this)
     applyTinyHyperGraphSolverOptions(this, options)
     let candidateHopSlotStride = 1
     const candidateFirstRegionByPortId = new Int32Array(
@@ -975,34 +968,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): RegionalHopFrontier | undefined {
     const { state } = this
     const queue = state.candidateQueue
-    if (queue !== this.regionalHopFrontierQueue) {
-      this.regionalHopFrontierQueue = queue
-      this.regionalHopFrontierNativeQueue = isNativeIndexedCandidateHeap(queue)
-        ? queue
-        : undefined
+    if (!(queue instanceof IndexedCandidateHeap)) {
+      this.regionalHopFrontierQueue = undefined
       this.regionalHopFrontierEpoch = undefined
       this.regionalHopFrontiers.clear()
+      return undefined
     }
-    const nativeQueue = this.regionalHopFrontierNativeQueue
-    if (!nativeQueue) return undefined
 
-    const epoch = nativeQueue.closureEpoch
+    const epoch = queue.closureEpoch
     if (
+      queue !== this.regionalHopFrontierQueue ||
       epoch !== this.regionalHopFrontierEpoch ||
       state.goalPortId !== this.regionalHopFrontierGoalPortId ||
       state.currentRouteId !== this.regionalHopFrontierRouteId ||
       state.currentRouteNetId !== this.regionalHopFrontierNetId
     ) {
+      this.regionalHopFrontierQueue = queue
       this.regionalHopFrontierEpoch = epoch
       this.regionalHopFrontierGoalPortId = state.goalPortId
       this.regionalHopFrontierRouteId = state.currentRouteId
       this.regionalHopFrontierNetId = state.currentRouteNetId
       this.regionalHopFrontiers.clear()
-      this.regionalHopFrontierEligible =
-        isNativeIndexedCandidateHeap(nativeQueue) &&
-        hasNativeRegionalHopFrontierMethods(this)
     }
-    if (!this.regionalHopFrontierEligible) return undefined
 
     // This writes occurrence links only. Port/incidence reads stay in the loop.
     if (!Array.isArray(neighbors) || neighbors.length > 0x7fffffff) {
@@ -2104,22 +2091,3 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     return currentCandidate.g
   }
 }
-
-registerRegionalHopFrontierMethods(TinyHyperGraphSolver.prototype, [
-  "getHopId",
-  "computeG",
-  "computeH",
-  "getCandidateBestCost",
-  "setCandidateBestCost",
-  "isPortReservedForDifferentNet",
-  "isRegionReservedForDifferentNet",
-  "isKnownSingleLayerRegion",
-  "computeRegionCostForRegion",
-  "populateSegmentGeometryScratch",
-  "getRouteHeuristic",
-  "getRouteStartPortId",
-  "getRouteEndPortId",
-  "getStartingNextRegionId",
-  "onPathFound",
-  "onOutOfCandidates",
-])

@@ -1,4 +1,3 @@
-import { registerRegionalHopFrontierMethods } from "./regional-hop-frontier-native-methods"
 import {
   type Candidate,
   TinyHyperGraphSolver,
@@ -65,8 +64,3 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     })
   }
 }
-
-registerRegionalHopFrontierMethods(
-  DistanceAwareTinyHyperGraphSolver.prototype,
-  ["onPathFound"],
-)
