@@ -2,6 +2,7 @@ export const DEFAULT_MIN_VIA_PAD_DIAMETER = 0.3
 export const TRACE_VIA_MARGIN = 0.15
 const traceWidth = 0.1
 const IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST = 10
+const MAX_FINITE_SQUARED_TRACE_COUNT = 1e154
 
 export const isKnownSingleLayerMask = (regionAvailableZMask: number) =>
   regionAvailableZMask > 0 &&
@@ -55,12 +56,20 @@ export const computeRegionCostForArea = (
   )
     ? numSameLayerIntersections * IMPOSSIBLE_SINGLE_LAYER_INTERSECTION_COST
     : 0
-  const layerCount = countAvailableLayers(regionAvailableZMask)
+  // A finite squared trace count makes a zero factor the same signed zero.
+  // Invalid masks and overflowing counts retain the full arithmetic below.
   const traceDensityCost =
-    (traceDensityCostFactor *
-      (traceCount / layerCount) ** 2 *
-      traceWidth ** 2) /
-    area
+    traceDensityCostFactor === 0 &&
+    typeof traceCount === "number" &&
+    traceCount >= -MAX_FINITE_SQUARED_TRACE_COUNT &&
+    traceCount <= MAX_FINITE_SQUARED_TRACE_COUNT &&
+    typeof regionAvailableZMask === "number" &&
+    (regionAvailableZMask === 0 || regionAvailableZMask >>> 0 !== 0)
+      ? (traceDensityCostFactor * traceWidth ** 2) / area
+      : (traceDensityCostFactor *
+          (traceCount / countAvailableLayers(regionAvailableZMask)) ** 2 *
+          traceWidth ** 2) /
+        area
 
   return (
     (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
