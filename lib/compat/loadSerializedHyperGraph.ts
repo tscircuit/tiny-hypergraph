@@ -6,6 +6,69 @@ import type {
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 
+/** Check both serialized views of incidence before building numeric indexes. */
+const validateSerializedIncidence = (graph: SerializedHyperGraph) => {
+  const regions = new Map<string, Set<string>>()
+  for (const region of graph.regions) {
+    if (regions.has(region.regionId)) {
+      throw new Error(`Duplicate region ID "${region.regionId}"`)
+    }
+    const points = new Set<string>()
+    for (const portId of region.pointIds) {
+      if (points.has(portId)) {
+        throw new Error(`Region "${region.regionId}" repeats port "${portId}"`)
+      }
+      points.add(portId)
+    }
+    regions.set(region.regionId, points)
+  }
+
+  const ports = new Map<string, SerializedHyperGraph["ports"][number]>()
+  for (const port of graph.ports) {
+    if (ports.has(port.portId)) {
+      throw new Error(`Duplicate port ID "${port.portId}"`)
+    }
+    ports.set(port.portId, port)
+    for (const regionId of [port.region1Id, port.region2Id]) {
+      const points = regions.get(regionId)
+      if (!points) {
+        throw new Error(
+          `Port "${port.portId}" references missing region "${regionId}"`,
+        )
+      }
+      if (!points.has(port.portId)) {
+        throw new Error(
+          `Region "${regionId}" is missing incident port "${port.portId}"`,
+        )
+      }
+    }
+  }
+
+  for (const [regionId, points] of regions) {
+    for (const portId of points) {
+      const port = ports.get(portId)
+      if (!port) {
+        throw new Error(
+          `Region "${regionId}" references missing port "${portId}"`,
+        )
+      }
+      if (port.region1Id !== regionId && port.region2Id !== regionId) {
+        throw new Error(
+          `Region "${regionId}" lists nonincident port "${portId}"`,
+        )
+      }
+    }
+  }
+
+  const connectionIds = new Set<string>()
+  for (const connection of graph.connections ?? []) {
+    if (connectionIds.has(connection.connectionId)) {
+      throw new Error(`Duplicate connection ID "${connection.connectionId}"`)
+    }
+    connectionIds.add(connection.connectionId)
+  }
+}
+
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
 ) => {
@@ -69,11 +132,18 @@ const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
     )
   }
 
+  const retainedPortIds = new Set(filteredPorts.map((port) => port.portId))
+
   return {
     ...serializedHyperGraph,
-    regions: serializedHyperGraph.regions.filter(
-      (region) => !removedRegionIds.has(region.regionId),
-    ),
+    regions: serializedHyperGraph.regions
+      .filter((region) => !removedRegionIds.has(region.regionId))
+      .map((region) => ({
+        ...region,
+        pointIds: region.pointIds.filter((portId) =>
+          retainedPortIds.has(portId),
+        ),
+      })),
     ports: filteredPorts,
   }
 }
@@ -329,6 +399,7 @@ export const loadSerializedHyperGraph = (
   problem: TinyHyperGraphProblem
   solution: TinyHyperGraphSolution
 } => {
+  validateSerializedIncidence(serializedHyperGraph)
   const filteredHyperGraph = filterObstacleRegions(serializedHyperGraph)
   const regionIdToIndex = new Map<string, number>()
   const portIdToIndex = new Map<string, number>()
@@ -353,9 +424,7 @@ export const loadSerializedHyperGraph = (
   const portCount = filteredHyperGraph.ports.length
 
   const regionIncidentPorts = filteredHyperGraph.regions.map((region) =>
-    region.pointIds
-      .map((portId) => portIdToIndex.get(portId))
-      .filter((portIndex): portIndex is number => portIndex !== undefined),
+    region.pointIds.map((portId) => portIdToIndex.get(portId)!),
   )
 
   const incidentPortRegion = Array.from(

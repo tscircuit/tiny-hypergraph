@@ -35,6 +35,8 @@ export const portChokepointFixture: SerializedHyperGraph = {
   regions: [
     createRegion("a-start", 0, 6, 4, 4, ["a-start-port", "left-top-mid"]),
     createRegion("left-middle", 0, 2, 4, 4, [
+      "a-start-port",
+      "b-start-port",
       "left-top-mid",
       "left-mid-bottom",
       "left-center-choke",
@@ -46,6 +48,8 @@ export const portChokepointFixture: SerializedHyperGraph = {
     ]),
     createRegion("a-end", 8, 6, 4, 4, ["a-end-port", "right-top-mid"]),
     createRegion("right-middle", 8, 2, 4, 4, [
+      "a-end-port",
+      "b-end-port",
       "right-top-mid",
       "center-right-choke",
       "right-mid-bottom",
