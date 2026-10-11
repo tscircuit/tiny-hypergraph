@@ -145,7 +145,7 @@ const getCrossingCount = (
   return crossingCount
 }
 
-test("visualizes reversed duplicate-port ordering from PMP22650", () => {
+test("visualizes duplicate-port ordering from PMP22650", () => {
   const solver = new DuplicateCongestedPortSolver(
     createPmp22650OrderingFixture(),
     { duplicatePortProximity: 0.05 },
@@ -190,6 +190,6 @@ test("visualizes reversed duplicate-port ordering from PMP22650", () => {
 
   expect(leftPorts).toHaveLength(CONNECTION_COUNT)
   expect(rightPorts).toHaveLength(CONNECTION_COUNT)
-  expect(crossingCount).toBe(21)
+  expect(crossingCount).toBe(0)
   expect(svg).toMatchSvgSnapshot(import.meta.path)
 })

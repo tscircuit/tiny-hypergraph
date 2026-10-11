@@ -104,6 +104,17 @@ const normalize = (point: Point): Point | undefined => {
   }
 }
 
+const orientAlongPositiveBoundaryAxis = (direction: Point): Point => {
+  // Matching duplicate indexes must have the same geometric order on every
+  // boundary or downstream uniform spacing turns them into crossed pairs.
+  const shouldReverse =
+    Math.abs(direction.x) >= Math.abs(direction.y)
+      ? direction.x < 0
+      : direction.y < 0
+
+  return shouldReverse ? { x: -direction.x, y: -direction.y } : direction
+}
+
 const getRegionBounds = (
   region: SerializedRegion | undefined,
 ): {
@@ -214,10 +225,12 @@ const getDuplicateDirection = (
       x: sourcePoint.x - nearestPoint.x,
       y: sourcePoint.y - nearestPoint.y,
     })
-    if (awayFromNearest) return awayFromNearest
+    if (awayFromNearest) return orientAlongPositiveBoundaryAxis(awayFromNearest)
   }
 
-  return getFallbackBoundaryDirection(sourcePort, regionById)
+  return orientAlongPositiveBoundaryAxis(
+    getFallbackBoundaryDirection(sourcePort, regionById),
+  )
 }
 
 const createDuplicatePortId = (
