@@ -42,9 +42,7 @@ test("heap scalar cache avoids repeated priority reads and bounds retained stora
   // Exact dequeue sequence from the original 474f522 heap, including ties.
   expect(
     createHash("sha256").update(JSON.stringify(sequence)).digest("hex"),
-  ).toBe(
-    "f3a7065d8135bed9957ddc72f8a7fecd305bfe6b0fce3c98917f95634ae73ea6",
-  )
+  ).toBe("f3a7065d8135bed9957ddc72f8a7fecd305bfe6b0fce3c98917f95634ae73ea6")
   expect(prioritiesRead).toBe(2_048)
   heap.clear()
   expect(storage.priorityByIndex).toBe(priorities)

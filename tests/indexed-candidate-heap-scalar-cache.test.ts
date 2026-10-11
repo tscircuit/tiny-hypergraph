@@ -29,10 +29,11 @@ test("queued scalar caches preserve original directed-hop heap results", (): voi
       { length: 16 },
       (_, index): number => index + 20,
     ),
-    incidentPortRegion: Array.from(
-      { length: 16 },
-      (_, index): number[] => [index, index + 20, index + 40],
-    ),
+    incidentPortRegion: Array.from({ length: 16 }, (_, index): number[] => [
+      index,
+      index + 20,
+      index + 40,
+    ]),
   }
   for (const mode of ["map", "compact"] as const) {
     const heap = new IndexedCandidateHeap(
