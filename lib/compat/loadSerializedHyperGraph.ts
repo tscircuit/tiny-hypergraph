@@ -367,6 +367,7 @@ export const loadSerializedHyperGraph = (
   const regionCenterX = new Float64Array(regionCount)
   const regionCenterY = new Float64Array(regionCount)
   const regionAvailableZMask = new Int32Array(regionCount)
+  const regionConnectedZMask = new Int32Array(regionCount)
   const regionNetId = new Int32Array(regionCount).fill(-1)
   const hasSerializedRegionNetId = new Int8Array(regionCount)
 
@@ -377,6 +378,32 @@ export const loadSerializedHyperGraph = (
     regionCenterX[regionIndex] = geometry.centerX
     regionCenterY[regionIndex] = geometry.centerY
     regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
+    const connectedZ = region.d?.connectedZ
+    if (Array.isArray(connectedZ)) {
+      for (const z of connectedZ) {
+        if (!Number.isInteger(z) || z < 0 || z > 30) {
+          throw new Error(
+            `Region "${region.regionId}" has invalid connected layer ${z}`,
+          )
+        }
+        regionConnectedZMask[regionIndex] |= 1 << z
+      }
+      if (
+        (regionConnectedZMask[regionIndex] &
+          regionAvailableZMask[regionIndex]) !==
+        regionConnectedZMask[regionIndex]
+      ) {
+        throw new Error(
+          `Region "${region.regionId}" connects unavailable layers`,
+        )
+      }
+      const connectedNetId = getSerializedRegionNetId(region)
+      if (connectedNetId === undefined || connectedNetId === -1) {
+        throw new Error(
+          `Region "${region.regionId}" has connected copper without a net`,
+        )
+      }
+    }
 
     const serializedRegionNetId = getSerializedRegionNetId(region)
     if (serializedRegionNetId !== undefined) {
@@ -545,6 +572,38 @@ export const loadSerializedHyperGraph = (
     routeNet[routeIndex] = getNetIndex(connection)
   })
 
+  // Immutable-only nets must not change the established route net indexes.
+  let portReservedNetId: Int32Array | undefined
+  filteredHyperGraph.ports.forEach(
+    (port: SerializedHyperGraph["ports"][number], portIndex: number): void => {
+      const immutableNetIds: unknown = port.d?.immutableCopperNetIds
+      if (immutableNetIds === undefined) return
+      if (
+        !Array.isArray(immutableNetIds) ||
+        !immutableNetIds.every(
+          (netId: unknown): netId is string => typeof netId === "string",
+        )
+      ) {
+        throw new Error(
+          `Port "${port.portId}" has invalid immutable copper nets`,
+        )
+      }
+      if (immutableNetIds.length === 0) return
+      portReservedNetId ??= new Int32Array(portCount).fill(-1)
+      const netIndexes = new Set<number>()
+      for (const netId of immutableNetIds) {
+        let netIndex = netIdToIndex.get(netId)
+        if (netIndex === undefined) {
+          netIndex = nextNetIndex++
+          netIdToIndex.set(netId, netIndex)
+        }
+        netIndexes.add(netIndex)
+      }
+      portReservedNetId[portIndex] =
+        netIndexes.size === 1 ? [...netIndexes][0]! : -2
+    },
+  )
+
   const topology: TinyHyperGraphTopology = {
     portCount,
     regionCount,
@@ -555,6 +614,7 @@ export const loadSerializedHyperGraph = (
     regionCenterX,
     regionCenterY,
     regionAvailableZMask,
+    regionConnectedZMask,
     regionMetadata,
     portAngleForRegion1,
     portAngleForRegion2,
@@ -562,6 +622,7 @@ export const loadSerializedHyperGraph = (
     portY,
     portZ,
     portMetadata,
+    ...(portReservedNetId !== undefined && { portReservedNetId }),
   }
 
   const initialAssignments = filteredHyperGraph.regions.flatMap(

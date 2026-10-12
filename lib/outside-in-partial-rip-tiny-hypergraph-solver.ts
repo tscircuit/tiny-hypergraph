@@ -246,25 +246,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
   private getCommittedRouteSegments(
     routeId: RouteId,
+    indexedSegments: readonly IndexedCommittedRouteSegment[],
   ): CommittedRouteSegment[] | undefined {
-    const indexedSegments: IndexedCommittedRouteSegment[] = []
-    for (
-      let regionId = 0;
-      regionId < this.state.regionSegments.length;
-      regionId++
-    ) {
-      for (const [segmentRouteId, fromPortId, toPortId] of this.state
-        .regionSegments[regionId] ?? []) {
-        if (segmentRouteId !== routeId) continue
-        indexedSegments.push({
-          segmentIndex: indexedSegments.length,
-          regionId,
-          fromPortId,
-          toPortId,
-        })
-      }
-    }
-
     if (indexedSegments.length === 0) return undefined
 
     const segmentIndicesByPortId = new Map<PortId, number[]>()
@@ -447,8 +430,36 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     let rippedSegmentCount = 0
     let retainedSegmentCount = 0
 
+    // The committed state stays unchanged until the retained state is rebuilt.
+    // Preserve the original regional insertion order in each route's bucket.
+    const indexedSegmentsByRoute = new Map<
+      RouteId,
+      IndexedCommittedRouteSegment[]
+    >()
+    for (
+      let regionId = 0;
+      regionId < this.state.regionSegments.length;
+      regionId++
+    ) {
+      for (const [routeId, fromPortId, toPortId] of this.state.regionSegments[
+        regionId
+      ] ?? []) {
+        const indexedSegments = indexedSegmentsByRoute.get(routeId) ?? []
+        indexedSegments.push({
+          segmentIndex: indexedSegments.length,
+          regionId,
+          fromPortId,
+          toPortId,
+        })
+        indexedSegmentsByRoute.set(routeId, indexedSegments)
+      }
+    }
+
     for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
-      const orderedSegments = this.getCommittedRouteSegments(routeId)
+      const orderedSegments = this.getCommittedRouteSegments(
+        routeId,
+        indexedSegmentsByRoute.get(routeId) ?? [],
+      )
       if (!orderedSegments) return false
 
       if (
@@ -704,6 +715,31 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return path
   }
 
+  private computeOutsideInG(
+    candidate: Candidate,
+    neighborPortId: PortId,
+    expandingForward: boolean,
+    maximumCost: number,
+    segmentDistance: number,
+  ): number {
+    // The physical objective uses forward target-port costs in both search
+    // directions. Keep the previous capacity-only search when VIA_COST is 0.
+    // Adjust the bound before computeG prunes the physical candidate.
+    const penaltyCorrection =
+      expandingForward || this.VIA_COST === 0
+        ? 0
+        : (this.problem.portPenalty?.[candidate.portId] ?? 0) -
+          (this.problem.portPenalty?.[neighborPortId] ?? 0)
+    return (
+      this.computeG(
+        candidate,
+        neighborPortId,
+        maximumCost - penaltyCorrection,
+        segmentDistance,
+      ) + penaltyCorrection
+    )
+  }
+
   private buildJoinedCandidate(
     forwardCandidate: OutsideInCandidate,
     reverseCandidate: OutsideInCandidate,
@@ -906,9 +942,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
       if (candidate.g >= previousBestCost) continue
 
-      const g = this.computeG(
+      const g = this.computeOutsideInG(
         candidate,
         neighborPortId,
+        expandingForward,
         previousBestCost,
         segmentDistance,
       )
@@ -1033,7 +1070,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   ): boolean {
     const bestSummary = this.bestSolvedRoundSummary
     if (!bestSummary) return true
-    if (!this.useComplexityAwareSelection) {
+    if (!this.useComplexityAwareSelection && this.VIA_COST === 0) {
       return this.compareRegionCostSummaries(summary, bestSummary) < 0
     }
 
@@ -1043,9 +1080,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     }
     const selectionBaseline = this.firstCompletedRoundSummary ?? qualityBaseline
 
+    const maxRegionCostGrowthRatio = Math.max(
+      0,
+      this.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO,
+    )
     const maxRegionCostCeiling =
-      selectionBaseline.maxRegionCost *
-      (1 + Math.max(0, this.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO))
+      maxRegionCostGrowthRatio === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : selectionBaseline.maxRegionCost * (1 + maxRegionCostGrowthRatio)
     const totalRegionCostCeiling =
       selectionBaseline.totalRegionCost *
       (1 + Math.max(0, this.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO))
@@ -1057,6 +1099,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       bestSummary.totalRegionCost <= totalRegionCostCeiling
 
     if (isEligible !== isBestEligible) return isEligible
+    if (this.VIA_COST > 0) {
+      return this.compareRegionCostSummaries(summary, bestSummary) < 0
+    }
     if (isEligible && summary.segmentCount !== bestSummary.segmentCount) {
       return summary.segmentCount < bestSummary.segmentCount
     }
@@ -1109,7 +1154,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       if (regionCost > currentRipThreshold) hotRegionIds.push(regionId)
     }
 
-    const summary: RegionCostSummary = { maxRegionCost, totalRegionCost }
+    const summary = this.withPathEnergy({ maxRegionCost, totalRegionCost })
     const completedRoundSummary: CompletedRoundSummary = {
       ...summary,
       ripCount: state.ripCount,
@@ -1147,13 +1192,17 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       qualityBaseline.maxRegionCost * (1 - targetImprovementRatio)
     const maxTargetTotalRegionCost =
       qualityBaseline.totalRegionCost * (1 + maxTotalCostGrowthRatio)
+    // The early-stop target must hold for the physical solution we return,
+    // rather than a lower-pressure round rejected by the energy selector.
+    const targetSummary =
+      this.VIA_COST > 0 ? this.bestSolvedRoundSummary! : completedRoundSummary
     const targetReached =
       this.useComplexityAwareSelection &&
       state.ripCount > qualityBaseline.ripCount &&
       targetImprovementRatio > 0 &&
-      maxRegionCost <= targetMaxRegionCost &&
-      totalRegionCost <= maxTargetTotalRegionCost &&
-      segmentCount <= qualityBaseline.segmentCount
+      targetSummary.maxRegionCost <= targetMaxRegionCost &&
+      targetSummary.totalRegionCost <= maxTargetTotalRegionCost &&
+      targetSummary.segmentCount <= qualityBaseline.segmentCount
     if (targetReached) this.partialRipTargetReached = true
     this.stats = {
       ...this.stats,

@@ -13,6 +13,7 @@ import {
   type TinyHyperGraphTopology,
 } from "../core"
 import { shuffle } from "../shuffle"
+import { range } from "../utils"
 import type {
   PortId,
   RegionId,
@@ -55,7 +56,7 @@ export interface TinyHyperGraphSectionSolverOptions
 const applyTinyHyperGraphSectionSolverOptions = (
   solver: TinyHyperGraphSectionSearchSolver | TinyHyperGraphSectionSolver,
   options?: TinyHyperGraphSectionSolverOptions,
-) => {
+): void => {
   applyTinyHyperGraphSolverOptions(solver, options)
 
   if (!options) {
@@ -209,7 +210,15 @@ const summarizeRegionIntersectionCachesExcludingRegionIds = (
 const compareRegionCostSummaries = (
   left: RegionCostSummary,
   right: RegionCostSummary,
-) => {
+): number => {
+  if (left.pathEnergy !== undefined || right.pathEnergy !== undefined) {
+    if (left.pathEnergy === undefined || right.pathEnergy === undefined) {
+      throw new Error("Physical-via objective requires completed path energy")
+    }
+    if (left.pathEnergy !== right.pathEnergy) {
+      return left.pathEnergy - right.pathEnergy
+    }
+  }
   if (left.maxRegionCost !== right.maxRegionCost) {
     return left.maxRegionCost - right.maxRegionCost
   }
@@ -658,9 +667,18 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
   }
 
   captureBestState(summary: RegionCostSummary) {
+    const eligible =
+      this.VIA_COST <= 0 ||
+      this.isWithinRegionCostEnvelope(summary, this.baselineSummary)
+    const bestEligible =
+      this.bestSummary === undefined ||
+      this.VIA_COST <= 0 ||
+      this.isWithinRegionCostEnvelope(this.bestSummary, this.baselineSummary)
     if (
       this.bestSummary &&
-      compareRegionCostSummaries(summary, this.bestSummary) >= 0
+      (eligible !== bestEligible
+        ? !eligible
+        : compareRegionCostSummaries(summary, this.bestSummary) >= 0)
     ) {
       return
     }
@@ -760,14 +778,23 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     const totalRegionCost =
       this.immutableRegionSummary.totalRegionCost + mutableTotalRegionCost
 
-    this.captureBestState({
-      maxRegionCost,
-      totalRegionCost,
-    })
-    const bestSummary = this.bestSummary ?? {
-      maxRegionCost,
-      totalRegionCost,
+    const summary = this.withPathEnergy(
+      {
+        maxRegionCost,
+        totalRegionCost,
+      },
+      this.mutableRegionIds,
+    )
+    if (summary.pathEnergy !== undefined) {
+      if (this.immutableRegionSummary.pathEnergy === undefined) {
+        throw new Error("Physical-via objective requires immutable path energy")
+      }
+      summary.pathEnergy +=
+        this.immutableRegionSummary.pathEnergy -
+        this.immutableRegionSummary.totalRegionCost
     }
+    this.captureBestState(summary)
+    const bestSummary = this.bestSummary ?? summary
 
     if (
       bestSummary.maxRegionCost <
@@ -906,6 +933,8 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
   EXTRA_RIPS_AFTER_BEATING_BASELINE_MAX_REGION_COST = 10
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
+  CROSS_LAYER_INTERSECTION_COST_FACTOR = 1
+  VIA_COST = 0
 
   override MAX_ITERATIONS = 1e6
   STATIC_REACHABILITY_PRECHECK = false
@@ -927,19 +956,31 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       initialSolution,
       getTinyHyperGraphSolverOptions(this),
     )
-    this.baselineSummary = summarizeRegionIntersectionCaches(
-      this.baselineSolver.state.regionIntersectionCaches,
+    this.baselineSummary = this.baselineSolver.withPathEnergy(
+      summarizeRegionIntersectionCaches(
+        this.baselineSolver.state.regionIntersectionCaches,
+      ),
     )
     this.sectionRegionIds = getSectionRegionIds(topology, problem)
-    this.sectionBaselineSummary = summarizeRegionIntersectionCachesForRegionIds(
-      this.baselineSolver.state.regionIntersectionCaches,
+    const sectionRegionIdSet = new Set(this.sectionRegionIds)
+    this.sectionBaselineSummary = this.baselineSolver.withPathEnergy(
+      summarizeRegionIntersectionCachesForRegionIds(
+        this.baselineSolver.state.regionIntersectionCaches,
+        this.sectionRegionIds,
+      ),
       this.sectionRegionIds,
     )
-    this.outsideSectionBaselineSummary =
+    this.outsideSectionBaselineSummary = this.baselineSolver.withPathEnergy(
       summarizeRegionIntersectionCachesExcludingRegionIds(
         this.baselineSolver.state.regionIntersectionCaches,
         this.sectionRegionIds,
-      )
+      ),
+      this.VIA_COST > 0
+        ? range(topology.regionCount).filter(
+            (regionId) => !sectionRegionIdSet.has(regionId),
+          )
+        : undefined,
+    )
     this.applySectionRipPolicy()
   }
 
@@ -1034,10 +1075,17 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
       cloneRegionSegments(this.sectionSolver.state.regionSegments),
       getTinyHyperGraphSolverOptions(this),
     )
-    const candidateSummary = summarizeRegionIntersectionCaches(
-      candidateSolver.state.regionIntersectionCaches,
+    const candidateSummary = candidateSolver.withPathEnergy(
+      summarizeRegionIntersectionCaches(
+        candidateSolver.state.regionIntersectionCaches,
+      ),
     )
     const optimized =
+      (this.VIA_COST <= 0 ||
+        candidateSolver.isWithinRegionCostEnvelope(
+          candidateSummary,
+          this.baselineSummary,
+        )) &&
       compareRegionCostSummaries(candidateSummary, this.baselineSummary) < 0
 
     this.optimizedSolver = optimized ? candidateSolver : this.baselineSolver
