@@ -168,6 +168,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
   private selectiveReripCongestionUpdateCount = 0
+  private hasAttemptedWholeRouteGreedyCompletion = false
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -223,6 +224,22 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    let everyRouteHasSucceeded = true
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      if (this.routeSuccessCountByRouteId[routeId] === 0) {
+        everyRouteHasSucceeded = false
+        break
+      }
+    }
+    if (
+      this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING &&
+      !this.hasAttemptedWholeRouteGreedyCompletion &&
+      everyRouteHasSucceeded
+    ) {
+      this.hasAttemptedWholeRouteGreedyCompletion = true
+      if (this.tryGreedyFinalRouteAcceptance()) return
+    }
+
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
