@@ -44,7 +44,7 @@ test("tries final completion after every whole route has succeeded", () => {
       regionNetId: new Int32Array(),
     },
     {
-      MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING: true,
+      MULTI_ROUTE_CONNECTION_REVERSE_RETRY: true,
     },
   )
   solver.markEveryRouteAsSucceeded()
