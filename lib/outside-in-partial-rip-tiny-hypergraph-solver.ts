@@ -9,7 +9,7 @@ import {
 } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import { MinHeap } from "./MinHeap"
-import type { NetId, PortId, RegionId, RouteId } from "./types"
+import type { PortId, RegionId, RouteId } from "./types"
 
 type CommittedRouteSegment = {
   regionId: RegionId
@@ -99,7 +99,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   private bestSolvedRoundSummary?: CompletedRoundSummary
   private partialRipTargetReached = false
   private useComplexityAwareSelection = false
-  private routeCountByConnectionId = new Map<string | NetId, number>()
+  private routeCountByConnectionId = new Map<string, number>()
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -109,6 +109,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     super(topology, problem, options)
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       const connectionId = this.getRouteGroupId(routeId)
+      if (!connectionId) continue
       this.routeCountByConnectionId.set(
         connectionId,
         (this.routeCountByConnectionId.get(connectionId) ?? 0) + 1,
@@ -655,12 +656,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     )
   }
 
-  private getRouteGroupId(routeId: RouteId): string | NetId {
+  private getRouteGroupId(routeId: RouteId): string | undefined {
     const routeMetadata = this.problem.routeMetadata?.[routeId] as
       | {
-          connectionId?: unknown
           simpleRouteConnection?: {
-            name?: unknown
             __rootConnectionNames?: unknown
           }
         }
@@ -673,16 +672,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     ) {
       return rootConnectionNames[0]
     }
-    const connectionName = routeMetadata?.simpleRouteConnection?.name
-    if (typeof connectionName === "string") return connectionName
-    if (typeof routeMetadata?.connectionId === "string") {
-      return routeMetadata.connectionId
-    }
-    return this.problem.routeNet[routeId]!
+    return undefined
   }
 
   private isMultiRouteConnection(routeId: RouteId): boolean {
     const connectionId = this.getRouteGroupId(routeId)
+    if (!connectionId) return false
     return (this.routeCountByConnectionId.get(connectionId) ?? 0) > 1
   }
 
