@@ -335,7 +335,10 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
   }
 
-  private getPortUseCounts(): Map<string, number> {
+  private getPortUsage(): {
+    portUseCounts: Map<string, number>
+    routeIdsByPortId: Map<string, RouteId[]>
+  } {
     const { topology, problem } = loadSerializedHyperGraph(
       this.serializedHyperGraph,
     )
@@ -343,6 +346,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       problem.portPenalty = undefined
     }
     const portUseCounts = new Map<string, number>()
+    const routeIdsByPortId = new Map<string, RouteId[]>()
     let routeSolver: TinyHyperGraphSolver | undefined
 
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
@@ -372,14 +376,119 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           serializedPortId,
           (portUseCounts.get(serializedPortId) ?? 0) + 1,
         )
+        const routeIds = routeIdsByPortId.get(serializedPortId)
+        if (routeIds) {
+          routeIds.push(routeId)
+        } else {
+          routeIdsByPortId.set(serializedPortId, [routeId])
+        }
       }
     }
 
-    return portUseCounts
+    return { portUseCounts, routeIdsByPortId }
+  }
+
+  private getDuplicateDirectionMultiplierByPortId(
+    portUseCounts: Map<string, number>,
+    routeIdsByPortId: Map<string, RouteId[]>,
+    sourcePortById: Map<string, SerializedPort>,
+    duplicateDirectionByPortId: Map<string, Point>,
+  ): Map<string, 1 | -1> {
+    // Duplicate indexes only need a shared direction when the same routes
+    // cross two congested boundaries of one region. Other ports retain their
+    // established placement.
+    const portIdsByRegionAndRoutes = new Map<string, string[]>()
+
+    for (const [sourcePortId, useCount] of portUseCounts) {
+      if (useCount <= 1) continue
+      const sourcePort = sourcePortById.get(sourcePortId)
+      const routeIds = routeIdsByPortId.get(sourcePortId)
+      if (!sourcePort || !routeIds || routeIds.length !== useCount) continue
+
+      const routeSetKey = routeIds.join(",")
+      for (const regionId of [sourcePort.region1Id, sourcePort.region2Id]) {
+        const key = `${regionId}\u0000${routeSetKey}`
+        const portIds = portIdsByRegionAndRoutes.get(key)
+        if (portIds) {
+          portIds.push(sourcePortId)
+        } else {
+          portIdsByRegionAndRoutes.set(key, [sourcePortId])
+        }
+      }
+    }
+
+    const alignedPortsByPortId = new Map<
+      string,
+      Array<{ portId: string; multiplier: 1 | -1 }>
+    >()
+    for (const portIds of portIdsByRegionAndRoutes.values()) {
+      if (portIds.length < 2) continue
+      portIds.sort((left, right) => left.localeCompare(right))
+      const referencePortId = portIds[0]!
+      const referenceDirection = duplicateDirectionByPortId.get(referencePortId)
+      if (!referenceDirection) continue
+
+      for (const portId of portIds.slice(1)) {
+        const direction = duplicateDirectionByPortId.get(portId)
+        if (!direction) continue
+        const dot =
+          referenceDirection.x * direction.x +
+          referenceDirection.y * direction.y
+        if (Math.abs(dot) <= EPSILON) continue
+        const multiplier: 1 | -1 = dot < 0 ? -1 : 1
+
+        const referenceNeighbors = alignedPortsByPortId.get(referencePortId)
+        const referenceEdge = { portId, multiplier }
+        if (referenceNeighbors) {
+          referenceNeighbors.push(referenceEdge)
+        } else {
+          alignedPortsByPortId.set(referencePortId, [referenceEdge])
+        }
+
+        const neighbors = alignedPortsByPortId.get(portId)
+        const reverseEdge = { portId: referencePortId, multiplier }
+        if (neighbors) {
+          neighbors.push(reverseEdge)
+        } else {
+          alignedPortsByPortId.set(portId, [reverseEdge])
+        }
+      }
+    }
+
+    // A boundary can participate in two regions, so propagate direction
+    // constraints across the complete connected component.
+    const multiplierByPortId = new Map<string, 1 | -1>()
+    for (const startPortId of [...alignedPortsByPortId.keys()].sort()) {
+      if (multiplierByPortId.has(startPortId)) continue
+      multiplierByPortId.set(startPortId, 1)
+      const pendingPortIds = [startPortId]
+
+      for (let index = 0; index < pendingPortIds.length; index++) {
+        const portId = pendingPortIds[index]!
+        const portMultiplier = multiplierByPortId.get(portId)!
+        for (const neighbor of alignedPortsByPortId.get(portId) ?? []) {
+          const neighborMultiplier = (portMultiplier * neighbor.multiplier) as
+            | 1
+            | -1
+          const existingMultiplier = multiplierByPortId.get(neighbor.portId)
+          if (existingMultiplier === undefined) {
+            multiplierByPortId.set(neighbor.portId, neighborMultiplier)
+            pendingPortIds.push(neighbor.portId)
+          } else if (existingMultiplier !== neighborMultiplier) {
+            throw new Error(
+              `Duplicate port ordering is inconsistent for "${neighbor.portId}"`,
+            )
+          }
+        }
+      }
+    }
+
+    return multiplierByPortId
   }
 
   protected duplicateCongestedPorts(
     portUseCounts: Map<string, number>,
+    routeIdsByPortId = new Map<string, RouteId[]>(),
   ): SerializedHyperGraph {
     const duplicatePortProximity = this.getDuplicatePortProximity()
     if (!(duplicatePortProximity > 0)) {
@@ -410,6 +519,29 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     const portsByBoundary = groupPortsByBoundary(
       this.serializedHyperGraph.ports,
     )
+    const duplicateDirectionByPortId = new Map<string, Point>()
+    for (const [sourcePortId, useCount] of portUseCounts) {
+      if (useCount <= 1) continue
+      const sourcePort = sourcePortById.get(sourcePortId)
+      if (!sourcePort) continue
+      const boundaryPorts = portsByBoundary.get(getBoundaryKey(sourcePort))
+      if (!boundaryPorts) continue
+      duplicateDirectionByPortId.set(
+        sourcePortId,
+        getDuplicateDirection(
+          sourcePort,
+          findNearestPortOnSameBoundary(sourcePort, boundaryPorts),
+          regionById,
+        ),
+      )
+    }
+    const duplicateDirectionMultiplierByPortId =
+      this.getDuplicateDirectionMultiplierByPortId(
+        portUseCounts,
+        routeIdsByPortId,
+        sourcePortById,
+        duplicateDirectionByPortId,
+      )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
 
@@ -430,11 +562,17 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         sourcePort,
         boundaryPorts,
       )
-      const duplicateDirection = getDuplicateDirection(
+      const rawDuplicateDirection = getDuplicateDirection(
         sourcePort,
         nearestBoundaryPort,
         regionById,
       )
+      const directionMultiplier =
+        duplicateDirectionMultiplierByPortId.get(sourcePortId) ?? 1
+      const duplicateDirection = {
+        x: rawDuplicateDirection.x * directionMultiplier,
+        y: rawDuplicateDirection.y * directionMultiplier,
+      }
       const sourcePoint = getPortPoint(sourcePort)
       const duplicatePortIds: string[] = []
 
@@ -504,9 +642,11 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
   override _setup() {
     try {
-      const portUseCounts = this.getPortUseCounts()
-      this.revisedSerializedHyperGraph =
-        this.duplicateCongestedPorts(portUseCounts)
+      const { portUseCounts, routeIdsByPortId } = this.getPortUsage()
+      this.revisedSerializedHyperGraph = this.duplicateCongestedPorts(
+        portUseCounts,
+        routeIdsByPortId,
+      )
       this.stats = {
         ...this.stats,
         duplicateSourcePortCount: this.report.duplicatedPorts.length,
