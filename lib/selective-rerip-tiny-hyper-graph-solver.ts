@@ -232,7 +232,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       }
     }
     if (
-      this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING &&
+      this.MULTI_ROUTE_NET_OUTSIDE_IN_ROUTING &&
       !this.hasAttemptedWholeRouteGreedyCompletion &&
       everyRouteHasSucceeded
     ) {

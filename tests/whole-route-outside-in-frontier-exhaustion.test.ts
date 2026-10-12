@@ -31,17 +31,17 @@ test("an exhausted whole-route frontier ends the outside-in search", () => {
     portZ: new Int32Array(2),
   }
   const problem: TinyHyperGraphProblem = {
-    routeCount: 1,
+    routeCount: 2,
     portSectionMask: new Int8Array(2).fill(1),
-    routeStartPort: new Int32Array([0]),
-    routeEndPort: new Int32Array([1]),
-    routeNet: new Int32Array([0]),
+    routeStartPort: new Int32Array([0, 0]),
+    routeEndPort: new Int32Array([1, 1]),
+    routeNet: new Int32Array([0, 0]),
     regionNetId: new Int32Array(2).fill(-1),
   }
   const solver = new InspectableOutsideInSolver(topology, problem, {
     PARTIAL_RIP_ENABLED: false,
     OUTSIDE_IN_ROUTING: true,
-    WHOLE_ROUTE_OUTSIDE_IN_ROUTING: true,
+    MULTI_ROUTE_NET_OUTSIDE_IN_ROUTING: true,
     STATIC_REACHABILITY_PRECHECK: false,
   })
 

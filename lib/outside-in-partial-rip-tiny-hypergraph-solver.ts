@@ -9,7 +9,7 @@ import {
 } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import { MinHeap } from "./MinHeap"
-import type { PortId, RegionId, RouteId } from "./types"
+import type { NetId, PortId, RegionId, RouteId } from "./types"
 
 type CommittedRouteSegment = {
   regionId: RegionId
@@ -99,6 +99,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   private bestSolvedRoundSummary?: CompletedRoundSummary
   private partialRipTargetReached = false
   private useComplexityAwareSelection = false
+  private routeCountByNetId = new Map<NetId, number>()
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -106,6 +107,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     options?: TinyHyperGraphSolverOptions,
   ) {
     super(topology, problem, options)
+    for (const netId of problem.routeNet) {
+      this.routeCountByNetId.set(
+        netId,
+        (this.routeCountByNetId.get(netId) ?? 0) + 1,
+      )
+    }
     if (options?.PARTIAL_RIP_ENABLED === undefined) {
       this.PARTIAL_RIP_ENABLED = true
     }
@@ -123,7 +130,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       problem.routeCount > Math.max(0, this.PARTIAL_RIP_MAX_ROUTE_COUNT)
     ) {
       this.PARTIAL_RIP_ENABLED = false
-      if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+      if (!this.MULTI_ROUTE_NET_OUTSIDE_IN_ROUTING) {
         this.OUTSIDE_IN_ROUTING = false
       }
     }
@@ -637,7 +644,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     options: TinyHyperGraphSolverOptions,
     attempt: number,
   ): TinyHyperGraphSolver {
-    if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING || attempt < 0) {
+    if (!this.MULTI_ROUTE_NET_OUTSIDE_IN_ROUTING || attempt < 0) {
       return super.createGreedyFinalRouteSolver(options, attempt)
     }
     return new OutsideInGreedyFinalRouteSolver(
@@ -645,6 +652,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       this.problem,
       options,
     )
+  }
+
+  private isMultiRouteNet(routeId: RouteId): boolean {
+    const netId = this.problem.routeNet[routeId]
+    return netId !== undefined && (this.routeCountByNetId.get(netId) ?? 0) > 1
   }
 
   private startOutsideInRouteSearch(routeId: RouteId): boolean {
@@ -992,7 +1004,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     if (
       routeIdToAdvance !== undefined &&
       !this.partialRipRoutePlans.has(routeIdToAdvance) &&
-      !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
+      (!this.MULTI_ROUTE_NET_OUTSIDE_IN_ROUTING ||
+        !this.isMultiRouteNet(routeIdToAdvance))
     ) {
       super._step()
       return
