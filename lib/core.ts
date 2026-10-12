@@ -16,6 +16,7 @@ import {
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
+import { orderRoutesByCrossingDegree } from "./orderRoutesByCrossingDegree"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
@@ -112,6 +113,9 @@ export interface TinyHyperGraphTopology {
    */
   regionAvailableZMask?: Int32Array
 
+  /** Layers joined by existing copper, such as a plated through-hole pad. */
+  regionConnectedZMask?: Int32Array
+
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
 
@@ -124,6 +128,8 @@ export interface TinyHyperGraphTopology {
   portZ: Int32Array
 
   portMetadata?: any[]
+  /** Immutable copper: -1 free, -2 blocked, otherwise a net id in routeNet's space. */
+  portReservedNetId?: Int32Array
 }
 
 export interface TinyHyperGraphProblem {
@@ -182,6 +188,8 @@ export interface TinyHyperGraphSolution {
 export interface RegionCostSummary {
   maxRegionCost: number
   totalRegionCost: number
+  /** Completed-state energy in the same units as computeG when VIA_COST > 0. */
+  pathEnergy?: number
 }
 
 interface SolvedStateSnapshot {
@@ -263,6 +271,13 @@ export interface TinyHyperGraphSolverOptions {
   RIP_CONGESTION_REGION_COST_FACTOR?: number
   /** Opt-in quadratic penalty for concentrating traces in low-capacity regions. */
   TRACE_DENSITY_COST_FACTOR?: number
+  /** Congestion weight for intersections between traces on disjoint layers. */
+  CROSS_LAYER_INTERSECTION_COST_FACTOR?: number
+  /**
+   * Fixed cost per estimated physical via, independent of region area:
+   * two per same-layer crossing and one per entry/exit layer change.
+   */
+  VIA_COST?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   /**
@@ -325,6 +340,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   RIP_THRESHOLD_RAMP_ATTEMPTS: number
   RIP_CONGESTION_REGION_COST_FACTOR: number
   TRACE_DENSITY_COST_FACTOR?: number
+  CROSS_LAYER_INTERSECTION_COST_FACTOR?: number
+  VIA_COST?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
@@ -381,6 +398,15 @@ export const applyTinyHyperGraphSolverOptions = (
       0,
       options.TRACE_DENSITY_COST_FACTOR,
     )
+  }
+  if (options.CROSS_LAYER_INTERSECTION_COST_FACTOR !== undefined) {
+    solver.CROSS_LAYER_INTERSECTION_COST_FACTOR = Math.max(
+      0,
+      options.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+    )
+  }
+  if (options.VIA_COST !== undefined) {
+    solver.VIA_COST = Math.max(0, options.VIA_COST)
   }
   if (options.USE_LAZY_ROUTE_HEURISTIC !== undefined) {
     solver.USE_LAZY_ROUTE_HEURISTIC = options.USE_LAZY_ROUTE_HEURISTIC
@@ -468,6 +494,9 @@ export const getTinyHyperGraphSolverOptions = (
   RIP_THRESHOLD_RAMP_ATTEMPTS: solver.RIP_THRESHOLD_RAMP_ATTEMPTS,
   RIP_CONGESTION_REGION_COST_FACTOR: solver.RIP_CONGESTION_REGION_COST_FACTOR,
   TRACE_DENSITY_COST_FACTOR: solver.TRACE_DENSITY_COST_FACTOR,
+  CROSS_LAYER_INTERSECTION_COST_FACTOR:
+    solver.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+  VIA_COST: solver.VIA_COST,
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
@@ -535,6 +564,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
+  protected firstSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
@@ -558,6 +588,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   RIP_CONGESTION_REGION_COST_FACTOR = 0.1
   TRACE_DENSITY_COST_FACTOR = 0
+  CROSS_LAYER_INTERSECTION_COST_FACTOR = 1
+  VIA_COST = 0
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
   OWNED_REGIONAL_HOP_FRONTIER = false
@@ -691,6 +723,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
     this.bestSolvedStateSnapshot = undefined
     this.bestSolvedStateSummary = undefined
+    this.firstSolvedStateSummary = undefined
     this.hasLoggedNeverSuccessfullyRoutedRoutes = false
     this.staticallyUnroutableRoutes = []
     this.candidateOverflowBestCost?.clear()
@@ -736,9 +769,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
     const portEndpointNetIds: Array<Set<NetId> | undefined> = []
-    const portEndpointReservationNetId = new Int32Array(
-      topology.portCount,
-    ).fill(-1)
+    if (
+      topology.portReservedNetId &&
+      topology.portReservedNetId.length !== topology.portCount
+    ) {
+      throw new Error("Immutable port reservations must match the topology")
+    }
+    const portEndpointReservationNetId = topology.portReservedNetId
+      ? new Int32Array(topology.portReservedNetId)
+      : new Int32Array(topology.portCount).fill(-1)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
       const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
       endpointNetIds.add(netId)
@@ -777,8 +816,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  override _setup() {
+  protected isPortReservedForImmutableCopper(
+    portId: PortId,
+    netId: NetId,
+  ): boolean {
+    const reservedNetId = this.topology.portReservedNetId?.[portId]
+    return (
+      reservedNetId !== undefined &&
+      (reservedNetId === -2 ||
+        (reservedNetId !== -1 && reservedNetId !== netId))
+    )
+  }
+
+  protected validateImmutablePortEndpoints(
+    routeIds: readonly RouteId[],
+  ): boolean {
+    if (!this.topology.portReservedNetId) return true
+    for (const routeId of routeIds) {
+      const routeNetId = this.problem.routeNet[routeId]!
+      for (const portId of [
+        this.problem.routeStartPort[routeId]!,
+        this.problem.routeEndPort[routeId]!,
+      ]) {
+        if (this.isPortReservedForImmutableCopper(portId, routeNetId)) {
+          this.failed = true
+          this.error = `Route ${routeId} endpoint port ${portId} is blocked by immutable copper`
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  override _setup(): void {
     void this.problemSetup
+    if (!this.validateImmutablePortEndpoints(this.state.unroutedRoutes)) return
 
     if (this.STATIC_REACHABILITY_PRECHECK) {
       const staticallyUnroutableRoutes = getStaticallyUnroutableRoutes({
@@ -822,6 +894,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.resetCandidateBestCosts()
       const startingPortId = this.getRouteStartPortId(state.currentRouteId!)
+      if (
+        this.topology.portReservedNetId &&
+        !this.validateImmutablePortEndpoints([state.currentRouteId!])
+      ) {
+        return
+      }
       state.candidateQueue.clear()
       const startingNextRegionId = this.getStartingNextRegionId(
         state.currentRouteId!,
@@ -1253,6 +1331,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
+    // Rip thresholds and peak-cost comparisons measure routing capacity.
+    // Physical via preference is charged separately when extending a path.
     return computeRegionCost(
       this.topology.regionWidth[regionId],
       this.topology.regionHeight[regionId],
@@ -1262,7 +1342,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       traceCount,
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
-      this.TRACE_DENSITY_COST_FACTOR,
+      this.topology.regionConnectedZMask?.[regionId]
+        ? 0
+        : this.TRACE_DENSITY_COST_FACTOR,
+      this.CROSS_LAYER_INTERSECTION_COST_FACTOR,
+      0,
     )
   }
 
@@ -1272,6 +1356,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
     port2Id: PortId,
   ): SegmentGeometryScratch {
     return this.populateBaseSegmentGeometryScratch(regionId, port1Id, port2Id)
+  }
+
+  getEntryExitLayerChanges(
+    regionId: RegionId,
+    port1Id: PortId,
+    port2Id: PortId,
+  ): number {
+    const z1 = this.topology.portZ[port1Id]!
+    const z2 = this.topology.portZ[port2Id]!
+    const layers = (1 << z1) | (1 << z2)
+    const connected = this.topology.regionConnectedZMask?.[regionId] ?? 0
+    return z1 === z2 || (connected & layers) === layers ? 0 : 1
   }
 
   private populateBaseSegmentGeometryScratch(
@@ -1298,7 +1394,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     scratch.lesserAngle = angle1 < angle2 ? angle1 : angle2
     scratch.greaterAngle = angle1 < angle2 ? angle2 : angle1
     scratch.layerMask = (1 << z1) | (1 << z2)
-    scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.entryExitLayerChanges = this.getEntryExitLayerChanges(
+      regionId,
+      port1Id,
+      port2Id,
+    )
     scratch.netId = state.currentRouteNetId!
 
     return scratch
@@ -1316,7 +1416,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       port1Id,
       port2Id,
     )
-    setNewIntersectionCounts(regionCache, segmentGeometry)
+    // The physical objective needs insertion-independent crossings. Keep the
+    // existing capacity-only search unchanged when no via objective is used.
+    setNewIntersectionCounts(regionCache, segmentGeometry, this.VIA_COST > 0)
     const newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
     const newCrossLayerIntersections =
       segmentGeometry.crossingLayerIntersectionCount
@@ -1409,6 +1511,20 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
+    const shuffledRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    // Learn crossing groups only from a completed round. Route failures still
+    // use the existing reseed order, and the legacy via-free policy is unchanged.
+    const routeOrder =
+      this.VIA_COST > 0 &&
+      state.currentRouteId === undefined &&
+      state.unroutedRoutes.length === 0
+        ? orderRoutesByCrossingDegree(
+            topology,
+            state.regionSegments,
+            problem.routeNet,
+            shuffledRoutes,
+          )
+        : shuffledRoutes
 
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
@@ -1421,7 +1537,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
-    state.unroutedRoutes = shuffle(range(problem.routeCount), state.ripCount)
+    state.unroutedRoutes = routeOrder
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
@@ -1583,12 +1699,95 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected compareRegionCostSummaries(
     left: RegionCostSummary,
     right: RegionCostSummary,
-  ) {
+  ): number {
+    if (this.VIA_COST > 0) {
+      if (left.pathEnergy === undefined || right.pathEnergy === undefined) {
+        throw new Error("Physical-via objective requires completed path energy")
+      }
+      if (this.firstSolvedStateSummary) {
+        const leftEligible = this.isWithinRegionCostEnvelope(
+          left,
+          this.firstSolvedStateSummary,
+        )
+        const rightEligible = this.isWithinRegionCostEnvelope(
+          right,
+          this.firstSolvedStateSummary,
+        )
+        if (leftEligible !== rightEligible) return leftEligible ? -1 : 1
+      }
+      if (left.pathEnergy !== right.pathEnergy) {
+        return left.pathEnergy - right.pathEnergy
+      }
+    }
     if (left.maxRegionCost !== right.maxRegionCost) {
       return left.maxRegionCost - right.maxRegionCost
     }
 
     return left.totalRegionCost - right.totalRegionCost
+  }
+
+  /**
+   * Sum the same pressure, via estimate, distance and port costs as computeG.
+   * Cached crossing counts make this independent of route insertion order.
+   * Negotiated regionCongestionCost prices change between rip rounds and are
+   * search guidance, so they do not contribute to completed-state energy.
+   */
+  withPathEnergy<T extends RegionCostSummary>(
+    summary: T,
+    regionIds?: readonly RegionId[],
+    sourceState: TinyHyperGraphWorkingState = this.state,
+  ): T & RegionCostSummary {
+    if (this.VIA_COST <= 0) return summary
+
+    let estimatedViaCount = 0
+    let segmentDistance = 0
+    let portPenaltyCost = 0
+    for (const regionId of regionIds ?? range(this.topology.regionCount)) {
+      const cache = sourceState.regionIntersectionCaches[regionId]!
+      estimatedViaCount +=
+        2 * cache.existingSameLayerIntersections +
+        cache.existingEntryExitLayerChanges
+      for (const [, fromPortId, toPortId] of sourceState.regionSegments[
+        regionId
+      ]!) {
+        portPenaltyCost += this.problem.portPenalty?.[toPortId] ?? 0
+        if (this.ADD_SEGMENT_DISTANCE_TO_G) {
+          segmentDistance += Math.hypot(
+            this.topology.portX[fromPortId]! - this.topology.portX[toPortId]!,
+            this.topology.portY[fromPortId]! - this.topology.portY[toPortId]!,
+          )
+        }
+      }
+    }
+
+    return {
+      ...summary,
+      pathEnergy:
+        summary.totalRegionCost +
+        this.VIA_COST * estimatedViaCount +
+        this.DISTANCE_TO_COST * segmentDistance +
+        portPenaltyCost,
+    }
+  }
+
+  isWithinRegionCostEnvelope(
+    summary: RegionCostSummary,
+    baseline: RegionCostSummary,
+  ): boolean {
+    const maxRegionCostGrowthRatio = Math.max(
+      0,
+      this.PARTIAL_RIP_MAX_REGION_COST_GROWTH_RATIO,
+    )
+    const maxRegionCostCeiling =
+      maxRegionCostGrowthRatio === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : baseline.maxRegionCost * (1 + maxRegionCostGrowthRatio)
+    return (
+      summary.maxRegionCost <= maxRegionCostCeiling &&
+      summary.totalRegionCost <=
+        baseline.totalRegionCost *
+          (1 + Math.max(0, this.PARTIAL_RIP_MAX_TOTAL_COST_GROWTH_RATIO))
+    )
   }
 
   protected captureBestSolvedState(summary: RegionCostSummary) {
@@ -1676,10 +1875,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       totalRegionCost += regionCost
     }
 
-    return {
-      maxRegionCost,
-      totalRegionCost,
-    }
+    return this.withPathEnergy(
+      {
+        maxRegionCost,
+        totalRegionCost,
+      },
+      undefined,
+      solver.state,
+    )
   }
 
   protected createGreedyFinalRouteSolver(
@@ -1820,11 +2023,28 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
 
-    const summary = { maxRegionCost, totalRegionCost }
+    const summary = this.withPathEnergy({ maxRegionCost, totalRegionCost })
+    this.firstSolvedStateSummary ??= summary
     const shouldFinish =
       regionIdsOverCostThreshold.length === 0 ||
       state.ripCount >= this.RIP_THRESHOLD_RAMP_ATTEMPTS
-    if (shouldFinish) {
+    if (this.VIA_COST > 0) {
+      this.captureBestSolvedState(summary)
+      if (shouldFinish) {
+        this.restoreBestSolvedState()
+        maxRegionCost = this.bestSolvedStateSummary!.maxRegionCost
+        totalRegionCost = this.bestSolvedStateSummary!.totalRegionCost
+        regionIdsOverCostThreshold.length = 0
+        for (let regionId = 0; regionId < topology.regionCount; regionId++) {
+          if (
+            state.regionIntersectionCaches[regionId]!.existingRegionCost >
+            currentRipThreshold
+          ) {
+            regionIdsOverCostThreshold.push(regionId)
+          }
+        }
+      }
+    } else if (shouldFinish) {
       if (
         !this.bestSolvedStateSummary ||
         this.compareRegionCostSummaries(summary, this.bestSolvedStateSummary) <
@@ -1964,10 +2184,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     let newSameLayerIntersections = 0
     let newCrossLayerIntersections = 0
-    let newEntryExitLayerChanges =
-      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
-        ? 1
-        : 0
+    let newEntryExitLayerChanges = this.getEntryExitLayerChanges(
+      nextRegionId,
+      currentCandidate.portId,
+      neighborPortId,
+    )
     if (regionCache.existingSegmentCount > 0) {
       // Candidate scoring uses topology angles even when a subclass supplies
       // different geometry for inserting completed segments.
@@ -1976,7 +2197,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         currentCandidate.portId,
         neighborPortId,
       )
-      setNewIntersectionCounts(regionCache, segmentGeometry)
+      setNewIntersectionCounts(regionCache, segmentGeometry, this.VIA_COST > 0)
       newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
       newCrossLayerIntersections =
         segmentGeometry.crossingLayerIntersectionCount
@@ -2003,6 +2224,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       currentCandidate.g +
       newRegionCost +
+      this.VIA_COST *
+        (2 * newSameLayerIntersections + newEntryExitLayerChanges) +
       regionCongestionCost +
       neighborPortPenalty +
       segmentDistanceCost
