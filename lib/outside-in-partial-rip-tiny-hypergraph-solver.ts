@@ -3,6 +3,7 @@ import {
   createEmptyRegionIntersectionCache,
   type RegionCostSummary,
   type TinyHyperGraphProblem,
+  type TinyHyperGraphSolver,
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
@@ -98,6 +99,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   private bestSolvedRoundSummary?: CompletedRoundSummary
   private partialRipTargetReached = false
   private useComplexityAwareSelection = false
+  private routeCountByConnectionId = new Map<string, number>()
+  private reversedWholeRouteSearchId?: RouteId
+  private multiRouteConnectionReverseRetryCount = 0
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -105,6 +109,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     options?: TinyHyperGraphSolverOptions,
   ) {
     super(topology, problem, options)
+    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+      const connectionId = this.getRouteGroupId(routeId)
+      if (!connectionId) continue
+      this.routeCountByConnectionId.set(
+        connectionId,
+        (this.routeCountByConnectionId.get(connectionId) ?? 0) + 1,
+      )
+    }
     if (options?.PARTIAL_RIP_ENABLED === undefined) {
       this.PARTIAL_RIP_ENABLED = true
     }
@@ -130,6 +142,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   protected override getRouteStartPortId(routeId: RouteId): PortId {
+    if (this.reversedWholeRouteSearchId === routeId) {
+      return super.getRouteEndPortId(routeId)
+    }
     if (!this.PARTIAL_RIP_ENABLED) {
       return super.getRouteStartPortId(routeId)
     }
@@ -140,6 +155,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   protected override getRouteEndPortId(routeId: RouteId): PortId {
+    if (this.reversedWholeRouteSearchId === routeId) {
+      return super.getRouteStartPortId(routeId)
+    }
     if (!this.PARTIAL_RIP_ENABLED) {
       return super.getRouteEndPortId(routeId)
     }
@@ -200,11 +218,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   override onPathFound(finalCandidate: Candidate): void {
+    const routeId = this.state.currentRouteId
     if (!this.PARTIAL_RIP_ENABLED && !this.OUTSIDE_IN_ROUTING) {
       super.onPathFound(finalCandidate)
+      if (routeId !== undefined && this.state.currentRouteId === undefined) {
+        this.reversedWholeRouteSearchId = undefined
+      }
       return
     }
-    const routeId = this.state.currentRouteId
     const completedOutsideInRoute =
       routeId !== undefined && this.outsideInRouteSearch?.routeId === routeId
     super.onPathFound(finalCandidate)
@@ -213,6 +234,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       if (completedOutsideInRoute) this.outsideInCompletedRouteCount += 1
       if (this.oneSidedFallbackRouteId === routeId) {
         this.oneSidedFallbackRouteId = undefined
+      }
+      if (this.reversedWholeRouteSearchId === routeId) {
+        this.reversedWholeRouteSearchId = undefined
       }
     }
     this.outsideInRouteSearch = undefined
@@ -227,6 +251,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     this.partialRipRoutePlans.clear()
     this.outsideInRouteSearch = undefined
     this.oneSidedFallbackRouteId = undefined
+    this.reversedWholeRouteSearchId = undefined
     super.resetRoutingStateForRerip()
   }
 
@@ -536,6 +561,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     this.state.goalPortId = -1
     this.outsideInRouteSearch = undefined
     this.oneSidedFallbackRouteId = undefined
+    this.reversedWholeRouteSearchId = undefined
 
     for (
       let regionId = 0;
@@ -628,6 +654,76 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       settledByRegionId: new Map(),
       targetPortId,
     }
+  }
+
+  protected override createGreedyFinalRouteSolver(
+    options: TinyHyperGraphSolverOptions,
+    attempt: number,
+  ): TinyHyperGraphSolver {
+    if (!this.MULTI_ROUTE_CONNECTION_REVERSE_RETRY || attempt < 0) {
+      return super.createGreedyFinalRouteSolver(options, attempt)
+    }
+    return new ReverseRetryGreedyFinalRouteSolver(
+      this.topology,
+      this.problem,
+      options,
+    )
+  }
+
+  private getRouteGroupId(routeId: RouteId): string | undefined {
+    const routeMetadata = this.problem.routeMetadata?.[routeId] as
+      | {
+          simpleRouteConnection?: {
+            __rootConnectionNames?: unknown
+          }
+        }
+      | undefined
+    const rootConnectionNames =
+      routeMetadata?.simpleRouteConnection?.__rootConnectionNames
+    if (
+      Array.isArray(rootConnectionNames) &&
+      typeof rootConnectionNames[0] === "string"
+    ) {
+      return rootConnectionNames[0]
+    }
+    return undefined
+  }
+
+  private isMultiRouteConnection(routeId: RouteId): boolean {
+    const connectionId = this.getRouteGroupId(routeId)
+    if (!connectionId) return false
+    return (this.routeCountByConnectionId.get(connectionId) ?? 0) > 1
+  }
+
+  protected tryReverseMultiRouteConnectionSearch(): boolean {
+    if (!this.MULTI_ROUTE_CONNECTION_REVERSE_RETRY) return false
+    const routeId = this.state.currentRouteId
+    if (
+      routeId === undefined ||
+      this.partialRipRoutePlans.has(routeId) ||
+      !this.isMultiRouteConnection(routeId)
+    ) {
+      return false
+    }
+    if (this.reversedWholeRouteSearchId === routeId) {
+      this.reversedWholeRouteSearchId = undefined
+      return false
+    }
+
+    this.reversedWholeRouteSearchId = routeId
+    this.multiRouteConnectionReverseRetryCount += 1
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.goalPortId = -1
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+    this.state.unroutedRoutes.unshift(routeId)
+    this.stats = {
+      ...this.stats,
+      multiRouteConnectionReverseRetryCount:
+        this.multiRouteConnectionReverseRetryCount,
+    }
+    return true
   }
 
   private startOutsideInRouteSearch(routeId: RouteId): boolean {
@@ -1239,5 +1335,19 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       reripMode,
       partialRouteCount: usedPartialRip ? this.partialRipRoutePlans.size : 0,
     })
+  }
+}
+
+class ReverseRetryGreedyFinalRouteSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  override onOutOfCandidates(): void {
+    if (this.tryReverseMultiRouteConnectionSearch()) return
+    super.onOutOfCandidates()
+  }
+
+  override computeG(
+    currentCandidate: Candidate,
+    _neighborPortId: PortId,
+  ): number {
+    return currentCandidate.g
   }
 }
