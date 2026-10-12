@@ -699,6 +699,18 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
     return super.getStartingNextRegionId(routeId, startingPortId)
   }
 
+  override getStartingNextRegionIds(
+    routeId: RouteId,
+    startingPortId: PortId,
+  ): RegionId[] {
+    const forcedStartRegionId = this.routePlans[routeId]?.forcedStartRegionId
+    if (forcedStartRegionId !== undefined) {
+      return [forcedStartRegionId]
+    }
+
+    return super.getStartingNextRegionIds(routeId, startingPortId)
+  }
+
   override resetRoutingStateForRerip() {
     if (!this.fixedSnapshot) {
       super.resetRoutingStateForRerip()

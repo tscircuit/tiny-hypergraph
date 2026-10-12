@@ -139,6 +139,8 @@ test("solver can still rerip on out-of-candidates when static precheck is disabl
 
   solver.step()
   solver.step()
+  solver.step()
+  solver.step()
 
   expect(solver.solved).toBe(false)
   expect(solver.failed).toBe(false)

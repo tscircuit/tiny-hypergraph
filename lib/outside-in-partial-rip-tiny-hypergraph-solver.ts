@@ -167,6 +167,21 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return super.getStartingNextRegionId(routeId, startingPortId)
   }
 
+  override getStartingNextRegionIds(
+    routeId: RouteId,
+    startingPortId: PortId,
+  ): RegionId[] {
+    const partialRipRoutePlan = this.partialRipRoutePlans.get(routeId)
+    if (
+      this.PARTIAL_RIP_ENABLED &&
+      partialRipRoutePlan?.activeStartPortId === startingPortId
+    ) {
+      return [partialRipRoutePlan.forcedStartRegionId]
+    }
+
+    return super.getStartingNextRegionIds(routeId, startingPortId)
+  }
+
   private getEndingNextRegionId(
     routeId: RouteId,
     endingPortId: PortId,

@@ -504,6 +504,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
+  private remainingStartingRegionIds: RegionId[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
     netId: 0,
     lesserAngle: 0,
@@ -757,8 +758,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
           0,
           this.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
         ),
-        getStartingNextRegionId: (routeId, startingPortId) =>
-          this.getStartingNextRegionId(routeId, startingPortId),
+        getStartingNextRegionIds: (routeId, startingPortId) =>
+          this.getStartingNextRegionIds(routeId, startingPortId),
         getRouteSummary: (routeId) => this.getRouteSummary(routeId),
       })
       this.staticallyUnroutableRoutes = staticallyUnroutableRoutes
@@ -789,33 +790,35 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.resetCandidateBestCosts()
       const startingPortId = this.getRouteStartPortId(state.currentRouteId!)
       state.candidateQueue.clear()
-      const startingNextRegionId = this.getStartingNextRegionId(
+      const startingNextRegionIds = this.getStartingNextRegionIds(
         state.currentRouteId!,
         startingPortId,
       )
 
-      if (startingNextRegionId === undefined) {
+      if (startingNextRegionIds.length === 0) {
         this.failed = true
         this.error = `Start port ${startingPortId} has no incident regions`
         return
       }
 
-      const startingHopId = this.getHopId(startingPortId, startingNextRegionId)
-      this.setCandidateBestCost(startingHopId, 0)
-      state.candidateQueue.queue({
-        hopId: startingHopId,
-        nextRegionId: startingNextRegionId,
-        portId: startingPortId,
-        f: 0,
-        g: 0,
-        h: 0,
-      })
+      const [startingNextRegionId, ...remainingStartingRegionIds] =
+        startingNextRegionIds
+      this.remainingStartingRegionIds = remainingStartingRegionIds
+      this.queueStartingCandidate(startingPortId, startingNextRegionId!)
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
+      const nextStartingRegionId = this.remainingStartingRegionIds.shift()
+      if (nextStartingRegionId !== undefined) {
+        this.queueStartingCandidate(
+          this.getRouteStartPortId(state.currentRouteId!),
+          nextStartingRegionId,
+        )
+        return
+      }
       this.onOutOfCandidates()
       return
     }
@@ -1022,6 +1025,44 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ) ??
       startingIncidentRegions[0]
     )
+  }
+
+  getStartingNextRegionIds(
+    routeId: RouteId,
+    startingPortId: PortId,
+  ): RegionId[] {
+    const preferredRegionId = this.getStartingNextRegionId(
+      routeId,
+      startingPortId,
+    )
+    if (preferredRegionId === undefined) return []
+    const routeNetId = this.problem.routeNet[routeId]
+    const otherAvailableRegionIds = (
+      this.topology.incidentPortRegion[startingPortId] ?? []
+    ).filter(
+      (regionId) =>
+        regionId !== preferredRegionId &&
+        (this.problem.regionNetId[regionId] === -1 ||
+          this.problem.regionNetId[regionId] === routeNetId),
+    )
+
+    return [preferredRegionId, ...otherAvailableRegionIds]
+  }
+
+  private queueStartingCandidate(
+    startingPortId: PortId,
+    startingNextRegionId: RegionId,
+  ): void {
+    const startingHopId = this.getHopId(startingPortId, startingNextRegionId)
+    this.setCandidateBestCost(startingHopId, 0)
+    this.state.candidateQueue.queue({
+      hopId: startingHopId,
+      nextRegionId: startingNextRegionId,
+      portId: startingPortId,
+      f: 0,
+      g: 0,
+      h: 0,
+    })
   }
 
   protected getRouteStartPortId(routeId: RouteId): PortId {

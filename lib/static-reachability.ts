@@ -42,10 +42,10 @@ interface StaticReachabilityContext {
   portAssignment: Int32Array
   routeIds: RouteId[]
   maxPrecheckHops: number
-  getStartingNextRegionId: (
+  getStartingNextRegionIds: (
     routeId: RouteId,
     startingPortId: PortId,
-  ) => RegionId | undefined
+  ) => RegionId[]
   getRouteSummary: (routeId: RouteId) => StaticallyUnroutableRouteSummary
 }
 
@@ -117,20 +117,21 @@ const hasStaticReachabilityPath = (
     return true
   }
 
-  const startRegionId = context.getStartingNextRegionId(routeId, startPortId)
-  if (startRegionId === undefined) {
+  const startRegionIds = context.getStartingNextRegionIds(routeId, startPortId)
+  if (startRegionIds.length === 0) {
     return false
   }
 
-  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
-    {
+  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> =
+    startRegionIds.map((nextRegionId) => ({
       portId: startPortId,
-      nextRegionId: startRegionId,
-    },
-  ]
-  const seenHops = new Set<number>([
-    startPortId * topology.regionCount + startRegionId,
-  ])
+      nextRegionId,
+    }))
+  const seenHops = new Set<number>(
+    startRegionIds.map(
+      (regionId) => startPortId * topology.regionCount + regionId,
+    ),
+  )
 
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
     const currentCandidate = queue[queueIndex]!
