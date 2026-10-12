@@ -675,10 +675,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return undefined
   }
 
-  private isMultiRouteConnection(routeId: RouteId): boolean {
+  private shouldUseOutsideInRoutingForRoute(routeId: RouteId): boolean {
     const connectionId = this.getRouteGroupId(routeId)
     if (!connectionId) return false
-    return (this.routeCountByConnectionId.get(connectionId) ?? 0) > 1
+
+    const minimumRouteCount = Math.max(
+      2,
+      this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT,
+    )
+    const routeCount = this.routeCountByConnectionId.get(connectionId) ?? 0
+    return routeCount >= minimumRouteCount
   }
 
   private startOutsideInRouteSearch(routeId: RouteId): boolean {
@@ -1027,7 +1033,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       routeIdToAdvance !== undefined &&
       !this.partialRipRoutePlans.has(routeIdToAdvance) &&
       (!this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING ||
-        !this.isMultiRouteConnection(routeIdToAdvance))
+        !this.shouldUseOutsideInRoutingForRoute(routeIdToAdvance))
     ) {
       super._step()
       return
