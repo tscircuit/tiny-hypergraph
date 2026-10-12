@@ -224,6 +224,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    if (this.tryReverseMultiRouteConnectionSearch()) return
+
     let everyRouteHasSucceeded = true
     for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
       if (this.routeSuccessCountByRouteId[routeId] === 0) {
@@ -232,7 +234,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       }
     }
     if (
-      this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING &&
+      this.MULTI_ROUTE_CONNECTION_REVERSE_RETRY &&
       !this.hasAttemptedWholeRouteGreedyCompletion &&
       everyRouteHasSucceeded
     ) {
