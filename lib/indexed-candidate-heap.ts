@@ -23,6 +23,7 @@ export class IndexedCandidateHeap {
   private hopStateGeneration?: Uint32Array
   private hopIndexOrClosed?: Int32Array
   private currentHopStateGeneration = 1
+  private closureEpochToken: object = {}
 
   constructor(
     private readonly regionCount: number,
@@ -34,6 +35,11 @@ export class IndexedCandidateHeap {
     }
   }
 
+  /** Changes on every clear, including Map storage and generation wrap. */
+  get closureEpoch(): object {
+    return this.closureEpochToken
+  }
+
   get length(): number {
     return this.items.length
   }
@@ -43,6 +49,7 @@ export class IndexedCandidateHeap {
   }
 
   clear(): void {
+    this.closureEpochToken = {}
     this.items.length = 0
     this.indexByHopId.clear()
     this.closedHopIds.clear()
