@@ -190,6 +190,8 @@ test("visualizes duplicate-port ordering from PMP22650", () => {
 
   expect(leftPorts).toHaveLength(CONNECTION_COUNT)
   expect(rightPorts).toHaveLength(CONNECTION_COUNT)
+  expect(Number(leftPorts[1]!.d?.y)).toBeLessThan(PORT_Y)
+  expect(Number(rightPorts[1]!.d?.y)).toBeLessThan(PORT_Y)
   expect(crossingCount).toBe(0)
   expect(svg).toMatchSvgSnapshot(import.meta.path)
 })
