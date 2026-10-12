@@ -21,33 +21,35 @@ test("tries final completion after every whole route has succeeded", () => {
   }
   const solver = new SolverWithInspectableFinalCompletion(
     {
-      portCount: 0,
-      regionCount: 0,
-      regionIncidentPorts: [],
-      incidentPortRegion: [],
-      regionWidth: new Float64Array(),
-      regionHeight: new Float64Array(),
-      regionCenterX: new Float64Array(),
-      regionCenterY: new Float64Array(),
-      portAngleForRegion1: new Int32Array(),
-      portAngleForRegion2: new Int32Array(),
-      portX: new Float64Array(),
-      portY: new Float64Array(),
-      portZ: new Int32Array(),
+      portCount: 2,
+      regionCount: 2,
+      regionIncidentPorts: [[0], [1]],
+      incidentPortRegion: [[0], [1]],
+      regionWidth: new Float64Array(2).fill(1),
+      regionHeight: new Float64Array(2).fill(1),
+      regionCenterX: new Float64Array([0, 10]),
+      regionCenterY: new Float64Array(2),
+      portAngleForRegion1: new Int32Array(2),
+      portAngleForRegion2: new Int32Array(2),
+      portX: new Float64Array([0, 10]),
+      portY: new Float64Array(2),
+      portZ: new Int32Array(2),
     },
     {
       routeCount: 1,
-      portSectionMask: new Int8Array(),
+      portSectionMask: new Int8Array(2).fill(1),
       routeStartPort: new Int32Array([0]),
-      routeEndPort: new Int32Array([0]),
+      routeEndPort: new Int32Array([1]),
       routeNet: new Int32Array([0]),
-      regionNetId: new Int32Array(),
+      regionNetId: new Int32Array(2).fill(-1),
     },
     {
       MULTI_ROUTE_CONNECTION_REVERSE_RETRY: true,
     },
   )
   solver.markEveryRouteAsSucceeded()
+  solver.state.currentRouteId = 0
+  solver.state.currentRouteNetId = 0
 
   solver.onOutOfCandidates()
 

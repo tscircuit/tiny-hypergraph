@@ -224,24 +224,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
-    if (this.tryReverseMultiRouteConnectionSearch()) return
-
-    let everyRouteHasSucceeded = true
-    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
-      if (this.routeSuccessCountByRouteId[routeId] === 0) {
-        everyRouteHasSucceeded = false
-        break
-      }
-    }
-    if (
-      this.MULTI_ROUTE_CONNECTION_REVERSE_RETRY &&
-      !this.hasAttemptedWholeRouteGreedyCompletion &&
-      everyRouteHasSucceeded
-    ) {
-      this.hasAttemptedWholeRouteGreedyCompletion = true
-      if (this.tryGreedyFinalRouteAcceptance()) return
-    }
-
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
@@ -251,6 +233,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 
     const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
     if (!directPath.found || directPath.owners.size === 0) {
+      if (this.tryMultiRouteConnectionRecovery()) return
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = !directPath.found
         ? directPath.reason
@@ -279,6 +262,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
       )
     ) {
+      if (this.tryMultiRouteConnectionRecovery()) return
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
       this.selectiveReripStats.lastFailedRouteId = failedRouteId
@@ -308,6 +292,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         new Set(repeatedOwnerRouteIds),
       )
       if (!alternatePath.found) {
+        if (this.tryMultiRouteConnectionRecovery()) return
         this.selectiveReripStats.globalReripCount += 1
         this.selectiveReripStats.globalReripReason = alternatePath.reason
         this.selectiveReripStats.lastFailedRouteId = failedRouteId
@@ -373,6 +358,24 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     this.selectiveReripStats.lastAlternateSearchExpandedLabelCount =
       alternatePath?.expandedLabelCount ?? 0
     this.publishSelectiveReripStats()
+  }
+
+  private tryMultiRouteConnectionRecovery(): boolean {
+    if (!this.MULTI_ROUTE_CONNECTION_REVERSE_RETRY) return false
+    if (!this.hasAttemptedWholeRouteGreedyCompletion) {
+      let everyRouteHasSucceeded = true
+      for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+        if (this.routeSuccessCountByRouteId[routeId] === 0) {
+          everyRouteHasSucceeded = false
+          break
+        }
+      }
+      if (everyRouteHasSucceeded) {
+        this.hasAttemptedWholeRouteGreedyCompletion = true
+        if (this.tryGreedyFinalRouteAcceptance()) return true
+      }
+    }
+    return this.tryReverseMultiRouteConnectionSearch()
   }
 
   private addCongestionCostForSelectiveRerip(): void {
