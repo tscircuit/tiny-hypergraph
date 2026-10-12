@@ -52,15 +52,31 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
     if (g >= this.getCandidateBestCost(goalHopId)) return
 
     this.setCandidateBestCost(goalHopId, g)
-    this.state.candidateQueue.queue({
-      hopId: goalHopId,
-      prevRegionId: finalCandidate.nextRegionId,
-      nextRegionId: finalCandidate.nextRegionId,
-      portId: goalPortId,
-      g,
-      h: 0,
-      f: g,
-      prevCandidate: finalCandidate,
-    })
+    const candidateQueue = this.state.candidateQueue
+    const queueGoal = candidateQueue.queue
+    if (candidateQueue.queueValues) {
+      candidateQueue.queueValues(
+        goalHopId,
+        finalCandidate.nextRegionId,
+        finalCandidate.nextRegionId,
+        goalPortId,
+        g,
+        0,
+        g,
+        finalCandidate,
+        queueGoal,
+      )
+    } else {
+      queueGoal.call(candidateQueue, {
+        hopId: goalHopId,
+        prevRegionId: finalCandidate.nextRegionId,
+        nextRegionId: finalCandidate.nextRegionId,
+        portId: goalPortId,
+        g,
+        h: 0,
+        f: g,
+        prevCandidate: finalCandidate,
+      })
+    }
   }
 }

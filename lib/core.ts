@@ -220,6 +220,17 @@ export interface TinyHyperGraphCandidateQueue {
   toArray(): Candidate[]
   clear(): void
   queue(candidate: Candidate): void
+  queueValues?(
+    hopId: HopId,
+    prevRegionId: RegionId | undefined,
+    nextRegionId: RegionId,
+    portId: PortId,
+    g: number,
+    h: number,
+    f: number,
+    prevCandidate: Candidate | undefined,
+    queue?: (candidate: Candidate) => void,
+  ): void
   dequeue(): Candidate | undefined
   isClosedHop?(portId: PortId, nextRegionId: RegionId): boolean
   isClosedHopId?(hopId: HopId): boolean
@@ -802,14 +813,30 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       const startingHopId = this.getHopId(startingPortId, startingNextRegionId)
       this.setCandidateBestCost(startingHopId, 0)
-      state.candidateQueue.queue({
-        hopId: startingHopId,
-        nextRegionId: startingNextRegionId,
-        portId: startingPortId,
-        f: 0,
-        g: 0,
-        h: 0,
-      })
+      const startingQueue = state.candidateQueue
+      const queueStart = startingQueue.queue
+      if (startingQueue.queueValues) {
+        startingQueue.queueValues(
+          startingHopId,
+          undefined,
+          startingNextRegionId,
+          startingPortId,
+          0,
+          0,
+          0,
+          undefined,
+          queueStart,
+        )
+      } else {
+        queueStart.call(startingQueue, {
+          hopId: startingHopId,
+          nextRegionId: startingNextRegionId,
+          portId: startingPortId,
+          f: 0,
+          g: 0,
+          h: 0,
+        })
+      }
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
@@ -896,24 +923,50 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       const h = this.computeH(neighborPortId)
 
-      const newCandidate = {
-        hopId: candidateHopId,
-        prevRegionId: currentCandidate.nextRegionId,
-        nextRegionId,
-        portId: neighborPortId,
-        g,
-        h,
-        f: g + h,
-        prevCandidate: currentCandidate,
-      }
+      const prevRegionId = currentCandidate.nextRegionId
+      const f = g + h
 
       if (neighborPortId === state.goalPortId) {
-        this.onPathFound(newCandidate)
+        this.onPathFound({
+          hopId: candidateHopId,
+          prevRegionId,
+          nextRegionId,
+          portId: neighborPortId,
+          g,
+          h,
+          f,
+          prevCandidate: currentCandidate,
+        })
         return
       }
 
       this.setCandidateBestCost(candidateHopId, g)
-      state.candidateQueue.queue(newCandidate)
+      const candidateQueue = state.candidateQueue
+      const queueCandidate = candidateQueue.queue
+      if (candidateQueue.queueValues) {
+        candidateQueue.queueValues(
+          candidateHopId,
+          prevRegionId,
+          nextRegionId,
+          neighborPortId,
+          g,
+          h,
+          f,
+          currentCandidate,
+          queueCandidate,
+        )
+      } else {
+        queueCandidate.call(candidateQueue, {
+          hopId: candidateHopId,
+          prevRegionId,
+          nextRegionId,
+          portId: neighborPortId,
+          g,
+          h,
+          f,
+          prevCandidate: currentCandidate,
+        })
+      }
     }
   }
 

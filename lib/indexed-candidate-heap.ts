@@ -23,6 +23,7 @@ export class IndexedCandidateHeap {
   private hopStateGeneration?: Uint32Array
   private hopIndexOrClosed?: Int32Array
   private currentHopStateGeneration = 1
+  private candidatesExposed = false
 
   constructor(
     private readonly regionCount: number,
@@ -39,11 +40,13 @@ export class IndexedCandidateHeap {
   }
 
   toArray(): Candidate[] {
+    this.candidatesExposed = true
     return [...this.items]
   }
 
   clear(): void {
     this.items.length = 0
+    this.candidatesExposed = false
     this.indexByHopId.clear()
     this.closedHopIds.clear()
     if (!this.hopStateGeneration) return
@@ -65,6 +68,7 @@ export class IndexedCandidateHeap {
   }
 
   queue(candidate: Candidate): void {
+    this.candidatesExposed = true
     const hopId = this.getHopId(candidate)
     if (this.isHopClosed(hopId)) return
 
@@ -82,6 +86,70 @@ export class IndexedCandidateHeap {
       return
     }
 
+    const index = this.items.length
+    this.items.push(candidate)
+    this.siftUp(index)
+  }
+
+  queueValues(
+    hopId: number,
+    prevRegionId: RegionId | undefined,
+    nextRegionId: RegionId,
+    portId: number,
+    g: number,
+    h: number,
+    f: number,
+    prevCandidate: Candidate | undefined,
+    queue = this.queue,
+  ): void {
+    let canReuse = !this.candidatesExposed && queue === originalQueue
+    if (canReuse) {
+      if (this.isHopClosed(hopId)) return
+      const existingIndex = this.getQueuedHopIndex(hopId)
+      if (existingIndex !== undefined) {
+        const candidate = this.items[existingIndex]!
+        if (
+          (prevRegionId !== undefined || prevCandidate !== undefined) &&
+          (candidate.prevRegionId !== undefined ||
+            candidate.prevCandidate !== undefined)
+        ) {
+          if (g >= candidate.g) return
+          const previousF = candidate.f
+          // Only dequeued entries become predecessors. Pending entries remain
+          // private until public queue/toArray exposes a reference.
+          candidate.hopId = hopId
+          candidate.prevRegionId = prevRegionId
+          candidate.nextRegionId = nextRegionId
+          candidate.portId = portId
+          candidate.g = g
+          candidate.h = h
+          candidate.f = f
+          candidate.prevCandidate = prevCandidate
+          if (f <= previousF) this.siftUp(existingIndex)
+          else this.siftDown(existingIndex)
+          return
+        }
+        canReuse = false
+      }
+    }
+
+    const candidate: Candidate =
+      prevRegionId === undefined && prevCandidate === undefined
+        ? { hopId, nextRegionId, portId, f, g, h }
+        : {
+            hopId,
+            prevRegionId,
+            nextRegionId,
+            portId,
+            g,
+            h,
+            f,
+            prevCandidate,
+          }
+    if (!canReuse) {
+      queue.call(this, candidate)
+      return
+    }
     const index = this.items.length
     this.items.push(candidate)
     this.siftUp(index)
@@ -211,3 +279,5 @@ export class IndexedCandidateHeap {
     this.setQueuedHopIndex(this.getHopId(candidate), index)
   }
 }
+
+const originalQueue = IndexedCandidateHeap.prototype.queue
