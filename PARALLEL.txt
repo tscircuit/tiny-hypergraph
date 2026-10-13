@@ -112,8 +112,17 @@ recorded in experiments/parallel-srj18-results.json.
 
 VALIDATION
 
-155 tests pass; TypeScript typecheck passes. Regenerating all 16 hypergraph inputs
+The full suite and final focused parallel tests pass; TypeScript typecheck passes.
+Regenerating all 16 hypergraph inputs
 with the checked-in generator reproduces every benchmark input SHA-256 exactly.
 Focused tests exercise interacting routes, rerips, iteration limits, disconnected
 and empty inputs, preloaded assignments, batch ordering, worker errors, cleanup,
 concurrent calls, custom subclass rejection and serial owned-frontier execution.
+
+FIXED-ROUND ALGORITHM PROTOTYPE
+
+A separate FixedRoundTinyHyperGraphSolver now freezes batches and negotiates
+port conflicts with fixed decisions across worker counts. Its routing outcome
+can differ from the legacy solver. See FIXED_ROUND.txt for its algorithm,
+work-budget tradeoffs, diagnostic benchmarks and limitations. Existing APIs and
+legacy-equivalence guarantees remain unchanged.

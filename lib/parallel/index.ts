@@ -12,6 +12,10 @@ export {
   type ParallelTinyHyperGraphSolverOptions,
 } from "./ParallelTinyHyperGraphSolver"
 export type { SolveResult } from "./protocol"
+export {
+  FixedRoundTinyHyperGraphSolver,
+  type FixedRoundTinyHyperGraphSolverOptions,
+} from "./FixedRoundTinyHyperGraphSolver"
 
 /** Independent graphs run on separate cores; results retain input order. */
 export async function solveTinyHyperGraphsParallel(

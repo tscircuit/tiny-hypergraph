@@ -15,7 +15,8 @@
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts",
     "benchmark:parallel:srj18": "bun scripts/benchmarking/parallel-srj18.ts",
-    "benchmark:parallel:srj18:generate": "bun scripts/benchmarking/generate-srj18-hypergraphs.ts"
+    "benchmark:parallel:srj18:generate": "bun scripts/benchmarking/generate-srj18-hypergraphs.ts",
+    "benchmark:fixed-round:srj18": "bun scripts/benchmarking/fixed-round-srj18.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",

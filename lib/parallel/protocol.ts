@@ -8,6 +8,7 @@ import type {
 import type { RegionIntersectionCache } from "../types"
 
 export interface RoutingSnapshot {
+  portPenalty?: Float64Array
   portAssignment: Int32Array
   regionUpdates: Array<{ regionId: number; cache: RegionIntersectionCache }>
   resetRegions: boolean
@@ -16,11 +17,17 @@ export interface RoutingSnapshot {
 
 export type FlatCandidate = Omit<Candidate, "prevCandidate">
 export interface RouteSearchResult {
+  failed?: boolean
+  error?: string | null
   path?: FlatCandidate[]
   exhausted: boolean
   steps: number
   readPorts: number[]
   readRegions: number[]
+}
+export interface RoundTaskResult {
+  index: number
+  search: RouteSearchResult
 }
 
 export type WorkerRequest =
@@ -33,6 +40,13 @@ export type WorkerRequest =
   | {
       kind: "route"
       routeId: number
+      snapshot: RoutingSnapshot
+      maxSteps: number
+    }
+  | {
+      kind: "round"
+      routeIds: number[]
+      taskCounter: Int32Array
       snapshot: RoutingSnapshot
       maxSteps: number
     }

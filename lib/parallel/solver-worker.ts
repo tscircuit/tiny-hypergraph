@@ -1,56 +1,9 @@
 import { parentPort } from "node:worker_threads"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
-import {
-  TinyHyperGraphSolver,
-  createEmptyRegionIntersectionCache,
-  type Candidate,
-} from "../core"
-import type {
-  FlatCandidate,
-  RouteSearchResult,
-  SolveResult,
-  WorkerRequest,
-} from "./protocol"
+import { TinyHyperGraphSolver } from "../core"
+import type { RoundTaskResult, SolveResult, WorkerRequest } from "./protocol"
 
-// Reuse the exact serial heap and arithmetic. Only intercept search completion
-// and record mutable inputs; the coordinator owns all routing mutations.
-class RouteSearchSolver extends TinyHyperGraphSolver {
-  readPorts = new Set<number>()
-  readRegions = new Set<number>()
-  path?: FlatCandidate[]
-  exhausted = false
-
-  override isPortReservedForDifferentNet(portId: number) {
-    this.readPorts.add(portId)
-    return super.isPortReservedForDifferentNet(portId)
-  }
-
-  override computeG(
-    candidate: Candidate,
-    portId: number,
-    maximumCost?: number,
-    distance?: number,
-  ) {
-    this.readRegions.add(candidate.nextRegionId)
-    return super.computeG(candidate, portId, maximumCost, distance)
-  }
-
-  override onPathFound(candidate: Candidate) {
-    const path: FlatCandidate[] = []
-    let cursor: Candidate | undefined = candidate
-    while (cursor) {
-      const prevCandidate: Candidate | undefined = cursor.prevCandidate
-      const { prevCandidate: _previous, ...flat } = cursor
-      path.push(flat)
-      cursor = prevCandidate
-    }
-    this.path = path.reverse()
-  }
-
-  override onOutOfCandidates() {
-    this.exhausted = true
-  }
-}
+import { RouteSearchSolver } from "./RouteSearchSolver"
 
 let initialized: Extract<WorkerRequest, { kind: "init" }> | undefined
 let routeSolver: RouteSearchSolver | undefined
@@ -86,46 +39,24 @@ parentPort.on("message", (request: WorkerRequest) => {
     } else {
       if (!initialized) throw new Error("Route worker was not initialized")
       const solver = routeSolver!
-      solver.readPorts.clear()
-      solver.readRegions.clear()
-      solver.path = undefined
-      solver.exhausted = false
-      solver.failed = false
-      solver.error = null
-      solver.state.currentRouteId = undefined
-      solver.state.currentRouteNetId = undefined
-      solver.state.candidateQueue.clear()
-      solver.state.portAssignment = request.snapshot.portAssignment
-      if (request.snapshot.resetRegions) {
-        solver.state.regionIntersectionCaches = Array.from(
-          { length: solver.topology.regionCount },
-          createEmptyRegionIntersectionCache,
-        )
-      }
-      for (const { regionId, cache } of request.snapshot.regionUpdates) {
-        solver.state.regionIntersectionCaches[regionId] = cache
-      }
-      solver.state.regionCongestionCost = request.snapshot.regionCongestionCost
-      solver.state.unroutedRoutes = [request.routeId]
-      // Setup has no routing mutations; endpoint reservations include all routes.
-      solver.setup()
-      let steps = 0
-      while (
-        !solver.path &&
-        !solver.exhausted &&
-        !solver.failed &&
-        steps < request.maxSteps
-      ) {
-        solver._step()
-        steps++
-      }
-      const value: RouteSearchResult = {
-        path: solver.path,
-        exhausted: solver.exhausted,
-        steps,
-        readPorts: [...solver.readPorts],
-        readRegions: [...solver.readRegions],
-      }
+      solver.trackReads = request.kind === "route"
+      solver.applySnapshot(request.snapshot)
+      let value
+      if (request.kind === "round") {
+        const results: RoundTaskResult[] = []
+        while (true) {
+          const index = Atomics.add(request.taskCounter, 0, 1)
+          if (index >= request.routeIds.length) break
+          results.push({
+            index,
+            search: solver.searchRoute(
+              request.routeIds[index],
+              request.maxSteps,
+            ),
+          })
+        }
+        value = results
+      } else value = solver.searchRoute(request.routeId, request.maxSteps)
       parentPort!.postMessage({ value })
     }
   } catch (error) {
