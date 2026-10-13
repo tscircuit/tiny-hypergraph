@@ -77,13 +77,12 @@ test("final routing moves blockers only within the shared rerip budget", () => {
     expect(solver.stats.acceptedGreedyFinalRouteOnTimeout).toBe(true)
     expect(solver.state.portAssignment[4]).toBe(1)
     expect(solver.state.regionSegments[2]).toEqual([[0, 5, 6]])
-    expect(solver.stats.finalRoutingStrategy).toBe(
-      parentRipCount < 8 ? "congestion-aware" : "greedy",
-    )
-    if (parentRipCount < 8) {
-      expect(solver.state.regionSegments[3]).toEqual([[2, 7, 9]])
-      expect(solver.state.regionSegments[4]).toEqual([[2, 9, 8]])
-    }
+    expect(solver.stats.finalRoutingStrategy).toBe("greedy")
+    expect(solver.state.portAssignment[7]).toBe(2)
+    expect(solver.state.portAssignment[8]).toBe(2)
+    expect(
+      solver.state.regionSegments.flat().some(([routeId]) => routeId === 2),
+    ).toBeTrue()
     expect(solver.state.unroutedRoutes).toEqual([])
   }
 })

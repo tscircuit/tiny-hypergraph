@@ -37,7 +37,8 @@ import { visualizeTinyGraph } from "./visualizeTinyGraph"
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
 
-const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
+const MIN_GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
+export const GREEDY_FINAL_ROUTE_COST_PER_EXISTING_SEGMENT = 0.02
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
@@ -1731,16 +1732,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
-    let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
-    // Do not reset the rerip budget by opening a new cost-aware search after
-    // the parent has already repeatedly rearranged the graph. Preserve the
-    // existing greedy shuffle seeds when the extra candidate is skipped.
-    for (
-      let greedyFinalRouteIter =
-        this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0;
-      greedyFinalRouteIter < greedyFinalRouteIters;
-      greedyFinalRouteIter++
-    ) {
+    const proportionalGreedyFinalRouteMaxIterations = Math.ceil(
+      (this.MAX_ITERATIONS * remainingRouteIds.length) /
+        Math.max(1, this.problem.routeCount),
+    )
+    let greedyFinalRouteMaxIterations = Math.max(
+      MIN_GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+      proportionalGreedyFinalRouteMaxIterations,
+    )
+    const greedyFinalRouteAttempts = range(greedyFinalRouteIters)
+    if (this.state.ripCount < this.costAwareFinalReripBudget) {
+      greedyFinalRouteAttempts.splice(1, 0, -1)
+    }
+    // Try the inexpensive load-aware completion before allowing another
+    // blocker rerip. The rerip candidate remains available when the existing
+    // assignments genuinely prevent completion.
+    for (const greedyFinalRouteIter of greedyFinalRouteAttempts) {
       const routeIds =
         greedyFinalRouteIter <= 0
           ? remainingRouteIds
@@ -1753,7 +1760,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           ...getTinyHyperGraphSolverOptions(this),
           ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
           GREEDY_FINAL_ROUTE_ITERS: 0,
-          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          MAX_ITERATIONS: greedyFinalRouteMaxIterations,
           RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
           STATIC_REACHABILITY_PRECHECK: false,
           OUTSIDE_IN_ROUTING: false,
@@ -2108,6 +2115,12 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     currentCandidate: Candidate,
     _neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    const existingSegmentCount =
+      this.state.regionIntersectionCaches[currentCandidate.nextRegionId]!
+        .existingSegmentCount
+    return (
+      currentCandidate.g +
+      existingSegmentCount * GREEDY_FINAL_ROUTE_COST_PER_EXISTING_SEGMENT
+    )
   }
 }

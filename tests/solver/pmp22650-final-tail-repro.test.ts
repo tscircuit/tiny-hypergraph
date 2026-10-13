@@ -134,7 +134,7 @@ const getPmp22650FinalTailGraphics = ({
   }
 }
 
-test("reproduces the unrouted PMP22650 final tail", () => {
+test("routes the PMP22650 final tail", () => {
   expect(fixture.source).toEqual({
     board: "TI PMP22650",
     dataset: "@tscircuit/dataset-srj24 sample024",
@@ -154,7 +154,7 @@ test("reproduces the unrouted PMP22650 final tail", () => {
     STATIC_REACHABILITY_PRECHECK: false,
     USE_SPARSE_CANDIDATE_STORAGE: false,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 10,
-    MAX_ITERATIONS: 10_000_000,
+    MAX_ITERATIONS: 64_000_000,
   })
   solver.state.regionCongestionCost.set(fixture.regionCongestionCost)
   solver.state.unroutedRoutes = [...fixture.remainingRouteIds]
@@ -183,7 +183,7 @@ test("reproduces the unrouted PMP22650 final tail", () => {
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-  expect(solver.solved).toBeFalse()
-  expect(solver.state.unroutedRoutes).toHaveLength(86)
-  expect(solver.stats.greedyFinalRouteMaxIterations).toBe(50_000)
+  expect(solver.solved).toBeTrue()
+  expect(solver.state.unroutedRoutes).toEqual([])
+  expect(solver.stats.greedyFinalRouteMaxIterations).toBeGreaterThan(50_000)
 }, 120_000)

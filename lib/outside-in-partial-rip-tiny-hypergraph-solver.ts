@@ -1,6 +1,7 @@
 import {
   type Candidate,
   createEmptyRegionIntersectionCache,
+  GREEDY_FINAL_ROUTE_COST_PER_EXISTING_SEGMENT,
   type RegionCostSummary,
   type TinyHyperGraphProblem,
   type TinyHyperGraphSolver,
@@ -1322,6 +1323,12 @@ class OutsideInGreedyFinalRouteSolver extends OutsideInPartialRipTinyHyperGraphS
     currentCandidate: Candidate,
     _neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    const existingSegmentCount =
+      this.state.regionIntersectionCaches[currentCandidate.nextRegionId]!
+        .existingSegmentCount
+    return (
+      currentCandidate.g +
+      existingSegmentCount * GREEDY_FINAL_ROUTE_COST_PER_EXISTING_SEGMENT
+    )
   }
 }
