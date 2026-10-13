@@ -35,6 +35,16 @@ async function run(graph: SerializedHyperGraph, workers: number, options = {}) {
   }
   return { solver, value }
 }
+test("unchanged bounded searches are reused without changing logical retries", async () => {
+  const options = { ROUTE_STEP_LIMIT: 1, MAX_ITERATIONS: 100 }
+  const baseline = await run(gridGraph(5), 1, options)
+  const parallel = await run(gridGraph(5), 8, options)
+  expect(parallel.value).toEqual(baseline.value)
+  expect(parallel.solver.executionStats).toEqual(baseline.solver.executionStats)
+  expect(baseline.solver.executionStats.unchangedSnapshotHits).toBeGreaterThan(
+    0,
+  )
+}, 30000)
 test("fixed snapshots and conflict decisions are identical with 1/2/4/8 workers", async () => {
   const graph = gridGraph(5)
   const options = {

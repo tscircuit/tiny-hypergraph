@@ -15,9 +15,7 @@
     "PORT_CONFLICT_PENALTY": 0
   },
   "repeats": 1,
-  "workerCounts": [
-    1
-  ],
+  "workerCounts": [1],
   "inputs": [
     {
       "sample": "sample001",

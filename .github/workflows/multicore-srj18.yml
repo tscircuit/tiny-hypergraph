@@ -40,7 +40,7 @@ jobs:
           PY
       - run: bun scripts/benchmarking/generate-srj18-hypergraphs.ts
       - name: Benchmark one and eight workers on the same eight CPUs
-        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --workers 1,8 --repeat 3 --out work/eight-core-results.json
+        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --workers 1,8 --repeat 3 --skip-equal-budget --out work/eight-core-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

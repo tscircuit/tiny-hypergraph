@@ -36,6 +36,7 @@ export type WorkerRequest =
       topology: TinyHyperGraphTopology
       problem: TinyHyperGraphProblem
       options: TinyHyperGraphSolverOptions
+      cacheScores?: boolean
     }
   | {
       kind: "route"

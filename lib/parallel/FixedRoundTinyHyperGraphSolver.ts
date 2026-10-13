@@ -12,6 +12,7 @@ import type {
   RoutingSnapshot,
 } from "./protocol"
 import { RouteSearchSolver } from "./RouteSearchSolver"
+import { CachedRouteSearchSolver } from "./CachedRouteSearchSolver"
 import { setNewIntersectionCounts } from "../countNewIntersections"
 import {
   defaultWorkerCount,
@@ -48,6 +49,7 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
     exhausted: 0,
     searchLimitReached: 0,
   }
+  executionStats = { searchesExecuted: 0, unchangedSnapshotHits: 0 }
   private dirtyRegions?: Set<number>
   private resetRegions = true
   private retryCounts: Uint32Array
@@ -226,10 +228,11 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
         topology: this.topology,
         problem: this.problem,
         options: getTinyHyperGraphSolverOptions(this),
+        cacheScores: true,
       }
       let local: RouteSearchSolver | undefined
       if (this.workers === 1) {
-        local = new RouteSearchSolver(
+        local = new CachedRouteSearchSolver(
           this.topology,
           { ...this.problem, initialAssignments: undefined },
           { ...init.options, STATIC_REACHABILITY_PRECHECK: false },
@@ -247,6 +250,10 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
         await Promise.all(pool.slots.map((slot) => slot.run(init)))
       }
       this.resetRegions = true
+      const unchangedSearches = new Map<
+        number,
+        { limit: number; result: RouteSearchResult }
+      >()
       while (
         !this.solved &&
         !this.failed &&
@@ -266,32 +273,47 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
           this.ROUTE_STEP_LIMIT,
           Math.floor((this.MAX_ITERATIONS - this.iterations) / count),
         )
-        const snapshot = this.takeSnapshot()
-        let searches: RouteSearchResult[]
+        const searches: RouteSearchResult[] = new Array(routeIds.length)
+        const pending: number[] = []
+        const pendingIndices: number[] = []
+        for (let i = 0; i < routeIds.length; i++) {
+          const cached = unchangedSearches.get(routeIds[i])
+          if (cached?.limit === maxSteps) {
+            searches[i] = cached.result
+            this.executionStats.unchangedSnapshotHits++
+          } else {
+            pending.push(routeIds[i])
+            pendingIndices.push(i)
+          }
+        }
+        this.executionStats.searchesExecuted += pending.length
+        const snapshot = pending.length ? this.takeSnapshot() : undefined
         if (local) {
-          local.applySnapshot(snapshot)
-          searches = routeIds.map((routeId) =>
-            local!.searchRoute(routeId, maxSteps),
-          )
-        } else {
+          if (snapshot) local.applySnapshot(snapshot)
+          for (let i = 0; i < pending.length; i++)
+            searches[pendingIndices[i]] = local.searchRoute(
+              pending[i],
+              maxSteps,
+            )
+        } else if (snapshot) {
           const taskCounter = new Int32Array(new SharedArrayBuffer(4))
           const results = await Promise.all(
             pool!.slots.map((slot) =>
               slot.run<RoundTaskResult[]>({
                 kind: "round",
-                routeIds,
+                routeIds: pending,
                 taskCounter,
                 snapshot,
                 maxSteps,
               }),
             ),
           )
-          searches = new Array(routeIds.length)
           for (const tasks of results)
             for (const { index, search } of tasks) {
-              if (searches[index])
+              const resultIndex = pendingIndices[index]
+              if (searches[resultIndex])
                 throw new Error("Duplicate fixed-round task result")
-              searches[index] = search
+              searches[resultIndex] = search
             }
           for (let index = 0; index < routeIds.length; index++) {
             if (!searches[index])
@@ -301,6 +323,9 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
         this.dirtyRegions!.clear()
         this.resetRegions = false
         this.roundStats.rounds++
+        const previousAccepted = this.roundStats.accepted
+        const previousConflicts = this.roundStats.portConflicts
+        const previousRip = this.state.ripCount
         let mustRip = false
         for (let index = 0; index < routeIds.length; index++) {
           const routeId = routeIds[index],
@@ -320,6 +345,20 @@ export class FixedRoundTinyHyperGraphSolver extends TinyHyperGraphSolver {
         this.state.currentRouteNetId = undefined
         if (!this.state.unroutedRoutes.length) this.onAllRoutesRouted()
         else if (mustRip) this.onOutOfCandidates()
+        // Only unchanged snapshots may reuse a bounded search. Keep the logical
+        // iteration count and retry order exactly as if it had run again.
+        if (
+          this.roundStats.accepted !== previousAccepted ||
+          this.roundStats.portConflicts !== previousConflicts ||
+          this.state.ripCount !== previousRip
+        )
+          unchangedSearches.clear()
+        else
+          for (let i = 0; i < routeIds.length; i++)
+            unchangedSearches.set(routeIds[i], {
+              limit: maxSteps,
+              result: searches[i],
+            })
       }
       if (!this.solved && !this.failed) {
         this.tryFinalAcceptance()

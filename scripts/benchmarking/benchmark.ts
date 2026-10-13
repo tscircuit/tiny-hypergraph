@@ -772,7 +772,9 @@ const getSrj18DatasetDir = async (cwd: string) => {
     // Keep this completed-case benchmark on its original archive. The latest
     // autorouter srj18 board inputs are measured by parallel-srj18.ts.
     path.join(
-      path.dirname(fileURLToPath(import.meta.resolve("dataset-srj18-pipeline7"))),
+      path.dirname(
+        fileURLToPath(import.meta.resolve("dataset-srj18-pipeline7")),
+      ),
       "generated-datasets",
       "srj18",
     ),

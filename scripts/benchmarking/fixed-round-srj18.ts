@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
-import { cpus } from "node:os"
+import { cpus, availableParallelism } from "node:os"
+import { execFileSync } from "node:child_process"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { TinyHyperGraphSolver } from "../../lib/core"
@@ -110,6 +111,10 @@ if (process.argv.includes("--child")) {
       cpuMs: (cpu.user + cpu.system) / 1000,
       peakRssBytes: process.resourceUsage().maxRSS * 1024,
       fingerprint: hash(state),
+      executionStats:
+        solver instanceof FixedRoundTinyHyperGraphSolver
+          ? solver.executionStats
+          : null,
       ...state,
     }),
   )
@@ -155,7 +160,16 @@ if (process.argv.includes("--child")) {
     runtime: Bun.version,
     cpu: cpus()[0]?.model,
     visibleCpus: cpus().length,
+    availableCpus: availableParallelism(),
+    cpuAffinity: existsSync("/proc/self/status")
+      ? readFileSync("/proc/self/status", "utf8").match(
+          /^Cpus_allowed_list:\s*(.+)$/m,
+        )?.[1]
+      : null,
     cpuQuota: quota,
+    revision: execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim(),
     prototypeConfig: {
       ROUND_SIZE: roundSize,
       ROUTE_STEP_LIMIT: routeStepLimit,
@@ -196,12 +210,16 @@ if (process.argv.includes("--child")) {
   }
   const controls = [
     { mode: "serial", workers: 1, budget: 1000000, label: "serial-1m" },
-    {
-      mode: "fixed",
-      workers: 1,
-      budget: 1000000,
-      label: "fixed-equal-budget-1m",
-    },
+    ...(process.argv.includes("--skip-equal-budget")
+      ? []
+      : [
+          {
+            mode: "fixed",
+            workers: 1,
+            budget: 1000000,
+            label: "fixed-equal-budget-1m",
+          },
+        ]),
   ]
   const modes = [
     ...(process.argv.includes("--prototype-only") ? [] : controls),

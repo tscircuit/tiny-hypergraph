@@ -4,6 +4,7 @@ import { TinyHyperGraphSolver } from "../core"
 import type { RoundTaskResult, SolveResult, WorkerRequest } from "./protocol"
 
 import { RouteSearchSolver } from "./RouteSearchSolver"
+import { CachedRouteSearchSolver } from "./CachedRouteSearchSolver"
 
 let initialized: Extract<WorkerRequest, { kind: "init" }> | undefined
 let routeSolver: RouteSearchSolver | undefined
@@ -12,7 +13,10 @@ parentPort.on("message", (request: WorkerRequest) => {
   try {
     if (request.kind === "init") {
       initialized = request
-      routeSolver = new RouteSearchSolver(
+      const SearchSolver = request.cacheScores
+        ? CachedRouteSearchSolver
+        : RouteSearchSolver
+      routeSolver = new SearchSolver(
         request.topology,
         { ...request.problem, initialAssignments: undefined },
         { ...request.options, STATIC_REACHABILITY_PRECHECK: false },

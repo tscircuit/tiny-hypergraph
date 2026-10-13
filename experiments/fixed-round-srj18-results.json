@@ -15,12 +15,7 @@
     "GREEDY_FINAL_ROUTE_ITERS": 0
   },
   "repeats": 1,
-  "workerCounts": [
-    1,
-    2,
-    4,
-    8
-  ],
+  "workerCounts": [1, 2, 4, 8],
   "inputs": [
     {
       "sample": "sample001",

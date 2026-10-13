@@ -4038,10 +4038,5 @@
   ],
   "allWorkerCountsMatch": true,
   "methodology": "Sequential isolated child processes; core warmup and file parsing excluded. Timed conversion, solve, output conversion, worker startup and cleanup. CPU time covers all threads. Peak RSS includes input and warmup. Eight workers oversubscribe the four-core quota; not an eight-core hardware measurement.",
-  "workerCounts": [
-    1,
-    2,
-    4,
-    8
-  ]
+  "workerCounts": [1, 2, 4, 8]
 }
