@@ -75,8 +75,8 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
       state.currentRouteId === undefined ||
       costs instanceof Map ||
       generations instanceof Map ||
-      this.ADD_SEGMENT_DISTANCE_TO_G ||
-      !this.fastExpansion
+      !this.fastExpansion ||
+      this.OWNED_REGIONAL_HOP_FRONTIER
     )
       return super._step()
     const candidate = state.candidateQueue.dequeue()
@@ -112,6 +112,7 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
       const nextRegion = next[i]
       if (nextRegion === -1) continue
       const nextHop = hops[i]
+      if (state.candidateQueue.isClosedHopId?.(nextHop)) continue
       const reserved = reservations[port] ?? -1
       if (reserved === -2 || (reserved !== -1 && reserved !== net)) continue
       if (assignments[port] !== -1 && assignments[port] !== net) continue
@@ -119,12 +120,17 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
       if (owner !== -1 && owner !== net) continue
       const previous =
         generations[nextHop] === epoch ? costs[nextHop] : Infinity
-      if (
-        candidate.g >= previous ||
-        base + (problem.portPenalty?.[port] ?? 0) >= previous
-      )
-        continue
-      const g = this.computeG(candidate, port, previous)
+      if (candidate.g >= previous) continue
+      let lowerBound = base + (problem.portPenalty?.[port] ?? 0)
+      let distance: number | undefined
+      if (this.ADD_SEGMENT_DISTANCE_TO_G) {
+        const dx = topology.portX[candidate.portId] - topology.portX[port]
+        const dy = topology.portY[candidate.portId] - topology.portY[port]
+        distance = Math.sqrt(dx * dx + dy * dy)
+        lowerBound += distance * this.DISTANCE_TO_COST
+      }
+      if (lowerBound >= previous) continue
+      const g = this.computeG(candidate, port, previous, distance)
       if (!Number.isFinite(g) || g >= previous) continue
       const h = this.computeH(port)
       costs[nextHop] = g
@@ -149,10 +155,19 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
       this.cachedCells = 0
     } else
       for (const { regionId } of snapshot.regionUpdates) {
-        const old = this.scoreCaches[regionId]
-        if (old) this.cachedCells -= old.generic.length * (1 + old.own.size)
-        this.scoreCaches[regionId] = undefined
+        this.invalidateScoreCache(regionId)
       }
+  }
+
+  protected invalidateScoreCache(regionId: number) {
+    const old = this.scoreCaches?.[regionId]
+    if (old) this.cachedCells -= old.generic.length * (1 + old.own.size)
+    if (this.scoreCaches) this.scoreCaches[regionId] = undefined
+  }
+
+  protected clearScoreCaches() {
+    this.scoreCaches = []
+    this.cachedCells = 0
   }
 
   override computeG(

@@ -5,13 +5,51 @@ import type { RoundTaskResult, SolveResult, WorkerRequest } from "./protocol"
 
 import { RouteSearchSolver } from "./RouteSearchSolver"
 import { CachedRouteSearchSolver } from "./CachedRouteSearchSolver"
+import {
+  runPortfolioCandidate,
+  comparePortfolioCandidates,
+} from "./portfolio-candidate"
 
 let initialized: Extract<WorkerRequest, { kind: "init" }> | undefined
 let routeSolver: RouteSearchSolver | undefined
+let portfolio: Extract<WorkerRequest, { kind: "portfolioInit" }> | undefined
+let portfolioBest: ReturnType<typeof runPortfolioCandidate> | undefined
 if (!parentPort) throw new Error("solver-worker must run in a worker thread")
 parentPort.on("message", (request: WorkerRequest) => {
   try {
-    if (request.kind === "init") {
+    if (request.kind === "portfolioInit") {
+      portfolio = request
+      portfolioBest = undefined
+      parentPort!.postMessage({ value: null })
+    } else if (request.kind === "portfolioCandidate") {
+      if (!portfolio) throw new Error("Portfolio worker was not initialized")
+      const result = runPortfolioCandidate(
+        portfolio.topology,
+        portfolio.problem,
+        portfolio.options,
+        request.index,
+      )
+      if (
+        !portfolioBest ||
+        comparePortfolioCandidates(result.candidate, portfolioBest.candidate) <
+          0
+      )
+        portfolioBest = result
+      parentPort!.postMessage({ value: result.candidate })
+    } else if (request.kind === "portfolioOutput") {
+      if (portfolioBest?.candidate.index !== request.index)
+        throw new Error("Portfolio winner is not retained")
+      const solver = portfolioBest.solver
+      parentPort!.postMessage({
+        value:
+          solver.solved && !solver.failed
+            ? {
+                portAssignment: solver.state.portAssignment,
+                regionSegments: solver.state.regionSegments,
+              }
+            : null,
+      })
+    } else if (request.kind === "init") {
       initialized = request
       const SearchSolver = request.cacheScores
         ? CachedRouteSearchSolver

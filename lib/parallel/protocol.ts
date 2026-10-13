@@ -32,6 +32,14 @@ export interface RoundTaskResult {
 
 export type WorkerRequest =
   | {
+      kind: "portfolioInit"
+      topology: TinyHyperGraphTopology
+      problem: TinyHyperGraphProblem
+      options: TinyHyperGraphSolverOptions
+    }
+  | { kind: "portfolioCandidate"; index: number }
+  | { kind: "portfolioOutput"; index: number }
+  | {
       kind: "init"
       topology: TinyHyperGraphTopology
       problem: TinyHyperGraphProblem
@@ -64,4 +72,9 @@ export interface SolveResult {
   iterations: number
   output: SerializedHyperGraph | null
   stats: Record<string, unknown>
+}
+
+export interface PortfolioRoutingState {
+  portAssignment: Int32Array
+  regionSegments: Array<Array<[number, number, number]>>
 }

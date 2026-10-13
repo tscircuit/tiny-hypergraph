@@ -1,0 +1,58 @@
+DETERMINISTIC EIGHT-CANDIDATE PROTOTYPE
+
+  import { solveTinyHyperGraphPortfolio } from "tiny-hypergraph/lib/parallel"
+
+  const result = await solveTinyHyperGraphPortfolio(input, { workers: 8 })
+  if (result.failed) throw new Error(result.error ?? "Routing failed")
+  const output = result.output
+
+This runs eight fixed candidates for ONE graph. Changing workers changes only
+scheduling: all eight candidates run, and the same output, selected candidate,
+candidate statistics and quality metrics must result with 1/2/4/8 workers.
+It may return a different route from the original serial algorithm. Existing
+ParallelTinyHyperGraphSolver retains the original algorithm's exact outcome.
+
+Candidate zero uses the original search and route order. Seven candidates use
+distance-aware search with fixed route shuffles and fixed heuristic/congestion
+settings (see PORTFOLIO_PLANS). Each candidate defaults to 250,000 core iterations.
+Candidate zero retains the legacy greedy completion tail (up to four additional
+50,000-step searches). Distance candidates disable that tail. The budget and
+candidate list are independent of worker count. Explicit solverOptions override
+candidate defaults; MAX_ITERATIONS applies to EACH candidate, not the portfolio.
+
+Selection waits for all candidates. Completed candidates rank before failures;
+among completions, fewer known-single-layer intersections rank first, followed
+by maximum regional congestion cost, total cost, then candidate index. This is
+a routing-model audit, not a final PCB DRC. If all completions violate the model,
+the result still exposes those violations: inspect quality.singleLayerIntersections.
+The legacy fallback can preserve completion while producing such violations.
+If every candidate fails, candidate zero is returned as the deterministic failure.
+
+The cached candidate engine preserves each constituent search's arithmetic,
+frontier order and iteration budget. It caches symmetric transition scores per
+region and net, invalidating them on route insertion and rerips. Dense expansion
+precomputes directed hops and uses the existing generation-stamped costs.
+Score tables are bounded to 32 MB per candidate; beyond that, scoring falls back
+to the original arithmetic. Only the selected state crosses back from a worker;
+output conversion uses the caller's original serialized IDs and metadata.
+
+Single-worker execution runs in process and blocks that thread. It pays for all
+eight candidates sequentially. Eight workers can run the candidates concurrently,
+but require additional workspaces, memory, startup and data copies. Time and CPU
+cost must be measured against BOTH the original solver and the one-worker
+portfolio; parallel scaling does not establish a speedup over the original.
+
+Benchmark all 16 current srj18 inputs, including failures:
+
+  mkdir -p work
+  tar -xzf experiments/srj18-inputs.tar.gz -C work
+  bun scripts/benchmarking/fixed-round-srj18.ts --portfolio --workers 1,2,4,8
+
+The compressed snapshot contains exactly the inputs extracted by
+generate-srj18-hypergraphs.ts from dataset commit
+100e8957ce789b5b288e14c476dc83f4efc5214b and published autorouter 0.0.979, effort 0.1.
+Every graph has source provenance and a checked SHA-256. Keeping this snapshot
+avoids transitive dependency changes during extraction and repeated expensive
+preprocessing on CI. The generator remains available to independently reproduce
+it. CI constrains a Blacksmith runner to eight CPUs, checks its quota, benchmarks
+both one/eight workers and the original solver, and verifies deterministic hashes.

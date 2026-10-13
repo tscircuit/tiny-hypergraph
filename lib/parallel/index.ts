@@ -13,6 +13,10 @@ export {
 } from "./ParallelTinyHyperGraphSolver"
 export type { SolveResult } from "./protocol"
 export {
+  solveTinyHyperGraphPortfolio,
+  type PortfolioSolveResult,
+} from "./portfolio"
+export {
   FixedRoundTinyHyperGraphSolver,
   type FixedRoundTinyHyperGraphSolverOptions,
 } from "./FixedRoundTinyHyperGraphSolver"

@@ -6,7 +6,11 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { TinyHyperGraphSolver } from "../../lib/core"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
-import { FixedRoundTinyHyperGraphSolver } from "../../lib/parallel"
+import {
+  FixedRoundTinyHyperGraphSolver,
+  solveTinyHyperGraphPortfolio,
+} from "../../lib/parallel"
+import { PORTFOLIO_PLANS } from "../../lib/parallel/portfolio-candidate"
 
 const arg = (flag: string, fallback: string) => {
   const i = process.argv.indexOf(flag)
@@ -37,6 +41,26 @@ if (process.argv.includes("--child")) {
   warm.solve()
   const cpuStart = process.cpuUsage(),
     start = performance.now()
+  if (mode === "portfolio") {
+    const result = await solveTinyHyperGraphPortfolio(graph, {
+      workers,
+      solverOptions: { MAX_ITERATIONS: budget },
+    })
+    const ms = performance.now() - start,
+      cpu = process.cpuUsage(cpuStart)
+    const { output, ...semantic } = result
+    const state = { ...semantic, outputHash: hash(output) }
+    console.log(
+      JSON.stringify({
+        ms,
+        cpuMs: (cpu.user + cpu.system) / 1000,
+        peakRssBytes: process.resourceUsage().maxRSS * 1024,
+        fingerprint: hash(state),
+        ...state,
+      }),
+    )
+    process.exit(0)
+  }
   const { topology, problem } = loadSerializedHyperGraph(graph)
   const solver =
     mode === "serial"
@@ -126,6 +150,7 @@ if (process.argv.includes("--child")) {
   const routeStepLimit = Number(arg("--route-step-limit", "50000"))
   const portConflictPenalty = Number(arg("--port-conflict-penalty", "1"))
   const workerCounts = arg("--workers", "1,2,4,8").split(",").map(Number)
+  const portfolio = process.argv.includes("--portfolio")
   if (
     !workerCounts.length ||
     workerCounts.some((n) => !Number.isSafeInteger(n) || n < 1)
@@ -170,14 +195,24 @@ if (process.argv.includes("--child")) {
     revision: execFileSync("git", ["rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
-    prototypeConfig: {
-      ROUND_SIZE: roundSize,
-      ROUTE_STEP_LIMIT: routeStepLimit,
-      PORT_CONFLICT_PENALTY: portConflictPenalty,
-      RETRIES_BEFORE_RIP: 8,
-      MAX_ITERATIONS: 2000000,
-      GREEDY_FINAL_ROUTE_ITERS: 0,
-    },
+    algorithm: portfolio ? "fixed-eight-candidate-portfolio" : "fixed-round",
+    portfolioConfig: portfolio
+      ? {
+          candidateCount: 8,
+          MAX_ITERATIONS: 250000,
+          plans: PORTFOLIO_PLANS,
+        }
+      : null,
+    prototypeConfig: portfolio
+      ? null
+      : {
+          ROUND_SIZE: roundSize,
+          ROUTE_STEP_LIMIT: routeStepLimit,
+          PORT_CONFLICT_PENALTY: portConflictPenalty,
+          RETRIES_BEFORE_RIP: 8,
+          MAX_ITERATIONS: 2000000,
+          GREEDY_FINAL_ROUTE_ITERS: 0,
+        },
     repeats: repeat,
     workerCounts,
     inputs: sources,
@@ -195,6 +230,9 @@ if (process.argv.includes("--child")) {
         JSON.stringify(report.prototypeConfig) ||
       prior.runtime !== report.runtime ||
       prior.cpuQuota !== report.cpuQuota ||
+      prior.cpuAffinity !== report.cpuAffinity ||
+      JSON.stringify(prior.portfolioConfig) !==
+        JSON.stringify(report.portfolioConfig) ||
       prior.datasetCommit !== report.datasetCommit
     )
       throw new Error("Resume configuration does not match")
@@ -210,7 +248,7 @@ if (process.argv.includes("--child")) {
   }
   const controls = [
     { mode: "serial", workers: 1, budget: 1000000, label: "serial-1m" },
-    ...(process.argv.includes("--skip-equal-budget")
+    ...(portfolio || process.argv.includes("--skip-equal-budget")
       ? []
       : [
           {
@@ -224,10 +262,10 @@ if (process.argv.includes("--child")) {
   const modes = [
     ...(process.argv.includes("--prototype-only") ? [] : controls),
     ...workerCounts.map((workers) => ({
-      mode: "fixed",
+      mode: portfolio ? "portfolio" : "fixed",
       workers,
-      budget: 2000000,
-      label: `fixed-${workers}-2m`,
+      budget: portfolio ? 250000 : 2000000,
+      label: portfolio ? `portfolio-${workers}-8x250k` : `fixed-${workers}-2m`,
     })),
   ]
   for (let run = 0; run < repeat; run++)
