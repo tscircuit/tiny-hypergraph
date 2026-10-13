@@ -8,6 +8,8 @@ import {
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import {
   findDistinctOwnerBlockerPath,
+  findShortestDistanceBlockerPath,
+  type DistinctOwnerBlockerSearchOptions,
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
 import type { PortId, RegionId, RouteId } from "./types"
@@ -47,6 +49,7 @@ type RelaxedSearchHop = {
 }
 
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
+const MAX_EXACT_BLOCKER_LABEL_COUNT = 131_072
 
 export type FailedOwnerPairCount = {
   failedRouteId: RouteId
@@ -168,6 +171,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   private readonly selectiveReripStats = createInitialSelectiveReripStats()
 
   private selectiveReripCongestionUpdateCount = 0
+  private hasAttemptedWholeRouteGreedyCompletion = false
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -223,6 +227,22 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    let everyRouteHasSucceeded = true
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      if (this.routeSuccessCountByRouteId[routeId] === 0) {
+        everyRouteHasSucceeded = false
+        break
+      }
+    }
+    if (
+      this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING &&
+      !this.hasAttemptedWholeRouteGreedyCompletion &&
+      everyRouteHasSucceeded
+    ) {
+      this.hasAttemptedWholeRouteGreedyCompletion = true
+      if (this.tryGreedyFinalRouteAcceptance()) return
+    }
+
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
@@ -392,10 +412,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const portOwners = this.getPortOwners()
     const portResources = new Map<PortId, PortBlockerResource>()
     const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
-    // Occupancy stays fixed during this synchronous search. Distinct owner
-    // labels revisit the same hop, but their outgoing resources are identical.
+    // Occupancy stays fixed during this synchronous search. Cache each
+    // topology state's outgoing resources while A* revisits queued states.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
-    return findDistinctOwnerBlockerPath({
+    const searchOptions: DistinctOwnerBlockerSearchOptions<
+      RelaxedSearchState,
+      number,
+      RouteId,
+      RelaxedSearchHopData
+    > = {
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
@@ -416,8 +441,24 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         hopsByState.set(key, hops)
         return hops
       },
-      maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
+    }
+    const exactPath = findDistinctOwnerBlockerPath({
+      ...searchOptions,
+      maxExpandedLabels: this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING
+        ? MAX_EXACT_BLOCKER_LABEL_COUNT
+        : this.getRelaxedSearchExpansionLimit(),
       checkReachability: true,
+    })
+    if (exactPath.found || exactPath.reason === "no_path") return exactPath
+    if (!this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING) return exactPath
+
+    return findShortestDistanceBlockerPath({
+      ...searchOptions,
+      getEstimatedRemainingDistance: ({ portId }): number =>
+        Math.hypot(
+          this.topology.portX[portId]! - this.topology.portX[goalPortId]!,
+          this.topology.portY[portId]! - this.topology.portY[goalPortId]!,
+        ),
     })
   }
 
