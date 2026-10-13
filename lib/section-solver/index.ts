@@ -13,6 +13,7 @@ import {
   type TinyHyperGraphTopology,
 } from "../core"
 import { shuffle } from "../shuffle"
+import { cloneRegionIntersectionCache } from "../regionIntersectionCache"
 import type {
   PortId,
   RegionId,
@@ -95,23 +96,6 @@ const cloneRegionSegments = (
         [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
     ),
   )
-
-const cloneRegionIntersectionCache = (
-  regionIntersectionCache: RegionIntersectionCache,
-): RegionIntersectionCache => ({
-  netIds: new Int32Array(regionIntersectionCache.netIds),
-  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
-  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
-  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
-  existingCrossingLayerIntersections:
-    regionIntersectionCache.existingCrossingLayerIntersections,
-  existingSameLayerIntersections:
-    regionIntersectionCache.existingSameLayerIntersections,
-  existingEntryExitLayerChanges:
-    regionIntersectionCache.existingEntryExitLayerChanges,
-  existingRegionCost: regionIntersectionCache.existingRegionCost,
-  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
-})
 
 const cloneSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,
