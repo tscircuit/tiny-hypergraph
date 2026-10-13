@@ -444,10 +444,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
     const exactPath = findDistinctOwnerBlockerPath({
       ...searchOptions,
-      maxExpandedLabels: MAX_EXACT_BLOCKER_LABEL_COUNT,
+      maxExpandedLabels: this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING
+        ? MAX_EXACT_BLOCKER_LABEL_COUNT
+        : this.getRelaxedSearchExpansionLimit(),
       checkReachability: true,
     })
     if (exactPath.found || exactPath.reason === "no_path") return exactPath
+    if (!this.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING) return exactPath
 
     return findShortestDistanceBlockerPath({
       ...searchOptions,
@@ -484,6 +487,18 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     return this.findRelaxedBlockerPath(forbiddenOwnerRouteIds)
+  }
+
+  protected getRelaxedSearchExpansionLimit(): number {
+    let incidentHopCount = 0
+    for (const incidentRegions of this.topology.incidentPortRegion) {
+      incidentHopCount += incidentRegions.length
+    }
+    const ownerScale = Math.max(
+      4,
+      Math.ceil(Math.log2(this.problem.routeCount + 1)),
+    )
+    return Math.max(4096, incidentHopCount * ownerScale * 4)
   }
 
   private getRelaxedSearchHops(params: {
