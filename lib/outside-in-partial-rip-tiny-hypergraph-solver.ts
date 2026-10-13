@@ -1087,7 +1087,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     if (
       (!isPartialRipRoute &&
         !search.distanceLimitHit &&
-        (forwardExhausted || reverseExhausted)) ||
+        forwardExhausted &&
+        reverseExhausted) ||
       (!expanded && forwardExhausted && reverseExhausted)
     ) {
       if (this.commitBestOutsideInJoin()) return

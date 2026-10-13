@@ -1,3 +1,5 @@
+import { MinHeap } from "./MinHeap"
+
 export type DistinctOwnerBlockerHop<TState, TOwner, THopData = unknown> = {
   state: TState
   distance: number
@@ -49,6 +51,19 @@ export type DistinctOwnerBlockerSearchResult<
   | DistinctOwnerBlockerSearchSuccess<TState, TOwner, THopData>
   | DistinctOwnerBlockerSearchFailure
 
+export type ShortestDistanceBlockerSearchOptions<
+  TState,
+  TStateKey,
+  TOwner,
+  THopData = unknown,
+> = Omit<
+  DistinctOwnerBlockerSearchOptions<TState, TStateKey, TOwner, THopData>,
+  "maxExpandedLabels" | "checkReachability"
+> & {
+  /** Must not overestimate the remaining distance to the goal. */
+  getEstimatedRemainingDistance: (state: TState) => number
+}
+
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
@@ -59,6 +74,29 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   queueOrder: number
   active: boolean
 }
+
+type ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData> = {
+  state: TState
+  stateKey: TStateKey
+  distance: number
+  estimatedTotalDistance: number
+  parent: ShortestDistanceSearchLabel<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  > | null
+  incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
+  queueOrder: number
+}
+
+const compareShortestDistanceLabels = <TState, TStateKey, TOwner, THopData>(
+  left: ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData>,
+  right: ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData>,
+): number =>
+  left.estimatedTotalDistance - right.estimatedTotalDistance ||
+  left.distance - right.distance ||
+  left.queueOrder - right.queueOrder
 
 const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
@@ -239,6 +277,145 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     reason: "no_path",
     expandedLabelCount: expandedStateCount,
   }
+}
+
+const reconstructShortestDistanceSearch = <TState, TStateKey, TOwner, THopData>(
+  goal: ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData>,
+  expandedLabelCount: number,
+): DistinctOwnerBlockerSearchSuccess<TState, TOwner, THopData> => {
+  const states: TState[] = []
+  const hops: Array<DistinctOwnerBlockerHop<TState, TOwner, THopData>> = []
+  let cursor: ShortestDistanceSearchLabel<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  > | null = goal
+  while (cursor !== null) {
+    states.push(cursor.state)
+    if (cursor.incomingHop !== null) hops.push(cursor.incomingHop)
+    cursor = cursor.parent
+  }
+
+  states.reverse()
+  hops.reverse()
+  const owners = new Set<TOwner>()
+  for (const hop of hops) {
+    for (const owner of hop.owners ?? []) owners.add(owner)
+  }
+
+  return {
+    found: true,
+    states,
+    hops,
+    owners,
+    distance: goal.distance,
+    expandedLabelCount,
+  }
+}
+
+/**
+ * Finds the shortest blocker path with one best label per topology state.
+ * This provides a polynomial fallback when exact distinct-owner search reaches
+ * its label budget.
+ */
+export const findShortestDistanceBlockerPath = <
+  TState,
+  TStateKey,
+  TOwner,
+  THopData = unknown,
+>(
+  options: ShortestDistanceBlockerSearchOptions<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  >,
+): DistinctOwnerBlockerSearchResult<TState, TOwner, THopData> => {
+  const startEstimate = options.getEstimatedRemainingDistance(options.start)
+  if (!Number.isFinite(startEstimate) || startEstimate < 0) {
+    throw new Error(
+      "Shortest-distance blocker estimates require finite distances >= 0",
+    )
+  }
+
+  const queue = new MinHeap<
+    ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData>
+  >([], compareShortestDistanceLabels)
+  const bestLabelByStateKey = new Map<
+    TStateKey,
+    ShortestDistanceSearchLabel<TState, TStateKey, TOwner, THopData>
+  >()
+  let nextQueueOrder = 0
+  let expandedLabelCount = 0
+  const startLabel: ShortestDistanceSearchLabel<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  > = {
+    state: options.start,
+    stateKey: options.getStateKey(options.start),
+    distance: 0,
+    estimatedTotalDistance: startEstimate,
+    parent: null,
+    incomingHop: null,
+    queueOrder: nextQueueOrder++,
+  }
+  bestLabelByStateKey.set(startLabel.stateKey, startLabel)
+  queue.queue(startLabel)
+
+  while (queue.length > 0) {
+    const current = queue.dequeue()!
+    if (bestLabelByStateKey.get(current.stateKey) !== current) continue
+    if (options.isGoal(current.state)) {
+      return reconstructShortestDistanceSearch(current, expandedLabelCount)
+    }
+    expandedLabelCount++
+
+    for (const hop of options.getHops(current.state)) {
+      if (!Number.isFinite(hop.distance) || hop.distance < 0) {
+        throw new Error(
+          "Shortest-distance blocker hops require finite distances >= 0",
+        )
+      }
+      const distance = current.distance + hop.distance
+      const estimatedRemainingDistance = options.getEstimatedRemainingDistance(
+        hop.state,
+      )
+      if (
+        !Number.isFinite(distance) ||
+        !Number.isFinite(estimatedRemainingDistance) ||
+        estimatedRemainingDistance < 0
+      ) {
+        throw new Error(
+          "Shortest-distance blocker path and estimate distances must remain finite and >= 0",
+        )
+      }
+
+      const stateKey = options.getStateKey(hop.state)
+      const bestLabel = bestLabelByStateKey.get(stateKey)
+      if (bestLabel && bestLabel.distance <= distance) continue
+      const candidate: ShortestDistanceSearchLabel<
+        TState,
+        TStateKey,
+        TOwner,
+        THopData
+      > = {
+        state: hop.state,
+        stateKey,
+        distance,
+        estimatedTotalDistance: distance + estimatedRemainingDistance,
+        parent: current,
+        incomingHop: hop,
+        queueOrder: nextQueueOrder++,
+      }
+      bestLabelByStateKey.set(stateKey, candidate)
+      queue.queue(candidate)
+    }
+  }
+
+  return { found: false, reason: "no_path", expandedLabelCount }
 }
 
 export const findDistinctOwnerBlockerPath = <

@@ -14,7 +14,7 @@ class InspectableOutsideInSolver extends OutsideInPartialRipTinyHyperGraphSolver
   }
 }
 
-test("an exhausted whole-route frontier ends the outside-in search", () => {
+test("outside-in search continues until both frontiers are exhausted", () => {
   const topology: TinyHyperGraphTopology = {
     portCount: 2,
     regionCount: 2,
@@ -61,9 +61,9 @@ test("an exhausted whole-route frontier ends the outside-in search", () => {
 
   solver.solve()
 
-  expect(solver.outOfCandidatesIteration).toBe(1)
+  expect(solver.outOfCandidatesIteration).toBe(2)
   expect(solver.stats.outsideInForwardExpansionCount).toBe(1)
-  expect(solver.stats.outsideInReverseExpansionCount).toBe(0)
+  expect(solver.stats.outsideInReverseExpansionCount).toBe(1)
 })
 
 test("independent connections on one net keep one-ended search", () => {
