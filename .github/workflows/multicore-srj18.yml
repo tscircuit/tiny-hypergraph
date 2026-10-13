@@ -1,0 +1,48 @@
+name: Deterministic multicore srj18
+
+on:
+  pull_request:
+    paths:
+      - "lib/parallel/**"
+      - "scripts/benchmarking/*srj18*"
+      - ".github/workflows/multicore-srj18.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ${{ vars.BENCHMARK_RUNNER || 'blacksmith-32vcpu-ubuntu-2404-arm' }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
+      - run: bun install --ignore-scripts
+      - name: Require eight CPUs and constrain affinity
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          cpus = sorted(os.sched_getaffinity(0))
+          assert len(cpus) >= 8, f"Only {len(cpus)} CPUs available"
+          quota = pathlib.Path('/sys/fs/cgroup/cpu.max')
+          if quota.exists():
+              maximum, period = quota.read_text().split()
+              assert maximum == 'max' or int(maximum) / int(period) >= 8, 'CPU quota below eight'
+          affinity = ','.join(map(str, cpus[:8]))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'BENCHMARK_CPUS={affinity}\n')
+          print(f'Benchmark affinity: {affinity}; quota: {quota.read_text() if quota.exists() else "unavailable"}')
+          PY
+      - run: bun scripts/benchmarking/generate-srj18-hypergraphs.ts
+      - name: Benchmark one and eight workers on the same eight CPUs
+        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --workers 1,8 --repeat 3 --out work/eight-core-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multicore-srj18
+          path: work/eight-core-results.json
