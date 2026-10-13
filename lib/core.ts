@@ -16,6 +16,10 @@ import {
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
+import {
+  cloneRegionIntersectionCache,
+  createEmptyRegionIntersectionCache,
+} from "./regionIntersectionCache"
 import { shuffle } from "./shuffle"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
@@ -39,18 +43,7 @@ export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
 
-export const createEmptyRegionIntersectionCache =
-  (): RegionIntersectionCache => ({
-    netIds: new Int32Array(0),
-    lesserAngles: new Int32Array(0),
-    greaterAngles: new Int32Array(0),
-    layerMasks: new Int32Array(0),
-    existingCrossingLayerIntersections: 0,
-    existingSameLayerIntersections: 0,
-    existingEntryExitLayerChanges: 0,
-    existingRegionCost: 0,
-    existingSegmentCount: 0,
-  })
+export { createEmptyRegionIntersectionCache } from "./regionIntersectionCache"
 
 const cloneRegionSegments = (
   regionSegments: Array<[RouteId, PortId, PortId][]>,
@@ -61,23 +54,6 @@ const cloneRegionSegments = (
         [routeId, fromPortId, toPortId] as [RouteId, PortId, PortId],
     ),
   )
-
-const cloneRegionIntersectionCache = (
-  regionIntersectionCache: RegionIntersectionCache,
-): RegionIntersectionCache => ({
-  netIds: new Int32Array(regionIntersectionCache.netIds),
-  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
-  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
-  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
-  existingCrossingLayerIntersections:
-    regionIntersectionCache.existingCrossingLayerIntersections,
-  existingSameLayerIntersections:
-    regionIntersectionCache.existingSameLayerIntersections,
-  existingEntryExitLayerChanges:
-    regionIntersectionCache.existingEntryExitLayerChanges,
-  existingRegionCost: regionIntersectionCache.existingRegionCost,
-  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
-})
 
 const cloneSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,

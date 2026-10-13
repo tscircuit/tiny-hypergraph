@@ -3,6 +3,7 @@ import {
   type TinyHyperGraphWorkingState,
 } from "../core"
 import type { PortId, RouteId } from "../types"
+import { cloneRegionIntersectionCache } from "../regionIntersectionCache"
 import type { PreviewRoutingStateSnapshot } from "./busSolverTypes"
 
 export const clearPreviewRoutingState = (
@@ -53,18 +54,9 @@ export const snapshotPreviewRoutingState = (
   regionSegments: state.regionSegments.map((segments) =>
     segments.map((segment) => [...segment] as [RouteId, PortId, PortId]),
   ),
-  regionIntersectionCaches: state.regionIntersectionCaches.map((cache) => ({
-    netIds: new Int32Array(cache.netIds),
-    lesserAngles: new Int32Array(cache.lesserAngles),
-    greaterAngles: new Int32Array(cache.greaterAngles),
-    layerMasks: new Int32Array(cache.layerMasks),
-    existingCrossingLayerIntersections:
-      cache.existingCrossingLayerIntersections,
-    existingSameLayerIntersections: cache.existingSameLayerIntersections,
-    existingEntryExitLayerChanges: cache.existingEntryExitLayerChanges,
-    existingRegionCost: cache.existingRegionCost,
-    existingSegmentCount: cache.existingSegmentCount,
-  })),
+  regionIntersectionCaches: state.regionIntersectionCaches.map(
+    cloneRegionIntersectionCache,
+  ),
 })
 
 export const restorePreviewRoutingState = (
@@ -76,17 +68,6 @@ export const restorePreviewRoutingState = (
     segments.map((segment) => [...segment] as [RouteId, PortId, PortId]),
   )
   state.regionIntersectionCaches = snapshot.regionIntersectionCaches.map(
-    (cache) => ({
-      netIds: new Int32Array(cache.netIds),
-      lesserAngles: new Int32Array(cache.lesserAngles),
-      greaterAngles: new Int32Array(cache.greaterAngles),
-      layerMasks: new Int32Array(cache.layerMasks),
-      existingCrossingLayerIntersections:
-        cache.existingCrossingLayerIntersections,
-      existingSameLayerIntersections: cache.existingSameLayerIntersections,
-      existingEntryExitLayerChanges: cache.existingEntryExitLayerChanges,
-      existingRegionCost: cache.existingRegionCost,
-      existingSegmentCount: cache.existingSegmentCount,
-    }),
+    cloneRegionIntersectionCache,
   )
 }
