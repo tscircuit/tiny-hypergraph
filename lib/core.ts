@@ -1916,6 +1916,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentRouteId = state.currentRouteId
 
     if (currentRouteId === undefined) return
+    if (
+      finalCandidate.portId !== state.goalPortId &&
+      !Number.isFinite(this.computeG(finalCandidate, state.goalPortId))
+    ) {
+      return
+    }
     this.routeSuccessCountByRouteId[currentRouteId] += 1
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
@@ -2095,8 +2101,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+      ? currentCandidate.g
+      : Number.POSITIVE_INFINITY
   }
 }
