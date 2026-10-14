@@ -75,12 +75,15 @@ const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
   PARTIAL_RIP_QUALITY_MAX_DISTANCE: 24,
   PARTIAL_RIP_MAX_ATTEMPTS: 10,
   OUTSIDE_IN_ROUTING: true,
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING: true,
   OUTSIDE_IN_MAX_DISTANCE: 24,
 })
 ```
 
 Set `PARTIAL_RIP_ENABLED` or `OUTSIDE_IN_ROUTING` to `false` to use the legacy
 whole-route or one-ended behavior respectively.
+`WHOLE_ROUTE_OUTSIDE_IN_ROUTING` applies the same two-ended search to initial
+whole routes instead of only reopened partial spans.
 `PARTIAL_RIP_MIN_ROUTE_COUNT` and `PARTIAL_RIP_MAX_ROUTE_COUNT` provide an
 inclusive scale window; graphs outside it use the legacy behavior. The solver
 exposes aggregate
