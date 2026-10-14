@@ -10,7 +10,7 @@ import {
   pmp22650FinalTailFixture,
 } from "./pmp22650-final-tail-fixture"
 
-test("PMP22650 whole-route search stalls in the final tail", () => {
+test("PMP22650 routes its final tail from both endpoints", () => {
   const solver = createPmp22650FinalTailSolver()
   const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
   const beforeGraphics = getPmp22650FinalTailGraphics({
@@ -44,5 +44,5 @@ test("PMP22650 whole-route search stalls in the final tail", () => {
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-  expect(routedRouteCount).toBe(3)
+  expect(routedRouteCount).toBe(41)
 })
