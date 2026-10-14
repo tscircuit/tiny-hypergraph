@@ -12,9 +12,7 @@ import {
 
 test("PMP22650 whole-route search stalls in the final tail", () => {
   const solver = createPmp22650FinalTailSolver()
-  const remainingRouteIds = new Set(
-    pmp22650FinalTailFixture.remainingRouteIds,
-  )
+  const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
   const beforeGraphics = getPmp22650FinalTailGraphics({
     solver,
     title: "PMP22650 before 50,000 search steps",

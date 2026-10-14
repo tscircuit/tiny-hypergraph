@@ -64,9 +64,7 @@ export const pmp22650FinalTailFixture = JSON.parse(
 
 export const pmp22650FinalTailTopology: TinyHyperGraphTopology = {
   ...pmp22650FinalTailFixture.topology,
-  regionWidth: new Float64Array(
-    pmp22650FinalTailFixture.topology.regionWidth,
-  ),
+  regionWidth: new Float64Array(pmp22650FinalTailFixture.topology.regionWidth),
   regionHeight: new Float64Array(
     pmp22650FinalTailFixture.topology.regionHeight,
   ),
@@ -98,46 +96,41 @@ export const pmp22650FinalTailProblem: TinyHyperGraphProblem = {
   routeStartPort: new Int32Array(
     pmp22650FinalTailFixture.problem.routeStartPort,
   ),
-  routeEndPort: new Int32Array(
-    pmp22650FinalTailFixture.problem.routeEndPort,
-  ),
+  routeEndPort: new Int32Array(pmp22650FinalTailFixture.problem.routeEndPort),
   routeNet: new Int32Array(pmp22650FinalTailFixture.problem.routeNet),
-  regionNetId: new Int32Array(
-    pmp22650FinalTailFixture.problem.regionNetId,
-  ),
-  portPenalty: new Float64Array(
-    pmp22650FinalTailFixture.problem.portPenalty,
-  ),
+  regionNetId: new Int32Array(pmp22650FinalTailFixture.problem.regionNetId),
+  portPenalty: new Float64Array(pmp22650FinalTailFixture.problem.portPenalty),
 }
 
-export const createPmp22650FinalTailSolver = (): SelectiveReripTinyHyperGraphSolver => {
-  const solver = new SelectiveReripTinyHyperGraphSolver(
-    pmp22650FinalTailTopology,
-    pmp22650FinalTailProblem,
-    {
-      DISTANCE_TO_COST: 0.05,
-      RIP_THRESHOLD_START: 0.05,
-      RIP_THRESHOLD_END: 0.8,
-      RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
-      ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
-      GREEDY_FINAL_ROUTE_ITERS: 1,
-      PARTIAL_RIP_ENABLED: false,
-      OUTSIDE_IN_ROUTING: true,
-      STATIC_REACHABILITY_PRECHECK: false,
-      USE_SPARSE_CANDIDATE_STORAGE: false,
-      RIP_THRESHOLD_RAMP_ATTEMPTS: 10,
-      MAX_ITERATIONS: 64_000_000,
-    },
-  )
-  solver.state.regionCongestionCost.set(
-    pmp22650FinalTailFixture.regionCongestionCost,
-  )
-  solver.state.unroutedRoutes = [
-    ...pmp22650FinalTailFixture.remainingRouteIds,
-  ]
-  solver.state.ripCount = 8
-  return solver
-}
+export const createPmp22650FinalTailSolver =
+  (): SelectiveReripTinyHyperGraphSolver => {
+    const solver = new SelectiveReripTinyHyperGraphSolver(
+      pmp22650FinalTailTopology,
+      pmp22650FinalTailProblem,
+      {
+        DISTANCE_TO_COST: 0.05,
+        RIP_THRESHOLD_START: 0.05,
+        RIP_THRESHOLD_END: 0.8,
+        RIP_CONGESTION_REGION_COST_FACTOR: 0.1,
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
+        GREEDY_FINAL_ROUTE_ITERS: 1,
+        PARTIAL_RIP_ENABLED: false,
+        OUTSIDE_IN_ROUTING: true,
+        STATIC_REACHABILITY_PRECHECK: false,
+        USE_SPARSE_CANDIDATE_STORAGE: false,
+        RIP_THRESHOLD_RAMP_ATTEMPTS: 10,
+        MAX_ITERATIONS: 64_000_000,
+      },
+    )
+    solver.state.regionCongestionCost.set(
+      pmp22650FinalTailFixture.regionCongestionCost,
+    )
+    solver.state.unroutedRoutes = [
+      ...pmp22650FinalTailFixture.remainingRouteIds,
+    ]
+    solver.state.ripCount = 8
+    return solver
+  }
 
 export const getPmp22650FinalTailGraphics = ({
   solver,
@@ -148,9 +141,7 @@ export const getPmp22650FinalTailGraphics = ({
   title: string
   showRatsnest?: boolean
 }): GraphicsObject => {
-  const remainingRouteIds = new Set(
-    pmp22650FinalTailFixture.remainingRouteIds,
-  )
+  const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
   const lines: NonNullable<GraphicsObject["lines"]> = showRatsnest
     ? pmp22650FinalTailFixture.remainingRouteIds.map((routeId) => {
         const startPortId = pmp22650FinalTailProblem.routeStartPort[routeId]
