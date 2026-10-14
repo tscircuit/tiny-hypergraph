@@ -1,0 +1,867 @@
+{
+  "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+  "autorouterVersion": "0.0.979",
+  "inputEffort": 0.1,
+  "runtime": "1.4.0",
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "visibleCpus": 5,
+  "cpuQuota": "400000 100000",
+  "prototypeConfig": {
+    "ROUND_SIZE": 8,
+    "ROUTE_STEP_LIMIT": 250000,
+    "RETRIES_BEFORE_RIP": 8,
+    "MAX_ITERATIONS": 2000000,
+    "GREEDY_FINAL_ROUTE_ITERS": 0,
+    "PORT_CONFLICT_PENALTY": 0
+  },
+  "repeats": 1,
+  "workerCounts": [1],
+  "inputs": [
+    {
+      "sample": "sample001",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "21a09454dd05b86464cd2d882ea96de7461260bd473e67c87a0e46011e508ea9",
+      "graphSha256": "f181f7b37cda144e21822ba15e467d73b6a63a62761ad67cac0f5f145e1c98f5",
+      "regions": 1711,
+      "ports": 13300,
+      "connections": 205
+    },
+    {
+      "sample": "sample002",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "2e2f6e8619e884afde2102e987cffcda8e7197ef2c63f8358aa5dd7cb14c8101",
+      "graphSha256": "aeedc3898e9b31aabbee719de4f0e67dd3b0ca4c62b52db544302f7de8874e9f",
+      "regions": 2579,
+      "ports": 20101,
+      "connections": 244
+    },
+    {
+      "sample": "sample003",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "c5abc751ef4ee68f0369df3d747174c527e47771fb673c61b72bbca0b93bc843",
+      "graphSha256": "5ade5dfd17a7e09bbfeeb3722cb21b0665351d63382cf4e688043cd538b2f7a2",
+      "regions": 2336,
+      "ports": 15360,
+      "connections": 145
+    },
+    {
+      "sample": "sample004",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "be67af8cc71fb962e9c1cf6a6de00b416eb057750b52f4cdd0f95c46f930b083",
+      "graphSha256": "27e6e65006b7c64f122c93e16678fbf001a19c6c128ade084e3d5bea27cfcc64",
+      "regions": 1832,
+      "ports": 8258,
+      "connections": 114
+    },
+    {
+      "sample": "sample005",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "3027de7f902a95002172e25378e41c0c826f51e95155317dc97a55864df1b681",
+      "graphSha256": "f91c3b78607e63b8373db1d51b61a3788915f8017de694ae7a1043205ab4db56",
+      "regions": 1834,
+      "ports": 14391,
+      "connections": 172
+    },
+    {
+      "sample": "sample006",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "ccaa924e0b5430bd717ea42bf45712412dba9ecd672853bb7bd3c70d69ed3608",
+      "graphSha256": "b68ab78ae36b30454371bec42d8fd7b65d62bba65028efb9edde38d76de12ee5",
+      "regions": 14366,
+      "ports": 37201,
+      "connections": 255
+    },
+    {
+      "sample": "sample007",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "a995e7ec0bbf70d96837b56280b966d3b29e3f7c477126acd0820581106b66d5",
+      "graphSha256": "85c53feb7f76dccaf7871260cf293548158dae4aeb80f1a8b04f966bb6d6498e",
+      "regions": 3276,
+      "ports": 22509,
+      "connections": 263
+    },
+    {
+      "sample": "sample008",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "86c0bebed1bfe8396c5e1eadaa486f4711a3c9efbed35fdfa65bf092555dd9fd",
+      "graphSha256": "6cf21161eb3a879dc1e9b86c2a1048ac663d1c36a22a6196deac4fbc690a0224",
+      "regions": 4898,
+      "ports": 22563,
+      "connections": 361
+    },
+    {
+      "sample": "sample009",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "53167849b45863bb21382c13a0464851cdd6d2bd5a4988d9e41962b46c928556",
+      "graphSha256": "7d008670a12cd3f1e88ec7ab1813266186f2c93d82d9ca1b408db5aa7202c277",
+      "regions": 4658,
+      "ports": 23213,
+      "connections": 256
+    },
+    {
+      "sample": "sample010",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "54809fdc0cee2685cab2f539bbfc6a68f0714fab47c8982f50037ccc5d32ffdb",
+      "graphSha256": "4aa660751987ed3b4f1ba1175d39ecc1f151df0bfc5b728ae1145c881eba168b",
+      "regions": 3058,
+      "ports": 23707,
+      "connections": 310
+    },
+    {
+      "sample": "sample011",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "c30aee0833640f6f370ce83c0ad5fc9476d80c40442a7c69f5db6b28af168afd",
+      "graphSha256": "4cc71a0d64b19d41dd9a849031e9c0f442c2ee6f3cbc63823e76d2c9351e7e2c",
+      "regions": 3009,
+      "ports": 18406,
+      "connections": 289
+    },
+    {
+      "sample": "sample012",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "be78defe9bac976077fe427fe2cce0ba54dfc1397ce2a3f9bd3dc0b9f2ce394d",
+      "graphSha256": "4ce95a9fbe5814bc68b7c9b077b80db837e9da798142ac41301fbfb7742a872e",
+      "regions": 7195,
+      "ports": 45710,
+      "connections": 504
+    },
+    {
+      "sample": "sample013",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "37b01a5f7cf5ff8f3056ad2c72137085e7608f2444ddfc74d188813c6c0f2554",
+      "graphSha256": "62b4d812bdab94bb9d38eea24c7798d8bbc9d3ad8b63114e008a4d1ed21cce18",
+      "regions": 6053,
+      "ports": 22634,
+      "connections": 238
+    },
+    {
+      "sample": "sample014",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "cd4fb3f2814dc459650c17ccc21bb1d72a852ab2301fa6c389c1f82305207919",
+      "graphSha256": "8daa4c21b938ffcccbd70fa71c3c2b6f037be941a09e82af70bfee85858a97f4",
+      "regions": 4300,
+      "ports": 22003,
+      "connections": 238
+    },
+    {
+      "sample": "sample015",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "cd24268f1713fc03c4c032a937d666fe6fb4d772187190d611ce4e3013a8d6fe",
+      "graphSha256": "2a2f5a43e306122033b58011033501a5f8fa4b95e4a04d4c060ee7c3b2ed0097",
+      "regions": 6290,
+      "ports": 33617,
+      "connections": 461
+    },
+    {
+      "sample": "sample016",
+      "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+      "autorouterVersion": "0.0.979",
+      "pipeline": "AutoroutingPipelineSolver7_MultiGraph",
+      "effort": 0.1,
+      "srjSha256": "dfefcf84ec3f1aa45eb058f31e25de646692f0f216f85bf9e98c02457e7611c8",
+      "graphSha256": "21d30821632d92c94343dc5ffeb6e4a8fc6e41ad06aac02dedad976f6e41306b",
+      "regions": 4952,
+      "ports": 18312,
+      "connections": 269
+    }
+  ],
+  "trials": [
+    {
+      "run": 0,
+      "mode": "fixed",
+      "workers": 1,
+      "budget": 2000000,
+      "label": "fixed-1-2m",
+      "ms": 96140.479291,
+      "cpuMs": 100831.86800000002,
+      "successCount": 9,
+      "samples": [
+        {
+          "sample": "sample001",
+          "ms": 4549.532628,
+          "cpuMs": 4912.522,
+          "peakRssBytes": 147853312,
+          "fingerprint": "57e9d4a98301cf60615ea84db176f7efb4262bdcc037e6cc70ee45130b2029b2",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 7,
+            "maxRegionCost": 0.867186105989414,
+            "maxRegionCostBeforeRip": 0.867186105989414,
+            "reripReason": "out_of_candidates",
+            "currentRipThreshold": 0.14,
+            "hotRegionCount": 32,
+            "totalRegionCost": 12.317964055620829,
+            "bestMaxRegionCost": 0.867186105989414,
+            "bestTotalRegionCost": 12.317964055620829,
+            "reripRegionCount": 32,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 225,
+            "searches": 1722,
+            "searchSteps": 2000000,
+            "accepted": 1635,
+            "portConflicts": 54,
+            "layerConflicts": 11,
+            "exhausted": 8,
+            "searchLimitReached": 14
+          },
+          "outputHash": "36c32a3974a37cd569c6d25489bec91afe6115680c21b859080e87c602cbf95b",
+          "routingStateHash": "1a9a1d7328696d34ad3fe5ce7e7fc92205a9c44ecb987976a32b981f4fc60cbc",
+          "quality": {
+            "maxRegionCost": 0.867186105989414,
+            "totalRegionCost": 12.317964055620829,
+            "pathLength": 2536.606222132236,
+            "layerChanges": 92,
+            "segments": 1284
+          }
+        },
+        {
+          "sample": "sample002",
+          "ms": 6541.696134,
+          "cpuMs": 6785.615,
+          "peakRssBytes": 193822720,
+          "fingerprint": "ccdf74ede522b7dc2648a53eb4c43dc99277e0589d329bf59584f87204e1bbe4",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "currentRipThreshold": 0.125,
+            "hotRegionCount": 61,
+            "maxRegionCost": 1.2559682812772868,
+            "totalRegionCost": 27.713845823817834,
+            "bestMaxRegionCost": 1.2559682812772868,
+            "bestTotalRegionCost": 27.713845823817834,
+            "ripCount": 6,
+            "maxRegionCostBeforeRip": 1.2559682812772868,
+            "reripRegionCount": 61,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 249,
+            "searches": 1921,
+            "searchSteps": 2000000,
+            "accepted": 1682,
+            "portConflicts": 201,
+            "layerConflicts": 4,
+            "exhausted": 0,
+            "searchLimitReached": 34
+          },
+          "outputHash": "50fd0d19521a63ac2312e7bf56be8c3889babf82b4a47b37e92978933e31993b",
+          "routingStateHash": "7481453b49b7b8d90f05048bfb8baa1d55af9c17d0d1bb8a5c1e6133c8d2765f",
+          "quality": {
+            "maxRegionCost": 1.2559682812772868,
+            "totalRegionCost": 27.713845823817834,
+            "pathLength": 5777.04167783728,
+            "layerChanges": 179,
+            "segments": 2234
+          }
+        },
+        {
+          "sample": "sample003",
+          "ms": 4951.085980999999,
+          "cpuMs": 5281.324,
+          "peakRssBytes": 172396544,
+          "fingerprint": "6b62f61ef9145e6a515f4e5a07b754e440bc422305f21e679521f6fa2996ec04",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 15,
+            "maxRegionCost": 1.03860570682513,
+            "maxRegionCostBeforeRip": 1.03860570682513,
+            "reripReason": "out_of_candidates",
+            "currentRipThreshold": 0.26,
+            "hotRegionCount": 22,
+            "totalRegionCost": 14.854200667438315,
+            "bestMaxRegionCost": 1.03860570682513,
+            "bestTotalRegionCost": 14.854200667438315,
+            "reripRegionCount": 22,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 375,
+            "searches": 2489,
+            "searchSteps": 2000000,
+            "accepted": 2252,
+            "portConflicts": 48,
+            "layerConflicts": 16,
+            "exhausted": 141,
+            "searchLimitReached": 32
+          },
+          "outputHash": "24a9a9992ca95d906b4ab876da50a1d7e67ba457c46611b72673c2e5cd3bc79e",
+          "routingStateHash": "d2e35d70b8e391e524d002d9c8934f3e12f41b9670f2fcef5a39c49b5f5c07f1",
+          "quality": {
+            "maxRegionCost": 1.03860570682513,
+            "totalRegionCost": 14.854200667438315,
+            "pathLength": 1033.100541742489,
+            "layerChanges": 98,
+            "segments": 1125
+          }
+        },
+        {
+          "sample": "sample004",
+          "ms": 2581.7783680000002,
+          "cpuMs": 2901.706,
+          "peakRssBytes": 143147008,
+          "fingerprint": "2d74f8fff4c84ced4b934037272debae106f79096360b025384d0e45714927fb",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 18,
+            "maxRegionCost": 1.563863269558284,
+            "maxRegionCostBeforeRip": 1.9912710430212817,
+            "reripReason": "out_of_candidates",
+            "currentRipThreshold": 0.26,
+            "hotRegionCount": 38,
+            "totalRegionCost": 25.317660283928017,
+            "bestMaxRegionCost": 1.563863269558284,
+            "bestTotalRegionCost": 25.317660283928017,
+            "reripRegionCount": 38,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 365,
+            "searches": 2426,
+            "searchSteps": 2000000,
+            "accepted": 2072,
+            "portConflicts": 154,
+            "layerConflicts": 25,
+            "exhausted": 149,
+            "searchLimitReached": 26
+          },
+          "outputHash": "c1908d02b20d6d89b4fe7e8a81f852b0c32fdb7e1b3c009c70633b7eac3ae00c",
+          "routingStateHash": "c82fd6e638bc5b392ec77ec82f0bc0fe8465eec768ac396d2a3697a455898b3c",
+          "quality": {
+            "maxRegionCost": 1.563863269558284,
+            "totalRegionCost": 25.317660283928017,
+            "pathLength": 945.2660306958948,
+            "layerChanges": 73,
+            "segments": 995
+          }
+        },
+        {
+          "sample": "sample005",
+          "ms": 1573.5825,
+          "cpuMs": 1925.995,
+          "peakRssBytes": 157646848,
+          "fingerprint": "c4844bce9c2ff88023cb9d3fe83608b0eb3dfe6004dad3b15e1ac84d461a06ab",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 637505,
+          "stats": {
+            "currentRipThreshold": 0.365,
+            "hotRegionCount": 0,
+            "maxRegionCost": 0.3055397832197098,
+            "totalRegionCost": 9.289058582554132,
+            "bestMaxRegionCost": 0.3055397832197098,
+            "bestTotalRegionCost": 9.289058582554132,
+            "ripCount": 21,
+            "maxRegionCostBeforeRip": 0.42658864455155243,
+            "reripRegionCount": 6
+          },
+          "roundStats": {
+            "rounds": 493,
+            "searches": 3862,
+            "searchSteps": 637505,
+            "accepted": 3784,
+            "portConflicts": 67,
+            "layerConflicts": 11,
+            "exhausted": 0,
+            "searchLimitReached": 0
+          },
+          "outputHash": "020e5499f0eb7313a6b755f875e4ef3c91cda546dae1cc32e0e6f774a017d1bc",
+          "routingStateHash": "542b64357d65b543948c8a25e6467b6dcd2c87c2c67bb44286b110d909471426",
+          "quality": {
+            "maxRegionCost": 0.3055397832197098,
+            "totalRegionCost": 9.289058582554132,
+            "pathLength": 2226.3897394167966,
+            "layerChanges": 90,
+            "segments": 1184
+          }
+        },
+        {
+          "sample": "sample006",
+          "ms": 7384.0085070000005,
+          "cpuMs": 7707.533,
+          "peakRssBytes": 376709120,
+          "fingerprint": "18952cadda9d5f12e78eca5a0d188f27d54c97944f9c6ef52b42ee35e3a4c7bb",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "neverSuccessfullyRoutedRouteCount": 31
+          },
+          "roundStats": {
+            "rounds": 30,
+            "searches": 236,
+            "searchSteps": 2000000,
+            "accepted": 205,
+            "portConflicts": 3,
+            "layerConflicts": 0,
+            "exhausted": 7,
+            "searchLimitReached": 21
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "27f74e4a53e15f3b58ef91413b31526948c0609087f1b1034d112bdf8f4a1228",
+          "quality": {
+            "maxRegionCost": 2.125398512221039,
+            "totalRegionCost": 9.734024026951104,
+            "pathLength": 1166.7833695178908,
+            "layerChanges": 143,
+            "segments": 2290
+          }
+        },
+        {
+          "sample": "sample007",
+          "ms": 9116.022554,
+          "cpuMs": 9551.31,
+          "peakRssBytes": 229412864,
+          "fingerprint": "ab50202a6510c3e14e6456c4555e058b0119dcb47c21caaa158a63a74edc1d41",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "currentRipThreshold": 0.22999999999999998,
+            "hotRegionCount": 23,
+            "maxRegionCost": 0.4830413715989564,
+            "totalRegionCost": 13.757697141466991,
+            "bestMaxRegionCost": 0.4830413715989564,
+            "bestTotalRegionCost": 13.757697141466991,
+            "ripCount": 13,
+            "maxRegionCostBeforeRip": 1.0429302341341102,
+            "reripRegionCount": 23,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 483,
+            "searches": 3778,
+            "searchSteps": 2000000,
+            "accepted": 3680,
+            "portConflicts": 80,
+            "layerConflicts": 11,
+            "exhausted": 0,
+            "searchLimitReached": 7
+          },
+          "outputHash": "5762ec8d93c6115502188dc597d889b1dbaf08b07e8fc02c7d7d9cc941180a53",
+          "routingStateHash": "2bde1e58f501a68566c1b2f0ec636e291575e7aac6fe069407ac6930a3c3f10e",
+          "quality": {
+            "maxRegionCost": 0.4830413715989564,
+            "totalRegionCost": 13.757697141466991,
+            "pathLength": 2894.1503563897504,
+            "layerChanges": 168,
+            "segments": 1559
+          }
+        },
+        {
+          "sample": "sample008",
+          "ms": 5707.173176,
+          "cpuMs": 5936.745,
+          "peakRssBytes": 195428352,
+          "fingerprint": "5ef41cedbe196486a5c261ea18f9c1cc09c281ec53b3749a1f23a183fcae4573",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 1,
+            "maxRegionCost": 3.0945180469152107,
+            "maxRegionCostBeforeRip": 3.0945180469152107,
+            "reripReason": "out_of_candidates",
+            "neverSuccessfullyRoutedRouteCount": 4
+          },
+          "roundStats": {
+            "rounds": 75,
+            "searches": 592,
+            "searchSteps": 2000000,
+            "accepted": 479,
+            "portConflicts": 25,
+            "layerConflicts": 4,
+            "exhausted": 28,
+            "searchLimitReached": 56
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "bacaed196111637928e8b4da02ff8fd4a7e496ad3f0f084c153d386c8de1589c",
+          "quality": {
+            "maxRegionCost": 0.5609258609020007,
+            "totalRegionCost": 9.39399212213027,
+            "pathLength": 728.2582563797525,
+            "layerChanges": 68,
+            "segments": 829
+          }
+        },
+        {
+          "sample": "sample009",
+          "ms": 7722.691544,
+          "cpuMs": 7961.783,
+          "peakRssBytes": 224899072,
+          "fingerprint": "bbcb0e05a61fa820f1a8f5491fad8f9acea56d1e90b93391574c928de64ee87c",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 2,
+            "maxRegionCost": 2.877636866226472,
+            "maxRegionCostBeforeRip": 2.877636866226472,
+            "reripReason": "out_of_candidates",
+            "neverSuccessfullyRoutedRouteCount": 0
+          },
+          "roundStats": {
+            "rounds": 112,
+            "searches": 810,
+            "searchSteps": 2000000,
+            "accepted": 751,
+            "portConflicts": 9,
+            "layerConflicts": 1,
+            "exhausted": 16,
+            "searchLimitReached": 33
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "28e741f39d350170b2e211eda7fc26a404261f6854fe45c53dbbb6dded13769d",
+          "quality": {
+            "maxRegionCost": 0.8325281507214028,
+            "totalRegionCost": 10.196705710885134,
+            "pathLength": 1338.9072926211345,
+            "layerChanges": 80,
+            "segments": 1387
+          }
+        },
+        {
+          "sample": "sample010",
+          "ms": 8199.340569,
+          "cpuMs": 8534.801,
+          "peakRssBytes": 233848832,
+          "fingerprint": "6c7444b1b7a0fda0c0c9241f6fa31ca07ff3a583d81672d7e3842cccfcbb2a4f",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "currentRipThreshold": 0.21500000000000002,
+            "hotRegionCount": 23,
+            "maxRegionCost": 0.5774257425742576,
+            "totalRegionCost": 12.365599851947994,
+            "bestMaxRegionCost": 0.5774257425742576,
+            "bestTotalRegionCost": 12.365599851947994,
+            "ripCount": 12,
+            "maxRegionCostBeforeRip": 1.2272727272727273,
+            "reripRegionCount": 23,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 512,
+            "searches": 4065,
+            "searchSteps": 2000000,
+            "accepted": 4027,
+            "portConflicts": 26,
+            "layerConflicts": 6,
+            "exhausted": 0,
+            "searchLimitReached": 6
+          },
+          "outputHash": "ea7eb4698e2dd22312daee60b4353a8e9dc2a7f2b6096c6f1cdfd24b33a43622",
+          "routingStateHash": "0be0ac8b156a3588b25048cd6837b332bd89dd3e7426e49478d7bb3dd0db9658",
+          "quality": {
+            "maxRegionCost": 0.5774257425742576,
+            "totalRegionCost": 12.365599851947994,
+            "pathLength": 2025.9134024324562,
+            "layerChanges": 118,
+            "segments": 1818
+          }
+        },
+        {
+          "sample": "sample011",
+          "ms": 8378.725505,
+          "cpuMs": 8675.592,
+          "peakRssBytes": 189128704,
+          "fingerprint": "f4202f47a4b189d9613c441db1e3539f448af69806e48fa94b2938000238746e",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 5,
+            "maxRegionCost": 1.2001679247302102,
+            "maxRegionCostBeforeRip": 1.0445395405960345,
+            "reripReason": "out_of_candidates",
+            "currentRipThreshold": 0.08,
+            "hotRegionCount": 54,
+            "totalRegionCost": 19.968375688002475,
+            "bestMaxRegionCost": 1.2001679247302102,
+            "bestTotalRegionCost": 19.968375688002475,
+            "reripRegionCount": 54,
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 245,
+            "searches": 1820,
+            "searchSteps": 2000000,
+            "accepted": 1724,
+            "portConflicts": 23,
+            "layerConflicts": 2,
+            "exhausted": 44,
+            "searchLimitReached": 27
+          },
+          "outputHash": "6a51176c7cb883efc6cd415a54609245200e33cacf26378996ea1cf742c7cbd7",
+          "routingStateHash": "7889827ca69c3b3f55aa99cc52f6b33b53cec110fa5e23b78a1c43dcec3454c0",
+          "quality": {
+            "maxRegionCost": 1.2001679247302102,
+            "totalRegionCost": 19.968375688002475,
+            "pathLength": 2004.0680890093795,
+            "layerChanges": 168,
+            "segments": 1752
+          }
+        },
+        {
+          "sample": "sample012",
+          "ms": 9870.257858,
+          "cpuMs": 10121.616,
+          "peakRssBytes": 302809088,
+          "fingerprint": "60d409afee513314490187a5e4ca560ef810d88668aaa1c6cedfc6a2d2b5b946",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 1,
+            "maxRegionCost": 1.2641574390668633,
+            "maxRegionCostBeforeRip": 1.2641574390668633,
+            "reripReason": "out_of_candidates",
+            "neverSuccessfullyRoutedRouteCount": 3
+          },
+          "roundStats": {
+            "rounds": 82,
+            "searches": 634,
+            "searchSteps": 2000000,
+            "accepted": 552,
+            "portConflicts": 24,
+            "layerConflicts": 2,
+            "exhausted": 8,
+            "searchLimitReached": 48
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "014dbbce27dc79721840a8563d7f250f1d4d05c315e94178b4774c6313116501",
+          "quality": {
+            "maxRegionCost": 0.07833655705996129,
+            "totalRegionCost": 0.22125514665147283,
+            "pathLength": 642.0834615751694,
+            "layerChanges": 6,
+            "segments": 303
+          }
+        },
+        {
+          "sample": "sample013",
+          "ms": 3881.822487,
+          "cpuMs": 4101.676,
+          "peakRssBytes": 206372864,
+          "fingerprint": "935295ee59fae90155060798a5b732c5bae982befadbe5428dd430340a8959b7",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "ripCount": 1,
+            "maxRegionCost": 1.1612813320154978,
+            "maxRegionCostBeforeRip": 1.1612813320154978,
+            "reripReason": "out_of_candidates",
+            "neverSuccessfullyRoutedRouteCount": 9
+          },
+          "roundStats": {
+            "rounds": 77,
+            "searches": 616,
+            "searchSteps": 2000000,
+            "accepted": 422,
+            "portConflicts": 17,
+            "layerConflicts": 2,
+            "exhausted": 130,
+            "searchLimitReached": 45
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "7019801788f4120d24df615968b32d9703ff8d30f73d8fdb107737accbe6a5f2",
+          "quality": {
+            "maxRegionCost": 0.4334757440887647,
+            "totalRegionCost": 7.335875476770613,
+            "pathLength": 1487.3456480435618,
+            "layerChanges": 107,
+            "segments": 1947
+          }
+        },
+        {
+          "sample": "sample014",
+          "ms": 5646.061113000001,
+          "cpuMs": 5819.168,
+          "peakRssBytes": 178282496,
+          "fingerprint": "144d976126fb8dcde8fd8d5244860abf03fe9f6d9ec89f5fda6a6b99fcf86dd4",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "neverSuccessfullyRoutedRouteCount": 26
+          },
+          "roundStats": {
+            "rounds": 39,
+            "searches": 310,
+            "searchSteps": 2000000,
+            "accepted": 212,
+            "portConflicts": 19,
+            "layerConflicts": 1,
+            "exhausted": 24,
+            "searchLimitReached": 54
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "321bb3f94f9c2e00fbb52d2476dd061fb7c80c71f7b3342d96e0251ec80eded7",
+          "quality": {
+            "maxRegionCost": 1.2757981433261634,
+            "totalRegionCost": 10.53412622785326,
+            "pathLength": 1657.5982691163047,
+            "layerChanges": 122,
+            "segments": 1834
+          }
+        },
+        {
+          "sample": "sample015",
+          "ms": 6137.441572000001,
+          "cpuMs": 6370.596,
+          "peakRssBytes": 251158528,
+          "fingerprint": "bb0afa58a7d2b6b2b24a74e378ebdc183ffffc8f1c62331926aee614ee965d05",
+          "solved": false,
+          "failed": true,
+          "error": "FixedRoundTinyHyperGraphSolver ran out of iterations",
+          "iterations": 2000000,
+          "stats": {
+            "neverSuccessfullyRoutedRouteCount": 20
+          },
+          "roundStats": {
+            "rounds": 73,
+            "searches": 582,
+            "searchSteps": 2000000,
+            "accepted": 441,
+            "portConflicts": 15,
+            "layerConflicts": 0,
+            "exhausted": 65,
+            "searchLimitReached": 61
+          },
+          "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+          "routingStateHash": "14eede038d57bda80441d1f8030aea62eac12c7153db718c5828c5f3e939538b",
+          "quality": {
+            "maxRegionCost": 1.9483726678326625,
+            "totalRegionCost": 28.924083355424035,
+            "pathLength": 2389.133742791822,
+            "layerChanges": 253,
+            "segments": 2858
+          }
+        },
+        {
+          "sample": "sample016",
+          "ms": 3899.258795,
+          "cpuMs": 4243.886,
+          "peakRssBytes": 220524544,
+          "fingerprint": "3d297befcf3f4a1550cfb44522868e8ab246f847b83c738724f634cf66fdc95c",
+          "solved": true,
+          "failed": false,
+          "error": null,
+          "iterations": 2000000,
+          "stats": {
+            "currentRipThreshold": 0.11,
+            "hotRegionCount": 49,
+            "maxRegionCost": 0.9027427078798439,
+            "totalRegionCost": 14.103322460352192,
+            "bestMaxRegionCost": 0.9027427078798439,
+            "bestTotalRegionCost": 14.103322460352192,
+            "ripCount": 8,
+            "maxRegionCostBeforeRip": 0.7597443201556308,
+            "reripRegionCount": 49,
+            "reripReason": "out_of_candidates",
+            "neverSuccessfullyRoutedRouteCount": 0,
+            "acceptedBestSolutionOnTimeout": true
+          },
+          "roundStats": {
+            "rounds": 308,
+            "searches": 2266,
+            "searchSteps": 2000000,
+            "accepted": 2151,
+            "portConflicts": 9,
+            "layerConflicts": 10,
+            "exhausted": 60,
+            "searchLimitReached": 36
+          },
+          "outputHash": "08808d4baf026706f3ed105ea556371fc31e64648fb134ed2b605439b4d72574",
+          "routingStateHash": "9a275ad53bcdbc8172434599bc24c78297062828da59f5a4c7c1be942279b079",
+          "quality": {
+            "maxRegionCost": 0.9027427078798439,
+            "totalRegionCost": 14.103322460352192,
+            "pathLength": 1209.3928221589788,
+            "layerChanges": 110,
+            "segments": 1611
+          }
+        }
+      ]
+    }
+  ],
+  "allWorkerCountsMatch": null,
+  "methodology": "Sequential isolated child processes; core warmup and file parsing excluded. Timed conversion, solve, output conversion, worker startup and cleanup. CPU time covers all threads. Peak RSS includes input and warmup. Worker count is not CPU capacity; consult cpuQuota and visibleCpus before interpreting scaling.",
+  "completed": true
+}

@@ -1,0 +1,128 @@
+DETERMINISTIC MULTICORE TINY-HYPERGRAPH
+
+Runtime: Bun 1.4.0 or later. These APIs use native worker threads and are intended
+for server/CLI use. Import from tiny-hypergraph/lib/parallel, separate from the
+browser-compatible lib/index entry point. No changes were made to core scoring,
+heap ordering, floating-point operations, route ordering, or seeded rerip order.
+
+SINGLE GRAPH
+
+  import { loadSerializedHyperGraph } from "tiny-hypergraph/lib/index"
+  import { ParallelTinyHyperGraphSolver } from "tiny-hypergraph/lib/parallel"
+
+  const { topology, problem } = loadSerializedHyperGraph(inputGraph)
+  const solver = new ParallelTinyHyperGraphSolver(topology, problem, {
+    workers: 4,
+    // All existing TinyHyperGraphSolverOptions are accepted.
+  })
+  await solver.solveAsync()
+  if (solver.failed) throw new Error(solver.error ?? "Routing failed")
+  const output = solver.getOutput()
+
+Calling solve() instead of solveAsync() runs the original synchronous algorithm.
+workers: 1 also runs the original serial algorithm. Do not step or mutate the
+solver while solveAsync() is pending. Custom solver subclasses are rejected by
+solveAsync(); their scoring cannot be reproduced by a base-algorithm worker.
+OWNED_REGIONAL_HOP_FRONTIER uses serial execution because its additional mutable
+pruning state is not represented by the speculative search read set.
+
+Route searches run against one snapshot, but commits happen in precisely the
+original route order. Workers record every mutable port assignment and regional
+intersection cache consulted by a search. A result is committed only if all those
+values remain unchanged. Otherwise, the coordinator runs the original serial
+search on the current state. Any rerip discards outstanding speculative results.
+Only changed region caches are sent in subsequent snapshots, and workers reuse
+their topology-sized search workspaces. The main solver maintains iteration
+counts, best-solution snapshots, congestion ramps and timeout acceptance.
+
+This is an experimental latency API: interdependent searches and communication
+can outweigh parallelism. The included measurements report this explicitly.
+
+INDEPENDENT GRAPHS
+
+  import { solveTinyHyperGraphsParallel } from "tiny-hypergraph/lib/parallel"
+
+  const results = await solveTinyHyperGraphsParallel(inputGraphs, {
+    workers: 4,
+    solverOptions: { MAX_ITERATIONS: 1_000_000 },
+  })
+
+Each worker runs the unmodified serial solver on a complete graph. Result order
+matches input order regardless of completion order. Each result includes solved,
+failed, error, iterations, deterministic stats and serialized output (null on
+failure). A routing failure stays a routing failure; infrastructure errors reject
+the call. Workers are terminated in finally blocks. This is the practical mode
+for improving throughput across independent boards or hypergraph problems.
+
+DETERMINISM SCOPE
+
+For the same input, options, Bun version and machine architecture, the checks
+compare complete JSON-serialized outputs, status, error, iteration count and all
+core statistics to the original TinyHyperGraphSolver. Timings and parallelStats
+are intentionally separate. No cross-runtime or cross-architecture bitwise
+floating-point guarantee is made. Base algorithm only; selective-rerip, bus,
+distance-aware, section-pipeline and other subclasses are not parallelized here.
+
+REPRODUCING THE SRJ18 BENCHMARK
+
+  bun install --ignore-scripts
+  bun run benchmark:parallel:srj18:generate
+  bun run benchmark:parallel:srj18 --repeat 3 --out work/results.json
+
+The generator uses dataset-srj18 commit
+100e8957ce789b5b288e14c476dc83f4efc5214b, the exact dependency pin in the latest
+public tscircuit/tscircuit-autorouter package.json checked during this task.
+It uses published autorouter 0.0.979, Pipeline 7, effort 0.1 and no cache to
+extract all 16 actual tiny-hypergraph stage inputs before downstream routing.
+This measures the base hypergraph solver, not end-to-end autorouter speed or DRC.
+The default 1,000,000-iteration limit is retained for every run.
+
+The older benchmark.sh still uses its completed-only Pipeline 7 input archive,
+now named dataset-srj18-pipeline7, so existing benchmark workflows remain usable.
+The new parallel benchmark exclusively uses regenerated current srj18 inputs.
+
+The benchmark warms all inputs, runs three serial and 1/2/4-worker batch trials,
+then three 2/4-worker within-graph trials. It checks input SHA-256 hashes and
+throws on any mismatch with the original serial results. Recorded durations
+include conversion, worker startup, messaging and worker cleanup. Batch timings
+also include receiving serialized outputs. Within-graph per-sample timings exclude getOutput() conversion; serial
+per-sample timings include it. Within-graph slowdown therefore understates its
+full output-producing overhead. Batch versus serial totals include output
+conversion in both modes and are the primary throughput comparison.
+Input generation and input file parsing are excluded. CPU quota is recorded.
+
+MEASURED RESULTS (MEDIAN OF THREE TRIALS)
+
+Original serial suite:              43.180 seconds
+Independent graphs, one worker:     46.295 seconds (0.93x)
+Independent graphs, two workers:    25.481 seconds (1.69x)
+Independent graphs, four workers:   14.704 seconds (2.94x)
+Within one graph, two workers:      80.044 seconds (0.54x)
+Within one graph, four workers:     86.868 seconds (0.50x)
+
+These suite timings cover all 16 graphs. 15 solve successfully and sample014
+fails at the default iteration limit in both serial and parallel modes. All 288
+comparisons matched the full serialized output, status, errors, iteration count
+and deterministic core statistics. Within-graph measurements exclude final
+output conversion as described above; they are still substantially slower.
+
+Machine: AMD EPYC 9V74, five visible logical CPUs, cgroup quota of four CPU cores.
+Runtime: Bun 1.4.0. Raw trials, input provenance and output fingerprints are
+recorded in experiments/parallel-srj18-results.json.
+
+VALIDATION
+
+The full suite and final focused parallel tests pass; TypeScript typecheck passes.
+Regenerating all 16 hypergraph inputs
+with the checked-in generator reproduces every benchmark input SHA-256 exactly.
+Focused tests exercise interacting routes, rerips, iteration limits, disconnected
+and empty inputs, preloaded assignments, batch ordering, worker errors, cleanup,
+concurrent calls, custom subclass rejection and serial owned-frontier execution.
+
+FIXED-ROUND ALGORITHM PROTOTYPE
+
+A separate FixedRoundTinyHyperGraphSolver now freezes batches and negotiates
+port conflicts with fixed decisions across worker counts. Its routing outcome
+can differ from the legacy solver. See FIXED_ROUND.txt for its algorithm,
+work-budget tradeoffs, diagnostic benchmarks and limitations. Existing APIs and
+legacy-equivalence guarantees remain unchanged.
