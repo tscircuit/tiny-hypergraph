@@ -105,3 +105,17 @@ avoids transitive dependency changes during extraction and repeated expensive
 preprocessing on CI. The generator remains available to independently reproduce
 it. CI constrains a Blacksmith runner to eight CPUs, checks its quota, benchmarks
 both one/eight workers and the original solver, and verifies deterministic hashes.
+
+Measured eight-core results: experiments/native-portfolio-srj18.md. The three-trial
+median is 18.465s versus 65.823s for the original solver (3.56x), and 82.971s for
+the same portfolio on one worker (4.49x scaling). These use one persistent pool
+for 16 sequential graphs, including startup/termination. One-worker wall time
+rises 26%; total eight-worker CPU time rises 49%. Outputs match across workers
+and repeats. Completion remains 15/16 and model-valid completion 11/16, with
+congestion regressions on samples002/007/016. See the report for per-case quality,
+memory cost and input provenance. The aggregate speedup is not a per-case promise.
+
+Cold workers per graph achieve 2.94x (23.222s vs 68.194s; one trial). Keep a pool
+alive to exceed 3x on this suite. Full-budget reference mode achieves 2.02x
+(32.351s vs 65.305s; one trial) while removing the observed selection-rank
+regressions. These controls and their raw reports are included in the experiment.
