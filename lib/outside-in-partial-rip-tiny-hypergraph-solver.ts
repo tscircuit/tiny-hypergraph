@@ -745,7 +745,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         forwardCandidate.travelDistance +
           reverseCandidate.travelDistance +
           connectorDistance >
-        this.OUTSIDE_IN_MAX_DISTANCE * 2
+          this.OUTSIDE_IN_MAX_DISTANCE * 2
       ) {
         return undefined
       }
