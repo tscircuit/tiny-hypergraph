@@ -30,7 +30,7 @@ const pmp22650CrossingRegionTopology: TinyHyperGraphTopology = {
   portZ: new Int32Array(4),
 }
 
-test("PMP22650 greedy timeout recovery accepts a single-layer crossing", () => {
+test("PMP22650 greedy timeout recovery rejects a single-layer crossing", () => {
   const solver = new TinyHyperGraphSolver(
     pmp22650CrossingRegionTopology,
     {
@@ -56,10 +56,10 @@ test("PMP22650 greedy timeout recovery accepts a single-layer crossing", () => {
 
   solver.tryFinalAcceptance()
 
-  expect(solver.solved).toBe(true)
+  expect(solver.solved).toBe(false)
   expect(
     solver.state.regionIntersectionCaches[0].existingSameLayerIntersections,
-  ).toBe(1)
+  ).toBe(0)
   expect(
     getSvgFromGraphicsObject(solver.visualize(), {
       backgroundColor: "#0d1b2a",
