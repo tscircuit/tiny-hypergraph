@@ -318,6 +318,8 @@ export interface TinyHyperGraphSolverOptions {
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING?: boolean
   /** Minimum number of decomposed routes before a connection uses outside-in search. */
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT?: number
+  /** Apply outside-in search to every initial whole route. */
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING?: boolean
   /** Maximum geometric distance explored by either outside-in frontier. */
   OUTSIDE_IN_MAX_DISTANCE?: number
 }
@@ -353,6 +355,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   OUTSIDE_IN_ROUTING?: boolean
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING?: boolean
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT?: number
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING?: boolean
   OUTSIDE_IN_MAX_DISTANCE?: number
 }
 
@@ -468,6 +471,10 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT =
       options.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT
   }
+  if (options.WHOLE_ROUTE_OUTSIDE_IN_ROUTING !== undefined) {
+    solver.WHOLE_ROUTE_OUTSIDE_IN_ROUTING =
+      options.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
+  }
   if (options.OUTSIDE_IN_MAX_DISTANCE !== undefined) {
     solver.OUTSIDE_IN_MAX_DISTANCE = options.OUTSIDE_IN_MAX_DISTANCE
   }
@@ -514,6 +521,7 @@ export const getTinyHyperGraphSolverOptions = (
     solver.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING,
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT:
     solver.MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT,
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING: solver.WHOLE_ROUTE_OUTSIDE_IN_ROUTING,
   OUTSIDE_IN_MAX_DISTANCE: solver.OUTSIDE_IN_MAX_DISTANCE,
 })
 
@@ -601,6 +609,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   OUTSIDE_IN_ROUTING = false
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_ROUTING = false
   MULTI_ROUTE_CONNECTION_OUTSIDE_IN_MIN_ROUTE_COUNT = 2
+  WHOLE_ROUTE_OUTSIDE_IN_ROUTING = false
   OUTSIDE_IN_MAX_DISTANCE = 24
 
   constructor(
