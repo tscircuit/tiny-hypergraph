@@ -31,6 +31,7 @@ type OutsideInCandidate = Candidate & {
 }
 
 type OutsideInFrontier = {
+  initialCandidate: OutsideInCandidate
   queue: MinHeap<OutsideInCandidate>
   bestCostByHopId: Map<number, number>
   settledByPortId: Map<PortId, OutsideInCandidate>
@@ -73,9 +74,9 @@ const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
  * as a normal route with temporary endpoints, so all existing cost and hard
  * constraint checks continue to apply.
  *
- * Outside-in frontier search is implemented by this class separately from the
- * partial-rip state transition. Initial whole routes retain the established
- * one-ended search; the bounded two-ended search applies to reopened spans.
+ * Outside-in frontier search is implemented separately from the partial-rip
+ * state transition. Reopened spans retain their geometric distance bound;
+ * initial whole routes use the solver's iteration budget.
  */
 export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
   protected partialRipRoutePlans = new Map<RouteId, PartialRipRoutePlan>()
@@ -122,7 +123,9 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       problem.routeCount > Math.max(0, this.PARTIAL_RIP_MAX_ROUTE_COUNT)
     ) {
       this.PARTIAL_RIP_ENABLED = false
-      this.OUTSIDE_IN_ROUTING = false
+      if (!this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
+        this.OUTSIDE_IN_ROUTING = false
+      }
     }
     this.useComplexityAwareSelection =
       problem.routeCount >=
@@ -200,7 +203,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   override onPathFound(finalCandidate: Candidate): void {
-    if (!this.PARTIAL_RIP_ENABLED && !this.OUTSIDE_IN_ROUTING) {
+    if (
+      !this.PARTIAL_RIP_ENABLED &&
+      !this.OUTSIDE_IN_ROUTING &&
+      !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
+    ) {
       super.onPathFound(finalCandidate)
       return
     }
@@ -220,7 +227,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   override resetRoutingStateForRerip(): void {
-    if (!this.PARTIAL_RIP_ENABLED && !this.OUTSIDE_IN_ROUTING) {
+    if (
+      !this.PARTIAL_RIP_ENABLED &&
+      !this.OUTSIDE_IN_ROUTING &&
+      !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
+    ) {
       super.resetRoutingStateForRerip()
       return
     }
@@ -620,6 +631,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     }
     queue.queue(root)
     return {
+      initialCandidate: root,
       queue,
       bestCostByHopId: new Map([
         [this.getHopId(startPortId, startRegionId), 0],
@@ -729,10 +741,11 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         connectorDx * connectorDx + connectorDy * connectorDy,
       )
       if (
+        this.partialRipRoutePlans.has(this.state.currentRouteId!) &&
         forwardCandidate.travelDistance +
           reverseCandidate.travelDistance +
           connectorDistance >
-        this.OUTSIDE_IN_MAX_DISTANCE * 2
+          this.OUTSIDE_IN_MAX_DISTANCE * 2
       ) {
         return undefined
       }
@@ -810,14 +823,33 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       search.remainingPostMeetingExpansions = 24
     }
 
-    const samePortCandidate = oppositeFrontier.settledByPortId.get(
-      candidate.portId,
-    )
+    const oppositeInitialCandidate = oppositeFrontier.initialCandidate
+    const canJoinOppositeInitialCandidate =
+      !this.isRegionReservedForDifferentNet(
+        oppositeInitialCandidate.nextRegionId,
+      )
+    const samePortCandidate =
+      oppositeFrontier.settledByPortId.get(candidate.portId) ??
+      (canJoinOppositeInitialCandidate &&
+      oppositeInitialCandidate.portId === candidate.portId
+        ? oppositeInitialCandidate
+        : undefined)
     if (samePortCandidate) {
       considerJoinedCandidate(
         expandingForward
           ? this.buildJoinedCandidate(candidate, samePortCandidate)
           : this.buildJoinedCandidate(samePortCandidate, candidate),
+      )
+    }
+
+    if (
+      canJoinOppositeInitialCandidate &&
+      oppositeInitialCandidate.nextRegionId === candidate.nextRegionId
+    ) {
+      considerJoinedCandidate(
+        expandingForward
+          ? this.buildJoinedCandidate(candidate, oppositeInitialCandidate)
+          : this.buildJoinedCandidate(oppositeInitialCandidate, candidate),
       )
     }
 
@@ -884,7 +916,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         segmentDx * segmentDx + segmentDy * segmentDy,
       )
       const travelDistance = candidate.travelDistance + segmentDistance
-      if (travelDistance > this.OUTSIDE_IN_MAX_DISTANCE) {
+      const isPartialRipRoute = this.partialRipRoutePlans.has(search.routeId)
+      if (isPartialRipRoute && travelDistance > this.OUTSIDE_IN_MAX_DISTANCE) {
         search.distanceLimitHit = true
         this.outsideInDistancePruneCount += 1
         continue
@@ -906,12 +939,20 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
       if (candidate.g >= previousBestCost) continue
 
-      const g = this.computeG(
+      const directionalG = this.computeG(
         candidate,
         neighborPortId,
-        previousBestCost,
+        !isPartialRipRoute && !expandingForward
+          ? Number.POSITIVE_INFINITY
+          : previousBestCost,
         segmentDistance,
       )
+      const g =
+        isPartialRipRoute || expandingForward
+          ? directionalG
+          : directionalG -
+            (this.problem.portPenalty?.[neighborPortId] ?? 0) +
+            (this.problem.portPenalty?.[candidate.portId] ?? 0)
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       frontier.bestCostByHopId.set(hopId, g)
       const heuristicDx =
@@ -954,7 +995,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   override _step(): void {
-    if (!this.OUTSIDE_IN_ROUTING) {
+    if (!this.OUTSIDE_IN_ROUTING && !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING) {
       super._step()
       return
     }
@@ -963,7 +1004,8 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       this.state.currentRouteId ?? this.state.unroutedRoutes[0]
     if (
       routeIdToAdvance !== undefined &&
-      !this.partialRipRoutePlans.has(routeIdToAdvance)
+      !this.partialRipRoutePlans.has(routeIdToAdvance) &&
+      !this.WHOLE_ROUTE_OUTSIDE_IN_ROUTING
     ) {
       super._step()
       return
@@ -1011,10 +1053,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       }
     }
 
+    const forwardExhausted = search.forward.queue.length === 0
+    const reverseExhausted = search.reverse.queue.length === 0
+    const isPartialRipRoute = this.partialRipRoutePlans.has(search.routeId)
     if (
-      !expanded &&
-      search.forward.queue.length === 0 &&
-      search.reverse.queue.length === 0
+      (!isPartialRipRoute &&
+        !search.distanceLimitHit &&
+        (forwardExhausted || reverseExhausted)) ||
+      (!expanded && forwardExhausted && reverseExhausted)
     ) {
       if (this.commitBestOutsideInJoin()) return
       this.outsideInRouteSearch = undefined

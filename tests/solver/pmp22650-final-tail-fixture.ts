@@ -116,6 +116,7 @@ export const createPmp22650FinalTailSolver =
         GREEDY_FINAL_ROUTE_ITERS: 1,
         PARTIAL_RIP_ENABLED: false,
         OUTSIDE_IN_ROUTING: true,
+        WHOLE_ROUTE_OUTSIDE_IN_ROUTING: true,
         STATIC_REACHABILITY_PRECHECK: false,
         USE_SPARSE_CANDIDATE_STORAGE: false,
         RIP_THRESHOLD_RAMP_ATTEMPTS: 10,

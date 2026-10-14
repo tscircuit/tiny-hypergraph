@@ -6,10 +6,8 @@ import {
   type TinyHyperGraphTopology,
 } from "./core"
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
-import {
-  findDistinctOwnerBlockerPath,
-  type DistinctOwnerBlockerSearchResult,
-} from "./find-distinct-owner-blocker-path"
+import type { DistinctOwnerBlockerSearchResult } from "./find-distinct-owner-blocker-path"
+import { findBlockerAwarePath } from "./find-blocker-aware-path"
 import type { PortId, RegionId, RouteId } from "./types"
 
 type RelaxedSearchState = {
@@ -395,11 +393,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
-    return findDistinctOwnerBlockerPath({
+    const endpointDistance = Math.hypot(
+      this.topology.portX[startPortId]! - this.topology.portX[goalPortId]!,
+      this.topology.portY[startPortId]! - this.topology.portY[goalPortId]!,
+    )
+    return findBlockerAwarePath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
+      getDistanceHeuristic: ({ portId }): number =>
+        Math.hypot(
+          this.topology.portX[portId]! - this.topology.portX[goalPortId]!,
+          this.topology.portY[portId]! - this.topology.portY[goalPortId]!,
+        ),
+      blockerCrossingPenalty: endpointDistance,
       getHops: (state): RelaxedSearchHop[] => {
         const key = this.getHopId(state.portId, state.nextRegionId)
         const cached = hopsByState.get(key)
@@ -416,8 +424,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         hopsByState.set(key, hops)
         return hops
       },
-      maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
-      checkReachability: true,
     })
   }
 
@@ -446,18 +452,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     return this.findRelaxedBlockerPath(forbiddenOwnerRouteIds)
-  }
-
-  protected getRelaxedSearchExpansionLimit(): number {
-    let incidentHopCount = 0
-    for (const incidentRegions of this.topology.incidentPortRegion) {
-      incidentHopCount += incidentRegions.length
-    }
-    const ownerScale = Math.max(
-      4,
-      Math.ceil(Math.log2(this.problem.routeCount + 1)),
-    )
-    return Math.max(4096, incidentHopCount * ownerScale * 4)
   }
 
   private getRelaxedSearchHops(params: {
