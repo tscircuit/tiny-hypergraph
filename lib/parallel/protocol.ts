@@ -6,6 +6,12 @@ import type {
   TinyHyperGraphTopology,
 } from "../core"
 import type { RegionIntersectionCache } from "../types"
+import type {
+  SharedRouteDistances,
+  SharedRouteHeuristics,
+} from "./shared-distances"
+import type { PortfolioBackend } from "./portfolio-candidate"
+import type { PackedPortfolioInput } from "./packed-input"
 
 export interface RoutingSnapshot {
   portPenalty?: Float64Array
@@ -33,8 +39,11 @@ export interface RoundTaskResult {
 export type WorkerRequest =
   | {
       kind: "portfolioInit"
-      topology: TinyHyperGraphTopology
-      problem: TinyHyperGraphProblem
+      backend?: PortfolioBackend
+      baselineIterations?: number
+      distances?: SharedRouteDistances
+      heuristics?: SharedRouteHeuristics
+      input: PackedPortfolioInput
       options: TinyHyperGraphSolverOptions
     }
   | { kind: "portfolioCandidate"; index: number }

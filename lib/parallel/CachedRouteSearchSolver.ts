@@ -7,15 +7,26 @@ import {
 import { setNewIntersectionCounts } from "../countNewIntersections"
 import { RouteSearchSolver } from "./RouteSearchSolver"
 import type { RoutingSnapshot } from "./protocol"
+import type {
+  SharedRouteDistances,
+  SharedRouteHeuristics,
+} from "./shared-distances"
+
+type ScoreTable = { values: Float64Array; generations: Uint32Array }
+const createScoreTable = (count: number): ScoreTable => ({
+  values: new Float64Array(count),
+  generations: new Uint32Array(count),
+})
 
 /** Scores depend on the immutable region snapshot and net, not on the route
  * prefix. Keep those scores across searches until that region changes. */
 export class CachedRouteSearchSolver extends RouteSearchSolver {
   private scoreCaches: Array<
     | {
-        nets: Set<number>
-        generic: Float64Array
-        own: Map<number, Float64Array>
+        nets?: Set<number>
+        epoch: number
+        generic: ScoreTable
+        own: Map<number, ScoreTable>
       }
     | undefined
   > = []
@@ -23,20 +34,31 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
   private secondIndex: Int32Array
   private cacheable: Uint8Array
   private cachedCells = 0
-  private readonly cellLimit = 4_000_000 // At most 32 MB of score tables per worker.
+  private readonly cellLimit = 2_666_666 // 12 bytes per cell; at most 32 MB per worker.
   private adjacency: Array<{ next: Int32Array; hops: Int32Array }> = []
   private fastExpansion = true
   private emptySameCost: Float64Array
   private emptyChangeCost: Float64Array
+  private heuristicRoute: Int32Array
+  private heuristicCost: Float64Array
+  private contextRegion = -1
+  private contextNet = -1
+  private contextSize = 0
+  private contextEpoch = 0
+  private contextTable?: ScoreTable
 
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
     options: TinyHyperGraphSolverOptions,
+    private readonly distances?: SharedRouteDistances,
+    private readonly heuristics?: SharedRouteHeuristics,
   ) {
     super(topology, problem, options)
     this.firstIndex = new Int32Array(topology.portCount)
     this.secondIndex = new Int32Array(topology.portCount)
+    this.heuristicRoute = new Int32Array(topology.portCount).fill(-1)
+    this.heuristicCost = new Float64Array(topology.portCount)
     this.cacheable = new Uint8Array(topology.regionCount).fill(1)
     this.emptySameCost = new Float64Array(topology.regionCount)
     this.emptyChangeCost = new Float64Array(topology.regionCount)
@@ -65,6 +87,30 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
           this.secondIndex[p] = i
         else this.cacheable[r] = 0
       }
+  }
+
+  override computeH(port: number) {
+    if (!this.heuristics) return super.computeH(port)
+    const route = this.state.currentRouteId!
+    if (this.heuristicRoute[port] !== route) {
+      const index = route * this.topology.portCount + port
+      const { values, ready } = this.heuristics
+      let distance: number
+      if (Atomics.load(ready, index) === 1) distance = values[index]
+      else {
+        const goal = this.problem.routeEndPort[route]
+        const dx = this.topology.portX[port] - this.topology.portX[goal]
+        const dy = this.topology.portY[port] - this.topology.portY[goal]
+        distance = Math.sqrt(dx * dx + dy * dy)
+        // Concurrent writers compute identical IEEE values. Publishing with
+        // release/acquire ensures readers never observe an uninitialized value.
+        values[index] = distance
+        Atomics.store(ready, index, 1)
+      }
+      this.heuristicCost[port] = distance * this.DISTANCE_TO_COST
+      this.heuristicRoute[port] = route
+    }
+    return this.heuristicCost[port]
   }
 
   override _step() {
@@ -98,6 +144,11 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
     const assignments = state.portAssignment
     const reservations = this.problemSetup.portEndpointReservationNetId
     const base = candidate.g + state.regionCongestionCost[region]
+    const distances = this.distances?.[region]
+    const row =
+      (topology.incidentPortRegion[candidate.portId][0] === region
+        ? this.firstIndex[candidate.portId]
+        : this.secondIndex[candidate.portId]) * ports.length
     for (let i = 0; i < ports.length; i++) {
       const port = ports[i]
       if (port === state.goalPortId) {
@@ -124,13 +175,16 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
       let lowerBound = base + (problem.portPenalty?.[port] ?? 0)
       let distance: number | undefined
       if (this.ADD_SEGMENT_DISTANCE_TO_G) {
-        const dx = topology.portX[candidate.portId] - topology.portX[port]
-        const dy = topology.portY[candidate.portId] - topology.portY[port]
-        distance = Math.sqrt(dx * dx + dy * dy)
+        if (distances && this.cacheable[region]) distance = distances[row + i]
+        else {
+          const dx = topology.portX[candidate.portId] - topology.portX[port]
+          const dy = topology.portY[candidate.portId] - topology.portY[port]
+          distance = Math.sqrt(dx * dx + dy * dy)
+        }
         lowerBound += distance * this.DISTANCE_TO_COST
       }
       if (lowerBound >= previous) continue
-      const g = this.computeG(candidate, port, previous, distance)
+      const g = this.computeG(candidate, port, previous, distance, row, i)
       if (!Number.isFinite(g) || g >= previous) continue
       const h = this.computeH(port)
       costs[nextHop] = g
@@ -151,8 +205,7 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
   override applySnapshot(snapshot: RoutingSnapshot) {
     super.applySnapshot(snapshot)
     if (snapshot.resetRegions) {
-      this.scoreCaches = []
-      this.cachedCells = 0
+      this.clearScoreCaches()
     } else
       for (const { regionId } of snapshot.regionUpdates) {
         this.invalidateScoreCache(regionId)
@@ -160,14 +213,20 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
   }
 
   protected invalidateScoreCache(regionId: number) {
-    const old = this.scoreCaches?.[regionId]
-    if (old) this.cachedCells -= old.generic.length * (1 + old.own.size)
-    if (this.scoreCaches) this.scoreCaches[regionId] = undefined
+    this.contextRegion = -1
+    const scores = this.scoreCaches?.[regionId]
+    if (!scores) return
+    scores.nets = undefined
+    if (scores.epoch === 0xffffffff) {
+      scores.generic.generations.fill(0)
+      for (const table of scores.own.values()) table.generations.fill(0)
+      scores.epoch = 1
+    } else scores.epoch++
   }
 
   protected clearScoreCaches() {
-    this.scoreCaches = []
-    this.cachedCells = 0
+    for (let r = 0; r < this.scoreCaches.length; r++)
+      this.invalidateScoreCache(r)
   }
 
   override computeG(
@@ -175,6 +234,8 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
     portId: number,
     maximumCost = Infinity,
     distance?: number,
+    knownRow?: number,
+    knownColumn?: number,
   ): number {
     const regionId = candidate.nextRegionId
     const congestion = this.state.regionCongestionCost[regionId]
@@ -190,7 +251,6 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
     }
     if (candidate.g + congestion + penalty + distanceCost > maximumCost + 1e-9)
       return Infinity
-    let scores = this.scoreCaches[regionId]
     const cache = this.state.regionIntersectionCaches[regionId]
     if (cache.existingSegmentCount === 0) {
       const cost =
@@ -199,43 +259,69 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
           : this.emptyChangeCost[regionId]) - cache.existingRegionCost
       return candidate.g + cost + congestion + penalty + distanceCost
     }
-    const n = this.topology.regionIncidentPorts[regionId].length
-    if (
-      !this.cacheable[regionId] ||
-      (!scores && this.cachedCells + n * n > this.cellLimit)
-    )
-      return super.computeG(candidate, portId, maximumCost, distance)
-    if (!scores) {
-      this.scoreCaches[regionId] = scores = {
-        nets: new Set(cache.netIds),
-        generic: new Float64Array(n * n).fill(NaN),
-        own: new Map(),
-      }
-      this.cachedCells += n * n
-    }
     const net = this.state.currentRouteNetId!
-    // Nets absent from this region have identical intersection scores.
-    let pairs = scores.generic
-    if (scores.nets.has(net)) {
-      pairs = scores.own.get(net)!
-      if (!pairs) {
-        if (this.cachedCells + n * n > this.cellLimit)
-          return super.computeG(candidate, portId, maximumCost, distance)
-        scores.own.set(net, (pairs = new Float64Array(n * n).fill(NaN)))
+    let pairs: ScoreTable
+    let epoch: number
+    let n: number
+    if (
+      this.contextRegion === regionId &&
+      this.contextNet === net &&
+      this.contextTable
+    ) {
+      pairs = this.contextTable
+      epoch = this.contextEpoch
+      n = this.contextSize
+    } else {
+      let scores = this.scoreCaches[regionId]
+      n = this.topology.regionIncidentPorts[regionId].length
+      if (
+        !this.cacheable[regionId] ||
+        (!scores && this.cachedCells + n * n > this.cellLimit)
+      )
+        return super.computeG(candidate, portId, maximumCost, distance)
+      if (!scores) {
+        this.scoreCaches[regionId] = scores = {
+          nets: new Set(cache.netIds),
+          epoch: 1,
+          generic: createScoreTable(n * n),
+          own: new Map(),
+        }
         this.cachedCells += n * n
       }
+      // Nets absent from this region have identical intersection scores.
+      pairs = scores.generic
+      scores.nets ??= new Set(cache.netIds)
+      if (scores.nets.has(net)) {
+        pairs = scores.own.get(net)!
+        if (!pairs) {
+          if (this.cachedCells + n * n > this.cellLimit)
+            return super.computeG(candidate, portId, maximumCost, distance)
+          scores.own.set(net, (pairs = createScoreTable(n * n)))
+          this.cachedCells += n * n
+        }
+      }
+      epoch = scores.epoch
+      this.contextRegion = regionId
+      this.contextNet = net
+      this.contextSize = n
+      this.contextEpoch = epoch
+      this.contextTable = pairs
     }
     const a =
-      this.topology.incidentPortRegion[candidate.portId][0] === regionId
-        ? this.firstIndex[candidate.portId]
-        : this.secondIndex[candidate.portId]
+      knownRow !== undefined
+        ? knownRow / n
+        : this.topology.incidentPortRegion[candidate.portId][0] === regionId
+          ? this.firstIndex[candidate.portId]
+          : this.secondIndex[candidate.portId]
     const b =
-      this.topology.incidentPortRegion[portId][0] === regionId
-        ? this.firstIndex[portId]
-        : this.secondIndex[portId]
-    const pair = a * n + b
-    let cost = pairs[pair]
-    if (Number.isNaN(cost)) {
+      knownColumn !== undefined
+        ? knownColumn
+        : this.topology.incidentPortRegion[portId][0] === regionId
+          ? this.firstIndex[portId]
+          : this.secondIndex[portId]
+    const pair = (knownRow ?? a * n) + (knownColumn ?? b)
+    let cost = pairs.values[pair]
+    if (pairs.generations[pair] !== epoch) {
       const geometry = this.populateSegmentGeometryScratch(
         regionId,
         candidate.portId,
@@ -256,8 +342,10 @@ export class CachedRouteSearchSolver extends RouteSearchSolver {
                 geometry.entryExitLayerChanges,
               cache.existingSegmentCount + 1,
             ) - cache.existingRegionCost
-      pairs[pair] = cost
-      pairs[b * n + a] = cost
+      pairs.values[pair] = cost
+      pairs.values[b * n + a] = cost
+      pairs.generations[pair] = epoch
+      pairs.generations[b * n + a] = epoch
     }
     return candidate.g + cost + congestion + penalty + distanceCost
   }

@@ -9,16 +9,20 @@ import {
   runPortfolioCandidate,
   comparePortfolioCandidates,
 } from "./portfolio-candidate"
+import { unpackPortfolioInput } from "./packed-input"
 
 let initialized: Extract<WorkerRequest, { kind: "init" }> | undefined
 let routeSolver: RouteSearchSolver | undefined
-let portfolio: Extract<WorkerRequest, { kind: "portfolioInit" }> | undefined
+let portfolio:
+  | (Extract<WorkerRequest, { kind: "portfolioInit" }> &
+      ReturnType<typeof unpackPortfolioInput>)
+  | undefined
 let portfolioBest: ReturnType<typeof runPortfolioCandidate> | undefined
 if (!parentPort) throw new Error("solver-worker must run in a worker thread")
 parentPort.on("message", (request: WorkerRequest) => {
   try {
     if (request.kind === "portfolioInit") {
-      portfolio = request
+      portfolio = { ...request, ...unpackPortfolioInput(request.input) }
       portfolioBest = undefined
       parentPort!.postMessage({ value: null })
     } else if (request.kind === "portfolioCandidate") {
@@ -28,6 +32,10 @@ parentPort.on("message", (request: WorkerRequest) => {
         portfolio.problem,
         portfolio.options,
         request.index,
+        portfolio.distances,
+        portfolio.heuristics,
+        portfolio.backend,
+        portfolio.baselineIterations,
       )
       if (
         !portfolioBest ||

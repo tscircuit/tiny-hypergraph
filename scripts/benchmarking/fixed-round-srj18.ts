@@ -45,6 +45,7 @@ if (process.argv.includes("--child")) {
     const result = await solveTinyHyperGraphPortfolio(graph, {
       workers,
       solverOptions: { MAX_ITERATIONS: budget },
+      baselineIterations: Number(arg("--baseline-budget", "250000")),
     })
     const ms = performance.now() - start,
       cpu = process.cpuUsage(cpuStart)
@@ -199,6 +200,7 @@ if (process.argv.includes("--child")) {
     portfolioConfig: portfolio
       ? {
           candidateCount: 8,
+          baselineIterations: Number(arg("--baseline-budget", "250000")),
           MAX_ITERATIONS: 250000,
           plans: PORTFOLIO_PLANS,
         }
@@ -285,6 +287,8 @@ if (process.argv.includes("--child")) {
             String(config.workers),
             "--budget",
             String(config.budget),
+            "--baseline-budget",
+            arg("--baseline-budget", "250000"),
             "--round-size",
             String(roundSize),
             "--route-step-limit",

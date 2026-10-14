@@ -33,11 +33,22 @@ jobs:
           import os, pathlib
           cpus = sorted(os.sched_getaffinity(0))
           assert len(cpus) >= 8, f"Only {len(cpus)} CPUs available"
+          physical = {}
+          for cpu in cpus:
+              topology = pathlib.Path(f'/sys/devices/system/cpu/cpu{cpu}/topology')
+              key = (topology.joinpath('physical_package_id').read_text().strip(), topology.joinpath('core_id').read_text().strip())
+              physical.setdefault(key, cpu)
+          assert len(physical) >= 8, f'Only {len(physical)} physical cores available'
           quota = pathlib.Path('/sys/fs/cgroup/cpu.max')
           if quota.exists():
               maximum, period = quota.read_text().split()
               assert maximum == 'max' or int(maximum) / int(period) >= 8, 'CPU quota below eight'
-          affinity = ','.join(map(str, cpus[:8]))
+          quota_v1 = pathlib.Path('/sys/fs/cgroup/cpu/cpu.cfs_quota_us')
+          period_v1 = pathlib.Path('/sys/fs/cgroup/cpu/cpu.cfs_period_us')
+          if quota_v1.exists() and period_v1.exists():
+              maximum, period = int(quota_v1.read_text()), int(period_v1.read_text())
+              assert maximum < 0 or maximum / period >= 8, 'CPU quota below eight'
+          affinity = ','.join(map(str, list(physical.values())[:8]))
           with open(os.environ['GITHUB_ENV'], 'a') as env:
               env.write(f'BENCHMARK_CPUS={affinity}\n')
           print(f'Benchmark affinity: {affinity}; quota: {quota.read_text() if quota.exists() else "unavailable"}')
@@ -46,10 +57,22 @@ jobs:
         run: |
           mkdir -p work
           tar -xzf experiments/srj18-inputs.tar.gz -C work
-      - name: Benchmark one and eight workers on the same eight CPUs
-        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --workers 1,8 --repeat 3 --skip-equal-budget --out work/eight-core-results.json
-      - name: Benchmark eight fixed candidates for each graph
-        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --portfolio --workers 1,8 --repeat 3 --out work/eight-core-portfolio-results.json
+      - name: Verify reproducible native kernel
+        run: |
+          cp lib/parallel/native-route-search.wasm work/committed-kernel.wasm
+          bun run build:native-search
+          cmp lib/parallel/native-route-search.wasm work/committed-kernel.wasm
+      - name: Benchmark persistent workers with sequential graphs
+        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/pooled-portfolio-srj18.ts --workers 1,8 --repeat 3 --out work/eight-core-pooled-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pooled-multicore-srj18
+          path: work/eight-core-pooled-results.json
+      - name: Measure cold per-graph startup separately
+        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/fixed-round-srj18.ts --portfolio --workers 1,8 --repeat 1 --out work/eight-core-portfolio-results.json
+      - name: Measure full-budget reference mode
+        run: taskset -c "$BENCHMARK_CPUS" bun scripts/benchmarking/pooled-portfolio-srj18.ts --baseline-budget 1000000 --workers 1,8 --repeat 1 --out work/eight-core-reference-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:

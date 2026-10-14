@@ -14,6 +14,7 @@ export {
 export type { SolveResult } from "./protocol"
 export {
   solveTinyHyperGraphPortfolio,
+  TinyHyperGraphPortfolioPool,
   type PortfolioSolveResult,
 } from "./portfolio"
 export {

@@ -5,6 +5,7 @@ import {
   runPortfolioCandidate,
   comparePortfolioCandidates,
   type PortfolioCandidate,
+  type PortfolioBackend,
 } from "./portfolio-candidate"
 import {
   defaultWorkerCount,
@@ -12,6 +13,11 @@ import {
   WorkerPool,
 } from "./WorkerPool"
 import type { SolveResult, PortfolioRoutingState } from "./protocol"
+import {
+  createSharedRouteDistances,
+  createSharedRouteHeuristics,
+} from "./shared-distances"
+import { packPortfolioInput } from "./packed-input"
 
 export interface PortfolioSolveResult extends SolveResult {
   selectedCandidate: number
@@ -21,12 +27,15 @@ export interface PortfolioSolveResult extends SolveResult {
 
 /** Eight fixed candidates for ONE graph; wait for all before selecting. The
  * worker count controls scheduling only, never the algorithm or budget. */
-export async function solveTinyHyperGraphPortfolio(
+async function solvePortfolio(
   graph: SerializedHyperGraph,
   options: {
     workers?: number
     solverOptions?: TinyHyperGraphSolverOptions
+    backend?: PortfolioBackend
+    baselineIterations?: number
   } = {},
+  suppliedPool?: WorkerPool,
 ): Promise<PortfolioSolveResult> {
   const workers = Math.min(
     8,
@@ -36,12 +45,27 @@ export async function solveTinyHyperGraphPortfolio(
     ...options.solverOptions,
     MAX_ITERATIONS: options.solverOptions?.MAX_ITERATIONS ?? 250_000,
   }
+  const baselineIterations =
+    options.baselineIterations ??
+    options.solverOptions?.MAX_ITERATIONS ??
+    250_000
+  if (!Number.isSafeInteger(baselineIterations) || baselineIterations < 1)
+    throw new Error("baselineIterations must be a positive integer")
   if (
     !Number.isSafeInteger(solverOptions.MAX_ITERATIONS) ||
     solverOptions.MAX_ITERATIONS < 1
   )
     throw new Error("MAX_ITERATIONS must be a positive integer")
   const { topology, problem } = loadSerializedHyperGraph(graph)
+  const backend = options.backend ?? "wasm"
+  if (backend !== "wasm" && backend !== "javascript")
+    throw new Error("Unsupported portfolio backend")
+  const distances =
+    backend === "javascript" ? createSharedRouteDistances(topology) : undefined
+  const heuristics =
+    backend === "javascript"
+      ? createSharedRouteHeuristics(topology, problem)
+      : undefined
   const candidates: PortfolioCandidate[] = new Array(8)
   if (workers === 1) {
     let best: ReturnType<typeof runPortfolioCandidate> | undefined
@@ -51,6 +75,10 @@ export async function solveTinyHyperGraphPortfolio(
         problem,
         solverOptions,
         index,
+        distances,
+        heuristics,
+        backend,
+        baselineIterations,
       )
       candidates[index] = result.candidate
       if (
@@ -69,7 +97,8 @@ export async function solveTinyHyperGraphPortfolio(
           : null,
     }
   }
-  const pool = new WorkerPool(workers)
+  const pool = suppliedPool ?? new WorkerPool(workers)
+  const input = packPortfolioInput(topology, problem)
   const owners = new Array<number>(8)
   let nextIndex = 0
   try {
@@ -77,9 +106,12 @@ export async function solveTinyHyperGraphPortfolio(
       pool.slots.map((slot) =>
         slot.run({
           kind: "portfolioInit",
-          topology,
-          problem,
+          input,
           options: solverOptions,
+          distances,
+          heuristics,
+          backend,
+          baselineIterations,
         }),
       ),
     )
@@ -117,6 +149,87 @@ export async function solveTinyHyperGraphPortfolio(
     }
     return { ...best, selectedCandidate: best.index, candidates, output }
   } finally {
-    await pool.close()
+    if (!suppliedPool) await pool.close()
+  }
+}
+
+/** Convenience call including worker creation and termination. */
+export async function solveTinyHyperGraphPortfolio(
+  graph: SerializedHyperGraph,
+  options: {
+    workers?: number
+    solverOptions?: TinyHyperGraphSolverOptions
+    backend?: PortfolioBackend
+    baselineIterations?: number
+  } = {},
+): Promise<PortfolioSolveResult> {
+  return solvePortfolio(graph, options)
+}
+
+/** Reuse worker runtimes across sequential graphs, preserving the exact same
+ * per-graph algorithm. Each graph still runs eight fixed candidates. */
+export class TinyHyperGraphPortfolioPool {
+  readonly workers: number
+  readonly backend: PortfolioBackend
+  readonly baselineIterations?: number
+  private pool?: WorkerPool
+  private running = false
+  private closed = false
+  constructor(
+    options: {
+      workers?: number
+      backend?: PortfolioBackend
+      baselineIterations?: number
+    } = {},
+  ) {
+    this.baselineIterations = options.baselineIterations
+    if (
+      this.baselineIterations !== undefined &&
+      (!Number.isSafeInteger(this.baselineIterations) ||
+        this.baselineIterations < 1)
+    )
+      throw new Error("baselineIterations must be a positive integer")
+    this.backend = options.backend ?? "wasm"
+    if (this.backend !== "wasm" && this.backend !== "javascript")
+      throw new Error("Unsupported portfolio backend")
+    this.workers = Math.min(
+      8,
+      validateWorkerCount(options.workers ?? defaultWorkerCount()),
+    )
+    if (this.workers > 1) this.pool = new WorkerPool(this.workers)
+  }
+  async solve(
+    graph: SerializedHyperGraph,
+    solverOptions: TinyHyperGraphSolverOptions = {},
+  ): Promise<PortfolioSolveResult> {
+    if (this.closed) throw new Error("Portfolio pool is closed")
+    if (this.running) throw new Error("Portfolio pool is already running")
+    this.running = true
+    try {
+      return await solvePortfolio(
+        graph,
+        {
+          workers: this.workers,
+          solverOptions,
+          backend: this.backend,
+          baselineIterations: this.baselineIterations,
+        },
+        this.pool,
+      )
+    } catch (error) {
+      this.closed = true
+      await this.pool?.close()
+      throw error
+    } finally {
+      this.running = false
+    }
+  }
+  async close() {
+    if (this.running)
+      throw new Error("Cannot close a portfolio pool while it is running")
+    if (this.closed) return
+    this.closed = true
+    await this.pool?.close()
+    this.pool = undefined
   }
 }

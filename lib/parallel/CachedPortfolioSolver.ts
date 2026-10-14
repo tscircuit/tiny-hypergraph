@@ -6,6 +6,10 @@ import {
   type TinyHyperGraphSolverOptions,
 } from "../core"
 import { CachedRouteSearchSolver } from "./CachedRouteSearchSolver"
+import type {
+  SharedRouteDistances,
+  SharedRouteHeuristics,
+} from "./shared-distances"
 
 /** Use the cached expansion engine for a complete serial candidate. All route
  * insertion, rerips, best-state acceptance and greedy tails retain core behavior. */
@@ -14,8 +18,10 @@ export class CachedPortfolioSolver extends CachedRouteSearchSolver {
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
     options: TinyHyperGraphSolverOptions,
+    distances?: SharedRouteDistances,
+    heuristics?: SharedRouteHeuristics,
   ) {
-    super(topology, problem, options)
+    super(topology, problem, options, distances, heuristics)
     this.trackReads = false
   }
   override getSolverName() {

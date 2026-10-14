@@ -10,6 +10,7 @@
       "**",
       "!**/cosmos-export",
       "!**/dist",
+      "!**/native/**",
       "!**/package.json",
       "!**/tests/fixtures/CM5IO_HyperGraph.json"
     ]
