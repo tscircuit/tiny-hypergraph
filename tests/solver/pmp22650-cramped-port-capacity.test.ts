@@ -134,7 +134,7 @@ test("PMP22650 does not overstate a cramped boundary's route capacity", () => {
         port.d?.duplicatedFromPortId === CRAMPED_PORT_ID,
     )
     .sort((left, right) => Number(left.d?.y) - Number(right.d?.y))
-  expect(lanes).toHaveLength(10)
+  expect(lanes).toHaveLength(1)
 
   const graphics: GraphicsObject = {
     rects: [

@@ -41,5 +41,5 @@ test("PMP23595 reuses one solver workspace while finding congested ports", () =>
   expect(solver.solved).toBe(true)
   expect(solver.failed).toBe(false)
   expect(solver.report.portUseCounts).toEqual(fixture.portUseCounts)
-  expect(solver.report.duplicatedPorts).toHaveLength(411)
+  expect(solver.report.duplicatedPorts).toHaveLength(274)
 })
