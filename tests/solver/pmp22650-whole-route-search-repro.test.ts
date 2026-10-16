@@ -5,34 +5,30 @@ import {
   stackGraphicsVertically,
 } from "graphics-debug"
 import {
-  createPmp22650FinalTailSolver,
-  getPmp22650FinalTailGraphics,
-  pmp22650FinalTailFixture,
-} from "./pmp22650-final-tail-fixture"
+  createPmp22650RouteSolver,
+  getPmp22650RouteGraphics,
+  pmp22650RouteFixture,
+} from "./pmp22650-route158-fixture"
 
-test("PMP22650 whole-route search stalls in the final tail", () => {
+test("PMP22650 one-ended search does not complete route 158", () => {
   const searchStepCount = 5_000
-  const solver = createPmp22650FinalTailSolver()
-  const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
-  const beforeGraphics = getPmp22650FinalTailGraphics({
+  const solver = createPmp22650RouteSolver()
+  const targetRouteId = pmp22650RouteFixture.targetRouteId
+  const beforeGraphics = getPmp22650RouteGraphics({
     solver,
-    title: "PMP22650 before 50,000 search steps",
+    title: `PMP22650 before ${searchStepCount} search steps`,
     showRatsnest: true,
   })
 
   for (let step = 0; step < searchStepCount; step++) solver.step()
 
-  const routedRouteIds = new Set(
-    solver.state.regionSegments.flatMap((regionSegments) =>
-      regionSegments.map(([routeId]) => routeId),
-    ),
+  const targetRouteCompleted = solver.state.regionSegments.some(
+    (regionSegments) =>
+      regionSegments.some(([routeId]) => routeId === targetRouteId),
   )
-  const routedRouteCount = [...remainingRouteIds].filter((routeId) =>
-    routedRouteIds.has(routeId),
-  ).length
-  const afterGraphics = getPmp22650FinalTailGraphics({
+  const afterGraphics = getPmp22650RouteGraphics({
     solver,
-    title: `PMP22650 after ${searchStepCount} search steps: ${routedRouteCount} of ${remainingRouteIds.size} routes completed`,
+    title: `PMP22650 after ${searchStepCount} search steps: route ${targetRouteCompleted ? "completed" : "not completed"}`,
     showRatsnest: true,
   })
   expect(
@@ -45,5 +41,5 @@ test("PMP22650 whole-route search stalls in the final tail", () => {
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-  expect(routedRouteCount).toBe(1)
+  expect(targetRouteCompleted).toBe(false)
 }, 120_000)
