@@ -917,9 +917,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         expandingForward ? previousBestCost : Number.POSITIVE_INFINITY,
         segmentDistance,
       )
-      if (!expandingForward) {
+      if (!expandingForward && !isPartialRipRoute) {
         // computeG charges the destination port. A reverse expansion traverses
-        // the physical edge backward, so charge its forward destination.
+        // a whole route backward, so charge its forward destination. Preserve
+        // the established bounded partial-rip scoring.
         g +=
           (this.problem.portPenalty?.[candidate.portId] ?? 0) -
           (this.problem.portPenalty?.[neighborPortId] ?? 0)
