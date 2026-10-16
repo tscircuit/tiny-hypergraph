@@ -10,7 +10,7 @@ import {
   pmp22650RouteFixture,
 } from "./pmp22650-route158-fixture"
 
-test("PMP22650 one-ended search does not complete route 158", () => {
+test("PMP22650 outside-in search completes route 158", () => {
   const searchStepCount = 5_000
   const solver = createPmp22650RouteSolver()
   const targetRouteId = pmp22650RouteFixture.targetRouteId
@@ -41,5 +41,5 @@ test("PMP22650 one-ended search does not complete route 158", () => {
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-  expect(targetRouteCompleted).toBe(false)
+  expect(targetRouteCompleted).toBe(true)
 }, 120_000)
