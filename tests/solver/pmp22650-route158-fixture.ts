@@ -96,8 +96,14 @@ export const pmp22650RouteProblem: TinyHyperGraphProblem = {
   portPenalty: new Float64Array(pmp22650RouteFixture.problem.portPenalty),
 }
 
+class Pmp22650RouteSolver extends SelectiveReripTinyHyperGraphSolver {
+  hasRouteSucceeded(routeId: number) {
+    return this.routeSuccessCountByRouteId[routeId] > 0
+  }
+}
+
 export const createPmp22650RouteSolver = () => {
-  const solver = new SelectiveReripTinyHyperGraphSolver(
+  const solver = new Pmp22650RouteSolver(
     pmp22650RouteTopology,
     pmp22650RouteProblem,
     {

@@ -20,12 +20,12 @@ test("PMP22650 one-ended search does not complete route 158", () => {
     showRatsnest: true,
   })
 
-  for (let step = 0; step < searchStepCount; step++) solver.step()
+  for (let step = 0; step < searchStepCount; step++) {
+    solver.step()
+    if (solver.hasRouteSucceeded(targetRouteId)) break
+  }
 
-  const targetRouteCompleted = solver.state.regionSegments.some(
-    (regionSegments) =>
-      regionSegments.some(([routeId]) => routeId === targetRouteId),
-  )
+  const targetRouteCompleted = solver.hasRouteSucceeded(targetRouteId)
   const afterGraphics = getPmp22650RouteGraphics({
     solver,
     title: `PMP22650 after ${searchStepCount} search steps: route ${targetRouteCompleted ? "completed" : "not completed"}`,
