@@ -18,6 +18,10 @@ export interface CompactCandidateHopIndex {
  */
 export class IndexedCandidateHeap {
   private items: Candidate[] = []
+  // Candidates remain immutable while queued. Keep their frequently compared
+  // scalars beside the heap slots so sifting does not chase candidate objects.
+  private priorityByIndex = new Float64Array(0)
+  private hopIdByIndex = new Float64Array(0)
   private indexByHopId = new Map<number, number>()
   private closedHopIds = new Set<number>()
   private hopStateGeneration?: Uint32Array
@@ -80,8 +84,11 @@ export class IndexedCandidateHeap {
       const existingCandidate = this.items[existingIndex]!
       if (candidate.g >= existingCandidate.g) return
 
+      const existingPriority = this.priorityByIndex[existingIndex]!
       this.items[existingIndex] = candidate
-      if (candidate.f <= existingCandidate.f) {
+      this.priorityByIndex[existingIndex] = candidate.f
+      this.hopIdByIndex[existingIndex] = hopId
+      if (candidate.f <= existingPriority) {
         this.siftUp(existingIndex)
       } else {
         this.siftDown(existingIndex)
@@ -90,7 +97,10 @@ export class IndexedCandidateHeap {
     }
 
     const index = this.items.length
+    this.ensureNumericCacheCapacity(index + 1)
     this.items.push(candidate)
+    this.priorityByIndex[index] = candidate.f
+    this.hopIdByIndex[index] = hopId
     this.siftUp(index)
   }
 
@@ -98,15 +108,29 @@ export class IndexedCandidateHeap {
     const bestCandidate = this.items[0]
     if (!bestCandidate) return undefined
 
-    const bestHopId = this.getHopId(bestCandidate)
+    const bestHopId = this.hopIdByIndex[0]!
     this.closeHop(bestHopId)
 
+    const lastIndex = this.items.length - 1
     const lastCandidate = this.items.pop()!
     if (this.items.length > 0) {
       this.items[0] = lastCandidate
+      this.priorityByIndex[0] = this.priorityByIndex[lastIndex]!
+      this.hopIdByIndex[0] = this.hopIdByIndex[lastIndex]!
       this.siftDown(0)
     }
     return bestCandidate
+  }
+
+  private ensureNumericCacheCapacity(requiredCapacity: number): void {
+    if (requiredCapacity <= this.priorityByIndex.length) return
+    const capacity = Math.max(64, this.priorityByIndex.length * 2)
+    const priorities = new Float64Array(capacity)
+    const hopIds = new Float64Array(capacity)
+    priorities.set(this.priorityByIndex)
+    hopIds.set(this.hopIdByIndex)
+    this.priorityByIndex = priorities
+    this.hopIdByIndex = hopIds
   }
 
   private getHopId(candidate: Candidate): number {
@@ -182,21 +206,31 @@ export class IndexedCandidateHeap {
 
   private siftUp(startIndex: number): void {
     const candidate = this.items[startIndex]!
+    const priority = this.priorityByIndex[startIndex]!
+    const hopId = this.hopIdByIndex[startIndex]!
     let index = startIndex
     while (index > 0) {
       const parentIndex = (index - 1) >> 1
       const parent = this.items[parentIndex]!
-      if (parent.f <= candidate.f) break
+      const parentPriority = this.priorityByIndex[parentIndex]!
+      if (parentPriority <= priority) break
       this.items[index] = parent
-      this.setQueuedHopIndex(this.getHopId(parent), index)
+      this.priorityByIndex[index] = parentPriority
+      const parentHopId = this.hopIdByIndex[parentIndex]!
+      this.hopIdByIndex[index] = parentHopId
+      this.setQueuedHopIndex(parentHopId, index)
       index = parentIndex
     }
     this.items[index] = candidate
-    this.setQueuedHopIndex(this.getHopId(candidate), index)
+    this.priorityByIndex[index] = priority
+    this.hopIdByIndex[index] = hopId
+    this.setQueuedHopIndex(hopId, index)
   }
 
   private siftDown(startIndex: number): void {
     const candidate = this.items[startIndex]!
+    const priority = this.priorityByIndex[startIndex]!
+    const hopId = this.hopIdByIndex[startIndex]!
     let index = startIndex
     while (true) {
       const leftChildIndex = index * 2 + 1
@@ -205,16 +239,23 @@ export class IndexedCandidateHeap {
       const rightChildIndex = leftChildIndex + 1
       const smallestChildIndex =
         rightChildIndex < this.items.length &&
-        this.items[rightChildIndex]!.f < this.items[leftChildIndex]!.f
+        this.priorityByIndex[rightChildIndex]! <
+          this.priorityByIndex[leftChildIndex]!
           ? rightChildIndex
           : leftChildIndex
       const smallestChild = this.items[smallestChildIndex]!
-      if (candidate.f <= smallestChild.f) break
+      const smallestChildPriority = this.priorityByIndex[smallestChildIndex]!
+      if (priority <= smallestChildPriority) break
       this.items[index] = smallestChild
-      this.setQueuedHopIndex(this.getHopId(smallestChild), index)
+      this.priorityByIndex[index] = smallestChildPriority
+      const smallestChildHopId = this.hopIdByIndex[smallestChildIndex]!
+      this.hopIdByIndex[index] = smallestChildHopId
+      this.setQueuedHopIndex(smallestChildHopId, index)
       index = smallestChildIndex
     }
     this.items[index] = candidate
-    this.setQueuedHopIndex(this.getHopId(candidate), index)
+    this.priorityByIndex[index] = priority
+    this.hopIdByIndex[index] = hopId
+    this.setQueuedHopIndex(hopId, index)
   }
 }
