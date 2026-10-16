@@ -123,7 +123,7 @@ const getPmp22650ConnectionGraphics = (
   }
 }
 
-test("PMP22650 goal-entry penalty delays a two-boundary route", () => {
+test("PMP22650 routes through a required penalized goal entry", () => {
   const solver = createPmp22650GoalEntrySolver()
   const beforeGraphics = getPmp22650ConnectionGraphics(
     solver,
@@ -134,7 +134,7 @@ test("PMP22650 goal-entry penalty delays a two-boundary route", () => {
 
   const afterGraphics = getPmp22650ConnectionGraphics(
     solver,
-    "PMP22650 after 100 search steps: still unrouted",
+    "PMP22650 after 100 search steps: routed",
   )
   expect(
     getSvgFromGraphicsObject(
@@ -153,11 +153,6 @@ test("PMP22650 goal-entry penalty delays a two-boundary route", () => {
     originalRouteId: 562,
     captureBoundary: "post-DuplicateCongestedPortSolver tiny hypergraph input",
   })
-  expect(solver.solved).toBe(false)
-  expect(solver.getNeverSuccessfullyRoutedRoutes()).toEqual([
-    expect.objectContaining({
-      connectionId: "source_net_altium_pcb_408_mst8",
-      attempts: 1,
-    }),
-  ])
+  expect(solver.solved).toBe(true)
+  expect(solver.getNeverSuccessfullyRoutedRoutes()).toEqual([])
 })

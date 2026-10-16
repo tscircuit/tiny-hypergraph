@@ -182,13 +182,13 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return super.getStartingNextRegionId(routeId, endingPortId)
   }
 
-  override computeH(neighborPortId: PortId): number {
+  override computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
     if (!this.PARTIAL_RIP_ENABLED) {
-      return super.computeH(neighborPortId)
+      return super.computeH(neighborPortId, nextRegionId)
     }
     const routeId = this.state.currentRouteId
     if (routeId === undefined || !this.partialRipRoutePlans.has(routeId)) {
-      return super.computeH(neighborPortId)
+      return super.computeH(neighborPortId, nextRegionId)
     }
 
     const endPortId = this.getRouteEndPortId(routeId)
@@ -196,7 +196,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       this.topology.portX[neighborPortId]! - this.topology.portX[endPortId]!
     const dy =
       this.topology.portY[neighborPortId]! - this.topology.portY[endPortId]!
-    return Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST
+    return (
+      Math.sqrt(dx * dx + dy * dy) * this.DISTANCE_TO_COST +
+      this.getGoalEntryPenaltyLowerBound(nextRegionId)
+    )
   }
 
   override onPathFound(finalCandidate: Candidate): void {
