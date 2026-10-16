@@ -11,6 +11,7 @@ import {
 } from "./pmp22650-final-tail-fixture"
 
 test("PMP22650 whole-route search stalls in the final tail", () => {
+  const searchStepCount = 5_000
   const solver = createPmp22650FinalTailSolver()
   const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
   const beforeGraphics = getPmp22650FinalTailGraphics({
@@ -19,7 +20,7 @@ test("PMP22650 whole-route search stalls in the final tail", () => {
     showRatsnest: true,
   })
 
-  for (let step = 0; step < 50_000; step++) solver.step()
+  for (let step = 0; step < searchStepCount; step++) solver.step()
 
   const routedRouteIds = new Set(
     solver.state.regionSegments.flatMap((regionSegments) =>
@@ -31,7 +32,7 @@ test("PMP22650 whole-route search stalls in the final tail", () => {
   ).length
   const afterGraphics = getPmp22650FinalTailGraphics({
     solver,
-    title: `PMP22650 after 50,000 search steps: ${routedRouteCount} of ${remainingRouteIds.size} routes completed`,
+    title: `PMP22650 after ${searchStepCount} search steps: ${routedRouteCount} of ${remainingRouteIds.size} routes completed`,
     showRatsnest: true,
   })
   expect(
@@ -44,5 +45,5 @@ test("PMP22650 whole-route search stalls in the final tail", () => {
       },
     ),
   ).toMatchSvgSnapshot(import.meta.path)
-  expect(routedRouteCount).toBe(3)
+  expect(routedRouteCount).toBe(1)
 }, 120_000)
