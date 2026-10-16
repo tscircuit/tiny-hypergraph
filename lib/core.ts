@@ -531,6 +531,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hCostEndRouteId: RouteId | undefined
   private hCostEndX = 0
   private hCostEndY = 0
+  private goalEntryPenaltyGoalPortId = -1
+  private goalEntryRegionIds = new Set<RegionId>()
+  private minimumGoalEntryPenalty = 0
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -666,6 +669,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this._problemSetup = undefined
     this.hCostEndRouteId = undefined
     this.hCostRouteIdByPortId.fill(-1)
+    this.goalEntryPenaltyGoalPortId = -1
+    this.goalEntryRegionIds.clear()
+    this.minimumGoalEntryPenalty = 0
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
       regionSegments.length = 0
@@ -939,7 +945,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         knownSegmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
 
       const newCandidate = {
         hopId: candidateHopId,
@@ -1086,7 +1092,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         knownSegmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
 
       const newCandidate = {
         hopId: candidateHopId,
@@ -2070,8 +2076,59 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.hCostByPortId[portId]!
   }
 
-  computeH(neighborPortId: PortId): number {
-    return this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId)
+  protected getGoalEntryPenaltyLowerBound(nextRegionId?: RegionId): number {
+    const { problem, state, topology } = this
+    if (
+      nextRegionId === undefined ||
+      !problem.portPenalty ||
+      state.goalPortId < 0
+    ) {
+      return 0
+    }
+
+    if (this.goalEntryPenaltyGoalPortId !== state.goalPortId) {
+      this.goalEntryPenaltyGoalPortId = state.goalPortId
+      const goalRegionIds = (
+        topology.incidentPortRegion[state.goalPortId] ?? []
+      ).filter(
+        (regionId) => (topology.regionIncidentPorts[regionId]?.length ?? 0) > 1,
+      )
+      this.goalEntryRegionIds = new Set(goalRegionIds)
+
+      let minimumGoalEntryPenalty = Number.POSITIVE_INFINITY
+      for (const goalRegionId of goalRegionIds) {
+        for (const portId of topology.regionIncidentPorts[goalRegionId] ?? []) {
+          if (portId === state.goalPortId) continue
+          const connectsToNonTerminalRegion = (
+            topology.incidentPortRegion[portId] ?? []
+          ).some(
+            (regionId) =>
+              regionId !== goalRegionId &&
+              (topology.regionIncidentPorts[regionId]?.length ?? 0) > 1,
+          )
+          if (!connectsToNonTerminalRegion) continue
+
+          minimumGoalEntryPenalty = Math.min(
+            minimumGoalEntryPenalty,
+            problem.portPenalty[portId] ?? 0,
+          )
+        }
+      }
+      this.minimumGoalEntryPenalty = Number.isFinite(minimumGoalEntryPenalty)
+        ? minimumGoalEntryPenalty
+        : 0
+    }
+
+    return this.goalEntryRegionIds.has(nextRegionId)
+      ? 0
+      : this.minimumGoalEntryPenalty
+  }
+
+  computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
+    return (
+      this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId) +
+      this.getGoalEntryPenaltyLowerBound(nextRegionId)
+    )
   }
 
   override visualize(): GraphicsObject {
