@@ -64,9 +64,7 @@ export const pmp22650FinalTailFixture = JSON.parse(
 
 export const pmp22650FinalTailTopology: TinyHyperGraphTopology = {
   ...pmp22650FinalTailFixture.topology,
-  regionWidth: new Float64Array(
-    pmp22650FinalTailFixture.topology.regionWidth,
-  ),
+  regionWidth: new Float64Array(pmp22650FinalTailFixture.topology.regionWidth),
   regionHeight: new Float64Array(
     pmp22650FinalTailFixture.topology.regionHeight,
   ),
@@ -98,16 +96,10 @@ export const pmp22650FinalTailProblem: TinyHyperGraphProblem = {
   routeStartPort: new Int32Array(
     pmp22650FinalTailFixture.problem.routeStartPort,
   ),
-  routeEndPort: new Int32Array(
-    pmp22650FinalTailFixture.problem.routeEndPort,
-  ),
+  routeEndPort: new Int32Array(pmp22650FinalTailFixture.problem.routeEndPort),
   routeNet: new Int32Array(pmp22650FinalTailFixture.problem.routeNet),
-  regionNetId: new Int32Array(
-    pmp22650FinalTailFixture.problem.regionNetId,
-  ),
-  portPenalty: new Float64Array(
-    pmp22650FinalTailFixture.problem.portPenalty,
-  ),
+  regionNetId: new Int32Array(pmp22650FinalTailFixture.problem.regionNetId),
+  portPenalty: new Float64Array(pmp22650FinalTailFixture.problem.portPenalty),
 }
 
 export const createPmp22650FinalTailSolver = () => {
@@ -134,9 +126,7 @@ export const createPmp22650FinalTailSolver = () => {
   solver.state.regionCongestionCost.set(
     pmp22650FinalTailFixture.regionCongestionCost,
   )
-  solver.state.unroutedRoutes = [
-    ...pmp22650FinalTailFixture.remainingRouteIds,
-  ]
+  solver.state.unroutedRoutes = [...pmp22650FinalTailFixture.remainingRouteIds]
   solver.state.ripCount = 8
   return solver
 }
@@ -150,9 +140,7 @@ export const getPmp22650FinalTailGraphics = ({
   title: string
   showRatsnest?: boolean
 }): GraphicsObject => {
-  const remainingRouteIds = new Set(
-    pmp22650FinalTailFixture.remainingRouteIds,
-  )
+  const remainingRouteIds = new Set(pmp22650FinalTailFixture.remainingRouteIds)
   const lines: NonNullable<GraphicsObject["lines"]> = showRatsnest
     ? pmp22650FinalTailFixture.remainingRouteIds.map((routeId) => {
         const startPortId = pmp22650FinalTailProblem.routeStartPort[routeId]
