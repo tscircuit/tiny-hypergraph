@@ -420,6 +420,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
       const sourcePort = sourcePortById.get(sourcePortId)
       if (!sourcePort) continue
+      if (sourcePort.d?.cramped === true) continue
 
       const duplicateCount = useCount - 1
       const boundaryPorts = portsByBoundary.get(getBoundaryKey(sourcePort))
