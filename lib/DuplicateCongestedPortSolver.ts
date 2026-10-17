@@ -198,7 +198,16 @@ const getFallbackBoundaryDirection = (
     y: region2Center.x - region1Center.x,
   })
 
-  return perpendicular ?? { x: 1, y: 0 }
+  if (!perpendicular) return { x: 1, y: 0 }
+  // Region ordering is metadata, not a direction for moving physical copper.
+  // Opposite signs on consecutive boundaries force duplicated routes to cross.
+  if (
+    perpendicular.x < 0 ||
+    (perpendicular.x === 0 && perpendicular.y < 0)
+  ) {
+    return { x: -perpendicular.x, y: -perpendicular.y }
+  }
+  return perpendicular
 }
 
 const getDuplicateDirection = (
