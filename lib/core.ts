@@ -2025,6 +2025,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const nextRegionId = currentCandidate.nextRegionId
+    const fromZ = topology.portZ[currentCandidate.portId]!
+    const toZ = topology.portZ[neighborPortId]!
+    const availableZMask = topology.regionAvailableZMask?.[nextRegionId] ?? 0
+    if (this.problem.enforceViaFit && availableZMask !== 0 && fromZ !== toZ) {
+      for (let z = Math.min(fromZ, toZ); z <= Math.max(fromZ, toZ); z++) {
+        if ((availableZMask & (1 << z)) === 0) {
+          return Number.POSITIVE_INFINITY
+        }
+      }
+    }
     if (
       this.problem.enforceViaFit &&
       (topology.regionAvailableZMask?.[nextRegionId] ?? 0) !== 0 &&
