@@ -31,9 +31,16 @@ type SameLayerIntersectionBlockerResource = {
   owners: RouteId[]
 }
 
+type ViaSpanBlockerResource = {
+  kind: "via_span"
+  regionId: RegionId
+  owners: RouteId[]
+}
+
 export type SelectiveReripBlockerResource =
   | PortBlockerResource
   | SameLayerIntersectionBlockerResource
+  | ViaSpanBlockerResource
 
 type RelaxedSearchHopData = {
   resources: SelectiveReripBlockerResource[]
@@ -391,7 +398,10 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
 
     const portOwners = this.getPortOwners()
     const portResources = new Map<PortId, PortBlockerResource>()
-    const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
+    const hopTemplatesByRegion = new Map<
+      RegionId,
+      Map<number, RelaxedSearchHop[]>
+    >()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
@@ -413,7 +423,17 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           hopTemplatesByRegion,
           forbiddenOwnerRouteIds,
         })
-        hopsByState.set(key, hops)
+        // Physical multilayer templates already share their owner metadata.
+        // Retaining every distance-adjusted incoming/outgoing port pair here
+        // expands the complete regional graph quadratically in memory.
+        if (
+          (!this.problem.enforceViaFit &&
+            !this.problem.viaRegionPortConflicts &&
+            !this.problem.portConflicts) ||
+          this.isKnownSingleLayerRegion(state.nextRegionId)
+        ) {
+          hopsByState.set(key, hops)
+        }
         return hops
       },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
@@ -467,25 +487,34 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
     forbiddenOwnerRouteIds: ReadonlySet<RouteId>
-    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
+    hopTemplatesByRegion: Map<RegionId, Map<number, RelaxedSearchHop[]>>
     buildRegionTemplates?: boolean
   }): RelaxedSearchHop[] {
     const { state, goalPortId, routeNetId } = params
     if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
-    // In multilayer regions, reservations and blocker resources depend only
-    // on the destination. Share their immutable metadata across incoming hops;
-    // each directed edge still gets its original distance and ordering.
+    // Via spans depend on the incoming layer, not the incoming port identity.
+    // Source-port ownership was already accounted for on the preceding hop.
+    // Share outgoing resources without materializing a dense port-pair graph.
     if (
       !params.buildRegionTemplates &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
-      let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
+      let byLayer = params.hopTemplatesByRegion.get(state.nextRegionId)
+      if (!byLayer) {
+        byLayer = new Map()
+        params.hopTemplatesByRegion.set(state.nextRegionId, byLayer)
+      }
+      const incomingLayer =
+        this.problem.enforceViaFit || this.problem.viaRegionPortConflicts
+          ? this.topology.portZ[state.portId]!
+          : -1
+      let templates = byLayer.get(incomingLayer)
       if (!templates) {
         templates = this.getRelaxedSearchHops({
           ...params,
           buildRegionTemplates: true,
         })
-        params.hopTemplatesByRegion.set(state.nextRegionId, templates)
+        byLayer.set(incomingLayer, templates)
       }
       const hops: RelaxedSearchHop[] = []
       for (const template of templates) {
@@ -511,7 +540,17 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     ] ?? []) {
       if (neighborPortId === state.portId && !params.buildRegionTemplates)
         continue
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (
+        this.isPortPermanentlyReservedForDifferentNet(state.portId) ||
+        this.isPortPermanentlyReservedForDifferentNet(neighborPortId) ||
+        this.isRegionLayerTransitionBlocked(
+          state.nextRegionId,
+          state.portId,
+          neighborPortId,
+        )
+      ) {
+        continue
+      }
       if (
         neighborPortId !== goalPortId &&
         this.problem.portSectionMask[neighborPortId] === 0
@@ -580,24 +619,62 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     portResources: Map<PortId, PortBlockerResource>
   }): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
-    const assignedNetId = this.state.portAssignment[params.toPortId]!
-    if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      let resource = params.portResources.get(params.toPortId)
-      if (!resource) {
-        const owners = [
-          ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
-        ].filter(
-          (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
-        )
-        if (owners.length === 0) {
-          throw new Error(
-            `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
-          )
+    const conflictingPortIds = new Set([
+      params.toPortId,
+      ...(this.problem.portConflicts?.[params.toPortId] ?? []),
+    ])
+    const viaConflicts = this.problem.viaRegionPortConflicts
+    for (const portId of [params.toPortId]) {
+      const z = this.topology.portZ[portId]!
+      for (const regionId of viaConflicts?.regionsByPort[portId] ?? []) {
+        const owners = new Set<RouteId>()
+        for (const [owner, from, to] of this.state.regionSegments[regionId] ?? []) {
+          if (this.problem.routeNet[owner] === params.routeNetId) continue
+          const fromZ = this.topology.portZ[from]!
+          const toZ = this.topology.portZ[to]!
+          if (
+            fromZ !== toZ &&
+            z >= Math.min(fromZ, toZ) &&
+            z <= Math.max(fromZ, toZ)
+          ) {
+            owners.add(owner)
+          }
         }
-        resource = { kind: "port", portId: params.toPortId, owners }
-        params.portResources.set(params.toPortId, resource)
+        if (owners.size > 0) {
+          resources.push({ kind: "via_span", regionId, owners: [...owners] })
+        }
       }
-      resources.push(resource)
+    }
+    const fromZ = this.topology.portZ[params.fromPortId]!
+    const toZ = this.topology.portZ[params.toPortId]!
+    if (fromZ !== toZ) {
+      for (const portId of viaConflicts?.portsByRegion[params.regionId] ?? []) {
+        const z = this.topology.portZ[portId]!
+        if (z >= Math.min(fromZ, toZ) && z <= Math.max(fromZ, toZ)) {
+          conflictingPortIds.add(portId)
+        }
+      }
+    }
+    for (const portId of conflictingPortIds) {
+      const assignedNetId = this.state.portAssignment[portId]!
+      if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
+        let resource = params.portResources.get(portId)
+        if (!resource) {
+          const owners = [
+            ...(params.portOwners.get(portId) ?? new Set<RouteId>()),
+          ].filter(
+            (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
+          )
+          if (owners.length === 0) {
+            throw new Error(
+              `SelectiveReripTinyHyperGraphSolver: port ${portId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+            )
+          }
+          resource = { kind: "port", portId, owners }
+          params.portResources.set(portId, resource)
+        }
+        resources.push(resource)
+      }
     }
 
     const sameLayerIntersectionOwners = this.getHardBlockedCrossingOwners(

@@ -1245,7 +1245,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.problem.routeEndPort[routeId]!
   }
 
-  isPortReservedForDifferentNet(portId: PortId): boolean {
+  /** Immutable copper claims stay blocked even while searching for rerip owners. */
+  protected isPortPermanentlyReservedForDifferentNet(portId: PortId): boolean {
     const obstacleNetId = this.problem.portReservedNetId?.[portId] ?? -1
     if (
       obstacleNetId === -2 ||
@@ -1262,11 +1263,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return true
     }
     for (const conflictingPortId of this.problem.portConflicts?.[portId] ?? []) {
-      const assignedNetId = this.state.portAssignment[conflictingPortId]!
       const endpointNetId =
         this.problemSetup.portEndpointReservationNetId[conflictingPortId] ?? -1
       if (
-        (assignedNetId !== -1 && assignedNetId !== this.state.currentRouteNetId) ||
         endpointNetId === -2 ||
         (endpointNetId !== -1 && endpointNetId !== this.state.currentRouteNetId)
       ) {
@@ -1274,6 +1273,57 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
     }
     return false
+  }
+
+  isPortReservedForDifferentNet(portId: PortId): boolean {
+    if (this.isPortPermanentlyReservedForDifferentNet(portId)) return true
+    for (const conflictingPortId of this.problem.portConflicts?.[portId] ?? []) {
+      const ownerNetId = this.state.portAssignment[conflictingPortId]!
+      if (ownerNetId !== -1 && ownerNetId !== this.state.currentRouteNetId) {
+        return true
+      }
+    }
+    return false
+  }
+
+  protected isRegionLayerTransitionBlocked(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ): boolean {
+    const fromZ = this.topology.portZ[fromPortId]!
+    const toZ = this.topology.portZ[toPortId]!
+    if (fromZ === toZ) return false
+    for (const portId of this.problem.viaRegionPortConflicts?.portsByRegion[
+      regionId
+    ] ?? []) {
+      const z = this.topology.portZ[portId]!
+      if (z < Math.min(fromZ, toZ) || z > Math.max(fromZ, toZ)) continue
+      const endpointNetId =
+        this.problemSetup.portEndpointReservationNetId[portId] ?? -1
+      if (
+        endpointNetId === -2 ||
+        (endpointNetId !== -1 && endpointNetId !== this.state.currentRouteNetId)
+      ) {
+        return true
+      }
+    }
+    const availableZMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    if (!this.problem.enforceViaFit || availableZMask === 0) return false
+    for (let z = Math.min(fromZ, toZ); z <= Math.max(fromZ, toZ); z++) {
+      if ((availableZMask & (1 << z)) === 0) return true
+    }
+    const boundaryClearance =
+      this.topology.regionMetadata?.[regionId]?.isLayerTransition
+        ? 0
+        : this.problem.viaBoundaryClearance ?? 0
+    return (
+      Math.min(
+        this.topology.regionWidth[regionId]!,
+        this.topology.regionHeight[regionId]!,
+      ) <
+      this.minViaPadDiameter + 2 * boundaryClearance - 1e-6
+    )
   }
 
   isRegionReservedForDifferentNet(regionId: RegionId): boolean {
@@ -2039,29 +2089,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const nextRegionId = currentCandidate.nextRegionId
-    const fromZ = topology.portZ[currentCandidate.portId]!
-    const toZ = topology.portZ[neighborPortId]!
-    const availableZMask = topology.regionAvailableZMask?.[nextRegionId] ?? 0
-    if (this.problem.enforceViaFit && availableZMask !== 0 && fromZ !== toZ) {
-      for (let z = Math.min(fromZ, toZ); z <= Math.max(fromZ, toZ); z++) {
-        if ((availableZMask & (1 << z)) === 0) {
-          return Number.POSITIVE_INFINITY
-        }
-      }
-    }
     if (
-      this.problem.enforceViaFit &&
-      (topology.regionAvailableZMask?.[nextRegionId] ?? 0) !== 0 &&
-      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId] &&
-      Math.min(
-        topology.regionWidth[nextRegionId]!,
-        topology.regionHeight[nextRegionId]!,
-      ) <
-        this.minViaPadDiameter +
-          (topology.regionMetadata?.[nextRegionId]?.isLayerTransition
-            ? 0
-            : 2 * (this.problem.viaBoundaryClearance ?? 0)) -
-          1e-6
+      this.isRegionLayerTransitionBlocked(
+        nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
     ) {
       return Number.POSITIVE_INFINITY
     }
