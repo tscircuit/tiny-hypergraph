@@ -151,6 +151,8 @@ export interface TinyHyperGraphProblem {
   portPenalty?: Float64Array
   /** Ports whose physical copper cannot coexist with this port on another net. */
   portConflicts?: readonly (readonly PortId[])[]
+  /** Regions are physical routing bounds, so any layer-change via must fit. */
+  enforceViaFit?: boolean
 
   /**
    * Existing serialized region assignments, converted to numeric ids.
@@ -1969,6 +1971,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const nextRegionId = currentCandidate.nextRegionId
+    if (
+      this.problem.enforceViaFit &&
+      (topology.regionAvailableZMask?.[nextRegionId] ?? 0) !== 0 &&
+      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId] &&
+      Math.min(
+        topology.regionWidth[nextRegionId]!,
+        topology.regionHeight[nextRegionId]!,
+      ) < this.minViaPadDiameter - 1e-6
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
     const regionCongestionCost = state.regionCongestionCost[nextRegionId]!
