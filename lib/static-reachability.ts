@@ -149,6 +149,13 @@ const hasStaticReachabilityPath = (
       currentCandidate.nextRegionId
     ] ?? []) {
       const assignedNetId = portAssignment[neighborPortId]
+      const obstacleNetId = problem.portReservedNetId?.[neighborPortId] ?? -1
+      if (
+        obstacleNetId === -2 ||
+        (obstacleNetId !== -1 && obstacleNetId !== routeNetId)
+      ) {
+        continue
+      }
 
       if (
         isPortEndpointReservedForStaticReachability(

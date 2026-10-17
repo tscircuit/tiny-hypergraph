@@ -123,6 +123,9 @@ const createProblemWithPortSectionMask = (
   routeEndPort: new Int32Array(problem.routeEndPort),
   routeNet: new Int32Array(problem.routeNet),
   regionNetId: new Int32Array(problem.regionNetId),
+  portConflicts: problem.portConflicts,
+  portReservedNetId: problem.portReservedNetId,
+  enforceViaFit: problem.enforceViaFit,
   portPenalty:
     problem.portPenalty === undefined
       ? undefined

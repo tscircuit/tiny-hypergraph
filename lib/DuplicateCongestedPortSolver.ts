@@ -295,6 +295,9 @@ const createSingleRouteProblem = (
   routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
   routeNet: Int32Array.from([problem.routeNet[routeId]]),
   regionNetId: problem.regionNetId,
+  portConflicts: problem.portConflicts,
+  portReservedNetId: problem.portReservedNetId,
+  enforceViaFit: problem.enforceViaFit,
   portPenalty: problem.portPenalty,
 })
 

@@ -151,6 +151,8 @@ export interface TinyHyperGraphProblem {
   portPenalty?: Float64Array
   /** Ports whose physical copper cannot coexist with this port on another net. */
   portConflicts?: readonly (readonly PortId[])[]
+  /** Physical obstacle ownership: -1 is free, -2 is blocked, otherwise net-only. */
+  portReservedNetId?: Int32Array
   /** Regions are physical routing bounds, so any layer-change via must fit. */
   enforceViaFit?: boolean
 
@@ -1237,6 +1239,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isPortReservedForDifferentNet(portId: PortId): boolean {
+    const obstacleNetId = this.problem.portReservedNetId?.[portId] ?? -1
+    if (
+      obstacleNetId === -2 ||
+      (obstacleNetId !== -1 && obstacleNetId !== this.state.currentRouteNetId)
+    ) {
+      return true
+    }
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
     if (
@@ -1963,7 +1972,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { state, topology } = this
 
     if (
-      this.problem.portConflicts &&
+      (this.problem.portConflicts || this.problem.portReservedNetId) &&
       (this.isPortReservedForDifferentNet(currentCandidate.portId) ||
         this.isPortReservedForDifferentNet(neighborPortId))
     ) {
