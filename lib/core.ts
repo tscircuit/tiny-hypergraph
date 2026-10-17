@@ -886,6 +886,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        // Reaching the target still traverses this region. The last segment
+        // must obey the same intersection constraints as every other hop.
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
@@ -1025,6 +1030,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -2086,8 +2094,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    // Greedy acceptance may ignore soft congestion costs, not hard geometry.
+    const cost = super.computeG(currentCandidate, neighborPortId)
+    return Number.isFinite(cost)
+      ? currentCandidate.g
+      : Number.POSITIVE_INFINITY
   }
 }
