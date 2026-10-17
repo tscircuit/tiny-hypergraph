@@ -149,6 +149,8 @@ export interface TinyHyperGraphProblem {
 
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
+  /** Ports whose physical copper cannot coexist with this port on another net. */
+  portConflicts?: readonly (readonly PortId[])[]
 
   /**
    * Existing serialized region assignments, converted to numeric ids.
@@ -1235,10 +1237,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
   isPortReservedForDifferentNet(portId: PortId): boolean {
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
-    return (
+    if (
       reservedNetId === -2 ||
       (reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId)
-    )
+    ) {
+      return true
+    }
+    for (const conflictingPortId of this.problem.portConflicts?.[portId] ?? []) {
+      const assignedNetId = this.state.portAssignment[conflictingPortId]!
+      const endpointNetId =
+        this.problemSetup.portEndpointReservationNetId[conflictingPortId] ?? -1
+      if (
+        (assignedNetId !== -1 && assignedNetId !== this.state.currentRouteNetId) ||
+        endpointNetId === -2 ||
+        (endpointNetId !== -1 && endpointNetId !== this.state.currentRouteNetId)
+      ) {
+        return true
+      }
+    }
+    return false
   }
 
   isRegionReservedForDifferentNet(regionId: RegionId): boolean {
@@ -1942,6 +1959,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     knownSegmentDistance?: number,
   ): number {
     const { state, topology } = this
+
+    if (
+      this.problem.portConflicts &&
+      (this.isPortReservedForDifferentNet(currentCandidate.portId) ||
+        this.isPortReservedForDifferentNet(neighborPortId))
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
 
     const nextRegionId = currentCandidate.nextRegionId
 
