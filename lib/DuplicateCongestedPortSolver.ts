@@ -297,6 +297,7 @@ const createSingleRouteProblem = (
   regionNetId: problem.regionNetId,
   portConflicts: problem.portConflicts,
   portReservedNetId: problem.portReservedNetId,
+  viaRegionPortConflicts: problem.viaRegionPortConflicts,
   enforceViaFit: problem.enforceViaFit,
   portPenalty: problem.portPenalty,
 })

@@ -153,6 +153,11 @@ export interface TinyHyperGraphProblem {
   portConflicts?: readonly (readonly PortId[])[]
   /** Physical obstacle ownership: -1 is free, -2 is blocked, otherwise net-only. */
   portReservedNetId?: Int32Array
+  /** Nearby ports whose copper conflicts with a via in a physical via region. */
+  viaRegionPortConflicts?: {
+    portsByRegion: readonly (readonly PortId[])[]
+    regionsByPort: readonly (readonly RegionId[])[]
+  }
   /** Regions are physical routing bounds, so any layer-change via must fit. */
   enforceViaFit?: boolean
 
@@ -1276,6 +1281,42 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  protected hasViaRegionPortConflict(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ): boolean {
+    const conflicts = this.problem.viaRegionPortConflicts
+    if (!conflicts) return false
+    const currentNetId = this.state.currentRouteNetId
+    for (const portId of [fromPortId, toPortId]) {
+      const z = this.topology.portZ[portId]!
+      for (const viaRegionId of conflicts.regionsByPort[portId] ?? []) {
+        for (const [ownerRouteId, firstPort, lastPort] of this.state.regionSegments[viaRegionId] ?? []) {
+          if (this.problem.routeNet[ownerRouteId] === currentNetId) continue
+          const firstZ = this.topology.portZ[firstPort]!
+          const lastZ = this.topology.portZ[lastPort]!
+          if (firstZ !== lastZ && z >= Math.min(firstZ, lastZ) && z <= Math.max(firstZ, lastZ)) return true
+        }
+      }
+    }
+    const firstZ = this.topology.portZ[fromPortId]!
+    const lastZ = this.topology.portZ[toPortId]!
+    if (firstZ === lastZ) return false
+    for (const portId of conflicts.portsByRegion[regionId] ?? []) {
+      const z = this.topology.portZ[portId]!
+      if (z < Math.min(firstZ, lastZ) || z > Math.max(firstZ, lastZ)) continue
+      const assignedNetId = this.state.portAssignment[portId]!
+      const reservedNetId = this.problemSetup.portEndpointReservationNetId[portId] ?? -1
+      if (
+        (assignedNetId !== -1 && assignedNetId !== currentNetId) ||
+        reservedNetId === -2 ||
+        (reservedNetId !== -1 && reservedNetId !== currentNetId)
+      ) return true
+    }
+    return false
+  }
+
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
@@ -1970,6 +2011,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     knownSegmentDistance?: number,
   ): number {
     const { state, topology } = this
+
+    if (this.hasViaRegionPortConflict(currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId)) {
+      return Number.POSITIVE_INFINITY
+    }
 
     if (
       (this.problem.portConflicts || this.problem.portReservedNetId) &&

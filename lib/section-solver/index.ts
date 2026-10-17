@@ -568,6 +568,7 @@ const createSectionRoutePlans = (
       regionNetId: new Int32Array(problem.regionNetId),
       portConflicts: problem.portConflicts,
       portReservedNetId: problem.portReservedNetId,
+      viaRegionPortConflicts: problem.viaRegionPortConflicts,
       enforceViaFit: problem.enforceViaFit,
       portPenalty:
         problem.portPenalty === undefined
