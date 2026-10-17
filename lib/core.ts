@@ -1322,7 +1322,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
-    return isKnownSingleLayerMask(regionAvailableZMask)
+    if (isKnownSingleLayerMask(regionAvailableZMask)) return true
+    if (!this.problem.enforceViaFit || regionAvailableZMask === 0) return false
+    // Multiple available planes do not permit crossings on one plane unless
+    // a physical via can actually connect them inside this routing region.
+    if ((regionAvailableZMask & (regionAvailableZMask >>> 1)) === 0) return true
+    const boundaryClearance =
+      this.topology.regionMetadata?.[regionId]?.isLayerTransition
+        ? 0
+        : this.problem.viaBoundaryClearance ?? 0
+    return Math.min(
+      this.topology.regionWidth[regionId]!,
+      this.topology.regionHeight[regionId]!,
+    ) < this.minViaPadDiameter + 2 * boundaryClearance - 1e-6
   }
 
   protected computeRegionCostForRegion(
