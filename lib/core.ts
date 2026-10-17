@@ -160,6 +160,8 @@ export interface TinyHyperGraphProblem {
   }
   /** Regions are physical routing bounds, so any layer-change via must fit. */
   enforceViaFit?: boolean
+  /** Clearance to copper assigned on an ordinary region's boundary. */
+  viaBoundaryClearance?: number
 
   /**
    * Existing serialized region assignments, converted to numeric ids.
@@ -2042,7 +2044,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       Math.min(
         topology.regionWidth[nextRegionId]!,
         topology.regionHeight[nextRegionId]!,
-      ) < this.minViaPadDiameter - 1e-6
+      ) <
+        this.minViaPadDiameter +
+          (topology.regionMetadata?.[nextRegionId]?.isLayerTransition
+            ? 0
+            : 2 * (this.problem.viaBoundaryClearance ?? 0)) -
+          1e-6
     ) {
       return Number.POSITIVE_INFINITY
     }

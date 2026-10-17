@@ -127,6 +127,7 @@ const createProblemWithPortSectionMask = (
   portReservedNetId: problem.portReservedNetId,
   viaRegionPortConflicts: problem.viaRegionPortConflicts,
   enforceViaFit: problem.enforceViaFit,
+  viaBoundaryClearance: problem.viaBoundaryClearance,
   portPenalty:
     problem.portPenalty === undefined
       ? undefined
