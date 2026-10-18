@@ -191,6 +191,30 @@ const getFallbackBoundaryDirection = (
   sourcePort: SerializedPort,
   regionById: Map<string, SerializedRegion>,
 ): Point => {
+  const firstBounds = getRegionBounds(regionById.get(sourcePort.region1Id))
+  const secondBounds = getRegionBounds(regionById.get(sourcePort.region2Id))
+  const sharedWidth =
+    Math.min(firstBounds.maxX, secondBounds.maxX) -
+    Math.max(firstBounds.minX, secondBounds.minX)
+  const sharedHeight =
+    Math.min(firstBounds.maxY, secondBounds.maxY) -
+    Math.max(firstBounds.minY, secondBounds.minY)
+  // Offset centers do not define the normal of a shared rectangular edge.
+  // Use the edge itself so a duplicated port remains on both boundaries.
+  if (
+    sharedWidth > EPSILON &&
+    (Math.abs(firstBounds.maxY - secondBounds.minY) <= EPSILON ||
+      Math.abs(secondBounds.maxY - firstBounds.minY) <= EPSILON)
+  ) {
+    return { x: 1, y: 0 }
+  }
+  if (
+    sharedHeight > EPSILON &&
+    (Math.abs(firstBounds.maxX - secondBounds.minX) <= EPSILON ||
+      Math.abs(secondBounds.maxX - firstBounds.minX) <= EPSILON)
+  ) {
+    return { x: 0, y: 1 }
+  }
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
   const perpendicular = normalize({
