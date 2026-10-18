@@ -944,10 +944,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
-      const lowerBoundWithoutDistance =
-        currentCandidate.g +
-        state.regionCongestionCost[currentCandidate.nextRegionId]! +
-        (problem.portPenalty?.[neighborPortId] ?? 0)
+      const lowerBoundWithoutDistance = this.reusesSharedCopperSegment(
+        currentCandidate.nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
+        ? currentCandidate.g
+        : currentCandidate.g +
+          state.regionCongestionCost[currentCandidate.nextRegionId]! +
+          (problem.portPenalty?.[neighborPortId] ?? 0)
       let knownSegmentDistance: number | undefined
       let lowerBoundCost = lowerBoundWithoutDistance
       if (this.ADD_SEGMENT_DISTANCE_TO_G) {
@@ -1094,10 +1099,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
-      const lowerBoundWithoutDistance =
-        currentCandidate.g +
-        state.regionCongestionCost[currentCandidate.nextRegionId]! +
-        (problem.portPenalty?.[neighborPortId] ?? 0)
+      const lowerBoundWithoutDistance = this.reusesSharedCopperSegment(
+        currentCandidate.nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
+        ? currentCandidate.g
+        : currentCandidate.g +
+          state.regionCongestionCost[currentCandidate.nextRegionId]! +
+          (problem.portPenalty?.[neighborPortId] ?? 0)
       let knownSegmentDistance: number | undefined
       let lowerBoundCost = lowerBoundWithoutDistance
       if (this.ADD_SEGMENT_DISTANCE_TO_G) {
