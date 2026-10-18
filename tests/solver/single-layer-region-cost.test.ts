@@ -31,8 +31,8 @@ const createTopology = (
   regionAvailableZMask: new Int32Array([regionAvailableZMask, 0]),
   portAngleForRegion1: new Int32Array([0, 9000, 18000, 27000]),
   portAngleForRegion2: new Int32Array(4),
-  portX: new Float64Array([1, 0, -1, 0]),
-  portY: new Float64Array([0, 1, 0, -1]),
+  portX: new Float64Array([1.5, 0, -1.5, 0]),
+  portY: new Float64Array([0, 1.5, 0, -1.5]),
   portZ: new Int32Array([portZ, portZ, portZ, portZ]),
 })
 
@@ -52,6 +52,7 @@ const getCrossingCost = (regionAvailableZMask: number, portZ: number) => {
   )
 
   solver.state.currentRouteNetId = 0
+  solver.state.regionSegments[0]!.push([0, 0, 2])
   solver.appendSegmentToRegionCache(0, 0, 2)
 
   solver.state.currentRouteNetId = 1

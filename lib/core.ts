@@ -160,6 +160,8 @@ export interface TinyHyperGraphProblem {
   }
   /** Regions are physical routing bounds, so any layer-change via must fit. */
   enforceViaFit?: boolean
+  /** False when detailed routing may use board layers outside the region mask. */
+  regionLayerMasksAreBinding?: boolean
   /** Clearance to copper assigned on an ordinary region's boundary. */
   viaBoundaryClearance?: number
 
@@ -1370,6 +1372,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
+    if (this.problem.regionLayerMasksAreBinding === false) return false
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
     if (isKnownSingleLayerMask(regionAvailableZMask)) return true
@@ -1413,6 +1416,73 @@ export class TinyHyperGraphSolver extends BaseSolver {
     port2Id: PortId,
   ): SegmentGeometryScratch {
     return this.populateBaseSegmentGeometryScratch(regionId, port1Id, port2Id)
+  }
+
+  protected isPortOnRegionBoundary(regionId: RegionId, portId: PortId): boolean {
+    const { topology } = this
+    const halfWidth = topology.regionWidth[regionId]! / 2
+    const halfHeight = topology.regionHeight[regionId]! / 2
+    const dx = Math.abs(
+      topology.portX[portId]! - topology.regionCenterX[regionId]!,
+    )
+    const dy = Math.abs(
+      topology.portY[portId]! - topology.regionCenterY[regionId]!,
+    )
+    return (
+      halfWidth > 0 &&
+      halfHeight > 0 &&
+      dx <= halfWidth + 1e-6 &&
+      dy <= halfHeight + 1e-6 &&
+      (Math.abs(dx - halfWidth) <= 1e-6 || Math.abs(dy - halfHeight) <= 1e-6)
+    )
+  }
+
+  protected segmentsCrossOnSameLayer(
+    regionId: RegionId,
+    firstFromPortId: PortId,
+    firstToPortId: PortId,
+    secondFromPortId: PortId,
+    secondToPortId: PortId,
+  ): boolean {
+    // Alternating boundary endpoints force a crossing. Interior terminal
+    // projections are only a congestion estimate, not a topological proof.
+    for (const portId of [
+      firstFromPortId,
+      firstToPortId,
+      secondFromPortId,
+      secondToPortId,
+    ]) {
+      if (!this.isPortOnRegionBoundary(regionId, portId)) return false
+    }
+    const first = this.populateSegmentGeometryScratch(
+      regionId,
+      firstFromPortId,
+      firstToPortId,
+    )
+    const firstLesserAngle = first.lesserAngle
+    const firstGreaterAngle = first.greaterAngle
+    const firstLayerMask = first.layerMask
+    const second = this.populateSegmentGeometryScratch(
+      regionId,
+      secondFromPortId,
+      secondToPortId,
+    )
+    if ((firstLayerMask & second.layerMask) === 0) return false
+    if (
+      firstLesserAngle === second.lesserAngle ||
+      firstLesserAngle === second.greaterAngle ||
+      firstGreaterAngle === second.lesserAngle ||
+      firstGreaterAngle === second.greaterAngle
+    ) {
+      return false
+    }
+    const secondLesserInsideFirst =
+      firstLesserAngle < second.lesserAngle &&
+      second.lesserAngle < firstGreaterAngle
+    const secondGreaterInsideFirst =
+      firstLesserAngle < second.greaterAngle &&
+      second.greaterAngle < firstGreaterAngle
+    return secondLesserInsideFirst !== secondGreaterInsideFirst
   }
 
   private populateBaseSegmentGeometryScratch(
@@ -2147,7 +2217,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (
       newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      this.isKnownSingleLayerRegion(nextRegionId) &&
+      state.regionSegments[nextRegionId]!.some(
+        ([routeId, fromPortId, toPortId]) =>
+          this.problem.routeNet[routeId] !== state.currentRouteNetId &&
+          this.segmentsCrossOnSameLayer(
+            nextRegionId,
+            currentCandidate.portId,
+            neighborPortId,
+            fromPortId,
+            toPortId,
+          ),
+      )
     ) {
       return Number.POSITIVE_INFINITY
     }

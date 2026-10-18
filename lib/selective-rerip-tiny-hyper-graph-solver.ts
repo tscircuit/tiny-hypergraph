@@ -259,28 +259,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const directOwnerRouteIds = [...directPath.owners]
     const repeatedOwnerRouteIds: RouteId[] = []
     for (const ownerRouteId of directOwnerRouteIds) {
-      const count = this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
-      if (count >= 2) repeatedOwnerRouteIds.push(ownerRouteId)
-    }
-    if (
-      directOwnerRouteIds.some((ownerRouteId) =>
-        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
-      )
-    ) {
-      this.selectiveReripStats.globalReripCount += 1
-      this.selectiveReripStats.globalReripReason = "failed_owner_cycle"
-      this.selectiveReripStats.lastFailedRouteId = failedRouteId
-      this.selectiveReripStats.lastDirectOwnerRouteIds = directOwnerRouteIds
-      this.selectiveReripStats.lastRepeatedOwnerRouteIds = repeatedOwnerRouteIds
-      this.selectiveReripStats.lastAlternateOwnerRouteIds = []
-      this.selectiveReripStats.lastRippedRouteIds = []
-      this.selectiveReripStats.lastRelaxedSearchExpandedLabelCount =
-        directPath.expandedLabelCount
-      this.selectiveReripStats.lastAlternateSearchExpandedLabelCount = 0
-      this.failedOwnerPairCounts.clear()
-      super.onOutOfCandidates()
-      this.publishSelectiveReripStats()
-      return
+      const count =
+        this.failedOwnerPairCounts.get(failedRouteId)?.get(ownerRouteId) ?? 0
+      if (count >= 1 || this.hasFailedOwnerPath(ownerRouteId, failedRouteId)) {
+        repeatedOwnerRouteIds.push(ownerRouteId)
+      }
     }
 
     let alternatePath:
@@ -292,8 +275,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       | undefined
     if (repeatedOwnerRouteIds.length > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
+      const forbiddenOwners = new Set([
+        ...repeatedOwnerRouteIds,
+        ...(this.failedOwnerPairCounts.get(failedRouteId)?.keys() ?? []),
+      ])
       alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
-        new Set(repeatedOwnerRouteIds),
+        forbiddenOwners,
       )
       if (!alternatePath.found) {
         this.selectiveReripStats.globalReripCount += 1
@@ -308,6 +295,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           directPath.expandedLabelCount
         this.selectiveReripStats.lastAlternateSearchExpandedLabelCount =
           alternatePath.expandedLabelCount
+        this.failedOwnerPairCounts.clear()
         super.onOutOfCandidates()
         this.publishSelectiveReripStats()
         return
@@ -322,6 +310,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       directOwnerRouteIds,
       alternateOwnerRouteIds,
     })
+    // Learn the owners actually removed, not an unselected cheap proposal.
+    // Otherwise alternate paths can bounce between the same two owners forever.
+    for (const ownerRouteId of rippedRouteIds) {
+      this.incrementFailedOwnerPair(failedRouteId, ownerRouteId)
+    }
     this.clearPartialRipPlans(rippedRouteIds)
     const alternateOnlyOwnerRouteIds = (alternateOwnerRouteIds ?? []).filter(
       (ownerRouteId) => !directPath.owners.has(ownerRouteId),
@@ -741,45 +734,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     return [...owners]
-  }
-
-  private segmentsCrossOnSameLayer(
-    regionId: RegionId,
-    firstFromPortId: PortId,
-    firstToPortId: PortId,
-    secondFromPortId: PortId,
-    secondToPortId: PortId,
-  ): boolean {
-    const first = this.populateSegmentGeometryScratch(
-      regionId,
-      firstFromPortId,
-      firstToPortId,
-    )
-    const firstLesserAngle = first.lesserAngle
-    const firstGreaterAngle = first.greaterAngle
-    const firstLayerMask = first.layerMask
-    const second = this.populateSegmentGeometryScratch(
-      regionId,
-      secondFromPortId,
-      secondToPortId,
-    )
-    if ((firstLayerMask & second.layerMask) === 0) return false
-    if (
-      firstLesserAngle === second.lesserAngle ||
-      firstLesserAngle === second.greaterAngle ||
-      firstGreaterAngle === second.lesserAngle ||
-      firstGreaterAngle === second.greaterAngle
-    ) {
-      return false
-    }
-
-    const secondLesserInsideFirst =
-      firstLesserAngle < second.lesserAngle &&
-      second.lesserAngle < firstGreaterAngle
-    const secondGreaterInsideFirst =
-      firstLesserAngle < second.greaterAngle &&
-      second.greaterAngle < firstGreaterAngle
-    return secondLesserInsideFirst !== secondGreaterInsideFirst
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {

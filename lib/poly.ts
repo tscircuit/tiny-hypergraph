@@ -629,6 +629,33 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     super(topology, problem, options)
   }
 
+  protected override isPortOnRegionBoundary(
+    regionId: RegionId,
+    portId: PortId,
+  ): boolean {
+    const { topology } = this
+    const firstRegion = topology.incidentPortRegion[portId]![0] === regionId
+    const edge = firstRegion
+      ? topology.portEdgeIndexForRegion1[portId]!
+      : topology.portEdgeIndexForRegion2[portId]!
+    const edgeT = firstRegion
+      ? topology.portEdgeTForRegion1[portId]!
+      : topology.portEdgeTForRegion2[portId]!
+    const start = topology.regionVertexStart[regionId]!
+    const count = topology.regionVertexCount[regionId]!
+    const a = start + edge
+    const b = start + ((edge + 1) % count)
+    const x =
+      topology.regionVertexX[a]! +
+      edgeT * (topology.regionVertexX[b]! - topology.regionVertexX[a]!)
+    const y =
+      topology.regionVertexY[a]! +
+      edgeT * (topology.regionVertexY[b]! - topology.regionVertexY[a]!)
+    return (
+      Math.hypot(topology.portX[portId]! - x, topology.portY[portId]! - y) <= 1e-6
+    )
+  }
+
   override populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
