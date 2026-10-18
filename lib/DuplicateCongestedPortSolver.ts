@@ -187,10 +187,10 @@ const findNearestPortOnSameBoundary = (
   return nearestPort
 }
 
-const getFallbackBoundaryDirection = (
+const getRectangularSharedBoundary = (
   sourcePort: SerializedPort,
   regionById: Map<string, SerializedRegion>,
-): Point => {
+): { axis: "x" | "y"; min: number; max: number } | undefined => {
   const firstBounds = getRegionBounds(regionById.get(sourcePort.region1Id))
   const secondBounds = getRegionBounds(regionById.get(sourcePort.region2Id))
   const sharedWidth =
@@ -199,21 +199,40 @@ const getFallbackBoundaryDirection = (
   const sharedHeight =
     Math.min(firstBounds.maxY, secondBounds.maxY) -
     Math.max(firstBounds.minY, secondBounds.minY)
-  // Offset centers do not define the normal of a shared rectangular edge.
-  // Use the edge itself so a duplicated port remains on both boundaries.
   if (
     sharedWidth > EPSILON &&
     (Math.abs(firstBounds.maxY - secondBounds.minY) <= EPSILON ||
       Math.abs(secondBounds.maxY - firstBounds.minY) <= EPSILON)
   ) {
-    return { x: 1, y: 0 }
+    return {
+      axis: "x",
+      min: Math.max(firstBounds.minX, secondBounds.minX),
+      max: Math.min(firstBounds.maxX, secondBounds.maxX),
+    }
   }
   if (
     sharedHeight > EPSILON &&
     (Math.abs(firstBounds.maxX - secondBounds.minX) <= EPSILON ||
       Math.abs(secondBounds.maxX - firstBounds.minX) <= EPSILON)
   ) {
-    return { x: 0, y: 1 }
+    return {
+      axis: "y",
+      min: Math.max(firstBounds.minY, secondBounds.minY),
+      max: Math.min(firstBounds.maxY, secondBounds.maxY),
+    }
+  }
+  return undefined
+}
+
+const getFallbackBoundaryDirection = (
+  sourcePort: SerializedPort,
+  regionById: Map<string, SerializedRegion>,
+): Point => {
+  // Offset centers do not define the normal of a shared rectangular edge.
+  // Use the edge itself so a duplicated port remains on both boundaries.
+  const sharedBoundary = getRectangularSharedBoundary(sourcePort, regionById)
+  if (sharedBoundary) {
+    return sharedBoundary.axis === "x" ? { x: 1, y: 0 } : { x: 0, y: 1 }
   }
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
@@ -468,12 +487,40 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         sourcePort,
         boundaryPorts,
       )
-      const duplicateDirection = getDuplicateDirection(
+      let duplicateDirection = getDuplicateDirection(
         sourcePort,
         nearestBoundaryPort,
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
+      let availableDuplicateDistance = duplicatePortProximity
+      const sharedBoundary = getRectangularSharedBoundary(sourcePort, regionById)
+      if (sharedBoundary) {
+        const coordinate = sourcePoint[sharedBoundary.axis]
+        if (
+          coordinate < sharedBoundary.min - EPSILON ||
+          coordinate > sharedBoundary.max + EPSILON
+        ) {
+          throw new Error(`Port "${sourcePortId}" is outside its shared edge`)
+        }
+        let sign = duplicateDirection[sharedBoundary.axis] < 0 ? -1 : 1
+        let distance =
+          sign > 0
+            ? sharedBoundary.max - coordinate
+            : coordinate - sharedBoundary.min
+        if (distance <= EPSILON) {
+          sign *= -1
+          distance =
+            sign > 0
+              ? sharedBoundary.max - coordinate
+              : coordinate - sharedBoundary.min
+        }
+        duplicateDirection =
+          sharedBoundary.axis === "x"
+            ? { x: sign, y: 0 }
+            : { x: 0, y: sign }
+        availableDuplicateDistance = Math.min(duplicatePortProximity, distance)
+      }
       const duplicatePortIds: string[] = []
 
       for (
@@ -487,7 +534,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           usedPortIds,
         )
         const offset =
-          (duplicatePortProximity * duplicateIndex) / (duplicateCount + 1)
+          (availableDuplicateDistance * duplicateIndex) / (duplicateCount + 1)
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
