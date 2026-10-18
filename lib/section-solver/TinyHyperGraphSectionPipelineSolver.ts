@@ -128,6 +128,7 @@ const createProblemWithPortSectionMask = (
   viaRegionPortConflicts: problem.viaRegionPortConflicts,
   enforceViaFit: problem.enforceViaFit,
   regionLayerMasksAreBinding: problem.regionLayerMasksAreBinding,
+  shareSameNetCopper: problem.shareSameNetCopper,
   viaBoundaryClearance: problem.viaBoundaryClearance,
   portPenalty:
     problem.portPenalty === undefined

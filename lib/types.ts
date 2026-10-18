@@ -25,6 +25,8 @@ export interface DynamicAnglePairArrays {
 }
 
 export interface RegionIntersectionCache extends DynamicAnglePairArrays {
+  /** Exact same-net hops already represented by the cached physical copper. */
+  sharedCopperSegmentKeys?: ReadonlySet<string>
   existingSameLayerIntersections: Integer
   existingCrossingLayerIntersections: Integer
   existingEntryExitLayerChanges: Integer

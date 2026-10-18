@@ -111,6 +111,13 @@ const cloneRegionIntersectionCache = (
     regionIntersectionCache.existingEntryExitLayerChanges,
   existingRegionCost: regionIntersectionCache.existingRegionCost,
   existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+  ...(regionIntersectionCache.sharedCopperSegmentKeys === undefined
+    ? {}
+    : {
+        sharedCopperSegmentKeys: new Set(
+          regionIntersectionCache.sharedCopperSegmentKeys,
+        ),
+      }),
 })
 
 const cloneSolvedStateSnapshot = (
@@ -571,6 +578,7 @@ const createSectionRoutePlans = (
       viaRegionPortConflicts: problem.viaRegionPortConflicts,
       enforceViaFit: problem.enforceViaFit,
       regionLayerMasksAreBinding: problem.regionLayerMasksAreBinding,
+      shareSameNetCopper: problem.shareSameNetCopper,
       viaBoundaryClearance: problem.viaBoundaryClearance,
       portPenalty:
         problem.portPenalty === undefined

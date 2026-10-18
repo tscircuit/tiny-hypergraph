@@ -115,6 +115,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     options?: TinyHyperGraphBusSolverOptions,
   ) {
     super(topology, problem, options)
+    if (problem.shareSameNetCopper) {
+      throw new Error(
+        "TinyHyperGraphBusSolver uses a separate bus capacity model; shareSameNetCopper is unsupported",
+      )
+    }
 
     this.busTraceOrder = deriveBusTraceOrder(topology, problem)
     this.centerTraceIndex = this.busTraceOrder.centerTraceIndex

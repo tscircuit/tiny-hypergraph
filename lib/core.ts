@@ -77,6 +77,13 @@ const cloneRegionIntersectionCache = (
     regionIntersectionCache.existingEntryExitLayerChanges,
   existingRegionCost: regionIntersectionCache.existingRegionCost,
   existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+  ...(regionIntersectionCache.sharedCopperSegmentKeys === undefined
+    ? {}
+    : {
+        sharedCopperSegmentKeys: new Set(
+          regionIntersectionCache.sharedCopperSegmentKeys,
+        ),
+      }),
 })
 
 const cloneSolvedStateSnapshot = (
@@ -162,6 +169,8 @@ export interface TinyHyperGraphProblem {
   enforceViaFit?: boolean
   /** False when detailed routing may use board layers outside the region mask. */
   regionLayerMasksAreBinding?: boolean
+  /** Logical routes reusing an exact same-net hop consume one copper resource. */
+  shareSameNetCopper?: boolean
   /** Clearance to copper assigned on an ordinary region's boundary. */
   viaBoundaryClearance?: number
 
@@ -1515,6 +1524,34 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return scratch
   }
 
+  private getSharedCopperSegmentKey(
+    fromPortId: PortId,
+    toPortId: PortId,
+  ): string {
+    const netId = this.state.currentRouteNetId
+    if (netId === undefined) {
+      throw new Error("Shared copper accounting requires an active route net")
+    }
+    return `${netId}:${Math.min(fromPortId, toPortId)}:${Math.max(fromPortId, toPortId)}`
+  }
+
+  private reusesSharedCopperSegment(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ): boolean {
+    if (!this.problem.shareSameNetCopper) return false
+    const cache = this.state.regionIntersectionCaches[regionId]!
+    if (cache.existingSegmentCount > 0 && !cache.sharedCopperSegmentKeys) {
+      throw new Error(`Region ${regionId} is missing its shared copper keys`)
+    }
+    return (
+      cache.sharedCopperSegmentKeys?.has(
+        this.getSharedCopperSegmentKey(fromPortId, toPortId),
+      ) === true
+    )
+  }
+
   appendSegmentToRegionCache(
     regionId: RegionId,
     port1Id: PortId,
@@ -1522,6 +1559,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     const { state } = this
     const regionCache = state.regionIntersectionCaches[regionId]
+    if (this.reusesSharedCopperSegment(regionId, port1Id, port2Id)) return
     const segmentGeometry = this.populateSegmentGeometryScratch(
       regionId,
       port1Id,
@@ -1560,6 +1598,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const existingSegmentCount = lesserAngles.length
 
     state.regionIntersectionCaches[regionId] = {
+      ...(this.problem.shareSameNetCopper
+        ? {
+            sharedCopperSegmentKeys: new Set([
+              ...(regionCache.sharedCopperSegmentKeys ?? []),
+              this.getSharedCopperSegmentKey(port1Id, port2Id),
+            ]),
+          }
+        : {}),
       netIds,
       lesserAngles,
       greaterAngles,
@@ -2170,8 +2216,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
-    const regionCongestionCost = state.regionCongestionCost[nextRegionId]!
-    const neighborPortPenalty = this.problem.portPenalty?.[neighborPortId] ?? 0
+    const reusesCopper = this.reusesSharedCopperSegment(
+      nextRegionId,
+      currentCandidate.portId,
+      neighborPortId,
+    )
+    const regionCongestionCost = reusesCopper
+      ? 0
+      : state.regionCongestionCost[nextRegionId]!
+    const neighborPortPenalty = reusesCopper
+      ? 0
+      : (this.problem.portPenalty?.[neighborPortId] ?? 0)
     let segmentDistanceCost = 0
     if (this.ADD_SEGMENT_DISTANCE_TO_G) {
       let segmentDistance = knownSegmentDistance
@@ -2232,6 +2287,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     ) {
       return Number.POSITIVE_INFINITY
     }
+
+    // All hard geometry checks above remain binding. Reusing a committed hop
+    // adds no copper, congestion, or port occupancy; the bound uses that too.
+    if (reusesCopper) return lowerBoundCost
 
     const newRegionCost =
       this.computeRegionCostForRegion(
