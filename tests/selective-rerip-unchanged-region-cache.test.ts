@@ -197,19 +197,33 @@ test("selective rerips reuse only unchanged region geometry and preserve ownersh
   }
 
   const costUpdates: Array<(solver: CountingSelectiveSolver) => void> = [
-    (solver) => { solver.minViaPadDiameter = 0.7 },
-    (solver) => { solver.TRACE_DENSITY_COST_FACTOR = 2 },
-    (solver) => { solver.topology.regionWidth[0] = 4 },
-    (solver) => { solver.topology.regionHeight[1] = 3 },
-    (solver) => { solver.topology.regionAvailableZMask![0] = 1 },
-    (solver) => { solver.useCurrentNetInCost = true },
+    (solver) => {
+      solver.minViaPadDiameter = 0.7
+    },
+    (solver) => {
+      solver.TRACE_DENSITY_COST_FACTOR = 2
+    },
+    (solver) => {
+      solver.topology.regionWidth[0] = 4
+    },
+    (solver) => {
+      solver.topology.regionHeight[1] = 3
+    },
+    (solver) => {
+      solver.topology.regionAvailableZMask![0] = 1
+    },
+    (solver) => {
+      solver.useCurrentNetInCost = true
+    },
   ]
   for (const updateCost of costUpdates) {
     for (const routeIds of [[], [2]]) {
       const optimized = createSolver()
       const original = createSolver()
       const previousCaches = [...optimized.state.regionIntersectionCaches]
-      const previousCosts = previousCaches.map((cache) => cache.existingRegionCost)
+      const previousCosts = previousCaches.map(
+        (cache) => cache.existingRegionCost,
+      )
       updateCost(optimized)
       updateCost(original)
       originalRebuild(original, new Set(routeIds))
