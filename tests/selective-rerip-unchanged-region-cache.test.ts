@@ -8,6 +8,25 @@ import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyp
 
 class CountingSelectiveSolver extends SelectiveReripTinyHyperGraphSolver {
   appendCount = 0
+  useCurrentNetInCost = false
+
+  protected override computeRegionCostForRegion(
+    regionId: number,
+    numSameLayerIntersections: number,
+    numCrossLayerIntersections: number,
+    numEntryExitChanges: number,
+    traceCount: number,
+  ): number {
+    return (
+      super.computeRegionCostForRegion(
+        regionId,
+        numSameLayerIntersections,
+        numCrossLayerIntersections,
+        numEntryExitChanges,
+        traceCount,
+      ) + (this.useCurrentNetInCost ? (this.state.currentRouteNetId ?? 0) : 0)
+    )
+  }
 
   override appendSegmentToRegionCache(
     regionId: number,
@@ -175,6 +194,38 @@ test("selective rerips reuse only unchanged region geometry and preserve ownersh
     expect(optimized.failed).toBe(false)
     expect(optimized.iterations).toBe(original.iterations)
     expect(optimized.getOutput()).toEqual(original.getOutput())
+  }
+
+  const costUpdates: Array<(solver: CountingSelectiveSolver) => void> = [
+    (solver) => { solver.minViaPadDiameter = 0.7 },
+    (solver) => { solver.TRACE_DENSITY_COST_FACTOR = 2 },
+    (solver) => { solver.topology.regionWidth[0] = 4 },
+    (solver) => { solver.topology.regionHeight[1] = 3 },
+    (solver) => { solver.topology.regionAvailableZMask![0] = 1 },
+    (solver) => { solver.useCurrentNetInCost = true },
+  ]
+  for (const updateCost of costUpdates) {
+    for (const routeIds of [[], [2]]) {
+      const optimized = createSolver()
+      const original = createSolver()
+      const previousCaches = [...optimized.state.regionIntersectionCaches]
+      const previousCosts = previousCaches.map((cache) => cache.existingRegionCost)
+      updateCost(optimized)
+      updateCost(original)
+      originalRebuild(original, new Set(routeIds))
+      rebuild(optimized, new Set(routeIds))
+      expect(optimized.state).toEqual(original.state)
+      expect(optimized.appendCount).toBe(routeIds.length === 0 ? 0 : 1)
+      for (const regionId of [0, 2]) {
+        const cache = optimized.state.regionIntersectionCaches[regionId]!
+        const previous = previousCaches[regionId]!
+        expect(cache.netIds).toBe(previous.netIds)
+        expect(cache.lesserAngles).toBe(previous.lesserAngles)
+        expect(cache.greaterAngles).toBe(previous.greaterAngles)
+        expect(cache.layerMasks).toBe(previous.layerMasks)
+        expect(previous.existingRegionCost).toBe(previousCosts[regionId])
+      }
+    }
   }
 
   for (const routeIds of [[], [0]]) {

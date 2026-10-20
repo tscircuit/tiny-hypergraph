@@ -748,6 +748,26 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
         }
       }
+      if (!rebuildRegionCache) {
+        const cache = this.state.regionIntersectionCaches[regionId]!
+        if (cache.existingSegmentCount === 0) continue
+        // Geometry is unchanged, but callers can update cost parameters between
+        // steps. Refresh the final score with the same counts and current net
+        // that the last append in a full rebuild would have used.
+        const existingRegionCost = this.computeRegionCostForRegion(
+          regionId,
+          cache.existingSameLayerIntersections,
+          cache.existingCrossingLayerIntersections,
+          cache.existingEntryExitLayerChanges,
+          cache.existingSegmentCount,
+        )
+        if (existingRegionCost !== cache.existingRegionCost) {
+          this.state.regionIntersectionCaches[regionId] = {
+            ...cache,
+            existingRegionCost,
+          }
+        }
+      }
     }
     this.state.currentRouteNetId = undefined
   }
