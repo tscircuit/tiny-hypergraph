@@ -706,13 +706,18 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
+    const previousRegionSegments = this.state.regionSegments
     this.state.regionSegments = this.state.regionSegments.map((segments) =>
       segments.filter(([routeId]) => !rippedRouteIds.has(routeId)),
     )
     this.state.portAssignment.fill(-1)
     this.state.regionIntersectionCaches = Array.from(
       { length: this.topology.regionCount },
-      () => createEmptyRegionIntersectionCache(),
+      (_, regionId) =>
+        this.state.regionSegments[regionId]!.length ===
+        previousRegionSegments[regionId]!.length
+          ? this.state.regionIntersectionCaches[regionId]!
+          : createEmptyRegionIntersectionCache(),
     )
 
     for (
@@ -720,6 +725,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       regionId < this.state.regionSegments.length;
       regionId++
     ) {
+      // Filtering preserves segment order. Regions without a removed segment
+      // retain exactly the geometry and intersection counts already committed.
+      const rebuildRegionCache =
+        this.state.regionSegments[regionId]!.length !==
+        previousRegionSegments[regionId]!.length
       for (const [routeId, fromPortId, toPortId] of this.state.regionSegments[
         regionId
       ]!) {
@@ -734,7 +744,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           }
           this.state.portAssignment[portId] = routeNetId
         }
-        this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+        if (rebuildRegionCache) {
+          this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
+        }
       }
     }
     this.state.currentRouteNetId = undefined
