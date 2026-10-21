@@ -56,6 +56,7 @@ const createSolver = (): TinyHyperGraphSolver => {
 }
 
 test("owned metadata skips repeated static checks and resets at explicit search boundaries", (): void => {
+  const workSnapshots = []
   for (const boundary of ["none", "clear", "best-cost-reset", "neighbors"]) {
     const cached = createSolver()
     const original = createSolver()
@@ -68,6 +69,7 @@ test("owned metadata skips repeated static checks and resets at explicit search 
       return frontier
     }
     const keyCalls = [0, 0]
+    let comparedSteps = 0
     for (const [index, solver] of [cached, original].entries()) {
       const getHopId = solver.getHopId.bind(solver)
       solver.getHopId = (portId, nextRegionId): number => {
@@ -95,7 +97,18 @@ test("owned metadata skips repeated static checks and resets at explicit search 
       expect(cached.solved).toBe(original.solved)
       expect(cached.failed).toBe(original.failed)
       expect(cached.stats).toEqual(original.stats)
+      comparedSteps++
     }
     expect(keyCalls[0]).toBeLessThan(keyCalls[1]!)
+    workSnapshots.push({
+      invalidationBoundary: boundary,
+      stepsWithEqualStateAndStats: comparedSteps,
+      beforeRepeatedMetadata: { hopIdEvaluations: keyCalls[1] },
+      afterOwnedMetadataCache: { hopIdEvaluations: keyCalls[0] },
+      repeatedHopIdEvaluationsAvoided: keyCalls[1]! - keyCalls[0]!,
+    })
   }
+  expect(workSnapshots).toMatchSnapshot(
+    "owned metadata removes repeated work and refreshes at search boundaries",
+  )
 })

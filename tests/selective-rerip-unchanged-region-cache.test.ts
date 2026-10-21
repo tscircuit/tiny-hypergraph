@@ -135,6 +135,7 @@ const rebuild = (
 }
 
 test("selective rerips reuse only unchanged region geometry and preserve ownership checks", (): void => {
+  const workSnapshots = []
   for (const routeIds of [[], [99], [0], [0, 2], [4], [0, 1, 2, 3, 4, 5]]) {
     const optimized = createSolver()
     const original = createSolver()
@@ -164,6 +165,20 @@ test("selective rerips reuse only unchanged region geometry and preserve ownersh
       }
     }
     expect(optimized.appendCount).toBe(expectedAppends)
+    workSnapshots.push({
+      rippedRouteIds: routeIds,
+      beforeRebuildAllRegions: { appendedSegments: original.appendCount },
+      afterRebuildChangedRegions: { appendedSegments: optimized.appendCount },
+      reusedGeometryRegions: previousCaches.flatMap((cache, regionId) =>
+        previousSegments[regionId]!.length > 0 &&
+        optimized.state.regionIntersectionCaches[regionId] === cache
+          ? [regionId]
+          : [],
+      ),
+      remainingCommittedRoutes: optimized.state.regionSegments
+        .slice(0, 3)
+        .map((segments) => segments.map(([routeId]) => routeId)),
+    })
 
     // Recommit ripped routes as future pathfinding would, then remove another
     // set. Retained caches must stay independent from changed neighboring ones.
@@ -195,6 +210,9 @@ test("selective rerips reuse only unchanged region geometry and preserve ownersh
     expect(optimized.iterations).toBe(original.iterations)
     expect(optimized.getOutput()).toEqual(original.getOutput())
   }
+  expect(workSnapshots).toMatchSnapshot(
+    "selective rerips only rebuild geometry in changed regions",
+  )
 
   const costUpdates: Array<(solver: CountingSelectiveSolver) => void> = [
     (solver) => {
