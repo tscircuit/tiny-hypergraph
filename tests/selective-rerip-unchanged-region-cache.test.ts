@@ -5,6 +5,16 @@ import {
   type TinyHyperGraphTopology,
 } from "lib/core"
 import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
+import {
+  afterColor,
+  beforeColor,
+  expectPerformanceSvg,
+  performanceCanvas,
+  projectVisual,
+  visualMetric,
+  visualPanel,
+  visualText,
+} from "./fixtures/performanceVisual"
 
 class CountingSelectiveSolver extends SelectiveReripTinyHyperGraphSolver {
   appendCount = 0
@@ -134,7 +144,7 @@ const rebuild = (
   internalSolver.rebuildCommittedState(rippedRouteIds)
 }
 
-test("selective rerips reuse only unchanged region geometry and preserve ownership checks", (): void => {
+test("selective rerips reuse only unchanged region geometry and preserve ownership checks", async (): Promise<void> => {
   const workSnapshots = []
   for (const routeIds of [[], [99], [0], [0, 2], [4], [0, 1, 2, 3, 4, 5]]) {
     const optimized = createSolver()
@@ -179,6 +189,116 @@ test("selective rerips reuse only unchanged region geometry and preserve ownersh
         .slice(0, 3)
         .map((segments) => segments.map(([routeId]) => routeId)),
     })
+    if (routeIds.length === 1 && routeIds[0] === 0) {
+      const graphics = performanceCanvas(
+        "Ripping one route only rebuilds the region it changed",
+        "Both views show the same committed copper after removing route 0. Color identifies geometry rebuilt versus reused.",
+      )
+      for (const [left, solver, title, color] of [
+        [24, original, "Before: rebuild every populated region", beforeColor],
+        [624, optimized, "After: retain untouched region geometry", afterColor],
+      ] as const) {
+        visualPanel(
+          graphics,
+          left,
+          title,
+          "Orange = rebuilt cache. Green = retained cache. Copper stays identical.",
+          color,
+        )
+        const project = projectVisual(
+          { minX: -0.5, maxX: 10.5, minY: -0.6, maxY: 2.6 },
+          left + 26,
+          214,
+          500,
+          240,
+        )
+        for (const regionId of [0, 1, 2]) {
+          const ports = solver.topology.regionIncidentPorts[regionId]!
+          const xs = ports.map((portId) => solver.topology.portX[portId]!)
+          const rebuilt =
+            left === 24 ||
+            previousCaches[regionId] !==
+              optimized.state.regionIntersectionCaches[regionId]
+          const regionColor = rebuilt ? beforeColor : afterColor
+          const center = project({
+            x: (Math.min(...xs) + Math.max(...xs)) / 2,
+            y: 1,
+          })
+          graphics.rects.push({
+            center,
+            width: ((Math.max(...xs) - Math.min(...xs) + 0.6) / 11) * 500,
+            height: (2.6 / 11) * 500,
+            fill: rebuilt ? "rgba(180,83,9,0.10)" : "rgba(4,120,87,0.10)",
+            stroke: regionColor,
+          })
+          visualText(
+            graphics,
+            center.x - 39,
+            center.y - 92,
+            `Region ${regionId}`,
+            16,
+          )
+          visualText(
+            graphics,
+            center.x - 31,
+            center.y - 68,
+            rebuilt ? "rebuild" : "reuse",
+            14,
+            regionColor,
+          )
+          for (const [routeId, from, to] of solver.state.regionSegments[
+            regionId
+          ]!) {
+            graphics.lines.push({
+              points: [from, to].map((portId) =>
+                project({
+                  x: solver.topology.portX[portId]!,
+                  y: solver.topology.portY[portId]!,
+                }),
+              ),
+              strokeWidth: 3,
+              strokeColor: routeId % 2 === 0 ? "#2563eb" : "#7c3aed",
+              ...(solver.topology.portZ[from] === 1
+                ? { strokeDash: "7 4" }
+                : {}),
+            })
+          }
+          for (const portId of ports) {
+            graphics.circles.push({
+              center: project({
+                x: solver.topology.portX[portId]!,
+                y: solver.topology.portY[portId]!,
+              }),
+              radius: 3,
+              fill: "white",
+              stroke: "#475569",
+            })
+          }
+        }
+        graphics.lines.push({
+          points: [project({ x: 0, y: 1 }), project({ x: 2, y: 1 })],
+          strokeColor: "#94a3b8",
+          strokeWidth: 2,
+          strokeDash: "4 4",
+        })
+        visualText(
+          graphics,
+          left + 20,
+          486,
+          "Gray dashed segment: removed route 0. Blue/purple: retained copper.",
+          13,
+          "#64748b",
+        )
+      }
+      visualMetric(
+        graphics,
+        "Segments appended while rebuilding committed geometry",
+        original.appendCount,
+        optimized.appendCount,
+        "Committed state matches the full rebuild; subsequent routing and ownership checks also match.",
+      )
+      await expectPerformanceSvg(graphics, import.meta.path)
+    }
 
     // Recommit ripped routes as future pathfinding would, then remove another
     // set. Retained caches must stay independent from changed neighboring ones.

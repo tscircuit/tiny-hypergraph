@@ -5,6 +5,15 @@ import {
   type TinyHyperGraphProblem,
   type TinyHyperGraphTopology,
 } from "lib/index"
+import {
+  afterColor,
+  beforeColor,
+  expectPerformanceSvg,
+  performanceCanvas,
+  visualMetric,
+  visualPanel,
+  visualText,
+} from "./fixtures/performanceVisual"
 
 const createSolver = (): TinyHyperGraphSolver => {
   const portCount = 42
@@ -55,7 +64,7 @@ const createSolver = (): TinyHyperGraphSolver => {
   return solver
 }
 
-test("owned metadata skips repeated static checks and resets at explicit search boundaries", (): void => {
+test("owned metadata skips repeated static checks and resets at explicit search boundaries", async (): Promise<void> => {
   const workSnapshots = []
   for (const boundary of ["none", "clear", "best-cost-reset", "neighbors"]) {
     const cached = createSolver()
@@ -69,11 +78,13 @@ test("owned metadata skips repeated static checks and resets at explicit search 
       return frontier
     }
     const keyCalls = [0, 0]
+    const portCalls = [new Int32Array(42), new Int32Array(42)]
     let comparedSteps = 0
     for (const [index, solver] of [cached, original].entries()) {
       const getHopId = solver.getHopId.bind(solver)
       solver.getHopId = (portId, nextRegionId): number => {
         keyCalls[index]!++
+        portCalls[index]![portId]!++
         return getHopId(portId, nextRegionId)
       }
     }
@@ -107,6 +118,64 @@ test("owned metadata skips repeated static checks and resets at explicit search 
       afterOwnedMetadataCache: { hopIdEvaluations: keyCalls[0] },
       repeatedHopIdEvaluationsAvoided: keyCalls[1]! - keyCalls[0]!,
     })
+    if (boundary === "none") {
+      const graphics = performanceCanvas(
+        "Reuse fixed metadata while the search keeps the same decisions",
+        "42-port graph shown schematically. Each number records a real getHopId call; state and stats match after every step.",
+      )
+      for (const [left, calls, title, color] of [
+        [24, portCalls[1]!, "Before: recompute each occurrence", beforeColor],
+        [
+          624,
+          portCalls[0]!,
+          "After: prepare once, reuse within the epoch",
+          afterColor,
+        ],
+      ] as const) {
+        visualPanel(
+          graphics,
+          left,
+          title,
+          "Each circle is a port; its label is the observed call count.",
+          color,
+        )
+        expect(calls.reduce((sum, count) => sum + count, 0)).toBe(
+          left === 24 ? keyCalls[1]! : keyCalls[0]!,
+        )
+        for (const [portId, count] of calls.entries()) {
+          const x = left + 48 + (portId % 7) * 74
+          const y = 201 + Math.floor(portId / 7) * 48
+          const alpha = Math.min(0.75, 0.08 + count / 55)
+          graphics.circles.push({
+            center: { x, y },
+            radius: 14,
+            fill:
+              left === 24
+                ? `rgba(180,83,9,${alpha})`
+                : `rgba(4,120,87,${alpha})`,
+            stroke: portId === 41 ? "#dc2626" : color,
+          })
+          visualText(graphics, x - 8, y, String(portId), 12)
+          visualText(graphics, x - 23, y + 23, `${count} calls`, 11, color)
+        }
+        visualText(
+          graphics,
+          left + 20,
+          492,
+          "Red outline: goal port belongs to another net in this fixture.",
+          13,
+          "#64748b",
+        )
+      }
+      visualMetric(
+        graphics,
+        "Hop-ID evaluations over the same search steps",
+        keyCalls[1]!,
+        keyCalls[0]!,
+        `${comparedSteps} paired steps: identical routing state, queue behavior and statistics. Live costs are still evaluated.`,
+      )
+      await expectPerformanceSvg(graphics, import.meta.path)
+    }
   }
   expect(workSnapshots).toMatchSnapshot(
     "owned metadata removes repeated work and refreshes at search boundaries",
