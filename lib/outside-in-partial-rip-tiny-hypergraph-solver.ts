@@ -78,6 +78,13 @@ const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
  * one-ended search; the bounded two-ended search applies to reopened spans.
  */
 export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
+  protected override canSearchRoutesInParallel(): boolean {
+    return (
+      this.constructor === OutsideInPartialRipTinyHyperGraphSolver &&
+      this.partialRipRoutePlans.size === 0
+    )
+  }
+
   protected partialRipRoutePlans = new Map<RouteId, PartialRipRoutePlan>()
   private outsideInRouteSearch?: OutsideInRouteSearch
   private oneSidedFallbackRouteId?: RouteId

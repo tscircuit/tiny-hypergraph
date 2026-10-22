@@ -1,4 +1,5 @@
-import { BaseSolver } from "@tscircuit/solver-utils"
+import type { SharedRouteSearchGraph } from "./parallelRouteSearchData"
+import { BaseSolver, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
@@ -809,6 +810,180 @@ export class TinyHyperGraphSolver extends BaseSolver {
           staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
         }
       }
+    }
+  }
+
+  protected canSearchRoutesInParallel(): boolean {
+    return this.constructor === TinyHyperGraphSolver
+  }
+
+  private asyncRunning = false
+  asyncStats = { dispatchedRoutes: 0, acceptedRoutes: 0, conflictedRoutes: 0 }
+
+  /** Speculate on a serial prefix; commit only searches whose read sets are unchanged. */
+  async solveAsync(
+    runtime?: SolverRuntimeExecutor,
+    stopAtIteration = Infinity,
+  ): Promise<void> {
+    if (this.asyncRunning)
+      throw new Error("Tiny hypergraph solveAsync is already running")
+    if (this.solved || this.failed || this.iterations >= stopAtIteration) return
+    const startTime = performance.now()
+    this.asyncRunning = true
+    try {
+      this.setup()
+      const { TinyHyperGraphRouteSearchSolver } = await import(
+        "./TinyHyperGraphRouteSearchSolver"
+      )
+      const { createSharedRouteSearchGraph, createSharedRouteSearchSnapshot } =
+        await import("./parallelRouteSearchData")
+      let graph: SharedRouteSearchGraph | undefined
+      while (
+        !this.solved &&
+        !this.failed &&
+        this.iterations < stopAtIteration
+      ) {
+        // Subclasses can change path costs, route ordering, and commit semantics.
+        // Their synchronous implementation remains authoritative.
+        if (
+          !runtime ||
+          typeof SharedArrayBuffer === "undefined" ||
+          !this.canSearchRoutesInParallel() ||
+          this.state.currentRouteId !== undefined ||
+          this.state.unroutedRoutes.length < 2
+        ) {
+          this.step()
+          continue
+        }
+        const routeIds = this.state.unroutedRoutes.slice(0, 16)
+        const ripCount = this.state.ripCount
+        const budget = Math.min(this.MAX_ITERATIONS, stopAtIteration)
+        graph ??= createSharedRouteSearchGraph(
+          this.topology,
+          this.problem,
+          getTinyHyperGraphSolverOptions(this),
+          this.ADD_SEGMENT_DISTANCE_TO_G,
+        )
+        const snapshot = createSharedRouteSearchSnapshot(this.state)
+        this.asyncStats.dispatchedRoutes += routeIds.length
+        // Each job reads an immutable copy, so host commits can overlap later jobs.
+        const batches: number[][] = []
+        for (let offset = 0; offset < routeIds.length; offset += 4) {
+          batches.push(routeIds.slice(offset, offset + 4))
+        }
+        const cancelled = new Int32Array(new SharedArrayBuffer(4))
+        const pending = batches
+          .map((batch) =>
+            runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
+              graph: graph!,
+              snapshot,
+              cancelled,
+              routeIds: batch,
+              maxIterations: budget - this.iterations,
+            }),
+          )
+          .map((job) =>
+            job.then(
+              (value) => ({ value, error: undefined }),
+              (error: unknown) => ({ value: undefined, error }),
+            ),
+          )
+        try {
+          results: for (const job of pending) {
+            const settled = await job
+            if (settled.error) throw settled.error
+            for (const result of settled.value!) {
+              if (
+                this.solved ||
+                this.failed ||
+                this.iterations >= stopAtIteration ||
+                this.state.ripCount !== ripCount ||
+                this.state.unroutedRoutes[0] !== result.routeId
+              )
+                break results
+              let readsUnchanged = true
+              const netId = this.problem.routeNet[result.routeId]
+              for (
+                let offset = 0;
+                offset < result.portReads.length;
+                offset += 2
+              ) {
+                const before = result.portReads[offset + 1]
+                const after =
+                  this.state.portAssignment[result.portReads[offset]]
+                if (
+                  (before === -1 || before === netId) !==
+                  (after === -1 || after === netId)
+                ) {
+                  readsUnchanged = false
+                  break
+                }
+              }
+              for (
+                let offset = 0;
+                readsUnchanged && offset < result.regionReads.length;
+                offset += 2
+              ) {
+                if (
+                  this.state.regionIntersectionCaches[
+                    result.regionReads[offset]
+                  ].existingSegmentCount !== result.regionReads[offset + 1]
+                )
+                  readsUnchanged = false
+              }
+              if (
+                result.candidate &&
+                this.iterations + result.iterations <= budget &&
+                readsUnchanged
+              ) {
+                this.state.currentRouteId = this.state.unroutedRoutes.shift()!
+                this.state.currentRouteNetId =
+                  this.problem.routeNet[this.state.currentRouteId]
+                this.routeAttemptCountByRouteId[this.state.currentRouteId] += 1
+                this.resetCandidateBestCosts()
+                this.state.goalPortId = this.getRouteEndPortId(
+                  this.state.currentRouteId,
+                )
+                this.onPathFound(result.candidate)
+                this.iterations += result.iterations
+                this.asyncStats.acceptedRoutes += 1
+                if (!this.solved && this.iterations >= this.MAX_ITERATIONS) {
+                  this.tryFinalAcceptance()
+                  if (!this.solved) {
+                    this.error = `${this.getSolverName()} ran out of iterations`
+                    this.failed = true
+                  }
+                }
+              } else {
+                this.asyncStats.conflictedRoutes += 1
+                // Replay the exact serial prefix on a conflict, exhausted search, or budget boundary.
+                const routeId = this.state.unroutedRoutes[0]
+                do {
+                  this.step()
+                } while (
+                  !this.solved &&
+                  !this.failed &&
+                  this.iterations < stopAtIteration &&
+                  this.state.ripCount === ripCount &&
+                  this.state.currentRouteId === routeId
+                )
+              }
+            }
+          }
+        } finally {
+          Atomics.store(cancelled, 0, 1)
+          const settled = await Promise.all(pending)
+          const rejected = settled.find((result) => result.error)
+          if (rejected) throw rejected.error
+        }
+      }
+    } catch (error) {
+      this.failed = true
+      this.error = `Tiny hypergraph asynchronous solve error: ${error}`
+      throw error
+    } finally {
+      this.asyncRunning = false
+      this.timeToSolve = performance.now() - startTime
     }
   }
 

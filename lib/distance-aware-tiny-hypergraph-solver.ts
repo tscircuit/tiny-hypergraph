@@ -15,6 +15,10 @@ import { IndexedCandidateHeap } from "./indexed-candidate-heap"
  * queued hop from being expanded later.
  */
 export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
+  protected override canSearchRoutesInParallel(): boolean {
+    return this.constructor === DistanceAwareTinyHyperGraphSolver
+  }
+
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
