@@ -821,6 +821,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): Promise<void> {
     if (this.asyncRunning)
       throw new Error("Tiny hypergraph solveAsync is already running")
+    if (this.solved || this.failed || this.iterations >= stopAtIteration) return
     const startTime = performance.now()
     this.asyncRunning = true
     try {

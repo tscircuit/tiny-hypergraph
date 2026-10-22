@@ -341,6 +341,7 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   ): Promise<void> {
     if (this.asyncRunning)
       throw new Error("Tiny section pipeline solveAsync is already running")
+    if (this.solved || this.failed || this.iterations >= stopAtIteration) return
     const startTime = performance.now()
     this.asyncRunning = true
     try {
@@ -355,10 +356,12 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
           const budget =
             Math.min(this.MAX_ITERATIONS, stopAtIteration) - this.iterations
           await phase.solveAsync(runtime, previousIterations + budget)
-          this.iterations +=
+          this.iterations += Math.max(
+            0,
             phase.iterations -
-            previousIterations -
-            (phase.solved || phase.failed ? 1 : 0)
+              previousIterations -
+              (phase.solved || phase.failed ? 1 : 0),
+          )
           if (this.iterations >= Math.min(this.MAX_ITERATIONS, stopAtIteration))
             break
         }
