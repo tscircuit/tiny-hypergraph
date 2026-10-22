@@ -282,6 +282,8 @@ export interface TinyHyperGraphSolverOptions {
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS?: number
+  /** Additional ceiling for an unfinished first assignment; no completed state is discarded. */
+  INITIAL_ROUTING_MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
@@ -330,6 +332,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS: number
+  INITIAL_ROUTING_MAX_ITERATIONS?: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
@@ -394,6 +397,18 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
+  }
+  if (options.INITIAL_ROUTING_MAX_ITERATIONS !== undefined) {
+    if (
+      !Number.isSafeInteger(options.INITIAL_ROUTING_MAX_ITERATIONS) ||
+      options.INITIAL_ROUTING_MAX_ITERATIONS <= 0
+    ) {
+      throw new Error(
+        "INITIAL_ROUTING_MAX_ITERATIONS must be a positive safe integer",
+      )
+    }
+    solver.INITIAL_ROUTING_MAX_ITERATIONS =
+      options.INITIAL_ROUTING_MAX_ITERATIONS
   }
   if (options.VERBOSE !== undefined) {
     solver.VERBOSE = options.VERBOSE
@@ -473,6 +488,7 @@ export const getTinyHyperGraphSolverOptions = (
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
+  INITIAL_ROUTING_MAX_ITERATIONS: solver.INITIAL_ROUTING_MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
@@ -568,6 +584,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   OWNED_REGIONAL_HOP_FRONTIER = false
 
   override MAX_ITERATIONS = 1e6
+  INITIAL_ROUTING_MAX_ITERATIONS?: number
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
@@ -1761,6 +1778,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
           GREEDY_FINAL_ROUTE_ITERS: 0,
           MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+          INITIAL_ROUTING_MAX_ITERATIONS: undefined,
           RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
           STATIC_REACHABILITY_PRECHECK: false,
           OUTSIDE_IN_ROUTING: false,
@@ -2036,7 +2054,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
-  override tryFinalAcceptance() {
+  override tryFinalAcceptance(): void {
+    if (
+      this.INITIAL_ROUTING_MAX_ITERATIONS !== undefined &&
+      !this.bestSolvedStateSnapshot &&
+      !this.problem.initialAssignments?.length &&
+      this.iterations >= this.MAX_ITERATIONS &&
+      this.MAX_ITERATIONS < this.INITIAL_ROUTING_MAX_ITERATIONS
+    ) {
+      this.MAX_ITERATIONS = this.INITIAL_ROUTING_MAX_ITERATIONS
+      return
+    }
     const neverSuccessfullyRoutedRoutes =
       this.getNeverSuccessfullyRoutedRoutes()
 
