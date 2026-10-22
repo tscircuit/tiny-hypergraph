@@ -1,0 +1,169 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`selective rerips reuse only unchanged region geometry and preserve ownership checks: selective rerips only rebuild geometry in changed regions 1`] = `
+[
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 0,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 6,
+    },
+    "remainingCommittedRoutes": [
+      [
+        0,
+        1,
+      ],
+      [
+        2,
+        3,
+      ],
+      [
+        4,
+        5,
+      ],
+    ],
+    "reusedGeometryRegions": [
+      0,
+      1,
+      2,
+    ],
+    "rippedRouteIds": [],
+  },
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 0,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 6,
+    },
+    "remainingCommittedRoutes": [
+      [
+        0,
+        1,
+      ],
+      [
+        2,
+        3,
+      ],
+      [
+        4,
+        5,
+      ],
+    ],
+    "reusedGeometryRegions": [
+      0,
+      1,
+      2,
+    ],
+    "rippedRouteIds": [
+      99,
+    ],
+  },
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 1,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 5,
+    },
+    "remainingCommittedRoutes": [
+      [
+        1,
+      ],
+      [
+        2,
+        3,
+      ],
+      [
+        4,
+        5,
+      ],
+    ],
+    "reusedGeometryRegions": [
+      1,
+      2,
+    ],
+    "rippedRouteIds": [
+      0,
+    ],
+  },
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 2,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 4,
+    },
+    "remainingCommittedRoutes": [
+      [
+        1,
+      ],
+      [
+        3,
+      ],
+      [
+        4,
+        5,
+      ],
+    ],
+    "reusedGeometryRegions": [
+      2,
+    ],
+    "rippedRouteIds": [
+      0,
+      2,
+    ],
+  },
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 1,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 5,
+    },
+    "remainingCommittedRoutes": [
+      [
+        0,
+        1,
+      ],
+      [
+        2,
+        3,
+      ],
+      [
+        5,
+      ],
+    ],
+    "reusedGeometryRegions": [
+      0,
+      1,
+    ],
+    "rippedRouteIds": [
+      4,
+    ],
+  },
+  {
+    "afterRebuildChangedRegions": {
+      "appendedSegments": 0,
+    },
+    "beforeRebuildAllRegions": {
+      "appendedSegments": 0,
+    },
+    "remainingCommittedRoutes": [
+      [],
+      [],
+      [],
+    ],
+    "reusedGeometryRegions": [],
+    "rippedRouteIds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+  },
+]
+`;
