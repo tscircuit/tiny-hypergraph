@@ -270,7 +270,8 @@ export interface TinyHyperGraphSolverOptions {
    * and reuse successful static neighbor checks during the owned search epoch.
    * The caller owns ordinary topology/problem/state and plain native queued
    * candidates for the entire queue epoch. Key mappings and metadata remain
-   * fixed between steps, and IndexedCandidateHeap methods retain their standard
+   * fixed between steps. Port masks, reservations and committed occupancy stay
+   * fixed until the native heap clears. IndexedCandidateHeap methods retain their standard
    * key and closure behavior. No external candidate injection or mutation of
    * queued references is allowed. Pure scoring overrides are allowed when they
    * preserve this contract.
@@ -1054,13 +1055,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
         nextRegionId = nextRegionIds[currentNeighborIndex]!
         candidateHopId = hopIds[currentNeighborIndex]!
       } else {
-        if (problem.portSectionMask[neighborPortId] === 0) continue
+        if (problem.portSectionMask[neighborPortId] === 0) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
         const nextRegion =
           topology.incidentPortRegion[neighborPortId][0] ===
           currentCandidate.nextRegionId
             ? topology.incidentPortRegion[neighborPortId][1]
             : topology.incidentPortRegion[neighborPortId][0]
-        if (nextRegion === undefined) continue
+        if (nextRegion === undefined) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionId = nextRegion
         candidateHopId = this.getHopId(neighborPortId, nextRegionId)
       }
@@ -1078,11 +1089,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
       if (!prepared[currentNeighborIndex]) {
         const assignedNetId = state.portAssignment[neighborPortId]
-        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (
+          this.isPortReservedForDifferentNet(neighborPortId) ||
+          (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) ||
+          this.isRegionReservedForDifferentNet(nextRegionId)
+        ) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
           continue
         }
-        if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
         nextRegionIds[currentNeighborIndex] = nextRegionId
         hopIds[currentNeighborIndex] = candidateHopId
         prepared[currentNeighborIndex] = 1
