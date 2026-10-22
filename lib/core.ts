@@ -1,3 +1,4 @@
+import type { SharedRouteSearchGraph } from "./parallelRouteSearchData"
 import { BaseSolver, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
@@ -829,6 +830,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const { TinyHyperGraphRouteSearchSolver } = await import(
         "./TinyHyperGraphRouteSearchSolver"
       )
+      const { createSharedRouteSearchGraph, createSharedRouteSearchSnapshot } =
+        await import("./parallelRouteSearchData")
+      let graph: SharedRouteSearchGraph | undefined
       while (
         !this.solved &&
         !this.failed &&
@@ -838,6 +842,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         // Their synchronous implementation remains authoritative.
         if (
           !runtime ||
+          typeof SharedArrayBuffer === "undefined" ||
           !this.canSearchRoutesInParallel() ||
           this.state.currentRouteId !== undefined ||
           this.state.unroutedRoutes.length < 2
@@ -848,31 +853,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const routeIds = this.state.unroutedRoutes.slice(0, 4)
         const ripCount = this.state.ripCount
         const budget = Math.min(this.MAX_ITERATIONS, stopAtIteration)
-        const input = {
-          topology: {
-            ...this.topology,
-            portMetadata: undefined,
-            regionMetadata: undefined,
-          },
-          problem: {
-            ...this.problem,
-            routeMetadata: undefined,
-            initialAssignments: undefined,
-          },
-          options: getTinyHyperGraphSolverOptions(this),
-          distanceAware: this.ADD_SEGMENT_DISTANCE_TO_G,
-          portAssignment: this.state.portAssignment,
-          regionIntersectionCaches: this.state.regionIntersectionCaches,
-          regionCongestionCost: this.state.regionCongestionCost,
-          maxIterations: budget - this.iterations,
-        }
+        graph ??= createSharedRouteSearchGraph(
+          this.topology,
+          this.problem,
+          getTinyHyperGraphSolverOptions(this),
+          this.ADD_SEGMENT_DISTANCE_TO_G,
+        )
+        const snapshot = createSharedRouteSearchSnapshot(this.state)
         this.asyncStats.dispatchedRoutes += routeIds.length
         // Await every job before mutating the snapshot, including inline runtimes.
         const results = await Promise.all(
           routeIds.map((routeId) =>
             runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
-              ...input,
+              graph: graph!,
+              snapshot,
               routeId,
+              maxIterations: budget - this.iterations,
             }),
           ),
         )

@@ -1,23 +1,17 @@
 import { SolverRuntime } from "@tscircuit/solver-utils"
-import {
-  TinyHyperGraphSolver,
-  type Candidate,
-  type TinyHyperGraphProblem,
-  type TinyHyperGraphSolverOptions,
-  type TinyHyperGraphTopology,
-} from "./core"
+import { TinyHyperGraphSolver, type Candidate } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
-import type { RegionIntersectionCache } from "./types"
+import {
+  unpackRouteSearchTopology,
+  unpackRouteSearchCaches,
+  type SharedRouteSearchGraph,
+  type SharedRouteSearchSnapshot,
+} from "./parallelRouteSearchData"
 
 export interface TinyHyperGraphRouteSearchInput {
-  topology: TinyHyperGraphTopology
-  problem: TinyHyperGraphProblem
-  options: TinyHyperGraphSolverOptions
-  portAssignment: Int32Array
-  regionIntersectionCaches: RegionIntersectionCache[]
-  regionCongestionCost: Float64Array
+  graph: SharedRouteSearchGraph
+  snapshot: SharedRouteSearchSnapshot
   routeId: number
-  distanceAware: boolean
   maxIterations: number
 }
 
@@ -28,6 +22,89 @@ export interface TinyHyperGraphRouteSearchOutput {
   regionReads: Array<[number, number]>
 }
 
+// Keep one class identity across jobs so the worker can optimize the hot search
+// methods after warmup instead of constructing a new subclass for every route.
+class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
+  readonly portReads = new Map<number, number>()
+  readonly regionReads = new Map<number, number>()
+  candidate?: Candidate
+
+  constructor(private readonly graph: SharedRouteSearchGraph) {
+    super(unpackRouteSearchTopology(graph.topology), graph.problem, {
+      ...graph.options,
+      STATIC_REACHABILITY_PRECHECK: false,
+    })
+    this.ADD_SEGMENT_DISTANCE_TO_G = graph.distanceAware
+  }
+
+  prepare(input: TinyHyperGraphRouteSearchInput): void {
+    this.portReads.clear()
+    this.regionReads.clear()
+    this.candidate = undefined
+    this.solved = false
+    this.failed = false
+    this.error = null
+    this.iterations = 0
+    this.MAX_ITERATIONS = input.maxIterations
+    this.state.portAssignment = input.snapshot.portAssignment
+    this.state.regionIntersectionCaches = unpackRouteSearchCaches(
+      input.snapshot,
+      this.topology.regionCount,
+    )
+    this.state.regionCongestionCost = input.snapshot.regionCongestionCost
+    this.state.unroutedRoutes = [input.routeId]
+    this.state.currentRouteId = undefined
+    this.state.currentRouteNetId = undefined
+    this.state.goalPortId = -1
+    this.state.candidateQueue.clear()
+    this.resetCandidateBestCosts()
+  }
+
+  override _setup(): void {
+    if (this.graph.distanceAware) super._setup()
+    else TinyHyperGraphSolver.prototype._setup.call(this)
+  }
+
+  override isPortReservedForDifferentNet(portId: number): boolean {
+    this.portReads.set(portId, this.state.portAssignment[portId])
+    return super.isPortReservedForDifferentNet(portId)
+  }
+
+  override computeG(
+    current: Candidate,
+    portId: number,
+    maximumCost = Infinity,
+    distance?: number,
+  ): number {
+    this.regionReads.set(
+      current.nextRegionId,
+      this.state.regionIntersectionCaches[current.nextRegionId]
+        .existingSegmentCount,
+    )
+    return super.computeG(current, portId, maximumCost, distance)
+  }
+
+  override onPathFound(finalCandidate: Candidate): void {
+    if (
+      this.graph.distanceAware &&
+      finalCandidate.portId !== this.state.goalPortId
+    ) {
+      super.onPathFound(finalCandidate)
+    } else {
+      this.candidate = finalCandidate
+      this.solved = true
+    }
+  }
+
+  override onOutOfCandidates(): void {
+    this.failed = true
+  }
+
+  override tryFinalAcceptance(): void {}
+}
+
+const searchWorkspaces = new Map<number, RouteSearch>()
+
 /** One isolated path search. The host owns route commits, rerips, and acceptance. */
 export class TinyHyperGraphRouteSearchSolver {
   static readonly solverName = "TinyHyperGraphRouteSearchSolver"
@@ -36,70 +113,21 @@ export class TinyHyperGraphRouteSearchSolver {
   constructor(private readonly input: TinyHyperGraphRouteSearchInput) {}
 
   solve(): void {
-    const input = this.input
-    const portReads = new Map<number, number>()
-    const regionReads = new Map<number, number>()
-    let candidate: Candidate | undefined
-
-    // Defined at execution time so core can import the registered task without
-    // creating an eager circular subclass dependency.
-    const SearchBase = input.distanceAware
-      ? DistanceAwareTinyHyperGraphSolver
-      : TinyHyperGraphSolver
-    class RouteSearch extends SearchBase {
-      override isPortReservedForDifferentNet(portId: number): boolean {
-        portReads.set(portId, this.state.portAssignment[portId])
-        return super.isPortReservedForDifferentNet(portId)
-      }
-
-      override computeG(
-        current: Candidate,
-        portId: number,
-        maximumCost = Infinity,
-        distance?: number,
-      ): number {
-        regionReads.set(
-          current.nextRegionId,
-          this.state.regionIntersectionCaches[current.nextRegionId]
-            .existingSegmentCount,
-        )
-        return super.computeG(current, portId, maximumCost, distance)
-      }
-
-      override onPathFound(finalCandidate: Candidate): void {
-        if (
-          input.distanceAware &&
-          finalCandidate.portId !== this.state.goalPortId
-        ) {
-          super.onPathFound(finalCandidate)
-        } else {
-          candidate = finalCandidate
-          this.solved = true
-        }
-      }
-
-      override onOutOfCandidates(): void {
-        this.failed = true
-      }
-
-      override tryFinalAcceptance(): void {}
+    let solver = searchWorkspaces.get(this.input.graph.id)
+    if (!solver) {
+      solver = new RouteSearch(this.input.graph)
+      // Bound retained topology memory when a host reuses its pool across boards.
+      if (searchWorkspaces.size >= 4)
+        searchWorkspaces.delete(searchWorkspaces.keys().next().value!)
+      searchWorkspaces.set(this.input.graph.id, solver)
     }
-
-    const solver = new RouteSearch(input.topology, input.problem, {
-      ...input.options,
-      STATIC_REACHABILITY_PRECHECK: false,
-    })
-    solver.MAX_ITERATIONS = input.maxIterations
-    solver.state.portAssignment = input.portAssignment
-    solver.state.regionIntersectionCaches = input.regionIntersectionCaches
-    solver.state.regionCongestionCost = input.regionCongestionCost
-    solver.state.unroutedRoutes = [input.routeId]
+    solver.prepare(this.input)
     solver.solve()
     this.output = {
-      candidate,
+      candidate: solver.candidate,
       iterations: solver.iterations,
-      portReads: [...portReads],
-      regionReads: [...regionReads],
+      portReads: [...solver.portReads],
+      regionReads: [...solver.regionReads],
     }
   }
 
