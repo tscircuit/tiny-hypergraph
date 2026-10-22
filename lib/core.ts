@@ -1,4 +1,4 @@
-import { BaseSolver } from "@tscircuit/solver-utils"
+import { BaseSolver, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
@@ -804,6 +804,140 @@ export class TinyHyperGraphSolver extends BaseSolver {
           staticallyUnroutableRouteCount: staticallyUnroutableRoutes.length,
         }
       }
+    }
+  }
+
+  protected canSearchRoutesInParallel(): boolean {
+    return this.constructor === TinyHyperGraphSolver
+  }
+
+  private asyncRunning = false
+  asyncStats = { dispatchedRoutes: 0, acceptedRoutes: 0, conflictedRoutes: 0 }
+
+  /** Speculate on a serial prefix; commit only searches whose read sets are unchanged. */
+  async solveAsync(
+    runtime?: SolverRuntimeExecutor,
+    stopAtIteration = Infinity,
+  ): Promise<void> {
+    if (this.asyncRunning)
+      throw new Error("Tiny hypergraph solveAsync is already running")
+    const startTime = performance.now()
+    this.asyncRunning = true
+    try {
+      this.setup()
+      const { TinyHyperGraphRouteSearchSolver } = await import(
+        "./TinyHyperGraphRouteSearchSolver"
+      )
+      while (
+        !this.solved &&
+        !this.failed &&
+        this.iterations < stopAtIteration
+      ) {
+        // Subclasses can change path costs, route ordering, and commit semantics.
+        // Their synchronous implementation remains authoritative.
+        if (
+          !runtime ||
+          !this.canSearchRoutesInParallel() ||
+          this.state.currentRouteId !== undefined ||
+          this.state.unroutedRoutes.length < 2
+        ) {
+          this.step()
+          continue
+        }
+        const routeIds = this.state.unroutedRoutes.slice(0, 4)
+        const ripCount = this.state.ripCount
+        const budget = Math.min(this.MAX_ITERATIONS, stopAtIteration)
+        const input = {
+          topology: {
+            ...this.topology,
+            portMetadata: undefined,
+            regionMetadata: undefined,
+          },
+          problem: {
+            ...this.problem,
+            routeMetadata: undefined,
+            initialAssignments: undefined,
+          },
+          options: getTinyHyperGraphSolverOptions(this),
+          distanceAware: this.ADD_SEGMENT_DISTANCE_TO_G,
+          portAssignment: this.state.portAssignment,
+          regionIntersectionCaches: this.state.regionIntersectionCaches,
+          regionCongestionCost: this.state.regionCongestionCost,
+          maxIterations: budget - this.iterations,
+        }
+        this.asyncStats.dispatchedRoutes += routeIds.length
+        // Await every job before mutating the snapshot, including inline runtimes.
+        const results = await Promise.all(
+          routeIds.map((routeId) =>
+            runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
+              ...input,
+              routeId,
+            }),
+          ),
+        )
+        for (let index = 0; index < results.length; index++) {
+          if (
+            this.solved ||
+            this.failed ||
+            this.iterations >= stopAtIteration ||
+            this.state.ripCount !== ripCount ||
+            this.state.unroutedRoutes[0] !== routeIds[index]
+          )
+            break
+          const result = results[index]
+          if (
+            result.candidate &&
+            this.iterations + result.iterations <= budget &&
+            result.portReads.every(
+              ([id, value]) => this.state.portAssignment[id] === value,
+            ) &&
+            result.regionReads.every(
+              ([id, count]) =>
+                this.state.regionIntersectionCaches[id].existingSegmentCount ===
+                count,
+            )
+          ) {
+            this.state.currentRouteId = this.state.unroutedRoutes.shift()!
+            this.state.currentRouteNetId =
+              this.problem.routeNet[this.state.currentRouteId]
+            this.routeAttemptCountByRouteId[this.state.currentRouteId] += 1
+            this.resetCandidateBestCosts()
+            this.state.goalPortId = this.getRouteEndPortId(
+              this.state.currentRouteId,
+            )
+            this.onPathFound(result.candidate)
+            this.iterations += result.iterations
+            this.asyncStats.acceptedRoutes += 1
+            if (!this.solved && this.iterations >= this.MAX_ITERATIONS) {
+              this.tryFinalAcceptance()
+              if (!this.solved) {
+                this.error = `${this.getSolverName()} ran out of iterations`
+                this.failed = true
+              }
+            }
+          } else {
+            this.asyncStats.conflictedRoutes += 1
+            // Replay the exact serial prefix on a conflict, exhausted search, or budget boundary.
+            const routeId = this.state.unroutedRoutes[0]
+            do {
+              this.step()
+            } while (
+              !this.solved &&
+              !this.failed &&
+              this.iterations < stopAtIteration &&
+              this.state.ripCount === ripCount &&
+              this.state.currentRouteId === routeId
+            )
+          }
+        }
+      }
+    } catch (error) {
+      this.failed = true
+      this.error = `Tiny hypergraph asynchronous solve error: ${error}`
+      throw error
+    } finally {
+      this.asyncRunning = false
+      this.timeToSolve = performance.now() - startTime
     }
   }
 

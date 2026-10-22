@@ -1,5 +1,9 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
+import {
+  BasePipelineSolver,
+  type PipelineStep,
+  type SolverRuntimeExecutor,
+} from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
@@ -327,6 +331,54 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+  }
+
+  private asyncRunning = false
+
+  async solveAsync(
+    runtime?: SolverRuntimeExecutor,
+    stopAtIteration = Infinity,
+  ): Promise<void> {
+    if (this.asyncRunning)
+      throw new Error("Tiny section pipeline solveAsync is already running")
+    const startTime = performance.now()
+    this.asyncRunning = true
+    try {
+      while (
+        !this.solved &&
+        !this.failed &&
+        this.iterations < stopAtIteration
+      ) {
+        const phase = this.activeSubSolver
+        if (runtime && phase instanceof TinyHyperGraphSolver) {
+          const previousIterations = phase.iterations
+          const budget =
+            Math.min(this.MAX_ITERATIONS, stopAtIteration) - this.iterations
+          await phase.solveAsync(runtime, previousIterations + budget)
+          this.iterations +=
+            phase.iterations -
+            previousIterations -
+            (phase.solved || phase.failed ? 1 : 0)
+          if (this.iterations >= Math.min(this.MAX_ITERATIONS, stopAtIteration))
+            break
+        }
+        this.step()
+      }
+      if (
+        !this.solved &&
+        !this.failed &&
+        this.iterations >= this.MAX_ITERATIONS
+      ) {
+        this.tryFinalAcceptance()
+        if (!this.solved) {
+          this.failed = true
+          this.error = `${this.getSolverName()} ran out of iterations`
+        }
+      }
+    } finally {
+      this.asyncRunning = false
+      this.timeToSolve = performance.now() - startTime
+    }
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {

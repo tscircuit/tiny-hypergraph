@@ -159,6 +159,13 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * known set of committed blockers.
  */
 export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  protected override canSearchRoutesInParallel(): boolean {
+    return (
+      this.constructor === SelectiveReripTinyHyperGraphSolver &&
+      this.partialRipRoutePlans.size === 0
+    )
+  }
+
   protected override costAwareFinalReripBudget = 8
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
