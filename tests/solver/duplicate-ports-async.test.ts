@@ -27,6 +27,27 @@ test("independent route workers preserve port counts and duplicated topology", a
       expect(parallel.getOutput()).toEqual(serial.getOutput())
       expect(parallel.stats).toEqual(serial.stats)
     }
+    const options = {
+      routeSolveOptions: {
+        MAX_ITERATIONS: 1,
+        GREEDY_FINAL_ROUTE_ITERS: 0,
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+      },
+    }
+    const serial = new DuplicateCongestedPortSolver(
+      structuredClone(sectionSolverFixtureGraph),
+      options,
+    )
+    const parallel = new DuplicateCongestedPortSolver(
+      structuredClone(sectionSolverFixtureGraph),
+      options,
+    )
+    serial.solve()
+    await parallel.solveAsync(runtime)
+    expect(serial.failed).toBe(true)
+    expect(parallel.failed).toBe(true)
+    expect(parallel.error).toBe(serial.error)
+    expect(parallel.report).toEqual(serial.report)
   } finally {
     await runtime.dispose()
   }

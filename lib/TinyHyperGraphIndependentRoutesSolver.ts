@@ -14,12 +14,17 @@ interface IndependentRoutesInput {
   routeIds: number[]
 }
 
+export interface IndependentRoutesOutput {
+  portIds: number[][]
+  error?: string
+}
+
 const workspaces = new Map<number, TinyHyperGraphSolver>()
 
 /** Independent empty-board route estimates used to identify congested ports. */
 export class TinyHyperGraphIndependentRoutesSolver {
   static readonly solverName = "TinyHyperGraphIndependentRoutesSolver"
-  private output?: number[][]
+  private output?: IndependentRoutesOutput
 
   constructor(private readonly input: IndependentRoutesInput) {}
 
@@ -42,16 +47,18 @@ export class TinyHyperGraphIndependentRoutesSolver {
       }
       solver.solve()
       if (!solver.solved || solver.failed) {
-        throw new Error(
-          `Route ${routeId} could not be solved independently: ${solver.error ?? "unknown error"}`,
-        )
+        this.output = {
+          portIds: output,
+          error: `Route ${routeId} could not be solved independently: ${solver.error ?? "unknown error"}`,
+        }
+        return
       }
       output.push([...getUsedPortIdsForSolvedRoute(solver)])
     }
-    this.output = output
+    this.output = { portIds: output }
   }
 
-  getOutput(): number[][] {
+  getOutput(): IndependentRoutesOutput {
     if (!this.output) throw new Error("Independent routes have not been solved")
     return this.output
   }

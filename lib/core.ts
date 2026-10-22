@@ -267,7 +267,8 @@ export interface TinyHyperGraphSolverOptions {
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   /**
-   * Retain ordered regional occurrences after observing their native hop closed.
+   * Retain ordered regional occurrences after observing their native hop closed,
+   * and reuse successful static neighbor checks during the owned search epoch.
    * The caller owns ordinary topology/problem/state and plain native queued
    * candidates for the entire queue epoch. Key mappings and metadata remain
    * fixed between steps, and IndexedCandidateHeap methods retain their standard
@@ -277,8 +278,8 @@ export interface TinyHyperGraphSolverOptions {
    * This flag does not detect custom methods: leave it disabled for observable
    * key/closure hooks or mutation during expansion. Standard native builtins are
    * required. Read-only observation is allowed. Clear, queue replacement, goal
-   * changes and neighbor-array replacement invalidate retention. Other queue
-   * implementations use the original search.
+   * changes, best-cost resets and neighbor-array replacement invalidate retained
+   * metadata. Other queue implementations use the original search.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS?: number
@@ -507,6 +508,9 @@ type SegmentGeometryScratch = MutableIntersectionCount
 type RegionalHopFrontier = {
   neighbors: PortId[]
   next: Int32Array
+  prepared: Uint8Array
+  nextRegionIds: Float64Array
+  hopIds: Float64Array
   head: number
 }
 
@@ -525,6 +529,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierGoalPortId?: PortId
   private regionalHopFrontierRouteId?: RouteId
   private regionalHopFrontierNetId?: NetId
+  private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
@@ -866,11 +871,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         for (let offset = 0; offset < routeIds.length; offset += 4) {
           batches.push(routeIds.slice(offset, offset + 4))
         }
+        const cancelled = new Int32Array(new SharedArrayBuffer(4))
         const pending = batches
           .map((batch) =>
             runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
               graph: graph!,
               snapshot,
+              cancelled,
               routeIds: batch,
               maxIterations: budget - this.iterations,
             }),
@@ -882,7 +889,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
             ),
           )
         try {
-          for (const job of pending) {
+          results: for (const job of pending) {
             const settled = await job
             if (settled.error) throw settled.error
             for (const result of settled.value!) {
@@ -893,18 +900,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
                 this.state.ripCount !== ripCount ||
                 this.state.unroutedRoutes[0] !== result.routeId
               )
-                break
+                break results
+              let readsUnchanged = true
+              const netId = this.problem.routeNet[result.routeId]
+              for (
+                let offset = 0;
+                offset < result.portReads.length;
+                offset += 2
+              ) {
+                const before = result.portReads[offset + 1]
+                const after =
+                  this.state.portAssignment[result.portReads[offset]]
+                if (
+                  (before === -1 || before === netId) !==
+                  (after === -1 || after === netId)
+                ) {
+                  readsUnchanged = false
+                  break
+                }
+              }
+              for (
+                let offset = 0;
+                readsUnchanged && offset < result.regionReads.length;
+                offset += 2
+              ) {
+                if (
+                  this.state.regionIntersectionCaches[
+                    result.regionReads[offset]
+                  ].existingSegmentCount !== result.regionReads[offset + 1]
+                )
+                  readsUnchanged = false
+              }
               if (
                 result.candidate &&
                 this.iterations + result.iterations <= budget &&
-                result.portReads.every(
-                  ([id, value]) => this.state.portAssignment[id] === value,
-                ) &&
-                result.regionReads.every(
-                  ([id, count]) =>
-                    this.state.regionIntersectionCaches[id]
-                      .existingSegmentCount === count,
-                )
+                readsUnchanged
               ) {
                 this.state.currentRouteId = this.state.unroutedRoutes.shift()!
                 this.state.currentRouteNetId =
@@ -941,6 +971,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
             }
           }
         } finally {
+          Atomics.store(cancelled, 0, 1)
           const settled = await Promise.all(pending)
           const rejected = settled.find((result) => result.error)
           if (rejected) throw rejected.error
@@ -1130,17 +1161,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
       epoch !== this.regionalHopFrontierEpoch ||
       state.goalPortId !== this.regionalHopFrontierGoalPortId ||
       state.currentRouteId !== this.regionalHopFrontierRouteId ||
-      state.currentRouteNetId !== this.regionalHopFrontierNetId
+      state.currentRouteNetId !== this.regionalHopFrontierNetId ||
+      state.candidateBestCostGeneration !==
+        this.regionalHopFrontierBestCostGeneration
     ) {
       this.regionalHopFrontierQueue = queue
       this.regionalHopFrontierEpoch = epoch
       this.regionalHopFrontierGoalPortId = state.goalPortId
       this.regionalHopFrontierRouteId = state.currentRouteId
       this.regionalHopFrontierNetId = state.currentRouteNetId
+      this.regionalHopFrontierBestCostGeneration =
+        state.candidateBestCostGeneration
       this.regionalHopFrontiers.clear()
     }
 
-    // This writes occurrence links only. Port/incidence reads stay in the loop.
+    // Prepare metadata lazily in scan order so an early goal or scoring failure
+    // still prevents reading later incidence, including malformed metadata.
     if (!Array.isArray(neighbors) || neighbors.length > 0x7fffffff) {
       return undefined
     }
@@ -1150,7 +1186,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       for (let index = 0; index < neighbors.length; index++) {
         next[index] = index + 1 < neighbors.length ? index + 1 : -1
       }
-      frontier = { neighbors, next, head: neighbors.length > 0 ? 0 : -1 }
+      frontier = {
+        neighbors,
+        next,
+        prepared: new Uint8Array(neighbors.length),
+        nextRegionIds: new Float64Array(neighbors.length),
+        hopIds: new Float64Array(neighbors.length),
+        head: neighbors.length > 0 ? 0 : -1,
+      }
       this.regionalHopFrontiers.set(regionId, frontier)
     }
     return frontier
@@ -1161,7 +1204,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     frontier: RegionalHopFrontier,
   ): void {
     const { problem, topology, state } = this
-    const { neighbors, next } = frontier
+    const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
     while (neighborIndex !== -1) {
@@ -1180,17 +1223,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
       if (neighborPortId === currentCandidate.portId) continue
-      if (problem.portSectionMask[neighborPortId] === 0) continue
-
-      const nextRegionId =
-        topology.incidentPortRegion[neighborPortId][0] ===
-        currentCandidate.nextRegionId
-          ? topology.incidentPortRegion[neighborPortId][1]
-          : topology.incidentPortRegion[neighborPortId][0]
-
-      if (nextRegionId === undefined) continue
-
-      const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      let nextRegionId: RegionId
+      let candidateHopId: HopId
+      if (prepared[currentNeighborIndex]) {
+        nextRegionId = nextRegionIds[currentNeighborIndex]!
+        candidateHopId = hopIds[currentNeighborIndex]!
+      } else {
+        if (problem.portSectionMask[neighborPortId] === 0) continue
+        const nextRegion =
+          topology.incidentPortRegion[neighborPortId][0] ===
+          currentCandidate.nextRegionId
+            ? topology.incidentPortRegion[neighborPortId][1]
+            : topology.incidentPortRegion[neighborPortId][0]
+        if (nextRegion === undefined) continue
+        nextRegionId = nextRegion
+        candidateHopId = this.getHopId(neighborPortId, nextRegionId)
+      }
       const candidateHopIsClosed = state.candidateQueue.isClosedHopId
         ? state.candidateQueue.isClosedHopId(candidateHopId)
         : state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId)
@@ -1203,12 +1251,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
         previousNeighborIndex = previousIndex
         continue
       }
-      const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
-        continue
+      if (!prepared[currentNeighborIndex]) {
+        const assignedNetId = state.portAssignment[neighborPortId]
+        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
+        nextRegionIds[currentNeighborIndex] = nextRegionId
+        hopIds[currentNeighborIndex] = candidateHopId
+        prepared[currentNeighborIndex] = 1
       }
-      if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
       const lowerBoundWithoutDistance =

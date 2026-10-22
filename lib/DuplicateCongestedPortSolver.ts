@@ -7,6 +7,7 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
+import type { IndependentRoutesOutput } from "./TinyHyperGraphIndependentRoutesSolver"
 import type { PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
@@ -402,7 +403,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       false,
     )
     // Small batches balance long routes without rebuilding topology for every route.
-    const jobs: Array<Promise<number[][]>> = []
+    const jobs: Array<Promise<IndependentRoutesOutput>> = []
     for (let offset = 0; offset < problem.routeCount; offset += 8) {
       jobs.push(
         runtime.executeAsync(TinyHyperGraphIndependentRoutesSolver, {
@@ -415,9 +416,15 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       )
     }
     const batches = await Promise.all(jobs)
+    const failed = batches.find((batch) => batch.error !== undefined)
+    if (failed) {
+      this.failed = true
+      this.error = failed.error!
+      return
+    }
     const counts = new Map<string, number>()
-    for (const routes of batches) {
-      for (const ports of routes) {
+    for (const batch of batches) {
+      for (const ports of batch.portIds) {
         for (const portId of ports) {
           const id = getSerializedPortId(topology, portId)
           counts.set(id, (counts.get(id) ?? 0) + 1)

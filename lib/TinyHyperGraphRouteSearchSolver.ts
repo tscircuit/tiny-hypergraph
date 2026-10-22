@@ -13,25 +13,27 @@ export interface TinyHyperGraphRouteSearchInput {
   snapshot: SharedRouteSearchSnapshot
   routeIds: number[]
   maxIterations: number
+  cancelled?: Int32Array
 }
 
 export interface TinyHyperGraphRouteSearchOutput {
   routeId: number
   candidate?: Candidate
   iterations: number
-  portReads: Array<[number, number]>
-  regionReads: Array<[number, number]>
+  portReads: Int32Array
+  regionReads: Int32Array
 }
 
 // Keep one class identity across jobs so the worker can optimize the hot search
 // methods after warmup instead of constructing a new subclass for every route.
 class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
-  readonly portReads = new Map<number, number>()
-  readonly regionReads = new Map<number, number>()
+  readonly portReads: number[] = []
+  readonly regionReads: number[] = []
   candidate?: Candidate
   private readonly portReadMarks: Int32Array
   private readonly regionReadMarks: Int32Array
   private readEpoch = 0
+  private cancelled?: Int32Array
 
   constructor(private readonly graph: SharedRouteSearchGraph) {
     super(unpackRouteSearchTopology(graph.topology), graph.problem, {
@@ -45,6 +47,7 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
 
   prepare(input: TinyHyperGraphRouteSearchInput): void {
     this.clearReadSet()
+    this.cancelled = input.cancelled
     this.candidate = undefined
     this.solved = false
     this.failed = false
@@ -80,14 +83,26 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
   }
 
   private clearReadSet(): void {
-    this.portReads.clear()
-    this.regionReads.clear()
+    this.portReads.length = 0
+    this.regionReads.length = 0
     if (this.readEpoch === 0x7fffffff) {
       this.portReadMarks.fill(0)
       this.regionReadMarks.fill(0)
       this.readEpoch = 0
     }
     this.readEpoch += 1
+  }
+
+  override _step(): void {
+    if (
+      this.iterations % 256 === 0 &&
+      this.cancelled &&
+      Atomics.load(this.cancelled, 0)
+    ) {
+      this.solved = true
+      return
+    }
+    super._step()
   }
 
   override _setup(): void {
@@ -98,7 +113,7 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
   override isPortReservedForDifferentNet(portId: number): boolean {
     if (this.portReadMarks[portId] !== this.readEpoch) {
       this.portReadMarks[portId] = this.readEpoch
-      this.portReads.set(portId, this.state.portAssignment[portId])
+      this.portReads.push(portId, this.state.portAssignment[portId])
     }
     return super.isPortReservedForDifferentNet(portId)
   }
@@ -111,7 +126,7 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
   ): number {
     if (this.regionReadMarks[current.nextRegionId] !== this.readEpoch) {
       this.regionReadMarks[current.nextRegionId] = this.readEpoch
-      this.regionReads.set(
+      this.regionReads.push(
         current.nextRegionId,
         this.state.regionIntersectionCaches[current.nextRegionId]
           .existingSegmentCount,
@@ -166,8 +181,8 @@ export class TinyHyperGraphRouteSearchSolver {
         routeId,
         candidate: solver.candidate,
         iterations: solver.iterations,
-        portReads: [...solver.portReads],
-        regionReads: [...solver.regionReads],
+        portReads: Int32Array.from(solver.portReads),
+        regionReads: Int32Array.from(solver.regionReads),
       })
       if (!solver.candidate) break
     }

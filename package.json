@@ -16,7 +16,7 @@
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.8",
+    "@biomejs/biome": "2.5.15",
     "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#161a835ed40ce72a2fa18ffe5ba6ba6392fcc176",
     "@tsci/tscircuit.dataset-srj12-bus-routing": "https://github.com/tscircuit/dataset-srj12-bus-routing#7d6a44e76c0419959ad0d0e382a19f65857ad7b8",
     "@tscircuit/capacity-autorouter": "^0.0.557",

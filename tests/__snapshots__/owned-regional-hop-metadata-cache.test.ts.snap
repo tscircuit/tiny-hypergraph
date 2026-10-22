@@ -1,0 +1,50 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`owned metadata skips repeated static checks and resets at explicit search boundaries: owned metadata removes repeated work and refreshes at search boundaries 1`] = `
+[
+  {
+    "afterOwnedMetadataCache": {
+      "hopIdEvaluations": 82,
+    },
+    "beforeRepeatedMetadata": {
+      "hopIdEvaluations": 1447,
+    },
+    "invalidationBoundary": "none",
+    "repeatedHopIdEvaluationsAvoided": 1365,
+    "stepsWithEqualStateAndStats": 50,
+  },
+  {
+    "afterOwnedMetadataCache": {
+      "hopIdEvaluations": 162,
+    },
+    "beforeRepeatedMetadata": {
+      "hopIdEvaluations": 540,
+    },
+    "invalidationBoundary": "clear",
+    "repeatedHopIdEvaluationsAvoided": 378,
+    "stepsWithEqualStateAndStats": 50,
+  },
+  {
+    "afterOwnedMetadataCache": {
+      "hopIdEvaluations": 197,
+    },
+    "beforeRepeatedMetadata": {
+      "hopIdEvaluations": 1418,
+    },
+    "invalidationBoundary": "best-cost-reset",
+    "repeatedHopIdEvaluationsAvoided": 1221,
+    "stepsWithEqualStateAndStats": 50,
+  },
+  {
+    "afterOwnedMetadataCache": {
+      "hopIdEvaluations": 88,
+    },
+    "beforeRepeatedMetadata": {
+      "hopIdEvaluations": 1057,
+    },
+    "invalidationBoundary": "neighbors",
+    "repeatedHopIdEvaluationsAvoided": 969,
+    "stepsWithEqualStateAndStats": 50,
+  },
+]
+`;
