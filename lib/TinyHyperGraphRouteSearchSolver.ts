@@ -11,11 +11,12 @@ import {
 export interface TinyHyperGraphRouteSearchInput {
   graph: SharedRouteSearchGraph
   snapshot: SharedRouteSearchSnapshot
-  routeId: number
+  routeIds: number[]
   maxIterations: number
 }
 
 export interface TinyHyperGraphRouteSearchOutput {
+  routeId: number
   candidate?: Candidate
   iterations: number
   portReads: Array<[number, number]>
@@ -28,36 +29,65 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
   readonly portReads = new Map<number, number>()
   readonly regionReads = new Map<number, number>()
   candidate?: Candidate
+  private readonly portReadMarks: Int32Array
+  private readonly regionReadMarks: Int32Array
+  private readEpoch = 0
 
   constructor(private readonly graph: SharedRouteSearchGraph) {
     super(unpackRouteSearchTopology(graph.topology), graph.problem, {
       ...graph.options,
       STATIC_REACHABILITY_PRECHECK: false,
     })
+    this.portReadMarks = new Int32Array(this.topology.portCount)
+    this.regionReadMarks = new Int32Array(this.topology.regionCount)
     this.ADD_SEGMENT_DISTANCE_TO_G = graph.distanceAware
   }
 
   prepare(input: TinyHyperGraphRouteSearchInput): void {
-    this.portReads.clear()
-    this.regionReads.clear()
+    this.clearReadSet()
     this.candidate = undefined
     this.solved = false
     this.failed = false
     this.error = null
     this.iterations = 0
     this.MAX_ITERATIONS = input.maxIterations
-    this.state.portAssignment = input.snapshot.portAssignment
+    this.state.portAssignment = new Int32Array(input.snapshot.portAssignment)
     this.state.regionIntersectionCaches = unpackRouteSearchCaches(
       input.snapshot,
       this.topology.regionCount,
     )
     this.state.regionCongestionCost = input.snapshot.regionCongestionCost
-    this.state.unroutedRoutes = [input.routeId]
+    this.state.unroutedRoutes = [input.routeIds[0]]
+    for (const segments of this.state.regionSegments) segments.length = 0
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
     this.state.goalPortId = -1
     this.state.candidateQueue.clear()
     this.resetCandidateBestCosts()
+  }
+
+  continueWithRoute(routeId: number): void {
+    if (!this.candidate)
+      throw new Error("Cannot commit an unfinished route search")
+    TinyHyperGraphSolver.prototype.onPathFound.call(this, this.candidate)
+    this.candidate = undefined
+    this.solved = false
+    this.failed = false
+    this.error = null
+    this.iterations = 0
+    this.clearReadSet()
+    this.state.unroutedRoutes = [routeId]
+  }
+
+  private clearReadSet(): void {
+    this.portReads.clear()
+    this.regionReads.clear()
+    if (this.readEpoch === 0x7fffffff) {
+      this.portReadMarks.fill(0)
+      this.regionReadMarks.fill(0)
+      this.readEpoch = 0
+    }
+    this.readEpoch += 1
   }
 
   override _setup(): void {
@@ -66,7 +96,10 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
   }
 
   override isPortReservedForDifferentNet(portId: number): boolean {
-    this.portReads.set(portId, this.state.portAssignment[portId])
+    if (this.portReadMarks[portId] !== this.readEpoch) {
+      this.portReadMarks[portId] = this.readEpoch
+      this.portReads.set(portId, this.state.portAssignment[portId])
+    }
     return super.isPortReservedForDifferentNet(portId)
   }
 
@@ -76,11 +109,14 @@ class RouteSearch extends DistanceAwareTinyHyperGraphSolver {
     maximumCost = Infinity,
     distance?: number,
   ): number {
-    this.regionReads.set(
-      current.nextRegionId,
-      this.state.regionIntersectionCaches[current.nextRegionId]
-        .existingSegmentCount,
-    )
+    if (this.regionReadMarks[current.nextRegionId] !== this.readEpoch) {
+      this.regionReadMarks[current.nextRegionId] = this.readEpoch
+      this.regionReads.set(
+        current.nextRegionId,
+        this.state.regionIntersectionCaches[current.nextRegionId]
+          .existingSegmentCount,
+      )
+    }
     return super.computeG(current, portId, maximumCost, distance)
   }
 
@@ -108,7 +144,7 @@ const searchWorkspaces = new Map<number, RouteSearch>()
 /** One isolated path search. The host owns route commits, rerips, and acceptance. */
 export class TinyHyperGraphRouteSearchSolver {
   static readonly solverName = "TinyHyperGraphRouteSearchSolver"
-  private output?: TinyHyperGraphRouteSearchOutput
+  private output?: TinyHyperGraphRouteSearchOutput[]
 
   constructor(private readonly input: TinyHyperGraphRouteSearchInput) {}
 
@@ -122,16 +158,23 @@ export class TinyHyperGraphRouteSearchSolver {
       searchWorkspaces.set(this.input.graph.id, solver)
     }
     solver.prepare(this.input)
-    solver.solve()
-    this.output = {
-      candidate: solver.candidate,
-      iterations: solver.iterations,
-      portReads: [...solver.portReads],
-      regionReads: [...solver.regionReads],
+    const output: TinyHyperGraphRouteSearchOutput[] = []
+    for (const routeId of this.input.routeIds) {
+      if (output.length > 0) solver.continueWithRoute(routeId)
+      solver.solve()
+      output.push({
+        routeId,
+        candidate: solver.candidate,
+        iterations: solver.iterations,
+        portReads: [...solver.portReads],
+        regionReads: [...solver.regionReads],
+      })
+      if (!solver.candidate) break
     }
+    this.output = output
   }
 
-  getOutput(): TinyHyperGraphRouteSearchOutput {
+  getOutput(): TinyHyperGraphRouteSearchOutput[] {
     if (!this.output) throw new Error("Route search has not run")
     return this.output
   }

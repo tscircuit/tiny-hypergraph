@@ -850,7 +850,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
           this.step()
           continue
         }
-        const routeIds = this.state.unroutedRoutes.slice(0, 4)
+        const routeIds = this.state.unroutedRoutes.slice(0, 16)
         const ripCount = this.state.ripCount
         const budget = Math.min(this.MAX_ITERATIONS, stopAtIteration)
         graph ??= createSharedRouteSearchGraph(
@@ -862,26 +862,29 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const snapshot = createSharedRouteSearchSnapshot(this.state)
         this.asyncStats.dispatchedRoutes += routeIds.length
         // Await every job before mutating the snapshot, including inline runtimes.
+        const batches: number[][] = []
+        for (let offset = 0; offset < routeIds.length; offset += 4) {
+          batches.push(routeIds.slice(offset, offset + 4))
+        }
         const results = await Promise.all(
-          routeIds.map((routeId) =>
+          batches.map((batch) =>
             runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
               graph: graph!,
               snapshot,
-              routeId,
+              routeIds: batch,
               maxIterations: budget - this.iterations,
             }),
           ),
         )
-        for (let index = 0; index < results.length; index++) {
+        for (const result of results.flat()) {
           if (
             this.solved ||
             this.failed ||
             this.iterations >= stopAtIteration ||
             this.state.ripCount !== ripCount ||
-            this.state.unroutedRoutes[0] !== routeIds[index]
+            this.state.unroutedRoutes[0] !== result.routeId
           )
             break
-          const result = results[index]
           if (
             result.candidate &&
             this.iterations + result.iterations <= budget &&
