@@ -1,5 +1,5 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BaseSolver } from "@tscircuit/solver-utils"
+import { BaseSolver, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
   TinyHyperGraphSolver,
@@ -272,7 +272,7 @@ const getSerializedPortId = (
   return `port-${portId}`
 }
 
-const createSingleRouteProblem = (
+export const createSingleRouteProblem = (
   problem: TinyHyperGraphProblem,
   routeId: RouteId,
 ): TinyHyperGraphProblem => ({
@@ -289,7 +289,7 @@ const createSingleRouteProblem = (
   portPenalty: problem.portPenalty,
 })
 
-const getUsedPortIdsForSolvedRoute = (
+export const getUsedPortIdsForSolvedRoute = (
   solver: TinyHyperGraphSolver,
 ): Set<PortId> => {
   const usedPortIds = new Set<PortId>()
@@ -376,6 +376,69 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
 
     return portUseCounts
+  }
+
+  async solveAsync(runtime?: SolverRuntimeExecutor): Promise<void> {
+    if (!runtime || typeof SharedArrayBuffer === "undefined") {
+      this.solve()
+      return
+    }
+    if (this.solved || this.failed) return
+    const { createSharedRouteSearchGraph } = await import(
+      "./parallelRouteSearchData"
+    )
+    const { TinyHyperGraphIndependentRoutesSolver } = await import(
+      "./TinyHyperGraphIndependentRoutesSolver"
+    )
+    const { topology, problem } = loadSerializedHyperGraph(
+      this.serializedHyperGraph,
+    )
+    if (this.options.useSerializedPortPenalties === false)
+      problem.portPenalty = undefined
+    const graph = createSharedRouteSearchGraph(
+      topology,
+      problem,
+      this.getIndividualRouteSolveOptions(),
+      false,
+    )
+    // Small batches balance long routes without rebuilding topology for every route.
+    const jobs: Array<Promise<number[][]>> = []
+    for (let offset = 0; offset < problem.routeCount; offset += 8) {
+      jobs.push(
+        runtime.executeAsync(TinyHyperGraphIndependentRoutesSolver, {
+          graph,
+          routeIds: Array.from(
+            { length: Math.min(8, problem.routeCount - offset) },
+            (_, index) => offset + index,
+          ),
+        }),
+      )
+    }
+    const batches = await Promise.all(jobs)
+    const counts = new Map<string, number>()
+    for (const routes of batches) {
+      for (const ports of routes) {
+        for (const portId of ports) {
+          const id = getSerializedPortId(topology, portId)
+          counts.set(id, (counts.get(id) ?? 0) + 1)
+        }
+      }
+    }
+    this.finish(counts)
+  }
+
+  private finish(portUseCounts: Map<string, number>): void {
+    this.revisedSerializedHyperGraph =
+      this.duplicateCongestedPorts(portUseCounts)
+    this.stats = {
+      ...this.stats,
+      duplicateSourcePortCount: this.report.duplicatedPorts.length,
+      duplicatedPortCount: this.report.duplicatedPorts.reduce(
+        (sum, duplicatedPort) => sum + duplicatedPort.duplicatePortIds.length,
+        0,
+      ),
+    }
+    this.solved = true
   }
 
   protected duplicateCongestedPorts(
@@ -505,17 +568,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
   override _setup() {
     try {
       const portUseCounts = this.getPortUseCounts()
-      this.revisedSerializedHyperGraph =
-        this.duplicateCongestedPorts(portUseCounts)
-      this.stats = {
-        ...this.stats,
-        duplicateSourcePortCount: this.report.duplicatedPorts.length,
-        duplicatedPortCount: this.report.duplicatedPorts.reduce(
-          (sum, duplicatedPort) => sum + duplicatedPort.duplicatePortIds.length,
-          0,
-        ),
-      }
-      this.solved = true
+      this.finish(portUseCounts)
     } catch (error) {
       this.failed = true
       this.error = error instanceof Error ? error.message : String(error)

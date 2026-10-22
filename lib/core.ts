@@ -861,74 +861,89 @@ export class TinyHyperGraphSolver extends BaseSolver {
         )
         const snapshot = createSharedRouteSearchSnapshot(this.state)
         this.asyncStats.dispatchedRoutes += routeIds.length
-        // Await every job before mutating the snapshot, including inline runtimes.
+        // Each job reads an immutable copy, so host commits can overlap later jobs.
         const batches: number[][] = []
         for (let offset = 0; offset < routeIds.length; offset += 4) {
           batches.push(routeIds.slice(offset, offset + 4))
         }
-        const results = await Promise.all(
-          batches.map((batch) =>
+        const pending = batches
+          .map((batch) =>
             runtime.executeAsync(TinyHyperGraphRouteSearchSolver, {
               graph: graph!,
               snapshot,
               routeIds: batch,
               maxIterations: budget - this.iterations,
             }),
-          ),
-        )
-        for (const result of results.flat()) {
-          if (
-            this.solved ||
-            this.failed ||
-            this.iterations >= stopAtIteration ||
-            this.state.ripCount !== ripCount ||
-            this.state.unroutedRoutes[0] !== result.routeId
           )
-            break
-          if (
-            result.candidate &&
-            this.iterations + result.iterations <= budget &&
-            result.portReads.every(
-              ([id, value]) => this.state.portAssignment[id] === value,
-            ) &&
-            result.regionReads.every(
-              ([id, count]) =>
-                this.state.regionIntersectionCaches[id].existingSegmentCount ===
-                count,
-            )
-          ) {
-            this.state.currentRouteId = this.state.unroutedRoutes.shift()!
-            this.state.currentRouteNetId =
-              this.problem.routeNet[this.state.currentRouteId]
-            this.routeAttemptCountByRouteId[this.state.currentRouteId] += 1
-            this.resetCandidateBestCosts()
-            this.state.goalPortId = this.getRouteEndPortId(
-              this.state.currentRouteId,
-            )
-            this.onPathFound(result.candidate)
-            this.iterations += result.iterations
-            this.asyncStats.acceptedRoutes += 1
-            if (!this.solved && this.iterations >= this.MAX_ITERATIONS) {
-              this.tryFinalAcceptance()
-              if (!this.solved) {
-                this.error = `${this.getSolverName()} ran out of iterations`
-                this.failed = true
+          .map((job) =>
+            job.then(
+              (value) => ({ value, error: undefined }),
+              (error: unknown) => ({ value: undefined, error }),
+            ),
+          )
+        try {
+          for (const job of pending) {
+            const settled = await job
+            if (settled.error) throw settled.error
+            for (const result of settled.value!) {
+              if (
+                this.solved ||
+                this.failed ||
+                this.iterations >= stopAtIteration ||
+                this.state.ripCount !== ripCount ||
+                this.state.unroutedRoutes[0] !== result.routeId
+              )
+                break
+              if (
+                result.candidate &&
+                this.iterations + result.iterations <= budget &&
+                result.portReads.every(
+                  ([id, value]) => this.state.portAssignment[id] === value,
+                ) &&
+                result.regionReads.every(
+                  ([id, count]) =>
+                    this.state.regionIntersectionCaches[id]
+                      .existingSegmentCount === count,
+                )
+              ) {
+                this.state.currentRouteId = this.state.unroutedRoutes.shift()!
+                this.state.currentRouteNetId =
+                  this.problem.routeNet[this.state.currentRouteId]
+                this.routeAttemptCountByRouteId[this.state.currentRouteId] += 1
+                this.resetCandidateBestCosts()
+                this.state.goalPortId = this.getRouteEndPortId(
+                  this.state.currentRouteId,
+                )
+                this.onPathFound(result.candidate)
+                this.iterations += result.iterations
+                this.asyncStats.acceptedRoutes += 1
+                if (!this.solved && this.iterations >= this.MAX_ITERATIONS) {
+                  this.tryFinalAcceptance()
+                  if (!this.solved) {
+                    this.error = `${this.getSolverName()} ran out of iterations`
+                    this.failed = true
+                  }
+                }
+              } else {
+                this.asyncStats.conflictedRoutes += 1
+                // Replay the exact serial prefix on a conflict, exhausted search, or budget boundary.
+                const routeId = this.state.unroutedRoutes[0]
+                do {
+                  this.step()
+                } while (
+                  !this.solved &&
+                  !this.failed &&
+                  this.iterations < stopAtIteration &&
+                  this.state.ripCount === ripCount &&
+                  this.state.currentRouteId === routeId
+                )
               }
             }
-          } else {
-            this.asyncStats.conflictedRoutes += 1
-            // Replay the exact serial prefix on a conflict, exhausted search, or budget boundary.
-            const routeId = this.state.unroutedRoutes[0]
-            do {
-              this.step()
-            } while (
-              !this.solved &&
-              !this.failed &&
-              this.iterations < stopAtIteration &&
-              this.state.ripCount === ripCount &&
-              this.state.currentRouteId === routeId
-            )
           }
+        } finally {
+          const settled = await Promise.all(pending)
+          const rejected = settled.find((result) => result.error)
+          if (rejected) throw rejected.error
         }
       }
     } catch (error) {
