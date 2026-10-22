@@ -269,7 +269,8 @@ export interface TinyHyperGraphSolverOptions {
    * Retain ordered regional occurrences after observing their native hop closed.
    * The caller owns ordinary topology/problem/state and plain native queued
    * candidates for the entire queue epoch. Key mappings and metadata remain
-   * fixed between steps, and IndexedCandidateHeap methods retain their standard
+   * fixed between steps. Port masks, reservations and committed occupancy stay
+   * fixed until the native heap clears. IndexedCandidateHeap methods retain their standard
    * key and closure behavior. No external candidate injection or mutation of
    * queued references is allowed. Pure scoring overrides are allowed when they
    * preserve this contract.
@@ -1031,7 +1032,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
       if (neighborPortId === currentCandidate.portId) continue
-      if (problem.portSectionMask[neighborPortId] === 0) continue
+      if (problem.portSectionMask[neighborPortId] === 0) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
+        continue
+      }
 
       const nextRegionId =
         topology.incidentPortRegion[neighborPortId][0] ===
@@ -1039,7 +1045,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
           ? topology.incidentPortRegion[neighborPortId][1]
           : topology.incidentPortRegion[neighborPortId][0]
 
-      if (nextRegionId === undefined) continue
+      if (nextRegionId === undefined) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
+        continue
+      }
 
       const candidateHopId = this.getHopId(neighborPortId, nextRegionId)
       const candidateHopIsClosed = state.candidateQueue.isClosedHopId
@@ -1055,11 +1066,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
       const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+      if (
+        this.isPortReservedForDifferentNet(neighborPortId) ||
+        (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) ||
+        this.isRegionReservedForDifferentNet(nextRegionId)
+      ) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
         continue
       }
-      if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
       const lowerBoundWithoutDistance =
