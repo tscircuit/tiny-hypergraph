@@ -35,9 +35,14 @@ const argument = (flag: string): string | undefined => {
   const index = process.argv.indexOf(flag)
   return index < 0 ? undefined : process.argv[index + 1]
 }
-const inputPath = argument("--input") ?? fileURLToPath(
-  new URL("../../tests/fixtures/srj18-sample014-native.json.gz", import.meta.url),
-)
+const inputPath =
+  argument("--input") ??
+  fileURLToPath(
+    new URL(
+      "../../tests/fixtures/srj18-sample014-native.json.gz",
+      import.meta.url,
+    ),
+  )
 const repeat = Number(argument("--repeat") ?? 2)
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("Invalid --repeat")
 const source = inputPath.endsWith(".gz")

@@ -67,7 +67,9 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
 
 /** Nonnegative path lengths are monotone within an owner-cardinality bucket. */
 class DistanceRadixQueue<TState, TStateKey, TOwner, THopData> {
-  private buckets: Array<Array<SearchLabel<TState, TStateKey, TOwner, THopData>> | undefined> = []
+  private buckets: Array<
+    Array<SearchLabel<TState, TStateKey, TOwner, THopData>> | undefined
+  > = []
   private readonly bits = new DataView(new ArrayBuffer(8))
   private lastHigh = 0
   private lastLow = 0
@@ -100,7 +102,8 @@ class DistanceRadixQueue<TState, TStateKey, TOwner, THopData> {
     const bucket = this.buckets[index]
     if (!bucket?.length) return null
     let minimum = Infinity
-    for (const label of bucket) if (label.distance < minimum) minimum = label.distance
+    for (const label of bucket)
+      if (label.distance < minimum) minimum = label.distance
     this.bits.setFloat64(0, minimum)
     this.lastHigh = this.bits.getUint32(0)
     this.lastLow = this.bits.getUint32(4)
@@ -132,8 +135,12 @@ class DistanceLabelQueue<TState, TStateKey, TOwner, THopData> {
     while (index > 0) {
       const parentIndex = (index - 1) >> 1
       const parent = heap[parentIndex]!
-      if (parent.distance < label.distance ||
-        (parent.distance === label.distance && parent.queueOrder < label.queueOrder)) break
+      if (
+        parent.distance < label.distance ||
+        (parent.distance === label.distance &&
+          parent.queueOrder < label.queueOrder)
+      )
+        break
       heap[index] = parent
       index = parentIndex
     }
@@ -161,13 +168,19 @@ class DistanceLabelQueue<TState, TStateKey, TOwner, THopData> {
       const left = index * 2 + 1
       if (left >= length) break
       const right = left + 1
-      const smaller = right < length &&
+      const smaller =
+        right < length &&
         (heap[right]!.distance < heap[left]!.distance ||
           (heap[right]!.distance === heap[left]!.distance &&
-           heap[right]!.queueOrder < heap[left]!.queueOrder)) ? right : left
+            heap[right]!.queueOrder < heap[left]!.queueOrder))
+          ? right
+          : left
       const child = heap[smaller]!
-      if (last.distance < child.distance ||
-        (last.distance === child.distance && last.queueOrder < child.queueOrder)) break
+      if (
+        last.distance < child.distance ||
+        (last.distance === child.distance && last.queueOrder < child.queueOrder)
+      )
+        break
       heap[index] = child
       index = smaller
     }
@@ -177,20 +190,26 @@ class DistanceLabelQueue<TState, TStateKey, TOwner, THopData> {
 }
 
 class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
-  private readonly heaps: Array<DistanceLabelQueue<TState, TStateKey, TOwner, THopData> | undefined> = []
+  private readonly heaps: Array<
+    DistanceLabelQueue<TState, TStateKey, TOwner, THopData> | undefined
+  > = []
   private minimumOwnerCount = 0
 
   push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
     const ownerCount = label.owners.length
-    const heap = this.heaps[ownerCount] ??
+    const heap =
+      this.heaps[ownerCount] ??
       (this.heaps[ownerCount] = new DistanceLabelQueue())
     if (ownerCount < this.minimumOwnerCount) this.minimumOwnerCount = ownerCount
     heap.push(label)
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
-    while (this.minimumOwnerCount < this.heaps.length &&
-      !this.heaps[this.minimumOwnerCount]?.length) this.minimumOwnerCount++
+    while (
+      this.minimumOwnerCount < this.heaps.length &&
+      !this.heaps[this.minimumOwnerCount]?.length
+    )
+      this.minimumOwnerCount++
     return this.heaps[this.minimumOwnerCount]?.pop() ?? null
   }
 }
@@ -353,7 +372,11 @@ export const findDistinctOwnerBlockerPath = <
     queueOrder: nextQueueOrder++,
     active: true,
   }
-  labelsByStateKey.set(startLabel.stateKey, {multi: [], empty: startLabel, singles: new Map()})
+  labelsByStateKey.set(startLabel.stateKey, {
+    multi: [],
+    empty: startLabel,
+    singles: new Map(),
+  })
   queue.push(startLabel)
 
   while (true) {
@@ -397,7 +420,10 @@ export const findDistinctOwnerBlockerPath = <
       }
       if (category === 1) {
         for (const owner of addedOwners) {
-          if (owner !== singleOwner && !(owner !== owner && singleOwner !== singleOwner)) {
+          if (
+            owner !== singleOwner &&
+            !(owner !== owner && singleOwner !== singleOwner)
+          ) {
             category = 2
             break
           }
@@ -416,21 +442,25 @@ export const findDistinctOwnerBlockerPath = <
               break
             }
           }
-          if (!dominated) for (const owner of addedOwners) {
-            const single = entry.singles.get(owner)
-            if (single !== undefined && single.distance <= distance) {
+          if (!dominated)
+            for (const owner of addedOwners) {
+              const single = entry.singles.get(owner)
+              if (single !== undefined && single.distance <= distance) {
+                dominated = true
+                break
+              }
+            }
+        }
+        if (!dominated)
+          for (const label of existingLabels) {
+            if (
+              label.distance <= distance &&
+              isOwnerSubsetOfUnion(label.owners, current.owners, addedOwners)
+            ) {
               dominated = true
               break
             }
           }
-        }
-        if (!dominated) for (const label of existingLabels) {
-          if (label.distance <= distance &&
-            isOwnerSubsetOfUnion(label.owners, current.owners, addedOwners)) {
-            dominated = true
-            break
-          }
-        }
       }
       if (dominated) continue
 
@@ -461,7 +491,7 @@ export const findDistinctOwnerBlockerPath = <
       }
 
       if (!entry) {
-        entry = {multi: existingLabels, empty: undefined, singles: new Map()}
+        entry = { multi: existingLabels, empty: undefined, singles: new Map() }
         labelsByStateKey.set(stateKey, entry)
       }
       let kept = 0
