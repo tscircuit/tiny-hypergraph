@@ -395,11 +395,14 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
-    const originsByRegion = new Map<RegionId, Array<{
-      portId: PortId
-      distance: number
-      owners: readonly RouteId[]
-    }>>()
+    const originsByRegion = new Map<
+      RegionId,
+      Array<{
+        portId: PortId
+        distance: number
+        owners: readonly RouteId[]
+      }>
+    >()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
@@ -410,13 +413,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         let hops = hopsByState.get(key)
         if (!hops) {
           hops = this.getRelaxedSearchHops({
-          state,
-          goalPortId,
-          routeNetId,
-          portOwners,
-          portResources,
-          hopTemplatesByRegion,
-          forbiddenOwnerRouteIds,
+            state,
+            goalPortId,
+            routeNetId,
+            portOwners,
+            portResources,
+            hopTemplatesByRegion,
+            forbiddenOwnerRouteIds,
           })
           hopsByState.set(key, hops)
         }
@@ -425,13 +428,19 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           const x = this.topology.portX[state.portId]
           const y = this.topology.portY[state.portId]
           for (const origin of origins) {
-            if (origin.owners.length > label.owners.length ||
-              !origin.owners.every((owner) => label.owners.includes(owner))) continue
-            const viaOrigin = origin.distance + Math.hypot(
-              this.topology.portX[origin.portId] - x,
-              this.topology.portY[origin.portId] - y,
+            if (
+              origin.owners.length > label.owners.length ||
+              !origin.owners.every((owner) => label.owners.includes(owner))
             )
-            const margin = Math.max(1, Math.abs(viaOrigin), Math.abs(label.distance)) * 1e-12
+              continue
+            const viaOrigin =
+              origin.distance +
+              Math.hypot(
+                this.topology.portX[origin.portId] - x,
+                this.topology.portY[origin.portId] - y,
+              )
+            const margin =
+              Math.max(1, Math.abs(viaOrigin), Math.abs(label.distance)) * 1e-12
             if (viaOrigin + margin < label.distance) {
               // Multilayer blocker resources depend only on the destination.
               // All other exits were already offered by the cheaper origin;
@@ -441,7 +450,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           }
           // Bound the acceleration index; discarded entries only lose reuse.
           if (origins.length < 32) {
-            origins.push({portId: state.portId, distance: label.distance, owners: label.owners})
+            origins.push({
+              portId: state.portId,
+              distance: label.distance,
+              owners: label.owners,
+            })
             originsByRegion.set(state.nextRegionId, origins)
           }
         }

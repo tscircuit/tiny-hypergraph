@@ -72,9 +72,9 @@ const compareLabelDistances = <TState, TStateKey, TOwner, THopData>(
 class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
   // Owner cardinality is an integer primary key. Separate distance heaps avoid
   // comparing owner sets on every sift and keep the original stable ordering.
-  private readonly heaps: Array<Array<
-    SearchLabel<TState, TStateKey, TOwner, THopData>
-  > | undefined> = []
+  private readonly heaps: Array<
+    Array<SearchLabel<TState, TStateKey, TOwner, THopData>> | undefined
+  > = []
   private minimumOwnerCount = 0
 
   push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
@@ -94,8 +94,11 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
-    while (this.minimumOwnerCount < this.heaps.length &&
-      !this.heaps[this.minimumOwnerCount]?.length) this.minimumOwnerCount++
+    while (
+      this.minimumOwnerCount < this.heaps.length &&
+      !this.heaps[this.minimumOwnerCount]?.length
+    )
+      this.minimumOwnerCount++
     const heap = this.heaps[this.minimumOwnerCount]
     if (!heap?.length) return null
     const first = heap[0]!
@@ -107,9 +110,11 @@ class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
       const leftIndex = index * 2 + 1
       if (leftIndex >= length) break
       const rightIndex = leftIndex + 1
-      const childIndex = rightIndex < length &&
+      const childIndex =
+        rightIndex < length &&
         compareLabelDistances(heap[rightIndex]!, heap[leftIndex]!) < 0
-          ? rightIndex : leftIndex
+          ? rightIndex
+          : leftIndex
       const child = heap[childIndex]!
       if (compareLabelDistances(last, child) <= 0) break
       heap[index] = child

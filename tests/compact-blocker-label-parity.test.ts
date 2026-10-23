@@ -15,18 +15,22 @@ test("compact owner labels preserve stable paths, owner identity and expansion b
       Array.from({ length: Math.floor(random() * 8) }, () => ({
         state: Math.floor(random() * size),
         distance: Math.floor(random() * 15) / 4,
-        owners: Array.from({ length: Math.floor(random() * 4) },
-          () => owners[Math.floor(random() * owners.length)]),
+        owners: Array.from(
+          { length: Math.floor(random() * 4) },
+          () => owners[Math.floor(random() * owners.length)],
+        ),
       })),
     )
     const options = {
       start: 0,
       getStateKey: (state: number): number => state,
       isGoal: (state: number): boolean => state === size - 1,
-      getHops: (state: number): typeof graph[number] => graph[state],
+      getHops: (state: number): (typeof graph)[number] => graph[state],
       maxExpandedLabels: Math.floor(random() * 1000),
       checkReachability: random() < 0.5,
     }
-    expect(findDistinctOwnerBlockerPath(options)).toEqual(referenceSearch(options))
+    expect(findDistinctOwnerBlockerPath(options)).toEqual(
+      referenceSearch(options),
+    )
   }
 })

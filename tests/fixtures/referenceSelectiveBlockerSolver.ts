@@ -1,16 +1,33 @@
-import { SelectiveReripTinyHyperGraphSolver, type SelectiveReripBlockerResource } from "../../lib/selective-rerip-tiny-hyper-graph-solver"
-import { findDistinctOwnerBlockerPath, type DistinctOwnerBlockerSearchResult } from "./referenceDistinctOwnerBlockerPath"
+import {
+  SelectiveReripTinyHyperGraphSolver,
+  type SelectiveReripBlockerResource,
+} from "../../lib/selective-rerip-tiny-hyper-graph-solver"
+import {
+  findDistinctOwnerBlockerPath,
+  type DistinctOwnerBlockerSearchResult,
+} from "./referenceDistinctOwnerBlockerPath"
 type PortId = number
 type RouteId = number
 type RegionId = number
 type RelaxedSearchState = { portId: number; nextRegionId: number }
 type RelaxedSearchHopData = { resources: SelectiveReripBlockerResource[] }
-type PortBlockerResource = Extract<SelectiveReripBlockerResource, {kind: "port"}>
-type RelaxedSearchHop = { state: RelaxedSearchState; distance: number; owners: number[]; data: RelaxedSearchHopData }
+type PortBlockerResource = Extract<
+  SelectiveReripBlockerResource,
+  { kind: "port" }
+>
+type RelaxedSearchHop = {
+  state: RelaxedSearchState
+  distance: number
+  owners: number[]
+  data: RelaxedSearchHopData
+}
 type ReferenceHelpers = {
+  describeRoute(routeId: number): string
   getPortOwners(): Map<number, Set<number>>
   getRelaxedSearchHops(params: {
-    state: RelaxedSearchState; goalPortId: number; routeNetId: number
+    state: RelaxedSearchState
+    goalPortId: number
+    routeNetId: number
     portOwners: ReadonlyMap<number, ReadonlySet<number>>
     portResources: Map<number, PortBlockerResource>
     hopTemplatesByRegion: Map<number, RelaxedSearchHop[]>
@@ -40,7 +57,7 @@ export class ReferenceSelectiveBlockerSolver extends SelectiveReripTinyHyperGrap
     const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
     if (startRegionId === undefined) {
       throw new Error(
-        `SelectiveReripTinyHyperGraphSolver: route ${this.describeRoute(routeId)} has no starting region for blocker search`,
+        `SelectiveReripTinyHyperGraphSolver: route ${helpers.describeRoute(routeId)} has no starting region for blocker search`,
       )
     }
 
@@ -75,5 +92,4 @@ export class ReferenceSelectiveBlockerSolver extends SelectiveReripTinyHyperGrap
       checkReachability: true,
     })
   }
-
 }

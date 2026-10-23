@@ -1031,7 +1031,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { problem, topology, state } = this
     const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
     const cache = state.regionIntersectionCaches[currentCandidate.nextRegionId]
-    let uniformCost = this.computeG === TinyHyperGraphSolver.prototype.computeG &&
+    let uniformCost =
+      this.computeG === TinyHyperGraphSolver.prototype.computeG &&
       this.computeRegionCostForRegion ===
         TinyHyperGraphSolver.prototype.computeRegionCostForRegion
     if (uniformCost) {
@@ -1146,24 +1147,31 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (uniformCost) {
         // With no foreign-net segments, every candidate has zero new
         // intersections. Its only variable region cost is a layer change.
-        const entryExit = topology.portZ[currentCandidate.portId] ===
-          topology.portZ[neighborPortId] ? 0 : 1
+        const entryExit =
+          topology.portZ[currentCandidate.portId] ===
+          topology.portZ[neighborPortId]
+            ? 0
+            : 1
         let regionCost = uniformCosts[entryExit]
         if (regionCost === undefined) {
-          regionCost = this.computeRegionCostForRegion(
-            currentCandidate.nextRegionId,
-            cache.existingSameLayerIntersections,
-            cache.existingCrossingLayerIntersections,
-            cache.existingEntryExitLayerChanges + entryExit,
-            cache.existingSegmentCount + 1,
-          ) - cache.existingRegionCost
+          regionCost =
+            this.computeRegionCostForRegion(
+              currentCandidate.nextRegionId,
+              cache.existingSameLayerIntersections,
+              cache.existingCrossingLayerIntersections,
+              cache.existingEntryExitLayerChanges + entryExit,
+              cache.existingSegmentCount + 1,
+            ) - cache.existingRegionCost
           uniformCosts[entryExit] = regionCost
         }
-        g = currentCandidate.g + regionCost +
+        g =
+          currentCandidate.g +
+          regionCost +
           state.regionCongestionCost[currentCandidate.nextRegionId]! +
           (problem.portPenalty?.[neighborPortId] ?? 0) +
-          (knownSegmentDistance === undefined ? 0 :
-            knownSegmentDistance * this.DISTANCE_TO_COST)
+          (knownSegmentDistance === undefined
+            ? 0
+            : knownSegmentDistance * this.DISTANCE_TO_COST)
       } else {
         g = this.computeG(
           currentCandidate,
