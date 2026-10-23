@@ -279,6 +279,7 @@ export interface TinyHyperGraphSolverOptions {
    * required. Read-only observation is allowed. Clear, queue replacement, goal
    * changes, best-cost resets and neighbor-array replacement invalidate retained
    * metadata. Other queue implementations use the original search.
+   * At the iteration limit, queued paths may be discarded before final routing.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS?: number
@@ -1738,6 +1739,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       ripCount: this.state.ripCount,
     })
 
+    // The exhausted parent will not resume its search. Release its path chains
+    // before allocating replacement searches, including between failed attempts.
+    const releaseSearchCandidates =
+      this.OWNED_REGIONAL_HOP_FRONTIER && this.iterations >= this.MAX_ITERATIONS
+    if (releaseSearchCandidates) this.state.candidateQueue.clear()
+
     let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
     // Do not reset the rerip budget by opening a new cost-aware search after
     // the parent has already repeatedly rearranged the graph. Preserve the
@@ -1778,6 +1785,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
+        if (releaseSearchCandidates) greedySolver.state.candidateQueue.clear()
         continue
       }
 
