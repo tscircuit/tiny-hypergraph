@@ -16,13 +16,13 @@
     "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "^2.4.8",
     "@tsci/seveibar.dataset-srj13": "https://github.com/tscircuit/dataset-srj13#161a835ed40ce72a2fa18ffe5ba6ba6392fcc176",
     "@tsci/tscircuit.dataset-srj12-bus-routing": "https://github.com/tscircuit/dataset-srj12-bus-routing#7d6a44e76c0419959ad0d0e382a19f65857ad7b8",
     "@tscircuit/capacity-autorouter": "^0.0.557",
     "@tscircuit/find-convex-regions": "^0.1.3",
     "@tscircuit/hypergraph": "^0.0.71",
-    "@tscircuit/solver-utils": "^0.0.17",
+    "@tscircuit/solver-utils": "^0.0.23",
     "@types/bun": "latest",
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
