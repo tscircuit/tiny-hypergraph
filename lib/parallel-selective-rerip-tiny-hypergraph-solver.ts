@@ -318,7 +318,11 @@ export class ParallelSelectiveReripTinyHyperGraphSolver extends StableSelectiveR
         this.iterations !== 0 ||
         stopAtIteration < this.MAX_ITERATIONS
       ) {
-        while (!this.solved && !this.failed && this.iterations < stopAtIteration)
+        while (
+          !this.solved &&
+          !this.failed &&
+          this.iterations < stopAtIteration
+        )
           this.step()
         return
       }
