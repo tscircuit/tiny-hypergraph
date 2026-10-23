@@ -6,10 +6,16 @@ import { createPortfolioInput } from "./fixtures/createPortfolioInput"
 
 const createSolver = (): ParallelSelectiveReripTinyHyperGraphSolver => {
   const { topology, problem, options } = createPortfolioInput()
-  return new ParallelSelectiveReripTinyHyperGraphSolver(topology, problem, options)
+  return new ParallelSelectiveReripTinyHyperGraphSolver(
+    topology,
+    problem,
+    options,
+  )
 }
 
-const comparable = (solver: ParallelSelectiveReripTinyHyperGraphSolver): unknown => ({
+const comparable = (
+  solver: ParallelSelectiveReripTinyHyperGraphSolver,
+): unknown => ({
   output: solver.solved && !solver.failed ? solver.getOutput() : null,
   state: solver.state,
   stats: solver.stats,
@@ -25,7 +31,14 @@ test("portfolio serial, inline, worker, and resumed-prefix results match exactly
   expect(serial.solved).toBe(true)
   const expected = comparable(serial)
   const inline = new SolverRuntime()
-  const workers = new BunRuntime({ workerCount: 4, workerUrl: new URL("./fixtures/portfolioRuntime.worker.ts", import.meta.url), requireWorker: true })
+  const workers = new BunRuntime({
+    workerCount: 4,
+    workerUrl: new URL(
+      "./fixtures/portfolioRuntime.worker.ts",
+      import.meta.url,
+    ),
+    requireWorker: true,
+  })
   try {
     for (const runtime of [inline, workers]) {
       const solver = createSolver()
@@ -40,7 +53,9 @@ test("portfolio serial, inline, worker, and resumed-prefix results match exactly
       expect(comparable(resumed)).toEqual(expected)
     }
     expect(serial.stats.portfolioLaneCount).toBe(1)
-    expect(serial.state.regionSegments.flat().filter(([route]) => route === 1)).toHaveLength(2)
+    expect(
+      serial.state.regionSegments.flat().filter(([route]) => route === 1),
+    ).toHaveLength(2)
   } finally {
     await inline.dispose()
     await workers.dispose()

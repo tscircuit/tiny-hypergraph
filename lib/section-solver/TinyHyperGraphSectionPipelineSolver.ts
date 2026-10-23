@@ -1,6 +1,10 @@
 import { ParallelSelectiveReripTinyHyperGraphSolver } from "../parallel-selective-rerip-tiny-hypergraph-solver"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BasePipelineSolver, type PipelineStep, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
+import {
+  BasePipelineSolver,
+  type PipelineStep,
+  type SolverRuntimeExecutor,
+} from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
@@ -331,18 +335,36 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
   }
 
-  async solveAsync(runtime?: SolverRuntimeExecutor, stopAtIteration = Infinity): Promise<void> {
-    if (this.asyncRunning) throw new Error("Tiny section pipeline solveAsync is already running")
+  async solveAsync(
+    runtime?: SolverRuntimeExecutor,
+    stopAtIteration = Infinity,
+  ): Promise<void> {
+    if (this.asyncRunning)
+      throw new Error("Tiny section pipeline solveAsync is already running")
     const start = performance.now()
     this.asyncRunning = true
     try {
-      while (!this.solved && !this.failed && this.iterations < stopAtIteration) {
+      while (
+        !this.solved &&
+        !this.failed &&
+        this.iterations < stopAtIteration
+      ) {
         const phase = this.activeSubSolver
-        const remaining = Math.min(this.MAX_ITERATIONS, stopAtIteration) - this.iterations
-        if (runtime && phase instanceof ParallelSelectiveReripTinyHyperGraphSolver && remaining >= phase.MAX_ITERATIONS - phase.iterations) {
+        const remaining =
+          Math.min(this.MAX_ITERATIONS, stopAtIteration) - this.iterations
+        if (
+          runtime &&
+          phase instanceof ParallelSelectiveReripTinyHyperGraphSolver &&
+          remaining >= phase.MAX_ITERATIONS - phase.iterations
+        ) {
           const previous = phase.iterations
           await phase.solveAsync(runtime)
-          this.iterations += Math.max(0, phase.iterations - previous - (phase.solved || phase.failed ? 1 : 0))
+          this.iterations += Math.max(
+            0,
+            phase.iterations -
+              previous -
+              (phase.solved || phase.failed ? 1 : 0),
+          )
         }
         this.step()
       }

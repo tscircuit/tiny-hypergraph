@@ -6,14 +6,35 @@ import { createPortfolioInput } from "./fixtures/createPortfolioInput"
 
 class TestPipeline extends TinyHyperGraphSectionPipelineSolver {
   constructor() {
-    super({ serializedHyperGraph: {} as never, solveGraphOptions: createPortfolioInput().options })
-    this.pipelineDef = [{ ...this.pipelineDef[0]!, solverClass: ParallelSelectiveReripTinyHyperGraphSolver }]
+    super({
+      serializedHyperGraph: {} as never,
+      solveGraphOptions: createPortfolioInput().options,
+    })
+    this.pipelineDef = [
+      {
+        ...this.pipelineDef[0]!,
+        solverClass: ParallelSelectiveReripTinyHyperGraphSolver,
+      },
+    ]
     this.MAX_ITERATIONS = 1000
   }
 
-  override loadHyperGraph(): ReturnType<TinyHyperGraphSectionPipelineSolver["loadHyperGraph"]> {
+  override loadHyperGraph(): ReturnType<
+    TinyHyperGraphSectionPipelineSolver["loadHyperGraph"]
+  > {
     const input = createPortfolioInput()
-    return { ...input, solution: { solvedRoutePathSegments: [[], [[3, 4], [4, 5]]] } }
+    return {
+      ...input,
+      solution: {
+        solvedRoutePathSegments: [
+          [],
+          [
+            [3, 4],
+            [4, 5],
+          ],
+        ],
+      },
+    }
   }
 }
 
@@ -29,12 +50,16 @@ test("section pipeline async delegation preserves phase transitions and prefix b
       const stepped = new TestPipeline()
       for (let i = 0; i < prefix; i++) stepped.step()
       expect(pipeline.iterations).toBe(stepped.iterations)
-      expect(pipeline.activeSubSolver?.iterations).toBe(stepped.activeSubSolver?.iterations)
+      expect(pipeline.activeSubSolver?.iterations).toBe(
+        stepped.activeSubSolver?.iterations,
+      )
       expect(pipeline.getOutput()).toEqual(stepped.getOutput())
       await pipeline.solveAsync(runtime)
       expect(pipeline.getOutput()).toEqual(serial.getOutput())
       expect(pipeline.iterations).toBe(serial.iterations)
-      expect(pipeline.currentPipelineStageIndex).toBe(serial.currentPipelineStageIndex)
+      expect(pipeline.currentPipelineStageIndex).toBe(
+        serial.currentPipelineStageIndex,
+      )
     }
   } finally {
     await runtime.dispose()

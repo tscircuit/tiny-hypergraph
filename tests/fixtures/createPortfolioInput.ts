@@ -1,11 +1,26 @@
-import type { TinyHyperGraphProblem, TinyHyperGraphTopology, TinyHyperGraphSolverOptions } from "../../lib/core"
+import type {
+  TinyHyperGraphProblem,
+  TinyHyperGraphTopology,
+  TinyHyperGraphSolverOptions,
+} from "../../lib/core"
 
-export const createPortfolioInput = (): { topology: TinyHyperGraphTopology; problem: TinyHyperGraphProblem; options: TinyHyperGraphSolverOptions } => ({
+export const createPortfolioInput = (): {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  options: TinyHyperGraphSolverOptions
+} => ({
   topology: {
     portCount: 6,
     regionCount: 6,
     regionIncidentPorts: [[0, 1, 3, 4], [1, 2, 4, 5], [0], [2], [3], [5]],
-    incidentPortRegion: [[0, 2], [0, 1], [1, 3], [0, 4], [0, 1], [1, 5]],
+    incidentPortRegion: [
+      [0, 2],
+      [0, 1],
+      [1, 3],
+      [0, 4],
+      [0, 1],
+      [1, 5],
+    ],
     regionWidth: new Float64Array(6).fill(20),
     regionHeight: new Float64Array(6).fill(20),
     regionCenterX: Float64Array.from([0, 10, -10, 20, -10, 20]),
