@@ -33,7 +33,11 @@ test("terminal owned searches release queued paths before replacement searches",
   const topology: TinyHyperGraphTopology = {
     portCount: 4,
     regionCount: 3,
-    regionIncidentPorts: [[0, 1], [1, 2], [2, 3]],
+    regionIncidentPorts: [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+    ],
     incidentPortRegion: [[0], [0, 1], [1, 2], [2]],
     regionWidth: new Float64Array(3).fill(10),
     regionHeight: new Float64Array(3).fill(10),
@@ -81,7 +85,9 @@ test("terminal owned searches release queued paths before replacement searches",
       true,
       true,
     ])
-    expect(solver.children.map((child): number => child.iterations)).toEqual([1, 1])
+    expect(solver.children.map((child): number => child.iterations)).toEqual([
+      1, 1,
+    ])
     expect(solver.state.portAssignment).toEqual(assignments)
     expect(solver.stats.greedyFinalRouteAttemptCount).toBe(2)
     expect(solver.stats.greedyFinalRouteMaxIterations).toBe(1)

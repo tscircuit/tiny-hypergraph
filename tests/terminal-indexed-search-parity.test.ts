@@ -28,7 +28,12 @@ test("terminal indexed searches preserve successful final routing", (): void => 
     portCount: 4,
     regionCount: 5,
     regionIncidentPorts: [[0, 1], [1, 2], [2, 3], [0], [3]],
-    incidentPortRegion: [[0, 3], [0, 1], [1, 2], [2, 4]],
+    incidentPortRegion: [
+      [0, 3],
+      [0, 1],
+      [1, 2],
+      [2, 4],
+    ],
     regionWidth: new Float64Array(5).fill(10),
     regionHeight: new Float64Array(5).fill(10),
     regionCenterX: new Float64Array(5),
