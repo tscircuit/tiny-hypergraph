@@ -28,3 +28,5 @@ export {
   type TinyHyperGraphSectionPipelineInput,
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
+
+export * from "./parallel-selective-rerip-tiny-hypergraph-solver"

@@ -1,5 +1,10 @@
+import { ParallelSelectiveReripTinyHyperGraphSolver } from "../parallel-selective-rerip-tiny-hypergraph-solver"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BasePipelineSolver, type PipelineStep } from "@tscircuit/solver-utils"
+import {
+  BasePipelineSolver,
+  type PipelineStep,
+  type SolverRuntimeExecutor,
+} from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "../compat/loadSerializedHyperGraph"
 import type {
@@ -319,6 +324,7 @@ export interface TinyHyperGraphSectionPipelineInput {
 }
 
 export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<TinyHyperGraphSectionPipelineInput> {
+  private asyncRunning = false
   initialVisualizationSolver?: TinyHyperGraphSolver
   selectedSectionMask?: Int8Array
   selectedSectionCandidateLabel?: string
@@ -327,6 +333,49 @@ export class TinyHyperGraphSectionPipelineSolver extends BasePipelineSolver<Tiny
   constructor(inputProblem: TinyHyperGraphSectionPipelineInput) {
     super(inputProblem)
     this.MAX_ITERATIONS = DEFAULT_SECTION_PIPELINE_MAX_ITERATIONS
+  }
+
+  async solveAsync(
+    runtime?: SolverRuntimeExecutor,
+    stopAtIteration = Infinity,
+  ): Promise<void> {
+    if (this.asyncRunning)
+      throw new Error("Tiny section pipeline solveAsync is already running")
+    const start = performance.now()
+    this.asyncRunning = true
+    try {
+      while (
+        !this.solved &&
+        !this.failed &&
+        this.iterations < stopAtIteration
+      ) {
+        const phase = this.activeSubSolver
+        const remaining =
+          Math.min(this.MAX_ITERATIONS, stopAtIteration) - this.iterations
+        if (
+          runtime &&
+          phase instanceof ParallelSelectiveReripTinyHyperGraphSolver &&
+          remaining >= phase.MAX_ITERATIONS - phase.iterations
+        ) {
+          const previous = phase.iterations
+          await phase.solveAsync(runtime)
+          this.iterations += Math.max(
+            0,
+            phase.iterations -
+              previous -
+              (phase.solved || phase.failed ? 1 : 0),
+          )
+        }
+        this.step()
+      }
+    } catch (error) {
+      this.failed = true
+      this.error = `Tiny section pipeline asynchronous solve error: ${error}`
+      throw error
+    } finally {
+      this.asyncRunning = false
+      this.timeToSolve = performance.now() - start
+    }
   }
 
   loadHyperGraph(serializedHyperGraph: SerializedHyperGraph): {

@@ -16,6 +16,11 @@ export type DistinctOwnerBlockerSearchOptions<
   isGoal: (state: TState) => boolean
   getHops: (
     state: TState,
+    label?: { distance: number; owners: readonly TOwner[] },
+  ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
+  /** Equivalent unweighted traversal; may omit destinations already discovered. */
+  getReachabilityHops?: (
+    state: TState,
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
   /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
@@ -52,7 +57,7 @@ export type DistinctOwnerBlockerSearchResult<
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
-  owners: Set<TOwner>
+  owners: TOwner[]
   distance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
@@ -60,98 +65,176 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   active: boolean
 }
 
-const compareLabels = <TState, TStateKey, TOwner, THopData>(
-  left: SearchLabel<TState, TStateKey, TOwner, THopData>,
-  right: SearchLabel<TState, TStateKey, TOwner, THopData>,
-): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
-  if (ownerCountDifference !== 0) return ownerCountDifference
-
-  const distanceDifference = left.distance - right.distance
-  if (distanceDifference !== 0) return distanceDifference
-
-  return left.queueOrder - right.queueOrder
-}
-
-class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
-  private readonly heap: Array<
-    SearchLabel<TState, TStateKey, TOwner, THopData>
+/** Nonnegative path lengths are monotone within an owner-cardinality bucket. */
+class DistanceRadixQueue<TState, TStateKey, TOwner, THopData> {
+  private buckets: Array<
+    Array<SearchLabel<TState, TStateKey, TOwner, THopData>> | undefined
   > = []
+  private readonly bits = new DataView(new ArrayBuffer(8))
+  private lastHigh = 0
+  private lastLow = 0
+  private zeroHead = 0
+  length = 0
 
   push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
-    this.heap.push(label)
-    let index = this.heap.length - 1
+    this.bits.setFloat64(0, label.distance)
+    const high = (this.bits.getUint32(0) ^ this.lastHigh) >>> 0
+    const low = (this.bits.getUint32(4) ^ this.lastLow) >>> 0
+    const index = high ? 64 - Math.clz32(high) : low ? 32 - Math.clz32(low) : 0
+    const bucket = this.buckets[index] ?? (this.buckets[index] = [])
+    bucket.push(label)
+    this.length++
+  }
 
-    while (index > 0) {
-      const parentIndex = Math.floor((index - 1) / 2)
-      if (compareLabels(this.heap[parentIndex]!, this.heap[index]!) <= 0) {
-        break
+  pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
+    const zero = this.buckets[0]
+    if (zero && this.zeroHead < zero.length) {
+      const label = zero[this.zeroHead++]!
+      this.length--
+      if (this.zeroHead === zero.length) {
+        zero.length = 0
+        this.zeroHead = 0
       }
-      ;[this.heap[parentIndex], this.heap[index]] = [
-        this.heap[index]!,
-        this.heap[parentIndex]!,
-      ]
+      return label
+    }
+    let index = 1
+    while (index < this.buckets.length && !this.buckets[index]?.length) index++
+    const bucket = this.buckets[index]
+    if (!bucket?.length) return null
+    let minimum = Infinity
+    for (const label of bucket)
+      if (label.distance < minimum) minimum = label.distance
+    this.bits.setFloat64(0, minimum)
+    this.lastHigh = this.bits.getUint32(0)
+    this.lastLow = this.bits.getUint32(4)
+    this.buckets[index] = undefined
+    this.length -= bucket.length
+    // Lower buckets are empty. Stable redistribution retains queue insertion
+    // order for equal distances, including labels added while processing ties.
+    for (const label of bucket) this.push(label)
+    return this.pop()
+  }
+}
+
+class DistanceLabelQueue<TState, TStateKey, TOwner, THopData> {
+  private items: Array<SearchLabel<TState, TStateKey, TOwner, THopData>> = []
+  private radix?: DistanceRadixQueue<TState, TStateKey, TOwner, THopData>
+
+  get length(): number {
+    return this.radix ? this.radix.length : this.items.length
+  }
+
+  push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
+    if (this.radix) {
+      this.radix.push(label)
+      return
+    }
+    const heap = this.items
+    let index = heap.length
+    heap.push(label)
+    while (index > 0) {
+      const parentIndex = (index - 1) >> 1
+      const parent = heap[parentIndex]!
+      if (
+        parent.distance < label.distance ||
+        (parent.distance === label.distance &&
+          parent.queueOrder < label.queueOrder)
+      )
+        break
+      heap[index] = parent
       index = parentIndex
+    }
+    heap[index] = label
+    if (heap.length >= 128) {
+      this.radix = new DistanceRadixQueue()
+      // The binary heap permutes ties. Restore insertion order before stable
+      // radix redistribution so migration cannot change selected paths.
+      heap.sort((left, right) => left.queueOrder - right.queueOrder)
+      for (const item of heap) this.radix.push(item)
+      this.items = []
     }
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
-    const first = this.heap[0]
-    const last = this.heap.pop()
+    if (this.radix) return this.radix.pop()
+    const heap = this.items
+    const first = heap[0]
+    const last = heap.pop()
     if (!first || !last) return null
-    if (this.heap.length === 0) return first
-
-    this.heap[0] = last
+    const length = heap.length
+    if (length === 0) return first
     let index = 0
     while (true) {
-      const leftIndex = index * 2 + 1
-      const rightIndex = leftIndex + 1
-      let bestIndex = index
+      const left = index * 2 + 1
+      if (left >= length) break
+      const right = left + 1
+      const smaller =
+        right < length &&
+        (heap[right]!.distance < heap[left]!.distance ||
+          (heap[right]!.distance === heap[left]!.distance &&
+            heap[right]!.queueOrder < heap[left]!.queueOrder))
+          ? right
+          : left
+      const child = heap[smaller]!
       if (
-        leftIndex < this.heap.length &&
-        compareLabels(this.heap[leftIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = leftIndex
-      }
-      if (
-        rightIndex < this.heap.length &&
-        compareLabels(this.heap[rightIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = rightIndex
-      }
-      if (bestIndex === index) break
-      ;[this.heap[index], this.heap[bestIndex]] = [
-        this.heap[bestIndex]!,
-        this.heap[index]!,
-      ]
-      index = bestIndex
+        last.distance < child.distance ||
+        (last.distance === child.distance && last.queueOrder < child.queueOrder)
+      )
+        break
+      heap[index] = child
+      index = smaller
     }
-
+    heap[index] = last
     return first
   }
 }
 
+class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
+  private readonly heaps: Array<
+    DistanceLabelQueue<TState, TStateKey, TOwner, THopData> | undefined
+  > = []
+  private minimumOwnerCount = 0
+
+  push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
+    const ownerCount = label.owners.length
+    const heap =
+      this.heaps[ownerCount] ??
+      (this.heaps[ownerCount] = new DistanceLabelQueue())
+    if (ownerCount < this.minimumOwnerCount) this.minimumOwnerCount = ownerCount
+    heap.push(label)
+  }
+
+  pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
+    while (
+      this.minimumOwnerCount < this.heaps.length &&
+      !this.heaps[this.minimumOwnerCount]?.length
+    )
+      this.minimumOwnerCount++
+    return this.heaps[this.minimumOwnerCount]?.pop() ?? null
+  }
+}
+
 const isOwnerSubset = <TOwner>(
-  possibleSubset: ReadonlySet<TOwner>,
-  possibleSuperset: ReadonlySet<TOwner>,
+  possibleSubset: readonly TOwner[],
+  possibleSuperset: readonly TOwner[],
 ): boolean => {
-  if (possibleSubset.size > possibleSuperset.size) return false
+  if (possibleSubset.length > possibleSuperset.length) return false
   for (const owner of possibleSubset) {
-    if (!possibleSuperset.has(owner)) return false
+    if (!possibleSuperset.includes(owner)) return false
   }
 
   return true
 }
 
 const isOwnerSubsetOfUnion = <TOwner>(
-  subset: ReadonlySet<TOwner>,
-  existing: ReadonlySet<TOwner>,
+  subset: readonly TOwner[],
+  existing: readonly TOwner[],
   added: readonly TOwner[],
 ): boolean => {
   if (subset === existing) return true
-  if (subset.size > existing.size + added.length) return false
+  if (subset.length > existing.length + added.length) return false
   for (const owner of subset) {
-    if (!existing.has(owner) && !added.includes(owner)) return false
+    if (!existing.includes(owner) && !added.includes(owner)) return false
   }
   return true
 }
@@ -221,7 +304,7 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     if (expandedStateCount >= maxExpandedStates) return undefined
     expandedStateCount++
 
-    for (const hop of options.getHops(state)) {
+    for (const hop of (options.getReachabilityHops ?? options.getHops)(state)) {
       totalHopDistance += hop.distance
       // Preserve the weighted search's validation and overflow behavior.
       if (hop.distance < 0 || !Number.isFinite(totalHopDistance)) {
@@ -268,24 +351,32 @@ export const findDistinctOwnerBlockerPath = <
     if (disconnected) return disconnected
   }
 
-  const labelsByStateKey = new Map<
-    TStateKey,
-    Array<SearchLabel<TState, TStateKey, TOwner, THopData>>
-  >()
+  type Label = SearchLabel<TState, TStateKey, TOwner, THopData>
+  type StateLabels = {
+    multi: Label[]
+    empty: Label | undefined
+    singles: Map<TOwner, Label>
+  }
+  const labelsByStateKey = new Map<TStateKey, StateLabels>()
+  const singletonOwners = new Map<TOwner, TOwner[]>()
   const queue = new SearchLabelQueue<TState, TStateKey, TOwner, THopData>()
   let nextQueueOrder = 0
   let expandedLabelCount = 0
   const startLabel: SearchLabel<TState, TStateKey, TOwner, THopData> = {
     state: options.start,
     stateKey: options.getStateKey(options.start),
-    owners: new Set<TOwner>(),
+    owners: [],
     distance: 0,
     parent: null,
     incomingHop: null,
     queueOrder: nextQueueOrder++,
     active: true,
   }
-  labelsByStateKey.set(startLabel.stateKey, [startLabel])
+  labelsByStateKey.set(startLabel.stateKey, {
+    multi: [],
+    empty: startLabel,
+    singles: new Map(),
+  })
   queue.push(startLabel)
 
   while (true) {
@@ -301,7 +392,7 @@ export const findDistinctOwnerBlockerPath = <
     }
     expandedLabelCount++
 
-    for (const hop of options.getHops(current.state)) {
+    for (const hop of options.getHops(current.state, current)) {
       if (!Number.isFinite(hop.distance) || hop.distance < 0) {
         throw new Error(
           "Distinct-owner blocker hops require finite distances >= 0",
@@ -314,29 +405,79 @@ export const findDistinctOwnerBlockerPath = <
       }
       const stateKey = options.getStateKey(hop.state)
       const queueOrder = nextQueueOrder++
-      const existingLabels = labelsByStateKey.get(stateKey) ?? []
+      let entry = labelsByStateKey.get(stateKey)
+      const existingLabels = entry?.multi ?? []
       const addedOwners = hop.owners ?? []
-      // Most proposed labels are dominated. Test the owner union without
-      // allocating a label or copying its owner set for those rejected hops.
-      let dominated = false
-      for (const label of existingLabels) {
-        if (
-          label.distance <= distance &&
-          isOwnerSubsetOfUnion(label.owners, current.owners, addedOwners)
-        ) {
-          dominated = true
-          break
+      if (entry?.empty && entry.empty.distance <= distance) continue
+
+      // Zero/single-owner labels dominate only their own owner class (or the
+      // empty class). Most rejected proposals need no Pareto-frontier scan.
+      let category = Math.min(2, current.owners.length)
+      let singleOwner = current.owners[0]!
+      if (category === 0 && addedOwners.length > 0) {
+        singleOwner = addedOwners[0]!
+        category = 1
+      }
+      if (category === 1) {
+        for (const owner of addedOwners) {
+          if (
+            owner !== singleOwner &&
+            !(owner !== owner && singleOwner !== singleOwner)
+          ) {
+            category = 2
+            break
+          }
         }
+      }
+      let dominated = false
+      if (category === 1) {
+        const single = entry?.singles.get(singleOwner)
+        dominated = single !== undefined && single.distance <= distance
+      } else if (category > 1) {
+        if (entry) {
+          for (const owner of current.owners) {
+            const single = entry.singles.get(owner)
+            if (single !== undefined && single.distance <= distance) {
+              dominated = true
+              break
+            }
+          }
+          if (!dominated)
+            for (const owner of addedOwners) {
+              const single = entry.singles.get(owner)
+              if (single !== undefined && single.distance <= distance) {
+                dominated = true
+                break
+              }
+            }
+        }
+        if (!dominated)
+          for (const label of existingLabels) {
+            if (
+              label.distance <= distance &&
+              isOwnerSubsetOfUnion(label.owners, current.owners, addedOwners)
+            ) {
+              dominated = true
+              break
+            }
+          }
       }
       if (dominated) continue
 
-      // Labels never mutate their owner set after entering the queue. Most
-      // hops encounter no new owner, so share the set until it changes.
       let owners = current.owners
-      for (const owner of addedOwners) {
-        if (owners.has(owner)) continue
-        if (owners === current.owners) owners = new Set(current.owners)
-        owners.add(owner)
+      if (category === 1 && current.owners.length === 0) {
+        let singleton = singletonOwners.get(singleOwner)
+        if (!singleton) {
+          singleton = [singleOwner]
+          singletonOwners.set(singleOwner, singleton)
+        }
+        owners = singleton
+      } else if (category > 1) {
+        for (const owner of addedOwners) {
+          if (owners.includes(owner)) continue
+          if (owners === current.owners) owners = [...current.owners]
+          owners.push(owner)
+        }
       }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
@@ -349,18 +490,32 @@ export const findDistinctOwnerBlockerPath = <
         active: true,
       }
 
-      const survivingLabels: Array<
-        SearchLabel<TState, TStateKey, TOwner, THopData>
-      > = []
-      for (const label of existingLabels) {
-        if (labelDominates(candidate, label)) {
-          label.active = false
-        } else {
-          survivingLabels.push(label)
-        }
+      if (!entry) {
+        entry = { multi: existingLabels, empty: undefined, singles: new Map() }
+        labelsByStateKey.set(stateKey, entry)
       }
-      survivingLabels.push(candidate)
-      labelsByStateKey.set(candidate.stateKey, survivingLabels)
+      let kept = 0
+      for (const label of existingLabels) {
+        if (labelDominates(candidate, label)) label.active = false
+        else existingLabels[kept++] = label
+      }
+      existingLabels.length = kept
+      if (owners.length === 0) {
+        if (entry.empty) entry.empty.active = false
+        entry.empty = candidate
+        for (const [owner, label] of entry.singles) {
+          if (distance <= label.distance) {
+            label.active = false
+            entry.singles.delete(owner)
+          }
+        }
+      } else if (owners.length === 1) {
+        const previous = entry.singles.get(owners[0]!)
+        if (previous) previous.active = false
+        entry.singles.set(owners[0]!, candidate)
+      } else {
+        existingLabels.push(candidate)
+      }
       queue.push(candidate)
     }
   }
