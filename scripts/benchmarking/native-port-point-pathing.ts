@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { gunzipSync } from "node:zlib"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import type {
   TinyHyperGraphTopology,
@@ -42,9 +43,17 @@ if (!inputPath) {
 }
 const repeat = Number(argument("--repeat") ?? 2)
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("Invalid --repeat")
-const source = readFileSync(inputPath, "utf8")
+const source = inputPath.endsWith(".gz")
+  ? gunzipSync(new Uint8Array(readFileSync(inputPath))).toString("utf8")
+  : readFileSync(inputPath, "utf8")
 const decodeInput = (): CapturedInput => {
   const input = JSON.parse(source, (_key, value) => {
+    if (value && typeof value === "object" && value.$number) {
+      if (!["Infinity", "-Infinity", "NaN"].includes(value.$number)) {
+        throw new Error(`Unsupported captured number: ${value.$number}`)
+      }
+      return Number(value.$number)
+    }
     if (!value || typeof value !== "object" || !value.$typed) return value
     switch (value.$typed) {
       case "Int8Array":
