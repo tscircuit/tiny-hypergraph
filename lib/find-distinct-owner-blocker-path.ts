@@ -16,6 +16,7 @@ export type DistinctOwnerBlockerSearchOptions<
   isGoal: (state: TState) => boolean
   getHops: (
     state: TState,
+    label?: { distance: number; owners: readonly TOwner[] },
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
   /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
@@ -52,7 +53,7 @@ export type DistinctOwnerBlockerSearchResult<
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
-  owners: Set<TOwner>
+  owners: TOwner[]
   distance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
@@ -60,98 +61,86 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   active: boolean
 }
 
-const compareLabels = <TState, TStateKey, TOwner, THopData>(
+const compareLabelDistances = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
-  if (ownerCountDifference !== 0) return ownerCountDifference
-
-  const distanceDifference = left.distance - right.distance
-  if (distanceDifference !== 0) return distanceDifference
-
-  return left.queueOrder - right.queueOrder
+  const difference = left.distance - right.distance
+  return difference !== 0 ? difference : left.queueOrder - right.queueOrder
 }
 
 class SearchLabelQueue<TState, TStateKey, TOwner, THopData> {
-  private readonly heap: Array<
+  // Owner cardinality is an integer primary key. Separate distance heaps avoid
+  // comparing owner sets on every sift and keep the original stable ordering.
+  private readonly heaps: Array<Array<
     SearchLabel<TState, TStateKey, TOwner, THopData>
-  > = []
+  > | undefined> = []
+  private minimumOwnerCount = 0
 
   push(label: SearchLabel<TState, TStateKey, TOwner, THopData>): void {
-    this.heap.push(label)
-    let index = this.heap.length - 1
-
+    const ownerCount = label.owners.length
+    const heap = this.heaps[ownerCount] ?? (this.heaps[ownerCount] = [])
+    if (ownerCount < this.minimumOwnerCount) this.minimumOwnerCount = ownerCount
+    let index = heap.length
+    heap.push(label)
     while (index > 0) {
-      const parentIndex = Math.floor((index - 1) / 2)
-      if (compareLabels(this.heap[parentIndex]!, this.heap[index]!) <= 0) {
-        break
-      }
-      ;[this.heap[parentIndex], this.heap[index]] = [
-        this.heap[index]!,
-        this.heap[parentIndex]!,
-      ]
+      const parentIndex = (index - 1) >> 1
+      const parent = heap[parentIndex]!
+      if (compareLabelDistances(parent, label) <= 0) break
+      heap[index] = parent
       index = parentIndex
     }
+    heap[index] = label
   }
 
   pop(): SearchLabel<TState, TStateKey, TOwner, THopData> | null {
-    const first = this.heap[0]
-    const last = this.heap.pop()
-    if (!first || !last) return null
-    if (this.heap.length === 0) return first
-
-    this.heap[0] = last
+    while (this.minimumOwnerCount < this.heaps.length &&
+      !this.heaps[this.minimumOwnerCount]?.length) this.minimumOwnerCount++
+    const heap = this.heaps[this.minimumOwnerCount]
+    if (!heap?.length) return null
+    const first = heap[0]!
+    const last = heap.pop()!
+    const length = heap.length
+    if (length === 0) return first
     let index = 0
     while (true) {
       const leftIndex = index * 2 + 1
+      if (leftIndex >= length) break
       const rightIndex = leftIndex + 1
-      let bestIndex = index
-      if (
-        leftIndex < this.heap.length &&
-        compareLabels(this.heap[leftIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = leftIndex
-      }
-      if (
-        rightIndex < this.heap.length &&
-        compareLabels(this.heap[rightIndex]!, this.heap[bestIndex]!) < 0
-      ) {
-        bestIndex = rightIndex
-      }
-      if (bestIndex === index) break
-      ;[this.heap[index], this.heap[bestIndex]] = [
-        this.heap[bestIndex]!,
-        this.heap[index]!,
-      ]
-      index = bestIndex
+      const childIndex = rightIndex < length &&
+        compareLabelDistances(heap[rightIndex]!, heap[leftIndex]!) < 0
+          ? rightIndex : leftIndex
+      const child = heap[childIndex]!
+      if (compareLabelDistances(last, child) <= 0) break
+      heap[index] = child
+      index = childIndex
     }
-
+    heap[index] = last
     return first
   }
 }
 
 const isOwnerSubset = <TOwner>(
-  possibleSubset: ReadonlySet<TOwner>,
-  possibleSuperset: ReadonlySet<TOwner>,
+  possibleSubset: readonly TOwner[],
+  possibleSuperset: readonly TOwner[],
 ): boolean => {
-  if (possibleSubset.size > possibleSuperset.size) return false
+  if (possibleSubset.length > possibleSuperset.length) return false
   for (const owner of possibleSubset) {
-    if (!possibleSuperset.has(owner)) return false
+    if (!possibleSuperset.includes(owner)) return false
   }
 
   return true
 }
 
 const isOwnerSubsetOfUnion = <TOwner>(
-  subset: ReadonlySet<TOwner>,
-  existing: ReadonlySet<TOwner>,
+  subset: readonly TOwner[],
+  existing: readonly TOwner[],
   added: readonly TOwner[],
 ): boolean => {
   if (subset === existing) return true
-  if (subset.size > existing.size + added.length) return false
+  if (subset.length > existing.length + added.length) return false
   for (const owner of subset) {
-    if (!existing.has(owner) && !added.includes(owner)) return false
+    if (!existing.includes(owner) && !added.includes(owner)) return false
   }
   return true
 }
@@ -278,7 +267,7 @@ export const findDistinctOwnerBlockerPath = <
   const startLabel: SearchLabel<TState, TStateKey, TOwner, THopData> = {
     state: options.start,
     stateKey: options.getStateKey(options.start),
-    owners: new Set<TOwner>(),
+    owners: [],
     distance: 0,
     parent: null,
     incomingHop: null,
@@ -301,7 +290,7 @@ export const findDistinctOwnerBlockerPath = <
     }
     expandedLabelCount++
 
-    for (const hop of options.getHops(current.state)) {
+    for (const hop of options.getHops(current.state, current)) {
       if (!Number.isFinite(hop.distance) || hop.distance < 0) {
         throw new Error(
           "Distinct-owner blocker hops require finite distances >= 0",
@@ -334,9 +323,9 @@ export const findDistinctOwnerBlockerPath = <
       // hops encounter no new owner, so share the set until it changes.
       let owners = current.owners
       for (const owner of addedOwners) {
-        if (owners.has(owner)) continue
-        if (owners === current.owners) owners = new Set(current.owners)
-        owners.add(owner)
+        if (owners.includes(owner)) continue
+        if (owners === current.owners) owners = [...current.owners]
+        owners.push(owner)
       }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,

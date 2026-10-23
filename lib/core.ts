@@ -1030,6 +1030,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): void {
     const { problem, topology, state } = this
     const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
+    const cache = state.regionIntersectionCaches[currentCandidate.nextRegionId]
+    let uniformCost = this.computeG === TinyHyperGraphSolver.prototype.computeG &&
+      this.computeRegionCostForRegion ===
+        TinyHyperGraphSolver.prototype.computeRegionCostForRegion
+    if (uniformCost) {
+      for (const netId of cache.netIds) {
+        if (netId !== state.currentRouteNetId) {
+          uniformCost = false
+          break
+        }
+      }
+    }
+    const uniformCosts: Array<number | undefined> = []
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
     while (neighborIndex !== -1) {
@@ -1054,13 +1067,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
         nextRegionId = nextRegionIds[currentNeighborIndex]!
         candidateHopId = hopIds[currentNeighborIndex]!
       } else {
-        if (problem.portSectionMask[neighborPortId] === 0) continue
+        if (problem.portSectionMask[neighborPortId] === 0) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
         const nextRegion =
           topology.incidentPortRegion[neighborPortId][0] ===
           currentCandidate.nextRegionId
             ? topology.incidentPortRegion[neighborPortId][1]
             : topology.incidentPortRegion[neighborPortId][0]
-        if (nextRegion === undefined) continue
+        if (nextRegion === undefined) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionId = nextRegion
         candidateHopId = this.getHopId(neighborPortId, nextRegionId)
       }
@@ -1078,11 +1101,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
       if (!prepared[currentNeighborIndex]) {
         const assignedNetId = state.portAssignment[neighborPortId]
-        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (this.isPortReservedForDifferentNet(neighborPortId)) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
           continue
         }
-        if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
+        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
+        if (this.isRegionReservedForDifferentNet(nextRegionId)) {
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionIds[currentNeighborIndex] = nextRegionId
         hopIds[currentNeighborIndex] = candidateHopId
         prepared[currentNeighborIndex] = 1
@@ -1106,12 +1142,36 @@ export class TinyHyperGraphSolver extends BaseSolver {
         lowerBoundCost += knownSegmentDistance * this.DISTANCE_TO_COST
       }
       if (lowerBoundCost >= previousBestCost) continue
-      const g = this.computeG(
-        currentCandidate,
-        neighborPortId,
-        previousBestCost,
-        knownSegmentDistance,
-      )
+      let g: number
+      if (uniformCost) {
+        // With no foreign-net segments, every candidate has zero new
+        // intersections. Its only variable region cost is a layer change.
+        const entryExit = topology.portZ[currentCandidate.portId] ===
+          topology.portZ[neighborPortId] ? 0 : 1
+        let regionCost = uniformCosts[entryExit]
+        if (regionCost === undefined) {
+          regionCost = this.computeRegionCostForRegion(
+            currentCandidate.nextRegionId,
+            cache.existingSameLayerIntersections,
+            cache.existingCrossingLayerIntersections,
+            cache.existingEntryExitLayerChanges + entryExit,
+            cache.existingSegmentCount + 1,
+          ) - cache.existingRegionCost
+          uniformCosts[entryExit] = regionCost
+        }
+        g = currentCandidate.g + regionCost +
+          state.regionCongestionCost[currentCandidate.nextRegionId]! +
+          (problem.portPenalty?.[neighborPortId] ?? 0) +
+          (knownSegmentDistance === undefined ? 0 :
+            knownSegmentDistance * this.DISTANCE_TO_COST)
+      } else {
+        g = this.computeG(
+          currentCandidate,
+          neighborPortId,
+          previousBestCost,
+          knownSegmentDistance,
+        )
+      }
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       const h = this.computeH(neighborPortId)
 

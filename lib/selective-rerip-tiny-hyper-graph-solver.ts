@@ -395,16 +395,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
     const hopsByState = new Map<number, RelaxedSearchHop[]>()
+    const originsByRegion = new Map<RegionId, Array<{
+      portId: PortId
+      distance: number
+      owners: readonly RouteId[]
+    }>>()
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): RelaxedSearchHop[] => {
+      getHops: (state, label): RelaxedSearchHop[] => {
         const key = this.getHopId(state.portId, state.nextRegionId)
-        const cached = hopsByState.get(key)
-        if (cached) return cached
-        const hops = this.getRelaxedSearchHops({
+        let hops = hopsByState.get(key)
+        if (!hops) {
+          hops = this.getRelaxedSearchHops({
           state,
           goalPortId,
           routeNetId,
@@ -412,8 +417,34 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           portResources,
           hopTemplatesByRegion,
           forbiddenOwnerRouteIds,
-        })
-        hopsByState.set(key, hops)
+          })
+          hopsByState.set(key, hops)
+        }
+        if (label && !this.isKnownSingleLayerRegion(state.nextRegionId)) {
+          const origins = originsByRegion.get(state.nextRegionId) ?? []
+          const x = this.topology.portX[state.portId]
+          const y = this.topology.portY[state.portId]
+          for (const origin of origins) {
+            if (origin.owners.length > label.owners.length ||
+              !origin.owners.every((owner) => label.owners.includes(owner))) continue
+            const viaOrigin = origin.distance + Math.hypot(
+              this.topology.portX[origin.portId] - x,
+              this.topology.portY[origin.portId] - y,
+            )
+            const margin = Math.max(1, Math.abs(viaOrigin), Math.abs(label.distance)) * 1e-12
+            if (viaOrigin + margin < label.distance) {
+              // Multilayer blocker resources depend only on the destination.
+              // All other exits were already offered by the cheaper origin;
+              // preserve its own port, which that expansion skipped.
+              return hops.filter((hop) => hop.state.portId === origin.portId)
+            }
+          }
+          // Bound the acceleration index; discarded entries only lose reuse.
+          if (origins.length < 32) {
+            origins.push({portId: state.portId, distance: label.distance, owners: label.owners})
+            originsByRegion.set(state.nextRegionId, origins)
+          }
+        }
         return hops
       },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
