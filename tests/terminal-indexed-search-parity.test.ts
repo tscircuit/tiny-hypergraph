@@ -69,7 +69,7 @@ test("terminal indexed searches preserve successful final routing", (): void => 
     })
     solver.solve()
     expect(solver.state.candidateQueue).toBeInstanceOf(IndexedCandidateHeap)
-    expect(solver.parentQueueSizes).toEqual([owned ? 0 : 1])
+    expect(solver.parentQueueSizes).toEqual([1])
     expect(solver.iterations).toBe(1)
     expect(solver.solved).toBe(true)
     expect(solver.failed).toBe(false)

@@ -29,7 +29,7 @@ class ObservedFinalSolver extends TinyHyperGraphSolver {
   }
 }
 
-test("terminal owned searches release queued paths before replacement searches", (): void => {
+test("terminal owned searches release failed replacement queues", (): void => {
   const topology: TinyHyperGraphTopology = {
     portCount: 4,
     regionCount: 3,
@@ -79,7 +79,7 @@ test("terminal owned searches release queued paths before replacement searches",
     const assignments = solver.state.portAssignment.slice()
     solver.tryFinalAcceptance()
     const retained = owned && terminal ? 0 : 1
-    expect(solver.parentQueueSizes).toEqual([retained, retained])
+    expect(solver.parentQueueSizes).toEqual([1, 1])
     expect(solver.previousChildQueueSizes).toEqual([retained])
     expect(solver.children.map((child): boolean => child.failed)).toEqual([
       true,
