@@ -266,7 +266,8 @@ export interface TinyHyperGraphSolverOptions {
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   /**
-   * Retain ordered regional occurrences after observing their native hop closed.
+   * Retire regional occurrences after observing closed hops or fixed metadata
+   * that excludes them from this search epoch.
    * The caller owns ordinary topology/problem/state and plain native queued
    * candidates for the entire queue epoch. Key mappings and metadata remain
    * fixed between steps, and IndexedCandidateHeap methods retain their standard
@@ -1026,6 +1027,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { neighbors, next, nextRegionIds, hopIds } = frontier
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
+    // Retire fixed exclusions only at their original check position. Live
+    // occupancy still runs on every visit; no metadata is read ahead of goals,
+    // source checks, masks, or earlier errors.
     while (neighborIndex !== -1) {
       const currentNeighborIndex = neighborIndex
       neighborIndex = next[currentNeighborIndex]!
@@ -1042,7 +1046,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
       if (neighborPortId === currentCandidate.portId) continue
-      if (problem.portSectionMask[neighborPortId] === 0) continue
+      if (problem.portSectionMask[neighborPortId] === 0) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
+        continue
+      }
 
       let nextRegionId = nextRegionIds[currentNeighborIndex]!
       let candidateHopId = hopIds[currentNeighborIndex]!
@@ -1057,6 +1066,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
             : topology.incidentPortRegion[neighborPortId][0]
         if (regionId === undefined) {
           nextRegionIds[currentNeighborIndex] = -1
+          if (previousIndex === -1) frontier.head = neighborIndex
+          else next[previousIndex] = neighborIndex
+          previousNeighborIndex = previousIndex
           continue
         }
         nextRegionId = regionId
@@ -1089,11 +1101,21 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
       const assignedNetId = state.portAssignment[neighborPortId]
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (this.isPortReservedForDifferentNet(neighborPortId)) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
+        continue
+      }
       if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
         continue
       }
-      if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
+      if (this.isRegionReservedForDifferentNet(nextRegionId)) {
+        if (previousIndex === -1) frontier.head = neighborIndex
+        else next[previousIndex] = neighborIndex
+        previousNeighborIndex = previousIndex
+        continue
+      }
       const previousBestCost = this.getCandidateBestCost(candidateHopId)
       if (currentCandidate.g >= previousBestCost) continue
       const lowerBoundWithoutDistance =
