@@ -20,6 +20,90 @@ type SolverConstructor = new (
 
 class InheritedSolver extends SelectiveReripTinyHyperGraphSolver {}
 
+test("fixed metadata retirement preserves filter combinations and epoch resets", () => {
+  for (let filters = 0; filters < 32; filters++) {
+    for (const compact of [false, true]) {
+      for (const reversed of [false, true]) {
+        for (const transition of [
+          "clear",
+          "heap",
+          "goal",
+          "neighbors",
+          "route",
+          "net",
+        ]) {
+          const prepare = (owned: boolean) => {
+            const result = makeManual(owned, compact)
+            const { solver } = result
+            solver.topology.regionIncidentPorts[0] = reversed
+              ? [3, 2, 1, 2, 0, 1]
+              : [0, 1, 2, 2, 1, 3]
+            if (filters & 1) solver.problem.portSectionMask[2] = 0
+            if (filters & 2) solver.topology.incidentPortRegion[2] = [0]
+            if (filters & 4)
+              solver.problemSetup.portEndpointReservationNetId[2] = 9
+            if (filters & 8) solver.problem.regionNetId[1] = 9
+            if (filters & 16) solver.state.portAssignment[2] = 9
+            return result
+          }
+          const original = prepare(false)
+          const optimized = prepare(true)
+          for (let index = 0; index < 2; index++) {
+            expect(step(optimized.solver)).toEqual(step(original.solver))
+          }
+          // Occupancy remains live; only immutable filters retire occurrences.
+          expect(
+            remainingFrontierPorts(optimized.solver).filter(
+              (port) => port === 2,
+            ).length,
+          ).toBe(filters & 7 || (filters & 8 && !(filters & 16)) ? 0 : 2)
+          for (const { solver } of [original, optimized]) {
+            solver.problem.portSectionMask[2] = 1
+            solver.topology.incidentPortRegion[2] = [0, 1]
+            solver.problemSetup.portEndpointReservationNetId[2] = -1
+            solver.problem.regionNetId[1] = -1
+            solver.state.portAssignment[2] = -1
+            solver.resetCandidateBestCosts()
+            if (transition === "clear") solver.state.candidateQueue.clear()
+            if (transition === "heap")
+              solver.state.candidateQueue = makeHeap(solver.topology, compact)
+            if (transition === "goal") solver.state.goalPortId = 2
+            if (transition === "neighbors")
+              solver.topology.regionIncidentPorts[0] = [
+                ...solver.topology.regionIncidentPorts[0]!,
+              ]
+            if (transition === "route") solver.state.currentRouteId = 1
+            if (transition === "net") solver.state.currentRouteNetId = 8
+            seed(solver, 0, 0, 0, -100)
+          }
+          expect(
+            step(optimized.solver),
+            `${filters}/${compact}/${reversed}/${transition}`,
+          ).toEqual(step(original.solver))
+        }
+      }
+    }
+  }
+})
+
+test("fixed metadata retirement keeps occupancy live within the same epoch", () => {
+  for (const compact of [false, true]) {
+    const original = makeManual(false, compact)
+    const optimized = makeManual(true, compact)
+    for (const { solver } of [original, optimized])
+      solver.state.portAssignment[2] = 9
+    expect(step(optimized.solver)).toEqual(step(original.solver))
+    for (const { solver } of [original, optimized])
+      solver.state.portAssignment[2] = -1
+    expect(step(optimized.solver)).toEqual(step(original.solver))
+    expect(
+      optimized.solver.state.candidateQueue
+        .toArray()
+        .some((candidate) => candidate.portId === 2),
+    ).toBe(true)
+  }
+})
+
 const makeTopology = (): TinyHyperGraphTopology => ({
   portCount: 7,
   regionCount: 5,

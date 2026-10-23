@@ -33,6 +33,7 @@ type OutsideInCandidate = Candidate & {
 type OutsideInFrontier = {
   queue: MinHeap<OutsideInCandidate>
   bestCostByHopId: Map<number, number>
+  denseBestCosts?: Float64Array
   settledByPortId: Map<PortId, OutsideInCandidate>
   settledByRegionId: Map<RegionId, OutsideInCandidate[]>
   targetPortId: PortId
@@ -619,11 +620,27 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       travelDistance: 0,
     }
     queue.queue(root)
+    const startHopId = this.getHopId(startPortId, startRegionId)
+    // Native hops occupy the same bounded incident slots as one-ended search.
+    // Keep exceptional keys sparse, and cap each frontier at 4 MiB.
+    const denseBestCosts =
+      !this.USE_SPARSE_CANDIDATE_STORAGE &&
+      Number.isSafeInteger(this.candidateHopCapacity) &&
+      this.candidateHopCapacity >= 0 &&
+      this.candidateHopCapacity <= 524_288
+        ? new Float64Array(this.candidateHopCapacity).fill(Infinity)
+        : undefined
+    if (
+      denseBestCosts &&
+      Number.isInteger(startHopId) &&
+      startHopId >= 0 &&
+      startHopId < denseBestCosts.length
+    )
+      denseBestCosts[startHopId] = 0
     return {
       queue,
-      bestCostByHopId: new Map([
-        [this.getHopId(startPortId, startRegionId), 0],
-      ]),
+      bestCostByHopId: new Map([[startHopId, 0]]),
+      denseBestCosts,
       settledByPortId: new Map(),
       settledByRegionId: new Map(),
       targetPortId,
@@ -667,7 +684,15 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     while (frontier.queue.length > 0) {
       const candidate = frontier.queue.dequeue()!
       const hopId = this.getHopId(candidate.portId, candidate.nextRegionId)
-      if (candidate.g <= (frontier.bestCostByHopId.get(hopId) ?? Infinity)) {
+      const denseCosts = frontier.denseBestCosts
+      const bestCost =
+        denseCosts &&
+        Number.isInteger(hopId) &&
+        hopId >= 0 &&
+        hopId < denseCosts.length
+          ? denseCosts[hopId]!
+          : (frontier.bestCostByHopId.get(hopId) ?? Infinity)
+      if (candidate.g <= bestCost) {
         return candidate
       }
     }
@@ -685,8 +710,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
     const settledInRegion =
       frontier.settledByRegionId.get(candidate.nextRegionId) ?? []
-    settledInRegion.push(candidate)
-    settledInRegion.sort((left, right) => left.g - right.g)
+    // The retained prefix is already sorted. Insert after equal costs to keep
+    // the native stable-sort tie order without sorting all sixteen entries.
+    let lower = 0
+    let upper = settledInRegion.length
+    while (lower < upper) {
+      const middle = (lower + upper) >>> 1
+      if (settledInRegion[middle]!.g <= candidate.g) lower = middle + 1
+      else upper = middle
+    }
+    settledInRegion.splice(lower, 0, candidate)
     if (settledInRegion.length > 16) settledInRegion.length = 16
     frontier.settledByRegionId.set(candidate.nextRegionId, settledInRegion)
   }
@@ -903,7 +936,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       }
 
       const hopId = this.getHopId(neighborPortId, nextRegionId)
-      const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
+      const denseCosts = frontier.denseBestCosts
+      const previousBestCost =
+        denseCosts &&
+        Number.isInteger(hopId) &&
+        hopId >= 0 &&
+        hopId < denseCosts.length
+          ? denseCosts[hopId]!
+          : (frontier.bestCostByHopId.get(hopId) ?? Infinity)
       if (candidate.g >= previousBestCost) continue
 
       const g = this.computeG(
@@ -913,7 +953,14 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         segmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      frontier.bestCostByHopId.set(hopId, g)
+      if (
+        denseCosts &&
+        Number.isInteger(hopId) &&
+        hopId >= 0 &&
+        hopId < denseCosts.length
+      )
+        denseCosts[hopId] = g
+      else frontier.bestCostByHopId.set(hopId, g)
       const heuristicDx =
         this.topology.portX[neighborPortId]! -
         this.topology.portX[frontier.targetPortId]!
