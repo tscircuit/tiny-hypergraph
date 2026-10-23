@@ -34,3 +34,25 @@ test("compact owner labels preserve stable paths, owner identity and expansion b
     )
   }
 })
+
+test("wide distance queues preserve ties across radix boundaries and owner classes", () => {
+  for (let trial = 0; trial < 24; trial++) {
+    const width = 320
+    const goal = width + 1
+    const distances = [0, Number.MIN_VALUE, 0.125, 1, 2, 2 ** 31, 2 ** 60]
+    const options = {
+      start: 0,
+      getStateKey: (state: number): number => state,
+      isGoal: (state: number): boolean => state === goal,
+      getHops: (state: number) => state === 0
+        ? Array.from({ length: width }, (_, index) => ({
+          state: index + 1,
+          distance: distances[(index * 17 + trial) % distances.length]!,
+          owners: trial % 2 ? [index % 3] : [],
+        }))
+        : [{ state: goal, distance: distances[(state + trial) % distances.length]!, owners: [trial % 3] }],
+      maxExpandedLabels: trial % 3 === 0 ? width / 2 : width * 4,
+    }
+    expect(findDistinctOwnerBlockerPath(options)).toEqual(referenceSearch(options))
+  }
+})

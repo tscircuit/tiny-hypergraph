@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { gunzipSync } from "node:zlib"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 import type {
@@ -35,12 +35,9 @@ const argument = (flag: string): string | undefined => {
   const index = process.argv.indexOf(flag)
   return index < 0 ? undefined : process.argv[index + 1]
 }
-const inputPath = argument("--input")
-if (!inputPath) {
-  throw new Error(
-    "Pass --input captured-port-pathing.json and optionally --reference /path/to/tiny-hypergraph --repeat 2",
-  )
-}
+const inputPath = argument("--input") ?? fileURLToPath(
+  new URL("../../tests/fixtures/srj18-sample014-native.json.gz", import.meta.url),
+)
 const repeat = Number(argument("--repeat") ?? 2)
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("Invalid --repeat")
 const source = inputPath.endsWith(".gz")
