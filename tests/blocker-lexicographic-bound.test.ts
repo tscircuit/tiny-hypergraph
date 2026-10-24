@@ -24,10 +24,12 @@ function exhaustiveObjective(graph: Graph): Label | undefined {
   while (queue.length > 0) {
     queue.sort(
       (a, b): number =>
-        getOwnerCount(a.mask) - getOwnerCount(b.mask) || a.distance - b.distance,
+        getOwnerCount(a.mask) - getOwnerCount(b.mask) ||
+        a.distance - b.distance,
     )
     const current = queue.shift()!
-    if (current.distance !== best.get(`${current.state}:${current.mask}`)) continue
+    if (current.distance !== best.get(`${current.state}:${current.mask}`))
+      continue
     if (current.state === graph.length - 1) return current
     for (const edge of graph[current.state]!) {
       let mask = current.mask
@@ -86,9 +88,9 @@ function checkGraph(options: { graph: Graph; remaining: number[] }): void {
     expect(result.found).toBe(objective !== undefined)
     if (result.found && objective) {
       expect(result.owners.size).toBe(getOwnerCount(objective.mask))
-      expect(Math.abs(result.distance - objective.distance)).toBeLessThanOrEqual(
-        1e-10 * Math.max(1, objective.distance),
-      )
+      expect(
+        Math.abs(result.distance - objective.distance),
+      ).toBeLessThanOrEqual(1e-10 * Math.max(1, objective.distance))
       expect(
         result.hops.reduce(
           (distance, edge): number => distance + edge.distance,

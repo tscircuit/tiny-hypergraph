@@ -24,7 +24,10 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
     getRemainingDistance: (): number => 0,
   }
   for (const checkReachability of [false, true]) {
-    const result = findDistinctOwnerBlockerPath({ ...options, checkReachability })
+    const result = findDistinctOwnerBlockerPath({
+      ...options,
+      checkReachability,
+    })
     expect(result.found).toBe(true)
     if (result.found) {
       expect(result.owners.size).toBe(0)
@@ -99,7 +102,9 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
     findDistinctOwnerBlockerPath({
       ...options,
       checkOwnerFreeReachability: false,
-      getHops: (): Hop[] => [{ state: 1, distance: Number.MAX_VALUE, owners: [] }],
+      getHops: (): Hop[] => [
+        { state: 1, distance: Number.MAX_VALUE, owners: [] },
+      ],
       getRemainingDistance: (state): number =>
         state === 0 ? 0 : Number.MAX_VALUE,
     }),

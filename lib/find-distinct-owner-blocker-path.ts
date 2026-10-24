@@ -88,7 +88,8 @@ const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.priorityOwnerCount - right.priorityOwnerCount
+  const ownerCountDifference =
+    left.priorityOwnerCount - right.priorityOwnerCount
   if (ownerCountDifference !== 0) return ownerCountDifference
 
   const distanceDifference =
@@ -495,7 +496,9 @@ export const findDistinctOwnerBlockerPath = <
         remainingDistance < 0 ||
         !Number.isFinite(estimatedTotalDistance)
       ) {
-        throw new Error("Distinct-owner blocker estimates must be finite and >= 0")
+        throw new Error(
+          "Distinct-owner blocker estimates must be finite and >= 0",
+        )
       }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,

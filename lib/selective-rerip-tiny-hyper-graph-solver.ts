@@ -466,10 +466,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         : undefined,
       // Proof traversal retains states, so its temporary hop record can be reused.
       forEachReachabilityHop: (state, visit): void => {
-        this.forEachRelaxedReachabilityHop(
-          { ...hopContext, state },
-          visit,
-        )
+        this.forEachRelaxedReachabilityHop({ ...hopContext, state }, visit)
       },
       getRemainingDistance: boundedReachabilityGeometry
         ? ({ portId }): number => {
@@ -481,7 +478,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
             const margin =
               256 *
               Number.EPSILON *
-              Math.max(1, Math.abs(x), Math.abs(y), Math.abs(goalX), Math.abs(goalY))
+              Math.max(
+                1,
+                Math.abs(x),
+                Math.abs(y),
+                Math.abs(goalX),
+                Math.abs(goalY),
+              )
             const remainingDistance = Math.max(
               0,
               Math.hypot(x - goalX, y - goalY) - margin,

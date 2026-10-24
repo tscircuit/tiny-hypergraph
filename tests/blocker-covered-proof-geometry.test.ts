@@ -15,7 +15,14 @@ function createFixture(): Fixture {
     portCount: 6,
     regionCount: 7,
     regionIncidentPorts: [[0, 1, 2, 3], [0], [1, 4], [2], [3, 5], [4], [5]],
-    incidentPortRegion: [[0, 1], [0, 2], [0, 3], [0, 4], [2, 5], [4, 6]],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [0, 4],
+      [2, 5],
+      [4, 6],
+    ],
     regionWidth: new Float64Array(7).fill(1),
     regionHeight: new Float64Array(7).fill(1),
     regionCenterX: new Float64Array(7),
@@ -106,10 +113,12 @@ test("covered proofs retain native validation outside bounded referenced geometr
   for (const geometry of cases) {
     const fixture = createFixture()
     geometry.change(fixture)
-    expect(fixture.solver["hasBoundedReachabilityGeometry"]({
-      startPortId: 0,
-      goalPortId: fixture.problem.routeEndPort[0]!,
-    })).toBe(geometry.eligible)
+    expect(
+      fixture.solver["hasBoundedReachabilityGeometry"]({
+        startPortId: 0,
+        goalPortId: fixture.problem.routeEndPort[0]!,
+      }),
+    ).toBe(geometry.eligible)
     const covered = searchOutcome(fixture.solver)
     fixture.solver["hasBoundedReachabilityGeometry"] = (): boolean => false
     expect(searchOutcome(fixture.solver)).toEqual(covered)

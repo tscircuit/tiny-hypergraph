@@ -8,7 +8,11 @@ type OwnerId = number
 type Hop = { state: StateId; distance: number; owners: OwnerId[] }
 
 test("two arrivals preserve owner-free classifications, directed states and every budget", (): void => {
-  const regionPairs: RegionId[][] = [[0, 1], [0, 2], [1, 2]]
+  const regionPairs: RegionId[][] = [
+    [0, 1],
+    [0, 2],
+    [1, 2],
+  ]
   for (let topologyCode = 0; topologyCode < 81; topologyCode++) {
     let remainingCode = topologyCode
     const incidentRegions: RegionId[][] = []
@@ -30,25 +34,40 @@ test("two arrivals preserve owner-free classifications, directed states and ever
                 const region = Math.floor(state / 4)
                 const hops: Hop[] = []
                 for (let port: PortId = 0; port < 4; port++) {
-                  if (port === from || !incidentRegions[port]!.includes(region)) continue
+                  if (port === from || !incidentRegions[port]!.includes(region))
+                    continue
                   const owner = singleLayerRegions.has(region)
                     ? (from + port) % 2
                     : port % 2
                   const owners = ownerMask & (1 << port) ? [owner] : []
                   if (owners.includes(forbiddenOwner)) continue
-                  const nextRegion = port === 3
-                    ? region
-                    : incidentRegions[port]!.find((next): boolean => next !== region)!
-                  hops.push({ state: nextRegion * 4 + port, distance: 1 + port / 4, owners })
+                  const nextRegion =
+                    port === 3
+                      ? region
+                      : incidentRegions[port]!.find(
+                          (next): boolean => next !== region,
+                        )!
+                  hops.push({
+                    state: nextRegion * 4 + port,
+                    distance: 1 + port / 4,
+                    owners,
+                  })
                 }
                 return hops
               },
               checkReachability: proofMode !== "owner_free",
               checkOwnerFreeReachability: proofMode !== "general",
             }
-            for (let maxExpandedLabels = 0; maxExpandedLabels <= 10; maxExpandedLabels++) {
+            for (
+              let maxExpandedLabels = 0;
+              maxExpandedLabels <= 10;
+              maxExpandedLabels++
+            ) {
               const expandedByRegion = new Map<RegionId, 1 | 2>()
-              const original = findDistinctOwnerBlockerPath({ ...options, maxExpandedLabels })
+              const original = findDistinctOwnerBlockerPath({
+                ...options,
+                maxExpandedLabels,
+              })
               const coveredOptions = {
                 ...options,
                 maxExpandedLabels,

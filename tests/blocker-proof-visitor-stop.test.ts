@@ -23,53 +23,75 @@ test("proof visitors stop on invalid distances and propagate callback failures",
         *getHops(state: NodeId): Generator<Hop> {
           try {
             for (const hop of graph[state]!) yield hop
-            if (state === invalidState) throw new Error("Read after invalid hop")
+            if (state === invalidState)
+              throw new Error("Read after invalid hop")
           } finally {
             closed.push(state)
           }
         },
         checkReachability: true,
         checkOwnerFreeReachability: true,
-        ...(customProvider ? {
-          forEachReachabilityHop(state: NodeId, visit: HopVisitor): void {
-            visited.push(state)
-            for (const hop of graph[state]!) {
-              if (!visit({ ...hop })) return
+        ...(customProvider
+          ? {
+              forEachReachabilityHop(state: NodeId, visit: HopVisitor): void {
+                visited.push(state)
+                for (const hop of graph[state]!) {
+                  if (!visit({ ...hop })) return
+                }
+                if (state === invalidState)
+                  throw new Error("Ignored stop request")
+              },
             }
-            if (state === invalidState) throw new Error("Ignored stop request")
-          },
-        } : {}),
+          : {}),
       }
       expect(() => findDistinctOwnerBlockerPath(options)).toThrow(
         "Distinct-owner blocker hops require finite distances >= 0",
       )
-      expect(closed).toEqual(customProvider
-        ? Array.from({ length: invalidState + 1 }, (_, index): NodeId => index)
-        : [
-          ...Array.from({ length: invalidState + 1 }, (_, index): NodeId => index),
-          ...Array.from({ length: invalidState + 1 }, (_, index): NodeId => index),
-        ])
-      expect(visited).toEqual(customProvider
-        ? Array.from({ length: invalidState + 1 }, (_, index): NodeId => index)
-        : [])
+      expect(closed).toEqual(
+        customProvider
+          ? Array.from(
+              { length: invalidState + 1 },
+              (_, index): NodeId => index,
+            )
+          : [
+              ...Array.from(
+                { length: invalidState + 1 },
+                (_, index): NodeId => index,
+              ),
+              ...Array.from(
+                { length: invalidState + 1 },
+                (_, index): NodeId => index,
+              ),
+            ],
+      )
+      expect(visited).toEqual(
+        customProvider
+          ? Array.from(
+              { length: invalidState + 1 },
+              (_, index): NodeId => index,
+            )
+          : [],
+      )
     }
   }
 
   const callbackError = new Error("State key failed")
   let returnedFromVisit = false
-  expect(() => findDistinctOwnerBlockerPath({
-    start: 0,
-    getStateKey: (state: NodeId): NodeId => {
-      if (state === 1) throw callbackError
-      return state
-    },
-    isGoal: (): boolean => false,
-    getHops: (): Hop[] => [],
-    checkOwnerFreeReachability: true,
-    forEachReachabilityHop(_state: NodeId, visit: HopVisitor): void {
-      visit({ state: 1, distance: 1, owners: [] })
-      returnedFromVisit = true
-    },
-  })).toThrow(callbackError)
+  expect(() =>
+    findDistinctOwnerBlockerPath({
+      start: 0,
+      getStateKey: (state: NodeId): NodeId => {
+        if (state === 1) throw callbackError
+        return state
+      },
+      isGoal: (): boolean => false,
+      getHops: (): Hop[] => [],
+      checkOwnerFreeReachability: true,
+      forEachReachabilityHop(_state: NodeId, visit: HopVisitor): void {
+        visit({ state: 1, distance: 1, owners: [] })
+        returnedFromVisit = true
+      },
+    }),
+  ).toThrow(callbackError)
   expect(returnedFromVisit).toBe(false)
 })

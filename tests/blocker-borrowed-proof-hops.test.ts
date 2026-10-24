@@ -20,7 +20,14 @@ test("borrowed proof hops preserve queued states and independent traversals", ()
     portCount: 6,
     regionCount: 7,
     regionIncidentPorts: [[0, 1, 2, 3], [0], [1, 4], [2], [3, 5], [4], [5]],
-    incidentPortRegion: [[0, 1], [0, 2], [0, 3], [0, 4], [2, 5], [4, 6]],
+    incidentPortRegion: [
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [0, 4],
+      [2, 5],
+      [4, 6],
+    ],
     regionWidth: new Float64Array(7).fill(1),
     regionHeight: new Float64Array(7).fill(1),
     regionCenterX: new Float64Array(7),
@@ -68,7 +75,9 @@ test("borrowed proof hops preserve queued states and independent traversals", ()
     return true
   })
   expect(proofSnapshots).toEqual(weighted)
-  expect(proofSnapshots.map((hop): PortId => hop.state.portId)).toEqual([1, 2, 3])
+  expect(proofSnapshots.map((hop): PortId => hop.state.portId)).toEqual([
+    1, 2, 3,
+  ])
   expect(new Set(borrowedRecords).size).toBe(1)
   expect(new Set(weighted).size).toBe(3)
   expect(weighted).toEqual(proofSnapshots)
@@ -99,8 +108,12 @@ test("borrowed proof hops preserve queued states and independent traversals", ()
   })
   expect(new Set(leftRecords).size).toBe(1)
   expect(new Set(rightRecords).size).toBe(1)
-  expect(queuedLeftStates.map((state): PortId => state.portId)).toEqual([1, 2, 3])
-  expect(queuedRightStates.map((state): PortId => state.portId)).toEqual([0, 1, 2])
+  expect(queuedLeftStates.map((state): PortId => state.portId)).toEqual([
+    1, 2, 3,
+  ])
+  expect(queuedRightStates.map((state): PortId => state.portId)).toEqual([
+    0, 1, 2,
+  ])
   const stoppedPorts: PortId[] = []
   solver["forEachRelaxedReachabilityHop"](context, (hop): boolean => {
     stoppedPorts.push(hop.state.portId)

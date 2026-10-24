@@ -32,7 +32,10 @@ test("reachability providers keep the same method receiver as weighted hop callb
   }
   for (const fixture of [options, separateProvider]) {
     for (const checkReachability of [false, true]) {
-      const result = findDistinctOwnerBlockerPath({ ...fixture, checkReachability })
+      const result = findDistinctOwnerBlockerPath({
+        ...fixture,
+        checkReachability,
+      })
       expect(result.found).toBe(true)
       if (result.found) {
         expect(result.distance).toBe(2)
