@@ -10,7 +10,7 @@ import {
   findDistinctOwnerBlockerPath,
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
-import type { PortId, RegionId, RouteId } from "./types"
+import type { HopId, PortId, RegionId, RouteId } from "./types"
 
 type RelaxedSearchState = {
   portId: PortId
@@ -44,6 +44,24 @@ type RelaxedSearchHop = {
   distance: number
   owners: RouteId[]
   data: RelaxedSearchHopData
+}
+
+type ReachabilityHopVisitor = (hop: RelaxedSearchHop) => boolean
+
+type ReachabilityTerminals = {
+  startPortId: PortId
+  goalPortId: PortId
+}
+
+type RelaxedSearchHopOptions = {
+  state: RelaxedSearchState
+  goalPortId: PortId
+  routeNetId: number
+  portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+  portResources: Map<PortId, PortBlockerResource>
+  forbiddenOwnerRouteIds: ReadonlySet<RouteId>
+  hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
+  buildRegionTemplates?: boolean
 }
 
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
@@ -390,11 +408,27 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    const boundedReachabilityGeometry = this.hasBoundedReachabilityGeometry({
+      startPortId,
+      goalPortId,
+    })
+    const proofExpansionsByRegion = new Map<RegionId, 1 | 2>()
     const portResources = new Map<PortId, PortBlockerResource>()
     const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
-    const hopsByState = new Map<number, RelaxedSearchHop[]>()
+    const hopsByState = new Map<HopId, RelaxedSearchHop[]>()
+    const remainingDistanceByPort = new Map<PortId, number>()
+    const goalX = this.topology.portX[goalPortId]!
+    const goalY = this.topology.portY[goalPortId]!
+    const hopContext = {
+      goalPortId,
+      routeNetId,
+      portOwners,
+      portResources,
+      hopTemplatesByRegion,
+      forbiddenOwnerRouteIds,
+    }
     return findDistinctOwnerBlockerPath({
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
@@ -405,19 +439,57 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         const cached = hopsByState.get(key)
         if (cached) return cached
         const hops = this.getRelaxedSearchHops({
+          ...hopContext,
           state,
-          goalPortId,
-          routeNetId,
-          portOwners,
-          portResources,
-          hopTemplatesByRegion,
-          forbiddenOwnerRouteIds,
         })
         hopsByState.set(key, hops)
         return hops
       },
       maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
       checkReachability: true,
+      checkOwnerFreeReachability: boundedReachabilityGeometry,
+      // Multilayer exits depend only on their destination. Two distinct incoming
+      // ports cover every exit, including each other's excluded incoming port.
+      // The proof exhausts owner-free states before processing owned states, so
+      // a skipped exit already has an equal or better reachability classification.
+      shouldExpandReachabilityState: boundedReachabilityGeometry
+        ? ({ nextRegionId }): boolean => {
+            if (this.isKnownSingleLayerRegion(nextRegionId)) return true
+            const count = proofExpansionsByRegion.get(nextRegionId)
+            if (count === 2) return false
+            proofExpansionsByRegion.set(
+              nextRegionId,
+              count === undefined ? 1 : 2,
+            )
+            return true
+          }
+        : undefined,
+      // Proof traversal retains states, so its temporary hop record can be reused.
+      forEachReachabilityHop: (state, visit): void => {
+        this.forEachRelaxedReachabilityHop(
+          { ...hopContext, state },
+          visit,
+        )
+      },
+      getRemainingDistance: boundedReachabilityGeometry
+        ? ({ portId }): number => {
+            const cached = remainingDistanceByPort.get(portId)
+            if (cached !== undefined) return cached
+            const x = this.topology.portX[portId]!
+            const y = this.topology.portY[portId]!
+            // Leave a coordinate-scale margin for floating point rounding.
+            const margin =
+              256 *
+              Number.EPSILON *
+              Math.max(1, Math.abs(x), Math.abs(y), Math.abs(goalX), Math.abs(goalY))
+            const remainingDistance = Math.max(
+              0,
+              Math.hypot(x - goalX, y - goalY) - margin,
+            )
+            remainingDistanceByPort.set(portId, remainingDistance)
+            return remainingDistance
+          }
+        : undefined,
     })
   }
 
@@ -460,16 +532,96 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return Math.max(4096, incidentHopCount * ownerScale * 4)
   }
 
-  private getRelaxedSearchHops(params: {
-    state: RelaxedSearchState
-    goalPortId: PortId
-    routeNetId: number
-    portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
-    portResources: Map<PortId, PortBlockerResource>
-    forbiddenOwnerRouteIds: ReadonlySet<RouteId>
-    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
-    buildRegionTemplates?: boolean
-  }): RelaxedSearchHop[] {
+  private hasBoundedReachabilityGeometry({
+    startPortId,
+    goalPortId,
+  }: ReachabilityTerminals): boolean {
+    const { portCount, portX, portY, regionIncidentPorts } = this.topology
+    if (
+      !Number.isInteger(portCount) ||
+      portCount < 0 ||
+      portX.length !== portCount ||
+      portY.length !== portCount ||
+      !Number.isInteger(startPortId) ||
+      startPortId < 0 ||
+      startPortId >= portCount ||
+      !Number.isInteger(goalPortId) ||
+      goalPortId < 0 ||
+      goalPortId >= portCount
+    ) {
+      return false
+    }
+    // Even the complete logical port cliques cannot overflow a distance sum in
+    // this domain. Check all referenced indices before omitting any edge checks.
+    for (let portId = 0; portId < portCount; portId++) {
+      if (
+        !(Math.abs(portX[portId]!) <= Number.MAX_SAFE_INTEGER) ||
+        !(Math.abs(portY[portId]!) <= Number.MAX_SAFE_INTEGER)
+      ) {
+        return false
+      }
+    }
+    for (const ports of regionIncidentPorts) {
+      if (!ports) return false
+      for (const portId of ports) {
+        if (!Number.isInteger(portId) || portId < 0 || portId >= portCount) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  private getRelaxedSearchHopTemplates(
+    params: RelaxedSearchHopOptions,
+  ): RelaxedSearchHop[] {
+    let templates = params.hopTemplatesByRegion.get(params.state.nextRegionId)
+    if (!templates) {
+      templates = this.getRelaxedSearchHops({
+        ...params,
+        buildRegionTemplates: true,
+      })
+      params.hopTemplatesByRegion.set(params.state.nextRegionId, templates)
+    }
+    return templates
+  }
+
+  private forEachRelaxedReachabilityHop(
+    params: RelaxedSearchHopOptions,
+    visit: ReachabilityHopVisitor,
+  ): void {
+    const { state } = params
+    if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return
+    if (this.isKnownSingleLayerRegion(state.nextRegionId)) {
+      for (const hop of this.getRelaxedSearchHops(params)) {
+        if (!visit(hop)) return
+      }
+      return
+    }
+    const templates = this.getRelaxedSearchHopTemplates(params)
+    const first = templates[0]
+    if (!first) return
+    // Only this wrapper is mutable. Queued states and shared resource metadata
+    // keep their original identities after the visitor returns.
+    const hop: RelaxedSearchHop = { ...first }
+    for (const template of templates) {
+      if (template.state.portId === state.portId) continue
+      hop.state = template.state
+      hop.owners = template.owners
+      hop.data = template.data
+      hop.distance = Math.hypot(
+        this.topology.portX[state.portId]! -
+          this.topology.portX[template.state.portId]!,
+        this.topology.portY[state.portId]! -
+          this.topology.portY[template.state.portId]!,
+      )
+      if (!visit(hop)) return
+    }
+  }
+
+  private getRelaxedSearchHops(
+    params: RelaxedSearchHopOptions,
+  ): RelaxedSearchHop[] {
     const { state, goalPortId, routeNetId } = params
     if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
     // In multilayer regions, reservations and blocker resources depend only
@@ -479,14 +631,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       !params.buildRegionTemplates &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
-      let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
-      if (!templates) {
-        templates = this.getRelaxedSearchHops({
-          ...params,
-          buildRegionTemplates: true,
-        })
-        params.hopTemplatesByRegion.set(state.nextRegionId, templates)
-      }
+      const templates = this.getRelaxedSearchHopTemplates(params)
       const hops: RelaxedSearchHop[] = []
       for (const template of templates) {
         if (template.state.portId === state.portId) continue

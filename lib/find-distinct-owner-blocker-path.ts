@@ -20,6 +20,24 @@ export type DistinctOwnerBlockerSearchOptions<
   maxExpandedLabels?: number
   /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
   checkReachability?: boolean
+  /** Prove whether every path needs an owner before ordering labels. Hops must be stable. */
+  checkOwnerFreeReachability?: boolean
+  /**
+   * Visit the same logical hops as getHops, in order, synchronously. Hop records
+   * may be borrowed for the duration of visit. Stop on false; never retain visit.
+   */
+  forEachReachabilityHop?: (
+    state: TState,
+    visit: (hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>) => boolean,
+  ) => void
+  /**
+   * Skip only when every successor was already discovered with equal or better
+   * owner-free reachability. Omitted distances must be finite, nonnegative and
+   * safe to sum. This callback does not change the traversal's expansion budget.
+   */
+  shouldExpandReachabilityState?: (state: TState) => boolean
+  /** An admissible, finite, non-negative lower bound; must be zero at goals. */
+  getRemainingDistance?: (state: TState) => number
 }
 
 export type DistinctOwnerBlockerSearchSuccess<
@@ -49,11 +67,17 @@ export type DistinctOwnerBlockerSearchResult<
   | DistinctOwnerBlockerSearchSuccess<TState, TOwner, THopData>
   | DistinctOwnerBlockerSearchFailure
 
+type BlockerReachability =
+  | { kind: "disconnected"; expandedStateCount: number }
+  | { kind: "reachable" | "incomplete"; minimumOwnerCount: 0 | 1 }
+
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
   owners: Set<TOwner>
+  priorityOwnerCount: number
   distance: number
+  estimatedTotalDistance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
   queueOrder: number
@@ -64,10 +88,11 @@ const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
+  const ownerCountDifference = left.priorityOwnerCount - right.priorityOwnerCount
   if (ownerCountDifference !== 0) return ownerCountDifference
 
-  const distanceDifference = left.distance - right.distance
+  const distanceDifference =
+    left.estimatedTotalDistance - right.estimatedTotalDistance
   if (distanceDifference !== 0) return distanceDifference
 
   return left.queueOrder - right.queueOrder
@@ -220,6 +245,7 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     // and its label budget when this traversal reaches the same work limit.
     if (expandedStateCount >= maxExpandedStates) return undefined
     expandedStateCount++
+    if (options.shouldExpandReachabilityState?.(state) === false) continue
 
     for (const hop of options.getHops(state)) {
       totalHopDistance += hop.distance
@@ -239,6 +265,107 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     reason: "no_path",
     expandedLabelCount: expandedStateCount,
   }
+}
+
+function inspectBlockerReachability<TState, TStateKey, TOwner, THopData>(
+  options: DistinctOwnerBlockerSearchOptions<
+    TState,
+    TStateKey,
+    TOwner,
+    THopData
+  >,
+  maxExpandedStates: number,
+): BlockerReachability {
+  const ownerFreeQueue = [options.start]
+  const ownedQueue: TState[] = []
+  // Upgrade boundary states reached later without an owner; skip their stale
+  // owned-queue entries instead of suppressing the owner-free path.
+  const ownerFreeByState = new Map<TStateKey, boolean>([
+    [options.getStateKey(options.start), true],
+  ])
+  let expandedStateCount = 0
+  let totalHopDistance = 0
+  let ownerFreePhase = true
+  let validHopDistances = true
+  const visitHop = (
+    hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>,
+  ): boolean => {
+    totalHopDistance += hop.distance
+    if (hop.distance < 0 || !Number.isFinite(totalHopDistance)) {
+      validHopDistances = false
+      return false
+    }
+    if (!ownerFreePhase) {
+      const stateKey = options.getStateKey(hop.state)
+      if (!ownerFreeByState.has(stateKey)) {
+        ownerFreeByState.set(stateKey, false)
+        ownedQueue.push(hop.state)
+      }
+      return true
+    }
+    let hasOwners = false
+    for (const _owner of hop.owners ?? []) {
+      hasOwners = true
+      break
+    }
+    const stateKey = options.getStateKey(hop.state)
+    if (hasOwners) {
+      if (!ownerFreeByState.has(stateKey)) {
+        ownerFreeByState.set(stateKey, false)
+        ownedQueue.push(hop.state)
+      }
+    } else if (ownerFreeByState.get(stateKey) !== true) {
+      ownerFreeByState.set(stateKey, true)
+      ownerFreeQueue.push(hop.state)
+    }
+    return true
+  }
+  const visitStateHops = (state: TState): void => {
+    if (options.forEachReachabilityHop) {
+      options.forEachReachabilityHop.call(options, state, visitHop)
+      return
+    }
+    for (const hop of options.getHops(state)) {
+      if (!visitHop(hop)) break
+    }
+  }
+  for (let index = 0; index < ownerFreeQueue.length; index++) {
+    const state = ownerFreeQueue[index]!
+    if (options.isGoal(state)) {
+      return { kind: "reachable", minimumOwnerCount: 0 }
+    }
+    if (expandedStateCount >= maxExpandedStates) {
+      return { kind: "incomplete", minimumOwnerCount: 0 }
+    }
+    expandedStateCount++
+    if (options.shouldExpandReachabilityState?.(state) === false) continue
+    visitStateHops(state)
+    if (!validHopDistances) {
+      return { kind: "incomplete", minimumOwnerCount: 0 }
+    }
+  }
+
+  if (!options.checkReachability) {
+    return { kind: "incomplete", minimumOwnerCount: 1 }
+  }
+  ownerFreePhase = false
+  for (let index = 0; index < ownedQueue.length; index++) {
+    const state = ownedQueue[index]!
+    if (ownerFreeByState.get(options.getStateKey(state)) === true) continue
+    if (options.isGoal(state)) {
+      return { kind: "reachable", minimumOwnerCount: 1 }
+    }
+    if (expandedStateCount >= maxExpandedStates) {
+      return { kind: "incomplete", minimumOwnerCount: 1 }
+    }
+    expandedStateCount++
+    if (options.shouldExpandReachabilityState?.(state) === false) continue
+    visitStateHops(state)
+    if (!validHopDistances) {
+      return { kind: "incomplete", minimumOwnerCount: 1 }
+    }
+  }
+  return { kind: "disconnected", expandedStateCount }
 }
 
 export const findDistinctOwnerBlockerPath = <
@@ -263,11 +390,21 @@ export const findDistinctOwnerBlockerPath = <
     throw new Error("maxExpandedLabels must be a non-negative integer")
   }
 
-  if (options.checkReachability) {
+  let minimumOwnerCount = 0
+  if (options.checkOwnerFreeReachability) {
+    const reachability = inspectBlockerReachability(options, maxExpandedLabels)
+    if (reachability.kind === "disconnected") {
+      return {
+        found: false,
+        reason: "no_path",
+        expandedLabelCount: reachability.expandedStateCount,
+      }
+    }
+    minimumOwnerCount = reachability.minimumOwnerCount
+  } else if (options.checkReachability) {
     const disconnected = findDisconnectedSearch(options, maxExpandedLabels)
     if (disconnected) return disconnected
   }
-
   const labelsByStateKey = new Map<
     TStateKey,
     Array<SearchLabel<TState, TStateKey, TOwner, THopData>>
@@ -279,11 +416,22 @@ export const findDistinctOwnerBlockerPath = <
     state: options.start,
     stateKey: options.getStateKey(options.start),
     owners: new Set<TOwner>(),
+    // Use a global lower bound, not an additional owner on each label.
+    priorityOwnerCount: minimumOwnerCount,
     distance: 0,
+    estimatedTotalDistance: options.getRemainingDistance
+      ? options.getRemainingDistance(options.start)
+      : 0,
     parent: null,
     incomingHop: null,
     queueOrder: nextQueueOrder++,
     active: true,
+  }
+  if (
+    !Number.isFinite(startLabel.estimatedTotalDistance) ||
+    startLabel.estimatedTotalDistance < 0
+  ) {
+    throw new Error("Distinct-owner blocker estimates must be finite and >= 0")
   }
   labelsByStateKey.set(startLabel.stateKey, [startLabel])
   queue.push(startLabel)
@@ -338,11 +486,24 @@ export const findDistinctOwnerBlockerPath = <
         if (owners === current.owners) owners = new Set(current.owners)
         owners.add(owner)
       }
+      const remainingDistance = options.getRemainingDistance
+        ? options.getRemainingDistance(hop.state)
+        : 0
+      const estimatedTotalDistance = distance + remainingDistance
+      if (
+        !Number.isFinite(remainingDistance) ||
+        remainingDistance < 0 ||
+        !Number.isFinite(estimatedTotalDistance)
+      ) {
+        throw new Error("Distinct-owner blocker estimates must be finite and >= 0")
+      }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
         stateKey,
         owners,
+        priorityOwnerCount: Math.max(minimumOwnerCount, owners.size),
         distance,
+        estimatedTotalDistance,
         parent: current,
         incomingHop: hop,
         queueOrder,
