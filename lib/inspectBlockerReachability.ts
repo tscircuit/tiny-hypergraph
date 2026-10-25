@@ -29,9 +29,7 @@ type ReachabilityHopTraversal<TState, TStateKey, TOwner, THopData> = {
     TOwner,
     THopData
   >
-  visitHop: (
-    hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>,
-  ) => boolean
+  visitHop: (hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>) => boolean
 }
 
 function visitReachabilityHop<TState, TStateKey, TOwner, THopData>(
@@ -84,12 +82,7 @@ function visitStateHops<TState, TStateKey, TOwner, THopData>(
 }
 
 /** Classify reachability without retaining borrowed hops or enumerating owner sets. */
-export function inspectBlockerReachability<
-  TState,
-  TStateKey,
-  TOwner,
-  THopData,
->(
+export function inspectBlockerReachability<TState, TStateKey, TOwner, THopData>(
   options: DistinctOwnerBlockerSearchOptions<
     TState,
     TStateKey,
