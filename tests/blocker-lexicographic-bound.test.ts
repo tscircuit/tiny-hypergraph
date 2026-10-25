@@ -71,7 +71,10 @@ function checkGraph(options: { graph: Graph; remaining: number[] }): void {
     checkReachability: true,
   }
   const objective = exhaustiveObjective(graph)
-  for (const minimumOwnerCount of [0, objective && objective.mask !== 0 ? 1 : 0]) {
+  for (const minimumOwnerCount of [
+    0,
+    objective && objective.mask !== 0 ? 1 : 0,
+  ]) {
     const result = findDistinctOwnerBlockerPath({
       ...searchOptions,
       minimumOwnerCount,

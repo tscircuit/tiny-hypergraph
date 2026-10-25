@@ -130,7 +130,10 @@ export function inspectRelaxedBlockerReachability(
     ownerFreeQueue: [input.start],
     ownedQueue: [],
     ownerFreeByHopId: new Map<HopId, boolean>([
-      [context.solver.getHopId(input.start.portId, input.start.nextRegionId), true],
+      [
+        context.solver.getHopId(input.start.portId, input.start.nextRegionId),
+        true,
+      ],
     ]),
     expansionsByRegion: new Map<RegionId, 1 | 2>(),
     totalHopDistance: 0,

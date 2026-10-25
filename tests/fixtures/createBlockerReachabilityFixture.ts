@@ -1,4 +1,7 @@
-import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "../../lib/core"
+import type {
+  TinyHyperGraphProblem,
+  TinyHyperGraphTopology,
+} from "../../lib/core"
 import { SelectiveReripTinyHyperGraphSolver } from "../../lib/selective-rerip-tiny-hyper-graph-solver"
 
 export type BlockerReachabilityFixture = {

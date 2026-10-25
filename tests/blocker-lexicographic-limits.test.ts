@@ -113,5 +113,4 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
       findDistinctOwnerBlockerPath({ ...options, minimumOwnerCount }),
     ).toThrow("minimumOwnerCount must be a non-negative integer")
   }
-
 })

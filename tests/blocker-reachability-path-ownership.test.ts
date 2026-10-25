@@ -1,10 +1,18 @@
 import { expect, test } from "bun:test"
 import type { DistinctOwnerBlockerHop } from "lib/find-distinct-owner-blocker-path"
-import type { RelaxedSearchHop, RelaxedSearchHopData, RelaxedSearchState } from "lib/selective-rerip/relaxedBlockerSearchTypes"
+import type {
+  RelaxedSearchHop,
+  RelaxedSearchHopData,
+  RelaxedSearchState,
+} from "lib/selective-rerip/relaxedBlockerSearchTypes"
 import type { RouteId } from "lib/types"
 import { createBlockerReachabilityFixture } from "./fixtures/createBlockerReachabilityFixture"
 
-type WeightedHop = DistinctOwnerBlockerHop<RelaxedSearchState, RouteId, RelaxedSearchHopData>
+type WeightedHop = DistinctOwnerBlockerHop<
+  RelaxedSearchState,
+  RouteId,
+  RelaxedSearchHopData
+>
 
 test("rerip prechecks preserve weighted hop identities and independent search results", (): void => {
   const { solver, problem } = createBlockerReachabilityFixture()
@@ -40,8 +48,8 @@ test("rerip prechecks preserve weighted hop identities and independent search re
   expect(first).toEqual(snapshot)
   for (const invalidLimit of [-1, 0.5, NaN, -Infinity]) {
     solver["getRelaxedSearchExpansionLimit"] = (): number => invalidLimit
-    expect((): unknown => solver["findRelaxedBlockerPath"](new Set([1]))).toThrow(
-      "maxExpandedLabels must be a non-negative integer",
-    )
+    expect((): unknown =>
+      solver["findRelaxedBlockerPath"](new Set([1])),
+    ).toThrow("maxExpandedLabels must be a non-negative integer")
   }
 })
