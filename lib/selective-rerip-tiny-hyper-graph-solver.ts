@@ -5,45 +5,36 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "./core"
-import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import {
   findDistinctOwnerBlockerPath,
+  type DistinctOwnerBlockerSearchOptions,
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
-import type { PortId, RegionId, RouteId } from "./types"
+import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
+import { inspectRelaxedBlockerReachability } from "./selective-rerip/inspectRelaxedBlockerReachability"
+import type {
+  PortBlockerResource,
+  RelaxedSearchHop,
+  RelaxedSearchHopData,
+  RelaxedSearchState,
+  SelectiveReripBlockerResource,
+} from "./selective-rerip/relaxedBlockerSearchTypes"
+import type { HopId, PortId, RegionId, RouteId } from "./types"
 
-type RelaxedSearchState = {
-  portId: PortId
-  nextRegionId: RegionId
+export type { SelectiveReripBlockerResource } from "./selective-rerip/relaxedBlockerSearchTypes"
+
+type ReachabilityTerminals = {
+  startPortId: PortId
+  goalPortId: PortId
 }
 
-type PortBlockerResource = {
-  kind: "port"
-  portId: PortId
-  owners: RouteId[]
-}
-
-type SameLayerIntersectionBlockerResource = {
-  kind: "same_layer_intersection"
-  regionId: RegionId
-  fromPortId: PortId
-  toPortId: PortId
-  owners: RouteId[]
-}
-
-export type SelectiveReripBlockerResource =
-  | PortBlockerResource
-  | SameLayerIntersectionBlockerResource
-
-type RelaxedSearchHopData = {
-  resources: SelectiveReripBlockerResource[]
-}
-
-type RelaxedSearchHop = {
-  state: RelaxedSearchState
-  distance: number
-  owners: RouteId[]
-  data: RelaxedSearchHopData
+type RelaxedSearchHopContext = {
+  goalPortId: PortId
+  routeNetId: number
+  portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+  portResources: Map<PortId, PortBlockerResource>
+  forbiddenOwnerRouteIds: ReadonlySet<RouteId>
+  hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
 }
 
 const MAX_SELECTIVE_RERIP_CONGESTION_UPDATES = 1
@@ -390,12 +381,33 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const portOwners = this.getPortOwners()
+    const boundedReachabilityGeometry = this.hasBoundedReachabilityGeometry({
+      startPortId,
+      goalPortId,
+    })
     const portResources = new Map<PortId, PortBlockerResource>()
     const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
-    const hopsByState = new Map<number, RelaxedSearchHop[]>()
-    return findDistinctOwnerBlockerPath({
+    const hopsByState = new Map<HopId, RelaxedSearchHop[]>()
+    const remainingDistanceByPort = new Map<PortId, number>()
+    const goalX = this.topology.portX[goalPortId]!
+    const goalY = this.topology.portY[goalPortId]!
+    const hopContext: RelaxedSearchHopContext = {
+      goalPortId,
+      routeNetId,
+      portOwners,
+      portResources,
+      hopTemplatesByRegion,
+      forbiddenOwnerRouteIds,
+    }
+    const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
+    const searchOptions: DistinctOwnerBlockerSearchOptions<
+      RelaxedSearchState,
+      HopId,
+      RouteId,
+      RelaxedSearchHopData
+    > = {
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
@@ -404,20 +416,64 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         const key = this.getHopId(state.portId, state.nextRegionId)
         const cached = hopsByState.get(key)
         if (cached) return cached
-        const hops = this.getRelaxedSearchHops({
-          state,
-          goalPortId,
-          routeNetId,
-          portOwners,
-          portResources,
-          hopTemplatesByRegion,
-          forbiddenOwnerRouteIds,
-        })
+        const hops = this.getRelaxedSearchHops({ state }, hopContext)
         hopsByState.set(key, hops)
         return hops
       },
-      maxExpandedLabels: this.getRelaxedSearchExpansionLimit(),
-      checkReachability: true,
+      maxExpandedLabels,
+      getRemainingDistance: boundedReachabilityGeometry
+        ? ({ portId }): number => {
+            const cached = remainingDistanceByPort.get(portId)
+            if (cached !== undefined) return cached
+            const x = this.topology.portX[portId]!
+            const y = this.topology.portY[portId]!
+            // Leave a coordinate-scale margin for floating point rounding.
+            const margin =
+              256 *
+              Number.EPSILON *
+              Math.max(
+                1,
+                Math.abs(x),
+                Math.abs(y),
+                Math.abs(goalX),
+                Math.abs(goalY),
+              )
+            const remainingDistance = Math.max(
+              0,
+              Math.hypot(x - goalX, y - goalY) - margin,
+            )
+            remainingDistanceByPort.set(portId, remainingDistance)
+            return remainingDistance
+          }
+        : undefined,
+    }
+    if (!boundedReachabilityGeometry) {
+      return findDistinctOwnerBlockerPath({
+        ...searchOptions,
+        checkReachability: true,
+      })
+    }
+    const reachability = inspectRelaxedBlockerReachability(
+      { start: searchOptions.start, maxExpandedStates: maxExpandedLabels },
+      {
+        solver: this,
+        goalPortId,
+        getHops: (state): RelaxedSearchHop[] =>
+          this.getRelaxedSearchHops({ state }, hopContext),
+        getHopTemplates: (state): RelaxedSearchHop[] =>
+          this.getRelaxedSearchHopTemplates(state, hopContext),
+      },
+    )
+    if (reachability.kind === "disconnected") {
+      return {
+        found: false,
+        reason: "no_path",
+        expandedLabelCount: reachability.expandedStateCount,
+      }
+    }
+    return findDistinctOwnerBlockerPath({
+      ...searchOptions,
+      minimumOwnerCount: reachability.minimumOwnerCount,
     })
   }
 
@@ -460,33 +516,76 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return Math.max(4096, incidentHopCount * ownerScale * 4)
   }
 
-  private getRelaxedSearchHops(params: {
-    state: RelaxedSearchState
-    goalPortId: PortId
-    routeNetId: number
-    portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
-    portResources: Map<PortId, PortBlockerResource>
-    forbiddenOwnerRouteIds: ReadonlySet<RouteId>
-    hopTemplatesByRegion: Map<RegionId, RelaxedSearchHop[]>
-    buildRegionTemplates?: boolean
-  }): RelaxedSearchHop[] {
-    const { state, goalPortId, routeNetId } = params
+  private hasBoundedReachabilityGeometry({
+    startPortId,
+    goalPortId,
+  }: ReachabilityTerminals): boolean {
+    const { portCount, portX, portY, regionIncidentPorts } = this.topology
+    if (
+      !Number.isInteger(portCount) ||
+      portCount < 0 ||
+      portX.length !== portCount ||
+      portY.length !== portCount ||
+      !Number.isInteger(startPortId) ||
+      startPortId < 0 ||
+      startPortId >= portCount ||
+      !Number.isInteger(goalPortId) ||
+      goalPortId < 0 ||
+      goalPortId >= portCount
+    ) {
+      return false
+    }
+    // Even the complete logical port cliques cannot overflow a distance sum in
+    // this domain. Check all referenced indices before omitting any edge checks.
+    for (let portId = 0; portId < portCount; portId++) {
+      if (
+        !(Math.abs(portX[portId]!) <= Number.MAX_SAFE_INTEGER) ||
+        !(Math.abs(portY[portId]!) <= Number.MAX_SAFE_INTEGER)
+      ) {
+        return false
+      }
+    }
+    for (const ports of regionIncidentPorts) {
+      if (!ports) return false
+      for (const portId of ports) {
+        if (!Number.isInteger(portId) || portId < 0 || portId >= portCount) {
+          return false
+        }
+      }
+    }
+    return true
+  }
+
+  private getRelaxedSearchHopTemplates(
+    state: RelaxedSearchState,
+    context: RelaxedSearchHopContext,
+  ): RelaxedSearchHop[] {
+    let templates = context.hopTemplatesByRegion.get(state.nextRegionId)
+    if (!templates) {
+      templates = this.getRelaxedSearchHops(
+        { state, buildRegionTemplates: true },
+        context,
+      )
+      context.hopTemplatesByRegion.set(state.nextRegionId, templates)
+    }
+    return templates
+  }
+
+  private getRelaxedSearchHops(
+    input: { state: RelaxedSearchState; buildRegionTemplates?: boolean },
+    context: RelaxedSearchHopContext,
+  ): RelaxedSearchHop[] {
+    const { state } = input
+    const { goalPortId, routeNetId } = context
     if (this.isRegionReservedForDifferentNet(state.nextRegionId)) return []
     // In multilayer regions, reservations and blocker resources depend only
     // on the destination. Share their immutable metadata across incoming hops;
     // each directed edge still gets its original distance and ordering.
     if (
-      !params.buildRegionTemplates &&
+      !input.buildRegionTemplates &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
-      let templates = params.hopTemplatesByRegion.get(state.nextRegionId)
-      if (!templates) {
-        templates = this.getRelaxedSearchHops({
-          ...params,
-          buildRegionTemplates: true,
-        })
-        params.hopTemplatesByRegion.set(state.nextRegionId, templates)
-      }
+      const templates = this.getRelaxedSearchHopTemplates(state, context)
       const hops: RelaxedSearchHop[] = []
       for (const template of templates) {
         if (template.state.portId === state.portId) continue
@@ -509,7 +608,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     for (const neighborPortId of this.topology.regionIncidentPorts[
       state.nextRegionId
     ] ?? []) {
-      if (neighborPortId === state.portId && !params.buildRegionTemplates)
+      if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (
@@ -524,8 +623,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         fromPortId: state.portId,
         toPortId: neighborPortId,
         routeNetId,
-        portOwners: params.portOwners,
-        portResources: params.portResources,
+        portOwners: context.portOwners,
+        portResources: context.portResources,
       })
       const owners: RouteId[] = []
       for (const resource of resources) {
@@ -535,7 +634,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       }
       if (
         owners.some((ownerRouteId) =>
-          params.forbiddenOwnerRouteIds.has(ownerRouteId),
+          context.forbiddenOwnerRouteIds.has(ownerRouteId),
         )
       ) {
         continue

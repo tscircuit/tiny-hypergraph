@@ -20,6 +20,10 @@ export type DistinctOwnerBlockerSearchOptions<
   maxExpandedLabels?: number
   /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
   checkReachability?: boolean
+  /** Certified lower bound from the caller's blocker analysis; defaults to zero. */
+  minimumOwnerCount?: number
+  /** An admissible, finite, non-negative lower bound; must be zero at goals. */
+  getRemainingDistance?: (state: TState) => number
 }
 
 export type DistinctOwnerBlockerSearchSuccess<
@@ -53,7 +57,9 @@ type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
   stateKey: TStateKey
   owners: Set<TOwner>
+  priorityOwnerCount: number
   distance: number
+  estimatedTotalDistance: number
   parent: SearchLabel<TState, TStateKey, TOwner, THopData> | null
   incomingHop: DistinctOwnerBlockerHop<TState, TOwner, THopData> | null
   queueOrder: number
@@ -64,10 +70,12 @@ const compareLabels = <TState, TStateKey, TOwner, THopData>(
   left: SearchLabel<TState, TStateKey, TOwner, THopData>,
   right: SearchLabel<TState, TStateKey, TOwner, THopData>,
 ): number => {
-  const ownerCountDifference = left.owners.size - right.owners.size
+  const ownerCountDifference =
+    left.priorityOwnerCount - right.priorityOwnerCount
   if (ownerCountDifference !== 0) return ownerCountDifference
 
-  const distanceDifference = left.distance - right.distance
+  const distanceDifference =
+    left.estimatedTotalDistance - right.estimatedTotalDistance
   if (distanceDifference !== 0) return distanceDifference
 
   return left.queueOrder - right.queueOrder
@@ -263,11 +271,14 @@ export const findDistinctOwnerBlockerPath = <
     throw new Error("maxExpandedLabels must be a non-negative integer")
   }
 
+  const minimumOwnerCount = options.minimumOwnerCount ?? 0
+  if (!Number.isInteger(minimumOwnerCount) || minimumOwnerCount < 0) {
+    throw new Error("minimumOwnerCount must be a non-negative integer")
+  }
   if (options.checkReachability) {
     const disconnected = findDisconnectedSearch(options, maxExpandedLabels)
     if (disconnected) return disconnected
   }
-
   const labelsByStateKey = new Map<
     TStateKey,
     Array<SearchLabel<TState, TStateKey, TOwner, THopData>>
@@ -279,11 +290,22 @@ export const findDistinctOwnerBlockerPath = <
     state: options.start,
     stateKey: options.getStateKey(options.start),
     owners: new Set<TOwner>(),
+    // Use a global lower bound, not an additional owner on each label.
+    priorityOwnerCount: minimumOwnerCount,
     distance: 0,
+    estimatedTotalDistance: options.getRemainingDistance
+      ? options.getRemainingDistance(options.start)
+      : 0,
     parent: null,
     incomingHop: null,
     queueOrder: nextQueueOrder++,
     active: true,
+  }
+  if (
+    !Number.isFinite(startLabel.estimatedTotalDistance) ||
+    startLabel.estimatedTotalDistance < 0
+  ) {
+    throw new Error("Distinct-owner blocker estimates must be finite and >= 0")
   }
   labelsByStateKey.set(startLabel.stateKey, [startLabel])
   queue.push(startLabel)
@@ -338,11 +360,26 @@ export const findDistinctOwnerBlockerPath = <
         if (owners === current.owners) owners = new Set(current.owners)
         owners.add(owner)
       }
+      const remainingDistance = options.getRemainingDistance
+        ? options.getRemainingDistance(hop.state)
+        : 0
+      const estimatedTotalDistance = distance + remainingDistance
+      if (
+        !Number.isFinite(remainingDistance) ||
+        remainingDistance < 0 ||
+        !Number.isFinite(estimatedTotalDistance)
+      ) {
+        throw new Error(
+          "Distinct-owner blocker estimates must be finite and >= 0",
+        )
+      }
       const candidate: SearchLabel<TState, TStateKey, TOwner, THopData> = {
         state: hop.state,
         stateKey,
         owners,
+        priorityOwnerCount: Math.max(minimumOwnerCount, owners.size),
         distance,
+        estimatedTotalDistance,
         parent: current,
         incomingHop: hop,
         queueOrder,
