@@ -4,7 +4,6 @@ import { findDistinctOwnerBlockerPath } from "lib/find-distinct-owner-blocker-pa
 type NodeId = number
 type OwnerId = number
 type Edge = { state: NodeId; distance: number; owners: OwnerId[] }
-type EdgeVisitor = (edge: Edge) => boolean
 type Graph = Edge[][]
 type Label = { state: NodeId; mask: number; distance: number }
 type StateOwnerKey = string
@@ -71,20 +70,13 @@ function checkGraph(options: { graph: Graph; remaining: number[] }): void {
     getHops: (state: NodeId): Edge[] => graph[state]!,
     checkReachability: true,
   }
-  for (const useSeparateProvider of [false, true]) {
+  const objective = exhaustiveObjective(graph)
+  for (const minimumOwnerCount of [0, objective && objective.mask !== 0 ? 1 : 0]) {
     const result = findDistinctOwnerBlockerPath({
       ...searchOptions,
-      forEachReachabilityHop: useSeparateProvider
-        ? (state: NodeId, visit: EdgeVisitor): void => {
-            for (const edge of graph[state]!) {
-              if (!visit({ ...edge, owners: [...edge.owners] })) return
-            }
-          }
-        : undefined,
-      checkOwnerFreeReachability: true,
+      minimumOwnerCount,
       getRemainingDistance: (state: NodeId): number => remaining[state]!,
     })
-    const objective = exhaustiveObjective(graph)
     expect(result.found).toBe(objective !== undefined)
     if (result.found && objective) {
       expect(result.owners.size).toBe(getOwnerCount(objective.mask))

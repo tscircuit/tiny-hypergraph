@@ -20,7 +20,7 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
     getStateKey: (state: NodeId): NodeId => state,
     isGoal: (state: NodeId): boolean => state === 3,
     getHops: (state: NodeId): Hop[] => graph[state]!,
-    checkOwnerFreeReachability: true,
+    minimumOwnerCount: 0,
     getRemainingDistance: (): number => 0,
   }
   for (const checkReachability of [false, true]) {
@@ -101,7 +101,6 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
   expect((): unknown =>
     findDistinctOwnerBlockerPath({
       ...options,
-      checkOwnerFreeReachability: false,
       getHops: (): Hop[] => [
         { state: 1, distance: Number.MAX_VALUE, owners: [] },
       ],
@@ -109,4 +108,10 @@ test("owner and distance bounds retain goal, cutoff, owner-free and validation b
         state === 0 ? 0 : Number.MAX_VALUE,
     }),
   ).toThrow("estimates must be finite")
+  for (const minimumOwnerCount of [-1, 0.5, NaN, Infinity]) {
+    expect((): unknown =>
+      findDistinctOwnerBlockerPath({ ...options, minimumOwnerCount }),
+    ).toThrow("minimumOwnerCount must be a non-negative integer")
+  }
+
 })

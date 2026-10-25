@@ -1,52 +1,14 @@
 import { expect, test } from "bun:test"
-import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "lib/core"
 import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
 import type { PortId } from "lib/types"
+import {
+  createBlockerReachabilityFixture,
+  type BlockerReachabilityFixture,
+} from "./fixtures/createBlockerReachabilityFixture"
 
-type Fixture = {
-  topology: TinyHyperGraphTopology
-  problem: TinyHyperGraphProblem
-  solver: SelectiveReripTinyHyperGraphSolver
-}
-type GeometryCase = { eligible: boolean; change: (fixture: Fixture) => void }
-
-function createFixture(): Fixture {
-  const topology: TinyHyperGraphTopology = {
-    portCount: 6,
-    regionCount: 7,
-    regionIncidentPorts: [[0, 1, 2, 3], [0], [1, 4], [2], [3, 5], [4], [5]],
-    incidentPortRegion: [
-      [0, 1],
-      [0, 2],
-      [0, 3],
-      [0, 4],
-      [2, 5],
-      [4, 6],
-    ],
-    regionWidth: new Float64Array(7).fill(1),
-    regionHeight: new Float64Array(7).fill(1),
-    regionCenterX: new Float64Array(7),
-    regionCenterY: new Float64Array(7),
-    portAngleForRegion1: new Int32Array(6),
-    portAngleForRegion2: new Int32Array(6),
-    portX: new Float64Array([0, 1, 2, 3, 1, 3]),
-    portY: new Float64Array([0, 0, 0, 0, -1, -1]),
-    portZ: new Int32Array([0, 0, 1, 1, 0, 1]),
-  }
-  const problem: TinyHyperGraphProblem = {
-    routeCount: 2,
-    routeStartPort: new Int32Array([0, 4]),
-    routeEndPort: new Int32Array([2, 5]),
-    routeNet: new Int32Array([0, 1]),
-    regionNetId: new Int32Array(7).fill(-1),
-    portSectionMask: new Int8Array(6).fill(1),
-  }
-  const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
-    STATIC_REACHABILITY_PRECHECK: false,
-  })
-  solver.state.currentRouteId = 0
-  solver.state.currentRouteNetId = 0
-  return { topology, problem, solver }
+type GeometryCase = {
+  eligible: boolean
+  change: (fixture: BlockerReachabilityFixture) => void
 }
 
 function searchOutcome(solver: SelectiveReripTinyHyperGraphSolver): unknown {
@@ -111,7 +73,7 @@ test("covered proofs retain native validation outside bounded referenced geometr
     },
   ]
   for (const geometry of cases) {
-    const fixture = createFixture()
+    const fixture = createBlockerReachabilityFixture()
     geometry.change(fixture)
     expect(
       fixture.solver["hasBoundedReachabilityGeometry"]({
@@ -123,7 +85,7 @@ test("covered proofs retain native validation outside bounded referenced geometr
     fixture.solver["hasBoundedReachabilityGeometry"] = (): boolean => false
     expect(searchOutcome(fixture.solver)).toEqual(covered)
   }
-  const unreachable = createFixture()
+  const unreachable = createBlockerReachabilityFixture()
   // Port 4 is reserved for another net and cannot be reached by this search.
   unreachable.topology.portX[4] = Number.NaN
   const result = unreachable.solver["findRelaxedBlockerPath"]()

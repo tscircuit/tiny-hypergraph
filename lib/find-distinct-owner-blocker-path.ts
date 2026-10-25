@@ -1,5 +1,3 @@
-import { inspectBlockerReachability } from "./inspectBlockerReachability"
-
 export type DistinctOwnerBlockerHop<TState, TOwner, THopData = unknown> = {
   state: TState
   distance: number
@@ -22,22 +20,8 @@ export type DistinctOwnerBlockerSearchOptions<
   maxExpandedLabels?: number
   /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
   checkReachability?: boolean
-  /** Prove whether every path needs an owner before ordering labels. Hops must be stable. */
-  checkOwnerFreeReachability?: boolean
-  /**
-   * Visit the same logical hops as getHops, in order, synchronously. Hop records
-   * may be borrowed for the duration of visit. Stop on false; never retain visit.
-   */
-  forEachReachabilityHop?: (
-    state: TState,
-    visit: (hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>) => boolean,
-  ) => void
-  /**
-   * Skip only when every successor was already discovered with equal or better
-   * owner-free reachability. Omitted distances must be finite, nonnegative and
-   * safe to sum. This callback does not change the traversal's expansion budget.
-   */
-  shouldExpandReachabilityState?: (state: TState) => boolean
+  /** Certified lower bound from the caller's blocker analysis; defaults to zero. */
+  minimumOwnerCount?: number
   /** An admissible, finite, non-negative lower bound; must be zero at goals. */
   getRemainingDistance?: (state: TState) => number
 }
@@ -244,7 +228,6 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     // and its label budget when this traversal reaches the same work limit.
     if (expandedStateCount >= maxExpandedStates) return undefined
     expandedStateCount++
-    if (options.shouldExpandReachabilityState?.(state) === false) continue
 
     for (const hop of options.getHops(state)) {
       totalHopDistance += hop.distance
@@ -288,18 +271,11 @@ export const findDistinctOwnerBlockerPath = <
     throw new Error("maxExpandedLabels must be a non-negative integer")
   }
 
-  let minimumOwnerCount = 0
-  if (options.checkOwnerFreeReachability) {
-    const reachability = inspectBlockerReachability(options, maxExpandedLabels)
-    if (reachability.kind === "disconnected") {
-      return {
-        found: false,
-        reason: "no_path",
-        expandedLabelCount: reachability.expandedStateCount,
-      }
-    }
-    minimumOwnerCount = reachability.minimumOwnerCount
-  } else if (options.checkReachability) {
+  const minimumOwnerCount = options.minimumOwnerCount ?? 0
+  if (!Number.isInteger(minimumOwnerCount) || minimumOwnerCount < 0) {
+    throw new Error("minimumOwnerCount must be a non-negative integer")
+  }
+  if (options.checkReachability) {
     const disconnected = findDisconnectedSearch(options, maxExpandedLabels)
     if (disconnected) return disconnected
   }

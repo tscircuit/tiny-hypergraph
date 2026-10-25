@@ -1,18 +1,44 @@
 import { expect, test } from "bun:test"
-import { findDistinctOwnerBlockerPath } from "lib/find-distinct-owner-blocker-path"
+import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "lib/core"
+import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
+import { inspectRelaxedBlockerReachability } from "lib/selective-rerip/inspectRelaxedBlockerReachability"
+import type { RelaxedSearchHop, RelaxedSearchState } from "lib/selective-rerip/relaxedBlockerSearchTypes"
+import type { PortId, RegionId } from "lib/types"
 
-type PortId = number
-type RegionId = number
-type StateId = number
-type OwnerId = number
-type Hop = { state: StateId; distance: number; owners: OwnerId[] }
+type ReachabilityModel = {
+  incidentRegions: RegionId[][]
+  singleLayerRegions: ReadonlySet<RegionId>
+  ownerMask: number
+  forbiddenOwner: number
+}
 
-test("two arrivals preserve owner-free classifications, directed states and every budget", (): void => {
-  const regionPairs: RegionId[][] = [
-    [0, 1],
-    [0, 2],
-    [1, 2],
-  ]
+function getModelHops(
+  input: { state: RelaxedSearchState; includeIncoming: boolean },
+  model: ReachabilityModel,
+): RelaxedSearchHop[] {
+  const { portId: from, nextRegionId: region } = input.state
+  const hops: RelaxedSearchHop[] = []
+  for (let portId: PortId = 0; portId < 4; portId++) {
+    if ((!input.includeIncoming && portId === from) ||
+      !model.incidentRegions[portId]!.includes(region)) continue
+    const owner = model.singleLayerRegions.has(region)
+      ? (from + portId) % 2 : portId % 2
+    const owners = model.ownerMask & (1 << portId) ? [owner] : []
+    if (owners.includes(model.forbiddenOwner)) continue
+    const nextRegionId = portId === 3 ? region :
+      model.incidentRegions[portId]!.find((next): boolean => next !== region)!
+    hops.push({
+      state: { portId, nextRegionId },
+      distance: Math.abs(portId - from),
+      owners,
+      data: { resources: [] },
+    })
+  }
+  return hops
+}
+
+test("two-arrival rerip scans match full directed traversal at every expansion budget", (): void => {
+  const regionPairs: RegionId[][] = [[0, 1], [0, 2], [1, 2]]
   for (let topologyCode = 0; topologyCode < 81; topologyCode++) {
     let remainingCode = topologyCode
     const incidentRegions: RegionId[][] = []
@@ -20,70 +46,64 @@ test("two arrivals preserve owner-free classifications, directed states and ever
       incidentRegions.push(regionPairs[remainingCode % 3]!)
       remainingCode = Math.floor(remainingCode / 3)
     }
-    const singleLayerRegions = new Set<RegionId>([topologyCode % 3])
+    const singleLayerRegion = topologyCode % 3
+    const model: ReachabilityModel = {
+      incidentRegions,
+      singleLayerRegions: new Set([singleLayerRegion]),
+      ownerMask: 0,
+      forbiddenOwner: -1,
+    }
+    const layerMasks = new Int32Array(3)
+    const topology: TinyHyperGraphTopology = {
+      portCount: 4,
+      regionCount: 3,
+      regionIncidentPorts: Array.from({ length: 3 }, (_, regionId): PortId[] =>
+        [0, 1, 2, 3].filter((portId): boolean => incidentRegions[portId]!.includes(regionId))),
+      incidentPortRegion: incidentRegions,
+      regionWidth: new Float64Array(3).fill(1),
+      regionHeight: new Float64Array(3).fill(1),
+      regionCenterX: new Float64Array(3),
+      regionCenterY: new Float64Array(3),
+      portAngleForRegion1: new Int32Array(4),
+      portAngleForRegion2: new Int32Array(4),
+      portX: new Float64Array([0, 1, 2, 3]),
+      portY: new Float64Array(4),
+      portZ: new Int32Array(4),
+      regionAvailableZMask: layerMasks,
+    }
+    const problem: TinyHyperGraphProblem = {
+      routeCount: 2,
+      routeStartPort: new Int32Array([0, 1]),
+      routeEndPort: new Int32Array([3, 2]),
+      routeNet: new Int32Array([0, 1]),
+      regionNetId: new Int32Array(3).fill(-1),
+      portSectionMask: new Int8Array(4).fill(1),
+    }
+    const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem)
+    solver.state.currentRouteId = 0
+    solver.state.currentRouteNetId = 0
+    const context = {
+      solver,
+      goalPortId: 3,
+      getHops: (state: RelaxedSearchState): RelaxedSearchHop[] =>
+        getModelHops({ state, includeIncoming: false }, model),
+      getHopTemplates: (state: RelaxedSearchState): RelaxedSearchHop[] =>
+        getModelHops({ state, includeIncoming: true }, model),
+    }
     for (let ownerMask = 0; ownerMask < 16; ownerMask++) {
+      model.ownerMask = ownerMask
       for (const forbiddenOwner of [-1, 0, 1]) {
+        model.forbiddenOwner = forbiddenOwner
         for (let startRegion = 0; startRegion < 3; startRegion++) {
-          for (const proofMode of ["general", "owner_free", "both"]) {
-            const options = {
-              start: startRegion * 4,
-              getStateKey: (state: StateId): StateId => state,
-              isGoal: (state: StateId): boolean => state % 4 === 3,
-              getHops(state: StateId): Hop[] {
-                const from = state % 4
-                const region = Math.floor(state / 4)
-                const hops: Hop[] = []
-                for (let port: PortId = 0; port < 4; port++) {
-                  if (port === from || !incidentRegions[port]!.includes(region))
-                    continue
-                  const owner = singleLayerRegions.has(region)
-                    ? (from + port) % 2
-                    : port % 2
-                  const owners = ownerMask & (1 << port) ? [owner] : []
-                  if (owners.includes(forbiddenOwner)) continue
-                  const nextRegion =
-                    port === 3
-                      ? region
-                      : incidentRegions[port]!.find(
-                          (next): boolean => next !== region,
-                        )!
-                  hops.push({
-                    state: nextRegion * 4 + port,
-                    distance: 1 + port / 4,
-                    owners,
-                  })
-                }
-                return hops
-              },
-              checkReachability: proofMode !== "owner_free",
-              checkOwnerFreeReachability: proofMode !== "general",
-            }
-            for (
-              let maxExpandedLabels = 0;
-              maxExpandedLabels <= 10;
-              maxExpandedLabels++
-            ) {
-              const expandedByRegion = new Map<RegionId, 1 | 2>()
-              const original = findDistinctOwnerBlockerPath({
-                ...options,
-                maxExpandedLabels,
-              })
-              const coveredOptions = {
-                ...options,
-                maxExpandedLabels,
-                expandedByRegion,
-                shouldExpandReachabilityState(state: StateId): boolean {
-                  const region = Math.floor(state / 4)
-                  if (singleLayerRegions.has(region)) return true
-                  const count = this.expandedByRegion.get(region)
-                  if (count === 2) return false
-                  this.expandedByRegion.set(region, count === undefined ? 1 : 2)
-                  return true
-                },
-              }
-              const covered = findDistinctOwnerBlockerPath(coveredOptions)
-              expect(covered).toEqual(original)
-            }
+          for (let maxExpandedStates = 0; maxExpandedStates <= 10; maxExpandedStates++) {
+            const input = { start: { portId: 0, nextRegionId: startRegion }, maxExpandedStates }
+            // All-single-layer masks force the full directed scan. Edge owners
+            // remain fixed by the model, isolating the two-arrival optimization.
+            layerMasks.fill(1)
+            const original = inspectRelaxedBlockerReachability(input, context)
+            layerMasks.fill(0)
+            layerMasks[singleLayerRegion] = 1
+            expect(inspectRelaxedBlockerReachability(input, context)).toEqual(original)
           }
         }
       }
