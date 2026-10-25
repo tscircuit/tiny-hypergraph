@@ -1,3 +1,5 @@
+import { inspectBlockerReachability } from "./inspectBlockerReachability"
+
 export type DistinctOwnerBlockerHop<TState, TOwner, THopData = unknown> = {
   state: TState
   distance: number
@@ -66,10 +68,6 @@ export type DistinctOwnerBlockerSearchResult<
 > =
   | DistinctOwnerBlockerSearchSuccess<TState, TOwner, THopData>
   | DistinctOwnerBlockerSearchFailure
-
-type BlockerReachability =
-  | { kind: "disconnected"; expandedStateCount: number }
-  | { kind: "reachable" | "incomplete"; minimumOwnerCount: 0 | 1 }
 
 type SearchLabel<TState, TStateKey, TOwner, THopData> = {
   state: TState
@@ -266,107 +264,6 @@ const findDisconnectedSearch = <TState, TStateKey, TOwner, THopData>(
     reason: "no_path",
     expandedLabelCount: expandedStateCount,
   }
-}
-
-function inspectBlockerReachability<TState, TStateKey, TOwner, THopData>(
-  options: DistinctOwnerBlockerSearchOptions<
-    TState,
-    TStateKey,
-    TOwner,
-    THopData
-  >,
-  maxExpandedStates: number,
-): BlockerReachability {
-  const ownerFreeQueue = [options.start]
-  const ownedQueue: TState[] = []
-  // Upgrade boundary states reached later without an owner; skip their stale
-  // owned-queue entries instead of suppressing the owner-free path.
-  const ownerFreeByState = new Map<TStateKey, boolean>([
-    [options.getStateKey(options.start), true],
-  ])
-  let expandedStateCount = 0
-  let totalHopDistance = 0
-  let ownerFreePhase = true
-  let validHopDistances = true
-  const visitHop = (
-    hop: DistinctOwnerBlockerHop<TState, TOwner, THopData>,
-  ): boolean => {
-    totalHopDistance += hop.distance
-    if (hop.distance < 0 || !Number.isFinite(totalHopDistance)) {
-      validHopDistances = false
-      return false
-    }
-    if (!ownerFreePhase) {
-      const stateKey = options.getStateKey(hop.state)
-      if (!ownerFreeByState.has(stateKey)) {
-        ownerFreeByState.set(stateKey, false)
-        ownedQueue.push(hop.state)
-      }
-      return true
-    }
-    let hasOwners = false
-    for (const _owner of hop.owners ?? []) {
-      hasOwners = true
-      break
-    }
-    const stateKey = options.getStateKey(hop.state)
-    if (hasOwners) {
-      if (!ownerFreeByState.has(stateKey)) {
-        ownerFreeByState.set(stateKey, false)
-        ownedQueue.push(hop.state)
-      }
-    } else if (ownerFreeByState.get(stateKey) !== true) {
-      ownerFreeByState.set(stateKey, true)
-      ownerFreeQueue.push(hop.state)
-    }
-    return true
-  }
-  const visitStateHops = (state: TState): void => {
-    if (options.forEachReachabilityHop) {
-      options.forEachReachabilityHop.call(options, state, visitHop)
-      return
-    }
-    for (const hop of options.getHops(state)) {
-      if (!visitHop(hop)) break
-    }
-  }
-  for (let index = 0; index < ownerFreeQueue.length; index++) {
-    const state = ownerFreeQueue[index]!
-    if (options.isGoal(state)) {
-      return { kind: "reachable", minimumOwnerCount: 0 }
-    }
-    if (expandedStateCount >= maxExpandedStates) {
-      return { kind: "incomplete", minimumOwnerCount: 0 }
-    }
-    expandedStateCount++
-    if (options.shouldExpandReachabilityState?.(state) === false) continue
-    visitStateHops(state)
-    if (!validHopDistances) {
-      return { kind: "incomplete", minimumOwnerCount: 0 }
-    }
-  }
-
-  if (!options.checkReachability) {
-    return { kind: "incomplete", minimumOwnerCount: 1 }
-  }
-  ownerFreePhase = false
-  for (let index = 0; index < ownedQueue.length; index++) {
-    const state = ownedQueue[index]!
-    if (ownerFreeByState.get(options.getStateKey(state)) === true) continue
-    if (options.isGoal(state)) {
-      return { kind: "reachable", minimumOwnerCount: 1 }
-    }
-    if (expandedStateCount >= maxExpandedStates) {
-      return { kind: "incomplete", minimumOwnerCount: 1 }
-    }
-    expandedStateCount++
-    if (options.shouldExpandReachabilityState?.(state) === false) continue
-    visitStateHops(state)
-    if (!validHopDistances) {
-      return { kind: "incomplete", minimumOwnerCount: 1 }
-    }
-  }
-  return { kind: "disconnected", expandedStateCount }
 }
 
 export const findDistinctOwnerBlockerPath = <
