@@ -1991,10 +1991,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     let newSameLayerIntersections = 0
     let newCrossLayerIntersections = 0
-    let newEntryExitLayerChanges =
-      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
-        ? 1
-        : 0
+    let newEntryExitLayerChanges: number
     if (regionCache.existingSegmentCount > 0) {
       // Candidate scoring uses topology angles even when a subclass supplies
       // different geometry for inserting completed segments.
@@ -2008,6 +2005,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newCrossLayerIntersections =
         segmentGeometry.crossingLayerIntersectionCount
       newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
+    } else {
+      newEntryExitLayerChanges =
+        topology.portZ[currentCandidate.portId] !==
+        topology.portZ[neighborPortId]
+          ? 1
+          : 0
     }
 
     if (
