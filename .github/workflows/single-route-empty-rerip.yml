@@ -1,0 +1,65 @@
+name: Single route exhaustion comparison
+on:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  focused:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install
+      - name: Compare identical native controls
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || 'main' }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/base/node_modules"
+          mkdir -p "$RUNNER_TEMP/base/scripts/benchmarks" "$RUNNER_TEMP/base/tests/fixtures" comparison
+          cp scripts/benchmarks/single-route-empty-rerip.ts "$RUNNER_TEMP/base/scripts/benchmarks/"
+          cp tests/fixtures/single-route-via-capacity.ts "$RUNNER_TEMP/base/tests/fixtures/"
+          (cd "$RUNNER_TEMP/base" && bun scripts/benchmarks/single-route-empty-rerip.ts "$GITHUB_WORKSPACE/comparison/base.json")
+          bun scripts/benchmarks/single-route-empty-rerip.ts comparison/head.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: single-route-exhaustion-focused
+          path: comparison
+  full_datasets:
+    strategy:
+      fail-fast: false
+      matrix:
+        dataset: [hg07, srj18]
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || 'main' }}
+          path: base
+      - uses: actions/checkout@v4
+        with:
+          path: head
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install before timing
+        run: |
+          (cd base && bun install)
+          (cd head && bun install)
+      - name: Run every sample on both revisions
+        run: |
+          (cd base && bun scripts/benchmarking/benchmark.ts --dataset '${{ matrix.dataset }}' --concurrency 4)
+          (cd head && bun scripts/benchmarking/benchmark.ts --dataset '${{ matrix.dataset }}' --concurrency 4)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: single-route-exhaustion-full-${{ matrix.dataset }}
+          path: |
+            base/benchmark-result.*
+            head/benchmark-result.*
