@@ -31,9 +31,7 @@ test("regional block certificates preserve ordered decisions across closure and 
       snapshotRegionalBlockSolver(original),
     )
     const frontier = optimized["regionalHopFrontiers"].get(0)!
-    expect([...frontier.blockBestCostBounds!.slice(0, 4)]).toEqual([
-      1, 1, 1, 1,
-    ])
+    expect([...frontier.blockBestCostBounds!.slice(0, 4)]).toEqual([1, 1, 1, 1])
     let recomputedBlocks = 0
     const updateBound = optimized["updateRegionalHopBlockBound"].bind(optimized)
     optimized["updateRegionalHopBlockBound"] = (...args): void => {
@@ -85,7 +83,9 @@ test("regional block certificates preserve ordered decisions across closure and 
       snapshotRegionalBlockSolver(original),
     )
     checkRegionalBlockList(optimized)
-    if (["none", "close-tail", "close-block", "lower-cost"].includes(transition)) {
+    if (
+      ["none", "close-tail", "close-block", "lower-cost"].includes(transition)
+    ) {
       expect(recomputedBlocks, transition).toBe(1)
     }
   }

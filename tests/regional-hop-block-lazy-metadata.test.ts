@@ -23,7 +23,10 @@ const runRegionalBlockMetadataCase = ({
   if (variant === "reserved-goal") solver.state.portAssignment[20] = 9
   if (variant === "duplicates") {
     solver.topology.regionIncidentPorts[0] =
-      solver.topology.regionIncidentPorts[0].flatMap((portId) => [portId, portId])
+      solver.topology.regionIncidentPorts[0].flatMap((portId) => [
+        portId,
+        portId,
+      ])
   }
   if (variant === "invalid-first" || variant === "masked-invalid") {
     delete solver.topology.incidentPortRegion[19]
@@ -102,9 +105,10 @@ test("block pruning preserves early goals, callback errors and unknown metadata"
     "duplicates",
   ]) {
     const original = runRegionalBlockMetadataCase({ owned: false, variant })
-    expect(runRegionalBlockMetadataCase({ owned: true, variant }), variant).toEqual(
-      original,
-    )
+    expect(
+      runRegionalBlockMetadataCase({ owned: true, variant }),
+      variant,
+    ).toEqual(original)
     if (variant === "invalid-first") expect(original.error).toBeDefined()
     else if (variant === "earlier-score-error") {
       expect(original.error).toBe("Earlier scoring failure")

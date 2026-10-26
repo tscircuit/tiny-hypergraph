@@ -25,7 +25,10 @@ test("wide regional blocks match the original loop on changing random costs", ()
     const neighbors = [...original.topology.regionIncidentPorts[0]]
     for (let index = neighbors.length - 1; index > 0; index--) {
       const other = Math.floor(nextRandom(random) * (index + 1))
-      ;[neighbors[index], neighbors[other]] = [neighbors[other], neighbors[index]]
+      ;[neighbors[index], neighbors[other]] = [
+        neighbors[other],
+        neighbors[index],
+      ]
     }
     if (scene % 2 === 0) neighbors.push(...neighbors.slice(16, 32))
     for (const solver of [original, optimized]) {

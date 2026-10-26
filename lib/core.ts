@@ -1042,11 +1042,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
             )
           : undefined,
         blockLastIndices: blockCount
-          ? Int32Array.from({ length: blockCount }, (_, blockIndex) =>
-              Math.min(
-                (blockIndex + 1) * REGIONAL_HOP_BLOCK_SIZE,
-                neighbors.length,
-              ) - 1,
+          ? Int32Array.from(
+              { length: blockCount },
+              (_, blockIndex) =>
+                Math.min(
+                  (blockIndex + 1) * REGIONAL_HOP_BLOCK_SIZE,
+                  neighbors.length,
+                ) - 1,
             )
           : undefined,
         head: neighbors.length > 0 ? 0 : -1,
@@ -1141,7 +1143,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (blockBounds) {
           if (frontier.observedBestCosts![currentNeighborIndex] === Infinity) {
             frontier.observedBestCosts![currentNeighborIndex] = -Infinity
-            this.completeRegionalHopBlockPosition(frontier, currentNeighborIndex)
+            this.completeRegionalHopBlockPosition(
+              frontier,
+              currentNeighborIndex,
+            )
           }
           const blockIndex = Math.floor(
             currentNeighborIndex / REGIONAL_HOP_BLOCK_SIZE,
@@ -1248,7 +1253,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       (blockIndex + 1) * REGIONAL_HOP_BLOCK_SIZE,
       frontier.neighbors.length,
     )
-    for (let index = blockIndex * REGIONAL_HOP_BLOCK_SIZE; index < end; index++) {
+    for (
+      let index = blockIndex * REGIONAL_HOP_BLOCK_SIZE;
+      index < end;
+      index++
+    ) {
       bound = Math.max(bound, frontier.observedBestCosts![index]!)
     }
     // Unknown, goal, nonfinite and not-yet-prepared positions stay unbounded.
