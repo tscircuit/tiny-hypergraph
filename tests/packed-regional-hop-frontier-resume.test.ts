@@ -18,7 +18,10 @@ const createScene = (owned: boolean, overflow: boolean): FrontierScene => {
   const topology: TinyHyperGraphTopology = {
     portCount: 5,
     regionCount: 2,
-    regionIncidentPorts: [[0, 1, 1, 2, 3, 4], [0, 1, 2, 3, 4]],
+    regionIncidentPorts: [
+      [0, 1, 1, 2, 3, 4],
+      [0, 1, 2, 3, 4],
+    ],
     incidentPortRegion: Array.from({ length: 5 }, () => [0, 1]),
     regionWidth: new Float64Array(2).fill(100),
     regionHeight: new Float64Array(2).fill(100),
