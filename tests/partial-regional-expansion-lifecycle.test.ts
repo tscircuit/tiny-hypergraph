@@ -27,7 +27,9 @@ test("tickets preserve closure, epochs and charged steps", (): void => {
   solver.state.candidateBestCostGeneration = 0xffffffff
   solver.step()
   expect(solver.state.candidateBestCostGeneration).toBe(1)
-  expect(solver.partialRegionalExpansionStats.cancelledParents).toBeGreaterThan(0)
+  expect(solver.partialRegionalExpansionStats.cancelledParents).toBeGreaterThan(
+    0,
+  )
   for (const ticket of solver["regionalExpansionQueue"].toArray()) {
     expect(previousParents).not.toContain(ticket)
   }

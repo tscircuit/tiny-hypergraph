@@ -28,7 +28,10 @@ test("partial search respects cost contracts and finite ties", (): void => {
   tied.topology.portX.fill(0)
   tied.topology.portY.fill(0)
   tied.problem.portPenalty!.fill(0)
-  const tiedSolver = createRecordedRegionalSolver({ graph: tied, partial: true })
+  const tiedSolver = createRecordedRegionalSolver({
+    graph: tied,
+    partial: true,
+  })
   tiedSolver.solve()
   expect(tiedSolver.completedCosts[0]).toBe(getIndependentRegionalCost(tied))
   expect(tiedSolver.solved).toBe(true)

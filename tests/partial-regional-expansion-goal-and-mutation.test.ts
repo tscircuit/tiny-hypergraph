@@ -7,7 +7,10 @@ import {
 test("partial search preserves goals and fails on mutation", (): void => {
   const directGraph = createPartialRegionalGraph({ seed: 1 })
   directGraph.problem.routeEndPort[0] = 1
-  const direct = createRecordedRegionalSolver({ graph: directGraph, partial: true })
+  const direct = createRecordedRegionalSolver({
+    graph: directGraph,
+    partial: true,
+  })
   direct.step()
   expect(direct.partialRegionalExpansionStats.preparedParents).toBe(0)
   expect(direct.state.currentRouteId).toBe(0)
