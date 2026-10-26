@@ -31,7 +31,11 @@ export function ownerCapacityHook(capacity: number) {
     const removals = ownerGroups.length + 1 - capacity
     if (removals <= 0) return { feasible: true }
     const alternatives: number[][] = []
-    const choose = (index: number, remaining: number, owners: number[]): void => {
+    const choose = (
+      index: number,
+      remaining: number,
+      owners: number[],
+    ): void => {
       if (remaining === 0) {
         alternatives.push(owners)
         return
@@ -54,7 +58,9 @@ export function createCapacityProbe(
   const topology: TinyHyperGraphTopology = {
     portCount,
     regionCount: 1,
-    regionIncidentPorts: [Array.from({ length: portCount }, (_, index) => index)],
+    regionIncidentPorts: [
+      Array.from({ length: portCount }, (_, index) => index),
+    ],
     incidentPortRegion: Array.from({ length: portCount }, () => [0]),
     regionWidth: new Float64Array([4]),
     regionHeight: new Float64Array([4]),
@@ -76,7 +82,10 @@ export function createCapacityProbe(
     routeCount,
     portSectionMask: new Int8Array(portCount).fill(1),
     routeStartPort: Int32Array.from({ length: routeCount }, (_, id) => id * 2),
-    routeEndPort: Int32Array.from({ length: routeCount }, (_, id) => id * 2 + 1),
+    routeEndPort: Int32Array.from(
+      { length: routeCount },
+      (_, id) => id * 2 + 1,
+    ),
     routeNet: new Int32Array([...ownerNets, 99]),
     regionNetId: new Int32Array([-1]),
     initialAssignments: assigned.map((routeId) => ({

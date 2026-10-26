@@ -6,14 +6,19 @@ test("a future mandatory blocker makes the shared alternative globally cheaper t
   const topology: TinyHyperGraphTopology = {
     portCount: 8,
     regionCount: 2,
-    regionIncidentPorts: [[0, 1, 3, 4, 5, 6], [1, 2, 6, 7]],
+    regionIncidentPorts: [
+      [0, 1, 3, 4, 5, 6],
+      [1, 2, 6, 7],
+    ],
     incidentPortRegion: [[0], [0, 1], [1], [0], [0], [0], [0, 1], [1]],
     regionWidth: new Float64Array([1, 1]),
     regionHeight: new Float64Array([4, 4]),
     regionCenterX: new Float64Array([-0.5, 0.5]),
     regionCenterY: new Float64Array([0, 0]),
     regionAvailableZMask: new Int32Array([255, 255]),
-    portAngleForRegion1: new Int32Array([18000, 0, 0, 13500, 4500, 22500, 31500, 31500]),
+    portAngleForRegion1: new Int32Array([
+      18000, 0, 0, 13500, 4500, 22500, 31500, 31500,
+    ]),
     portAngleForRegion2: new Int32Array([0, 18000, 0, 0, 0, 0, 22500, 0]),
     portX: new Float64Array([-1, 0, 1, -1, 0, -1, 0, 1]),
     portY: new Float64Array([0, 0, 0, 1, 1, -1, -1, -1]),
@@ -56,7 +61,10 @@ test("a future mandatory blocker makes the shared alternative globally cheaper t
   expect(result.states.map(({ portId }) => portId)).toEqual([0, 1, 2])
   expect(ignoredAtSecondRegion).toContainEqual([1])
   expect(solver.state.regionSegments).toEqual([
-    [[0, 3, 4], [1, 5, 6]],
+    [
+      [0, 3, 4],
+      [1, 5, 6],
+    ],
     [[1, 6, 7]],
   ])
 })

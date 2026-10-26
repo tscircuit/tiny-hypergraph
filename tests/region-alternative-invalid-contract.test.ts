@@ -17,7 +17,10 @@ test("malformed alternative owners and non-progressing removal branches throw in
     } as unknown as TinyHyperGraphRegionSegmentFeasibilityResult,
     { feasible: false, alternativeBlockerRouteIdSets: [[]] },
     { feasible: false, alternativeBlockerRouteIdSets: [[-1]] },
-    { feasible: false, alternativeBlockerRouteIdSets: [[solver.problem.routeCount]] },
+    {
+      feasible: false,
+      alternativeBlockerRouteIdSets: [[solver.problem.routeCount]],
+    },
     { feasible: false, alternativeBlockerRouteIdSets: [[candidate]] },
     { feasible: false, alternativeBlockerRouteIdSets: [[3]] },
     // This first removes 0, then incorrectly asks to remove it again forever.
