@@ -91,6 +91,33 @@ const cloneSolvedStateSnapshot = (
   ripCount: snapshot.ripCount,
 })
 
+export type TinyHyperGraphRegionSegmentFeasibilityContext = {
+  /** Current solver mappings; child and reset problems may use different IDs. */
+  problem: Readonly<TinyHyperGraphProblem>
+  topology: Readonly<TinyHyperGraphTopology>
+  regionId: RegionId
+  fromPortId: PortId
+  toPortId: PortId
+  routeId: RouteId | undefined
+  netId: NetId | undefined
+  regionSegments: readonly (readonly [RouteId, PortId, PortId])[]
+  /** Committed owners hypothetically removed by the blocker search. */
+  ignoredRouteIds?: ReadonlySet<RouteId>
+}
+
+export type TinyHyperGraphRegionSegmentFeasibilityResult =
+  | { feasible: true }
+  | {
+      feasible: false
+      blockerRouteIds: readonly RouteId[]
+      alternativeBlockerRouteIdSets?: never
+    }
+  | {
+      feasible: false
+      blockerRouteIds?: never
+      alternativeBlockerRouteIdSets: readonly (readonly RouteId[])[]
+    }
+
 export interface TinyHyperGraphTopology {
   portCount: number
   regionCount: number
@@ -124,6 +151,19 @@ export interface TinyHyperGraphTopology {
   portZ: Int32Array
 
   portMetadata?: any[]
+
+  /**
+   * Runtime-only, read-only hard constraint; install locally after loading.
+   * blockerRouteIds are mandatory removals. alternativeBlockerRouteIdSets
+   * instead branches over concrete removal choices; every feasible removal
+   * must contain at least one of those sets. Each set must make progress.
+   * Removing additional owners must never make a segment less feasible. Return
+   * no blockers or no alternatives for a permanent constraint. Rechecked after
+   * hypothetical rips, including after each alternative choice.
+   */
+  regionSegmentFeasibility?: (
+    context: TinyHyperGraphRegionSegmentFeasibilityContext,
+  ) => TinyHyperGraphRegionSegmentFeasibilityResult
 }
 
 export interface TinyHyperGraphProblem {
@@ -891,6 +931,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (
+          !this.isSegmentFeasible(
+            currentCandidate.nextRegionId,
+            currentCandidate.portId,
+            neighborPortId,
+          )
+        )
+          continue
         this.onPathFound(currentCandidate)
         return
       }
@@ -1044,6 +1092,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (
+          !this.isSegmentFeasible(
+            currentCandidate.nextRegionId,
+            currentCandidate.portId,
+            neighborPortId,
+          )
+        )
+          continue
         this.onPathFound(currentCandidate)
         return
       }
@@ -1271,6 +1327,54 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
+  }
+
+  /** Hard geometry constraints also apply to greedy scores and goal connectors. */
+  protected isSegmentFeasible(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+    knownSameLayerIntersectionCount?: number,
+  ): boolean {
+    if (
+      this.topology.regionSegmentFeasibility &&
+      !this.getRegionSegmentFeasibility(regionId, fromPortId, toPortId).feasible
+    )
+      return false
+    if (!this.isKnownSingleLayerRegion(regionId)) return true
+    const regionCache = this.state.regionIntersectionCaches[regionId]
+    if (regionCache.existingSegmentCount === 0) return true
+    if (knownSameLayerIntersectionCount !== undefined) {
+      return knownSameLayerIntersectionCount === 0
+    }
+    const segmentGeometry = this.populateBaseSegmentGeometryScratch(
+      regionId,
+      fromPortId,
+      toPortId,
+    )
+    setNewIntersectionCounts(regionCache, segmentGeometry)
+    return segmentGeometry.sameLayerIntersectionCount === 0
+  }
+
+  protected getRegionSegmentFeasibility(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+    ignoredRouteIds?: ReadonlySet<RouteId>,
+  ): TinyHyperGraphRegionSegmentFeasibilityResult {
+    return (
+      this.topology.regionSegmentFeasibility?.({
+        problem: this.problem,
+        topology: this.topology,
+        regionId,
+        fromPortId,
+        toPortId,
+        routeId: this.state.currentRouteId,
+        netId: this.state.currentRouteNetId,
+        regionSegments: this.state.regionSegments[regionId]!,
+        ignoredRouteIds,
+      }) ?? { feasible: true }
+    )
   }
 
   protected computeRegionCostForRegion(
@@ -1725,12 +1829,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    let remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
     if (remainingRouteIds.length === 0) {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
+    let startingSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
@@ -1778,6 +1882,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
+        const candidateRemainingRouteIds =
+          greedySolver.getRemainingRouteIdsForGreedyFinalRoute()
+        if (
+          greedyFinalRouteIter < 0 &&
+          candidateRemainingRouteIds.length < remainingRouteIds.length
+        ) {
+          // Keep completed cost-aware work when its budget ends. Greedy passes
+          // only need the remaining requests, including any reripped routes.
+          startingSnapshot = cloneSolvedStateSnapshot({
+            portAssignment: greedySolver.state.portAssignment,
+            regionSegments: greedySolver.state.regionSegments,
+            regionIntersectionCaches:
+              greedySolver.state.regionIntersectionCaches,
+            regionCongestionCost: greedySolver.state.regionCongestionCost,
+            ripCount: greedySolver.state.ripCount,
+          })
+          remainingRouteIds = candidateRemainingRouteIds
+        }
         continue
       }
 
@@ -2011,8 +2133,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     if (
-      newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      !this.isSegmentFeasible(
+        nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+        newSameLayerIntersections,
+      )
     ) {
       return Number.POSITIVE_INFINITY
     }
@@ -2113,8 +2239,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return this.isSegmentFeasible(
+      currentCandidate.nextRegionId,
+      currentCandidate.portId,
+      neighborPortId,
+    )
+      ? currentCandidate.g
+      : Number.POSITIVE_INFINITY
   }
 }

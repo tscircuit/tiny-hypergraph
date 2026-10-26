@@ -16,9 +16,15 @@ export type DistinctOwnerBlockerSearchOptions<
   isGoal: (state: TState) => boolean
   getHops: (
     state: TState,
+    /** Owners already hypothetically removed by this weighted search label. */
+    ignoredOwners?: ReadonlySet<TOwner>,
   ) => Iterable<DistinctOwnerBlockerHop<TState, TOwner, THopData>>
   maxExpandedLabels?: number
-  /** Reject disconnected graphs before enumerating owner sets. Hops must be stable during the search. */
+  /**
+   * Reject disconnected graphs before enumerating owner sets. Hops must stay
+   * stable for each owner context; getHops(state) must include every hop that
+   * can become available after hypothetical removals.
+   */
   checkReachability?: boolean
   /** Certified lower bound from the caller's blocker analysis; defaults to zero. */
   minimumOwnerCount?: number
@@ -323,7 +329,7 @@ export const findDistinctOwnerBlockerPath = <
     }
     expandedLabelCount++
 
-    for (const hop of options.getHops(current.state)) {
+    for (const hop of options.getHops(current.state, current.owners)) {
       if (!Number.isFinite(hop.distance) || hop.distance < 0) {
         throw new Error(
           "Distinct-owner blocker hops require finite distances >= 0",

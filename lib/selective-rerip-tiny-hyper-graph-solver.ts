@@ -412,7 +412,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): RelaxedSearchHop[] => {
+      getHops: (state, ignoredRouteIds): RelaxedSearchHop[] => {
+        if (this.topology.regionSegmentFeasibility) {
+          return this.getRelaxedSearchHops(
+            { state, ignoredRouteIds },
+            hopContext,
+          )
+        }
         const key = this.getHopId(state.portId, state.nextRegionId)
         const cached = hopsByState.get(key)
         if (cached) return cached
@@ -572,7 +578,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   private getRelaxedSearchHops(
-    input: { state: RelaxedSearchState; buildRegionTemplates?: boolean },
+    input: {
+      state: RelaxedSearchState
+      buildRegionTemplates?: boolean
+      ignoredRouteIds?: ReadonlySet<RouteId>
+    },
     context: RelaxedSearchHopContext,
   ): RelaxedSearchHop[] {
     const { state } = input
@@ -583,6 +593,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // each directed edge still gets its original distance and ordering.
     if (
       !input.buildRegionTemplates &&
+      !this.topology.regionSegmentFeasibility &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
       const templates = this.getRelaxedSearchHopTemplates(state, context)
@@ -618,28 +629,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         continue
       }
 
-      const resources = this.getHopBlockerResources({
+      const resourceAlternatives = this.getHopBlockerResources({
         regionId: state.nextRegionId,
         fromPortId: state.portId,
         toPortId: neighborPortId,
         routeNetId,
         portOwners: context.portOwners,
         portResources: context.portResources,
+        ignoredRouteIds: input.ignoredRouteIds,
       })
-      const owners: RouteId[] = []
-      for (const resource of resources) {
-        for (const owner of resource.owners) {
-          if (!owners.includes(owner)) owners.push(owner)
-        }
-      }
-      if (
-        owners.some((ownerRouteId) =>
-          context.forbiddenOwnerRouteIds.has(ownerRouteId),
-        )
-      ) {
-        continue
-      }
-
       let nextRegionId = state.nextRegionId
       if (neighborPortId !== goalPortId) {
         const [firstRegionId, secondRegionId] =
@@ -654,17 +652,32 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         }
       }
 
-      hops.push({
-        state: { portId: neighborPortId, nextRegionId },
-        distance: Math.hypot(
-          this.topology.portX[state.portId]! -
-            this.topology.portX[neighborPortId]!,
-          this.topology.portY[state.portId]! -
-            this.topology.portY[neighborPortId]!,
-        ),
-        owners,
-        data: { resources },
-      })
+      for (const resources of resourceAlternatives) {
+        const owners: RouteId[] = []
+        for (const resource of resources) {
+          for (const owner of resource.owners) {
+            if (!owners.includes(owner)) owners.push(owner)
+          }
+        }
+        if (
+          owners.some((ownerRouteId) =>
+            context.forbiddenOwnerRouteIds.has(ownerRouteId),
+          )
+        ) {
+          continue
+        }
+        hops.push({
+          state: { portId: neighborPortId, nextRegionId },
+          distance: Math.hypot(
+            this.topology.portX[state.portId]! -
+              this.topology.portX[neighborPortId]!,
+            this.topology.portY[state.portId]! -
+              this.topology.portY[neighborPortId]!,
+          ),
+          owners,
+          data: { resources },
+        })
+      }
     }
 
     return hops
@@ -677,7 +690,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
-  }): SelectiveReripBlockerResource[] {
+    ignoredRouteIds?: ReadonlySet<RouteId>
+  }): SelectiveReripBlockerResource[][] {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
@@ -714,7 +728,96 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       })
     }
 
-    return resources
+    if (this.topology.regionSegmentFeasibility) {
+      const ignoredRouteIds = new Set(params.ignoredRouteIds)
+      for (const resource of resources) {
+        for (const owner of resource.owners) ignoredRouteIds.add(owner)
+      }
+      const branches = [{ ignoredRouteIds, owners: [] as RouteId[] }]
+      const seenOwnerSets = new Set([""])
+      const alternatives: SelectiveReripBlockerResource[][] = []
+      for (let index = 0; index < branches.length; index++) {
+        const branch = branches[index]!
+        const feasibility = this.getRegionSegmentFeasibility(
+          params.regionId,
+          params.fromPortId,
+          params.toPortId,
+          branch.ignoredRouteIds,
+        )
+        if (feasibility.feasible) {
+          alternatives.push(
+            branch.owners.length === 0
+              ? resources
+              : [
+                  ...resources,
+                  {
+                    kind: "region_segment_feasibility",
+                    regionId: params.regionId,
+                    fromPortId: params.fromPortId,
+                    toPortId: params.toPortId,
+                    owners: branch.owners,
+                  },
+                ],
+          )
+          continue
+        }
+        const mandatory = feasibility.blockerRouteIds
+        const choices = feasibility.alternativeBlockerRouteIdSets
+        if (
+          (mandatory !== undefined && choices !== undefined) ||
+          (mandatory === undefined && !Array.isArray(choices)) ||
+          (mandatory !== undefined && !Array.isArray(mandatory))
+        )
+          throw new Error(
+            "Region segment feasibility returned invalid blocker choices",
+          )
+        const removalSets =
+          mandatory !== undefined
+            ? mandatory.length === 0
+              ? []
+              : [mandatory]
+            : choices!
+        for (const removalSet of removalSets) {
+          if (!Array.isArray(removalSet) || removalSet.length === 0)
+            throw new Error(
+              "Region segment feasibility returned an empty blocker choice",
+            )
+          const nextIgnoredRouteIds = new Set(branch.ignoredRouteIds)
+          const nextOwners = [...branch.owners]
+          for (const owner of removalSet) {
+            if (
+              !Number.isInteger(owner) ||
+              owner < 0 ||
+              owner >= this.problem.routeCount ||
+              owner === this.state.currentRouteId ||
+              !this.state.regionSegments[params.regionId]!.some(
+                ([routeId]) => routeId === owner,
+              )
+            )
+              throw new Error(
+                "Region segment feasibility returned an invalid blocker route",
+              )
+            if (nextIgnoredRouteIds.has(owner)) continue
+            nextIgnoredRouteIds.add(owner)
+            nextOwners.push(owner)
+          }
+          if (nextIgnoredRouteIds.size === branch.ignoredRouteIds.size)
+            throw new Error(
+              "Region segment feasibility blocker choice made no progress",
+            )
+          const key = [...nextOwners].sort((a, b) => a - b).join(",")
+          if (seenOwnerSets.has(key)) continue
+          seenOwnerSets.add(key)
+          branches.push({
+            ignoredRouteIds: nextIgnoredRouteIds,
+            owners: nextOwners,
+          })
+        }
+      }
+      return alternatives
+    }
+
+    return [resources]
   }
 
   private getPortOwners(): Map<PortId, Set<RouteId>> {
