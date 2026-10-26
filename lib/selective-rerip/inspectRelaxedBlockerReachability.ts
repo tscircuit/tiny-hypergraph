@@ -69,8 +69,10 @@ function expandReachabilityState(
   traversal: ReachabilityTraversal,
 ): boolean {
   const { solver } = traversal.search
-  const singleLayer = solver.isKnownSingleLayerRegion(state.nextRegionId)
-  if (!singleLayer) {
+  const entryDependent =
+    solver.isKnownSingleLayerRegion(state.nextRegionId) ||
+    solver.topology.regionSegmentFeasibility !== undefined
+  if (!entryDependent) {
     // Two distinct incoming ports cover all multilayer exits. Owner-free
     // states are exhausted first, so omitted exits already have an equal or
     // better owner-free classification. Single-layer crossings depend on entry.
@@ -82,7 +84,7 @@ function expandReachabilityState(
     )
   }
   if (solver.isRegionReservedForDifferentNet(state.nextRegionId)) return true
-  if (singleLayer) {
+  if (entryDependent) {
     for (const hop of traversal.search.getHops(state)) {
       if (!enqueueReachabilityHop(hop, traversal)) return false
     }

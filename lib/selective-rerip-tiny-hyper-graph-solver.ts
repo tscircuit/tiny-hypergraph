@@ -412,7 +412,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): RelaxedSearchHop[] => {
+      getHops: (state, ignoredRouteIds): RelaxedSearchHop[] => {
+        if (this.topology.regionSegmentFeasibility) {
+          return this.getRelaxedSearchHops(
+            { state, ignoredRouteIds },
+            hopContext,
+          )
+        }
         const key = this.getHopId(state.portId, state.nextRegionId)
         const cached = hopsByState.get(key)
         if (cached) return cached
@@ -572,7 +578,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   private getRelaxedSearchHops(
-    input: { state: RelaxedSearchState; buildRegionTemplates?: boolean },
+    input: {
+      state: RelaxedSearchState
+      buildRegionTemplates?: boolean
+      ignoredRouteIds?: ReadonlySet<RouteId>
+    },
     context: RelaxedSearchHopContext,
   ): RelaxedSearchHop[] {
     const { state } = input
@@ -583,6 +593,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // each directed edge still gets its original distance and ordering.
     if (
       !input.buildRegionTemplates &&
+      !this.topology.regionSegmentFeasibility &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
       const templates = this.getRelaxedSearchHopTemplates(state, context)
@@ -625,7 +636,9 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         routeNetId,
         portOwners: context.portOwners,
         portResources: context.portResources,
+        ignoredRouteIds: input.ignoredRouteIds,
       })
+      if (!resources) continue
       const owners: RouteId[] = []
       for (const resource of resources) {
         for (const owner of resource.owners) {
@@ -677,7 +690,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
-  }): SelectiveReripBlockerResource[] {
+    ignoredRouteIds?: ReadonlySet<RouteId>
+  }): SelectiveReripBlockerResource[] | undefined {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
@@ -712,6 +726,52 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         toPortId: params.toPortId,
         owners: sameLayerIntersectionOwners,
       })
+    }
+
+    if (this.topology.regionSegmentFeasibility) {
+      const ignoredRouteIds = new Set(params.ignoredRouteIds)
+      for (const resource of resources) {
+        for (const owner of resource.owners) ignoredRouteIds.add(owner)
+      }
+      const owners: RouteId[] = []
+      while (true) {
+        const feasibility = this.getRegionSegmentFeasibility(
+          params.regionId,
+          params.fromPortId,
+          params.toPortId,
+          ignoredRouteIds,
+        )
+        if (feasibility.feasible) break
+        let addedOwner = false
+        for (const owner of feasibility.blockerRouteIds) {
+          if (
+            !Number.isInteger(owner) ||
+            owner < 0 ||
+            owner >= this.problem.routeCount ||
+            owner === this.state.currentRouteId ||
+            !this.state.regionSegments[params.regionId]!.some(
+              ([routeId]) => routeId === owner,
+            )
+          )
+            throw new Error(
+              "Region segment feasibility returned an invalid blocker route",
+            )
+          if (ignoredRouteIds.has(owner)) continue
+          ignoredRouteIds.add(owner)
+          owners.push(owner)
+          addedOwner = true
+        }
+        if (!addedOwner) return undefined
+      }
+      if (owners.length > 0) {
+        resources.push({
+          kind: "region_segment_feasibility",
+          regionId: params.regionId,
+          fromPortId: params.fromPortId,
+          toPortId: params.toPortId,
+          owners,
+        })
+      }
     }
 
     return resources

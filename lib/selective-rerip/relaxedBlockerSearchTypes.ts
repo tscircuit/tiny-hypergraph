@@ -19,9 +19,18 @@ type SameLayerIntersectionBlockerResource = {
   owners: RouteId[]
 }
 
+type RegionSegmentFeasibilityBlockerResource = {
+  kind: "region_segment_feasibility"
+  regionId: RegionId
+  fromPortId: PortId
+  toPortId: PortId
+  owners: RouteId[]
+}
+
 export type SelectiveReripBlockerResource =
   | PortBlockerResource
   | SameLayerIntersectionBlockerResource
+  | RegionSegmentFeasibilityBlockerResource
 
 export type RelaxedSearchHopData = {
   resources: SelectiveReripBlockerResource[]
