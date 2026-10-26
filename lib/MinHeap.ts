@@ -8,6 +8,10 @@ export class MinHeap<T> {
     return this.items.length
   }
 
+  peek(): T | undefined {
+    return this.items[0]
+  }
+
   toArray(): T[] {
     return [...this.items]
   }
