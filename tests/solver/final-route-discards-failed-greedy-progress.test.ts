@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import { createFinalRouteCompletionHarness } from "../fixtures/finalRouteCompletionHarness"
 
 test("failed zero-cost greedy attempts do not replace the routing seed", () => {
-  const { solver, observations } = createFinalRouteCompletionHarness("failed-greedy")
+  const { solver, observations } =
+    createFinalRouteCompletionHarness("failed-greedy")
   const originalSegments = structuredClone(solver.state.regionSegments)
   const originalAssignments = Array.from(solver.state.portAssignment)
   solver.tryFinalAcceptance()

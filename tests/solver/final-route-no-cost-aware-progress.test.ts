@@ -17,7 +17,14 @@ test("cost-aware attempts without net progress leave the original greedy seed un
     expect(observations[0].portAssignment).toEqual(originalAssignments)
     expect(observations[0].congestion).toEqual(originalCongestion)
     expect(observations[0].cacheSegmentCount).toBe(1)
-    expect(solver.state.regionSegments).toEqual([[[0, 0, 1], [1, 2, 3], [2, 4, 5], [4, 7, 8]]])
+    expect(solver.state.regionSegments).toEqual([
+      [
+        [0, 0, 1],
+        [1, 2, 3],
+        [2, 4, 5],
+        [4, 7, 8],
+      ],
+    ])
     expect(solver.stats.greedyFinalRouteRemainingRouteCount).toBe(3)
   }
 })

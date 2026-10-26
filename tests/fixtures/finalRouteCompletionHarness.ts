@@ -6,7 +6,14 @@ import type {
 } from "lib/core"
 import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
 
-export type CompletionMode = "partial" | "active-route" | "none" | "equal-progress" | "worse-progress" | "reripped-seed" | "failed-greedy"
+export type CompletionMode =
+  | "partial"
+  | "active-route"
+  | "none"
+  | "equal-progress"
+  | "worse-progress"
+  | "reripped-seed"
+  | "failed-greedy"
 export type CompletionObservation = {
   attempt: number
   remainingRouteIds: number[]
@@ -55,10 +62,15 @@ export function createFinalRouteCompletionHarness(mode: CompletionMode): {
   const observations: CompletionObservation[] = []
   class CompletionHarness extends SelectiveReripTinyHyperGraphSolver {
     seedAlreadyConnectedRoute(routeId: number): void {
-      if (this.problem.routeStartPort[routeId] !== this.problem.routeEndPort[routeId]) {
+      if (
+        this.problem.routeStartPort[routeId] !==
+        this.problem.routeEndPort[routeId]
+      ) {
         throw new Error("Fixture seed must already be connected")
       }
-      this.state.unroutedRoutes = this.state.unroutedRoutes.filter((pending) => pending !== routeId)
+      this.state.unroutedRoutes = this.state.unroutedRoutes.filter(
+        (pending) => pending !== routeId,
+      )
       this.routeSuccessCountByRouteId[routeId] = 1
     }
 
@@ -73,7 +85,12 @@ export function createFinalRouteCompletionHarness(mode: CompletionMode): {
         candidate.state.unroutedRoutes.includes(routeId)
       candidate.solve = (): void => {
         if (attempt < 0) {
-          if (mode === "partial" || mode === "active-route" || mode === "equal-progress" || mode === "reripped-seed") {
+          if (
+            mode === "partial" ||
+            mode === "active-route" ||
+            mode === "equal-progress" ||
+            mode === "reripped-seed"
+          ) {
             // Stop at a deterministic completion boundary instead of spending
             // the full budget on this small fixture.
             const lastCompletedRouteId = mode === "reripped-seed" ? 2 : 1
@@ -81,7 +98,8 @@ export function createFinalRouteCompletionHarness(mode: CompletionMode): {
               routeIsPending(lastCompletedRouteId) &&
               !candidate.failed &&
               candidate.iterations < 100
-            ) candidate.step()
+            )
+              candidate.step()
             if (routeIsPending(lastCompletedRouteId)) {
               throw new Error("Fixture failed to complete its cost-aware route")
             }
@@ -89,10 +107,16 @@ export function createFinalRouteCompletionHarness(mode: CompletionMode): {
           if (mode === "active-route") {
             candidate.step()
             if (candidate.state.currentRouteId !== 2) {
-              throw new Error("Fixture did not stop during the next active route")
+              throw new Error(
+                "Fixture did not stop during the next active route",
+              )
             }
           }
-          if (mode === "reripped-seed" || mode === "equal-progress" || mode === "worse-progress") {
+          if (
+            mode === "reripped-seed" ||
+            mode === "equal-progress" ||
+            mode === "worse-progress"
+          ) {
             // Use the same occupancy/cache rebuild as an actual selective
             // rerip, and keep the original seed in the pending queue.
             const rerippable = candidate as unknown as {
@@ -116,14 +140,18 @@ export function createFinalRouteCompletionHarness(mode: CompletionMode): {
           cacheSegmentCount:
             candidate.state.regionIntersectionCaches[0].existingSegmentCount,
           maximumIterations: candidate.MAX_ITERATIONS,
-          greedyCost: candidate.computeG({ g: 7 } as Parameters<typeof candidate.computeG>[0], 3),
+          greedyCost: candidate.computeG(
+            { g: 7 } as Parameters<typeof candidate.computeG>[0],
+            3,
+          ),
         })
         if (mode === "failed-greedy") {
           while (
             routeIsPending(1) &&
             !candidate.failed &&
             candidate.iterations < 100
-          ) candidate.step()
+          )
+            candidate.step()
           candidate.failed = true
           candidate.error = "Fixture greedy completion budget boundary"
         } else {
