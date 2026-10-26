@@ -1725,12 +1725,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    let remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
     if (remainingRouteIds.length === 0) {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
+    let startingSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
@@ -1778,6 +1778,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
+        const candidateRemainingRouteIds =
+          greedySolver.getRemainingRouteIdsForGreedyFinalRoute()
+        if (
+          greedyFinalRouteIter < 0 &&
+          candidateRemainingRouteIds.length < remainingRouteIds.length
+        ) {
+          // Keep completed cost-aware work when its budget ends. Greedy passes
+          // only need the remaining requests, including any reripped routes.
+          startingSnapshot = cloneSolvedStateSnapshot({
+            portAssignment: greedySolver.state.portAssignment,
+            regionSegments: greedySolver.state.regionSegments,
+            regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
+            regionCongestionCost: greedySolver.state.regionCongestionCost,
+            ripCount: greedySolver.state.ripCount,
+          })
+          remainingRouteIds = candidateRemainingRouteIds
+        }
         continue
       }
 
