@@ -33,7 +33,8 @@ test("cost lookup preserves instance and global prototype custom model calls", (
     USE_REGION_COST_LOOKUP: true,
   })
   const originalValue = solver.score(0, 1, 0)
-  const originalMethod = TinyHyperGraphSolver.prototype["computeRegionCostForRegion"]
+  const originalMethod =
+    TinyHyperGraphSolver.prototype["computeRegionCostForRegion"]
   const calls: number[][] = []
   try {
     TinyHyperGraphSolver.prototype["computeRegionCostForRegion"] = (
@@ -49,7 +50,8 @@ test("cost lookup preserves instance and global prototype custom model calls", (
     expect(solver.score(0, 1, 0)).toBe(1016)
     expect(calls).toEqual([[0, 0, 1, 0, 1]])
   } finally {
-    TinyHyperGraphSolver.prototype["computeRegionCostForRegion"] = originalMethod
+    TinyHyperGraphSolver.prototype["computeRegionCostForRegion"] =
+      originalMethod
   }
   expect(Object.is(solver.score(0, 1, 0), originalValue)).toBe(true)
 })

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test"
-import { applyTinyHyperGraphSolverOptions, getTinyHyperGraphSolverOptions } from "../lib/core"
+import {
+  applyTinyHyperGraphSolverOptions,
+  getTinyHyperGraphSolverOptions,
+} from "../lib/core"
 import { computeRegionCost } from "../lib/computeRegionCost"
 import {
   createRegionCostProbeGraph,
@@ -38,7 +41,11 @@ test("region score lookup refreshes after policy geometry occupancy and restore 
     TRACE_DENSITY_COST_FACTOR: 0.25,
   })
   verify()
-  const replay = new RegionCostProbe(graph.topology, graph.problem, getTinyHyperGraphSolverOptions(solver))
+  const replay = new RegionCostProbe(
+    graph.topology,
+    graph.problem,
+    getTinyHyperGraphSolverOptions(solver),
+  )
   expect(replay.USE_REGION_COST_LOOKUP).toBe(true)
   expect(Object.is(replay.score(0, 1, 0), solver.score(0, 1, 0))).toBe(true)
   const c = solver.state.regionIntersectionCaches[0]

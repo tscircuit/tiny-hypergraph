@@ -19,7 +19,7 @@ test("region cost tables retain the original scalar for valid weighted counts", 
         solver.TRACE_DENSITY_COST_FACTOR = density
         for (let count = 0; count <= 8; count++) {
           occupancy.existingSegmentCount = count
-          occupancy.existingSameLayerIntersections = count * (count - 1) / 2
+          occupancy.existingSameLayerIntersections = (count * (count - 1)) / 2
           occupancy.existingCrossingLayerIntersections = count % 3
           occupancy.existingEntryExitLayerChanges = count % 2
           for (let same = 0; same <= count; same++) {
@@ -36,7 +36,9 @@ test("region cost tables retain the original scalar for valid weighted counts", 
                   solver.minViaPadDiameter,
                   density,
                 )
-                expect(Object.is(solver.score(same, cross, entry), expected)).toBe(true)
+                expect(
+                  Object.is(solver.score(same, cross, entry), expected),
+                ).toBe(true)
               }
             }
           }

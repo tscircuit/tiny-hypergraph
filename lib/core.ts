@@ -1334,8 +1334,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const layerMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
     // Custom cost models retain their original arguments and call sequence.
     if (
-      this.computeRegionCostForRegion !==
-        defaultRegionCostForRegion ||
+      this.computeRegionCostForRegion !== defaultRegionCostForRegion ||
       count > 256 ||
       k < 0 ||
       k >= 2 * count + 2 ||
