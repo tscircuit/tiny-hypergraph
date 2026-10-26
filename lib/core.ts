@@ -281,6 +281,11 @@ export interface TinyHyperGraphSolverOptions {
    * metadata. Other queue implementations use the original search.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
+  /**
+   * Reuse exact distances in the owned frontier. Native coordinate arrays and
+   * incident port order must stay fixed until resetForProblem or a new solver.
+   */
+  CACHE_IMMUTABLE_PORT_DISTANCES?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
@@ -329,6 +334,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
+  CACHE_IMMUTABLE_PORT_DISTANCES?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
@@ -391,6 +397,10 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.OWNED_REGIONAL_HOP_FRONTIER !== undefined) {
     solver.OWNED_REGIONAL_HOP_FRONTIER = options.OWNED_REGIONAL_HOP_FRONTIER
+  }
+  if (options.CACHE_IMMUTABLE_PORT_DISTANCES !== undefined) {
+    solver.CACHE_IMMUTABLE_PORT_DISTANCES =
+      options.CACHE_IMMUTABLE_PORT_DISTANCES
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -472,6 +482,7 @@ export const getTinyHyperGraphSolverOptions = (
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
+  CACHE_IMMUTABLE_PORT_DISTANCES: solver.CACHE_IMMUTABLE_PORT_DISTANCES,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -530,6 +541,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierNetId?: NetId
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
+  private immutablePortDistanceRows = new WeakMap<
+    PortId[],
+    Map<PortId, Float64Array>
+  >()
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
@@ -566,6 +581,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
   OWNED_REGIONAL_HOP_FRONTIER = false
+  CACHE_IMMUTABLE_PORT_DISTANCES = false
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -668,6 +684,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       )
     }
     this.problem = problem
+    this.immutablePortDistanceRows = new WeakMap()
     this._problemSetup = undefined
     this.hCostEndRouteId = undefined
     this.hCostRouteIdByPortId.fill(-1)
@@ -1030,6 +1047,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): void {
     const { problem, topology, state } = this
     const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
+    const distanceRow =
+      this.CACHE_IMMUTABLE_PORT_DISTANCES && this.ADD_SEGMENT_DISTANCE_TO_G
+        ? this.getImmutablePortDistanceRow(neighbors, currentCandidate.portId)
+        : undefined
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
     while (neighborIndex !== -1) {
@@ -1096,13 +1117,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
       let knownSegmentDistance: number | undefined
       let lowerBoundCost = lowerBoundWithoutDistance
       if (this.ADD_SEGMENT_DISTANCE_TO_G) {
-        const dx =
-          topology.portX[currentCandidate.portId]! -
-          topology.portX[neighborPortId]!
-        const dy =
-          topology.portY[currentCandidate.portId]! -
-          topology.portY[neighborPortId]!
-        knownSegmentDistance = Math.sqrt(dx * dx + dy * dy)
+        if (distanceRow) {
+          knownSegmentDistance = distanceRow[currentNeighborIndex]
+        } else {
+          const dx =
+            topology.portX[currentCandidate.portId]! -
+            topology.portX[neighborPortId]!
+          const dy =
+            topology.portY[currentCandidate.portId]! -
+            topology.portY[neighborPortId]!
+          knownSegmentDistance = Math.sqrt(dx * dx + dy * dy)
+        }
         lowerBoundCost += knownSegmentDistance * this.DISTANCE_TO_COST
       }
       if (lowerBoundCost >= previousBestCost) continue
@@ -1134,6 +1159,31 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
     }
+  }
+
+  private getImmutablePortDistanceRow(
+    neighbors: PortId[],
+    portId: PortId,
+  ): Float64Array {
+    let rows = this.immutablePortDistanceRows.get(neighbors)
+    if (!rows) {
+      rows = new Map()
+      this.immutablePortDistanceRows.set(neighbors, rows)
+    }
+    let row = rows.get(portId)
+    if (!row) {
+      row = new Float64Array(neighbors.length)
+      for (let index = 0; index < neighbors.length; index++) {
+        const neighborPortId = neighbors[index]
+        const dx =
+          this.topology.portX[portId] - this.topology.portX[neighborPortId]
+        const dy =
+          this.topology.portY[portId] - this.topology.portY[neighborPortId]
+        row[index] = Math.sqrt(dx * dx + dy * dy)
+      }
+      rows.set(portId, row)
+    }
+    return row
   }
 
   resetCandidateBestCosts() {
