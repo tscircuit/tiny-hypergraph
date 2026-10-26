@@ -147,9 +147,8 @@ test("immutable distances reuse exact geometry across rerips and reset with the 
       reused.resetRoutingStateForRerip()
       reused._step()
       const queued = reused.state.candidateQueue.toArray()[0]
-      expect(queued?.g).toBe(
-        Number.isFinite(distance) ? distance * factor : undefined,
-      )
+      if (Number.isFinite(distance)) expect(queued?.g).toBe(distance * factor)
+      else expect(queued).toBeUndefined()
     }
   }
 })
