@@ -281,13 +281,6 @@ export interface TinyHyperGraphSolverOptions {
    * metadata. Other queue implementations use the original search.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
-  /**
-   * Defer exact scoring in the owned native g/region-cost model. Topology,
-   * reservations and pure heuristic results stay fixed for the search epoch.
-   * Continuation resumes consume normal solver steps and can change capped
-   * search outcomes; this is not an exact legacy work-scheduling mode.
-   */
-  PARTIAL_REGIONAL_EXPANSION?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
@@ -336,7 +329,6 @@ export interface TinyHyperGraphSolverOptionTarget {
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
-  PARTIAL_REGIONAL_EXPANSION?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
@@ -399,9 +391,6 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.OWNED_REGIONAL_HOP_FRONTIER !== undefined) {
     solver.OWNED_REGIONAL_HOP_FRONTIER = options.OWNED_REGIONAL_HOP_FRONTIER
-  }
-  if (options.PARTIAL_REGIONAL_EXPANSION !== undefined) {
-    solver.PARTIAL_REGIONAL_EXPANSION = options.PARTIAL_REGIONAL_EXPANSION
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -483,7 +472,6 @@ export const getTinyHyperGraphSolverOptions = (
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
-  PARTIAL_REGIONAL_EXPANSION: solver.PARTIAL_REGIONAL_EXPANSION,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -518,43 +506,13 @@ type SegmentGeometryScratch = MutableIntersectionCount
 
 type RegionalHopFrontier = {
   neighbors: PortId[]
-  next: Int32Array
+  indices: Int32Array
   prepared: Uint8Array
   nextRegionIds: Float64Array
   hopIds: Float64Array
-  head: number
+  length: number
+  firstRetiredIndex: number
 }
-
-type RegionalSuccessor = {
-  portId: PortId
-  nextRegionId: RegionId
-  hopId: HopId
-  lowerBoundG: number
-  h: number
-  f: number
-  segmentDistance?: number
-}
-
-type RegionalExpansionTicket = {
-  parent: Candidate
-  neighbors: PortId[]
-  successors: RegionalSuccessor[]
-  index: number
-  f: number
-}
-
-const compareRegionalExpansionTickets = (
-  left: RegionalExpansionTicket,
-  right: RegionalExpansionTicket,
-): number => left.f - right.f
-
-const compareRegionalSuccessors = (
-  left: RegionalSuccessor,
-  right: RegionalSuccessor,
-): number => left.f - right.f
-
-const PARTIAL_REGIONAL_MIN_NEIGHBORS = 16
-const PARTIAL_REGIONAL_RESUME_BATCH = 8
 
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
@@ -573,24 +531,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierNetId?: NetId
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
-  private regionalExpansionQueue = new MinHeap<RegionalExpansionTicket>(
-    [],
-    compareRegionalExpansionTickets,
-  )
-  private regionalExpansionCandidateQueue?: IndexedCandidateHeap
-  private regionalExpansionEpoch?: object
-  private regionalExpansionRouteId?: RouteId
-  private regionalExpansionNetId?: NetId
-  private regionalExpansionGoalPortId?: PortId
-  private regionalExpansionBestCostGeneration?: number
-  readonly partialRegionalExpansionStats = {
-    preparedParents: 0,
-    preparedSuccessors: 0,
-    exactScorings: 0,
-    resumes: 0,
-    cancelledParents: 0,
-    maximumPendingParents: 0,
-  }
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
@@ -627,7 +567,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
   OWNED_REGIONAL_HOP_FRONTIER = false
-  PARTIAL_REGIONAL_EXPANSION = false
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -878,9 +817,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { problem, topology, state } = this
 
     if (state.currentRouteId === undefined) {
-      if (this.PARTIAL_REGIONAL_EXPANSION) {
-        this.synchronizeRegionalExpansionQueue()
-      }
       if (state.unroutedRoutes.length === 0) {
         this.onAllRoutesRouted()
         return
@@ -917,11 +853,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
-    if (this.PARTIAL_REGIONAL_EXPANSION) {
-      this.synchronizeRegionalExpansionQueue()
-      if (this.resumeRegionalExpansion()) return
-    }
-
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
@@ -942,13 +873,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
-
-    if (
-      this.PARTIAL_REGIONAL_EXPANSION &&
-      this.prepareRegionalExpansion(currentCandidate, neighbors)
-    ) {
-      return
-    }
 
     if (this.OWNED_REGIONAL_HOP_FRONTIER) {
       const frontier = this.getRegionalHopFrontier(
@@ -1044,194 +968,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  private synchronizeRegionalExpansionQueue(): void {
-    const { state } = this
-    const queue = state.candidateQueue
-    if (!(queue instanceof IndexedCandidateHeap)) {
-      this.partialRegionalExpansionStats.cancelledParents +=
-        this.regionalExpansionQueue.length
-      this.regionalExpansionQueue.clear()
-      this.regionalExpansionCandidateQueue = undefined
-      return
-    }
-    if (
-      queue !== this.regionalExpansionCandidateQueue ||
-      queue.closureEpoch !== this.regionalExpansionEpoch ||
-      state.currentRouteId !== this.regionalExpansionRouteId ||
-      state.currentRouteNetId !== this.regionalExpansionNetId ||
-      state.goalPortId !== this.regionalExpansionGoalPortId ||
-      state.candidateBestCostGeneration !==
-        this.regionalExpansionBestCostGeneration
-    ) {
-      this.partialRegionalExpansionStats.cancelledParents +=
-        this.regionalExpansionQueue.length
-      this.regionalExpansionQueue.clear()
-      this.regionalExpansionCandidateQueue = queue
-      this.regionalExpansionEpoch = queue.closureEpoch
-      this.regionalExpansionRouteId = state.currentRouteId
-      this.regionalExpansionNetId = state.currentRouteNetId
-      this.regionalExpansionGoalPortId = state.goalPortId
-      this.regionalExpansionBestCostGeneration =
-        state.candidateBestCostGeneration
-    }
-  }
-
-  private prepareRegionalExpansion(
-    parent: Candidate,
-    neighbors: PortId[],
-  ): boolean {
-    const { state, topology, problem } = this
-    const queue = state.candidateQueue
-    // This optimization owns the native monotone g/region-cost model. Custom
-    // g/region scorers and small/goal regions keep their eager expansion.
-    if (
-      !this.OWNED_REGIONAL_HOP_FRONTIER ||
-      !(queue instanceof IndexedCandidateHeap) ||
-      this.computeG !== TinyHyperGraphSolver.prototype.computeG ||
-      this.computeRegionCostForRegion !==
-        TinyHyperGraphSolver.prototype.computeRegionCostForRegion ||
-      !Number.isFinite(this.TRACE_DENSITY_COST_FACTOR) ||
-      this.TRACE_DENSITY_COST_FACTOR < 0 ||
-      neighbors.length < PARTIAL_REGIONAL_MIN_NEIGHBORS ||
-      neighbors.includes(state.goalPortId)
-    ) {
-      return false
-    }
-    const area =
-      topology.regionWidth[parent.nextRegionId]! *
-      topology.regionHeight[parent.nextRegionId]!
-    if (!(area > 0) || !Number.isFinite(area)) return false
-    const successors: RegionalSuccessor[] = []
-    for (const portId of neighbors) {
-      if (portId === parent.portId || problem.portSectionMask[portId] === 0) {
-        continue
-      }
-      const regions = topology.incidentPortRegion[portId]
-      const nextRegionId =
-        regions[0] === parent.nextRegionId ? regions[1] : regions[0]
-      if (nextRegionId === undefined) continue
-      const hopId = this.getHopId(portId, nextRegionId)
-      if (queue.isClosedHopId(hopId)) continue
-      const assignedNetId = state.portAssignment[portId]
-      if (
-        this.isPortReservedForDifferentNet(portId) ||
-        (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) ||
-        this.isRegionReservedForDifferentNet(nextRegionId)
-      ) {
-        continue
-      }
-      const bestCost = this.getCandidateBestCost(hopId)
-      if (parent.g >= bestCost) continue
-      let lowerBoundG =
-        parent.g +
-        state.regionCongestionCost[parent.nextRegionId]! +
-        (problem.portPenalty?.[portId] ?? 0)
-      let segmentDistance: number | undefined
-      if (this.ADD_SEGMENT_DISTANCE_TO_G) {
-        const dx = topology.portX[parent.portId]! - topology.portX[portId]!
-        const dy = topology.portY[parent.portId]! - topology.portY[portId]!
-        segmentDistance = Math.sqrt(dx * dx + dy * dy)
-        lowerBoundG += segmentDistance * this.DISTANCE_TO_COST
-      }
-      if (lowerBoundG >= bestCost) continue
-      const h = this.computeH(portId)
-      const f = lowerBoundG + h
-      if (!Number.isFinite(f)) {
-        throw new Error("Partial regional expansion requires finite priorities")
-      }
-      successors.push({
-        portId,
-        nextRegionId,
-        hopId,
-        lowerBoundG,
-        h,
-        f,
-        segmentDistance,
-      })
-    }
-    successors.sort(compareRegionalSuccessors)
-    this.partialRegionalExpansionStats.preparedParents += 1
-    this.partialRegionalExpansionStats.preparedSuccessors += successors.length
-    if (successors.length > 0) {
-      this.regionalExpansionQueue.queue({
-        parent,
-        neighbors,
-        successors,
-        index: 0,
-        f: successors[0]!.f,
-      })
-      this.partialRegionalExpansionStats.maximumPendingParents = Math.max(
-        this.partialRegionalExpansionStats.maximumPendingParents,
-        this.regionalExpansionQueue.length,
-      )
-    }
-    return true
-  }
-
-  private resumeRegionalExpansion(): boolean {
-    const queue = this.regionalExpansionCandidateQueue
-    const nextTicket = this.regionalExpansionQueue.peek()
-    if (!queue || !nextTicket) return false
-    const nextCandidate = queue.peek()
-    if (nextCandidate && nextTicket.f > nextCandidate.f) return false
-    const ticket = this.regionalExpansionQueue.dequeue()!
-    if (
-      this.topology.regionIncidentPorts[ticket.parent.nextRegionId] !==
-      ticket.neighbors
-    ) {
-      throw new Error("Regional topology changed during partial expansion")
-    }
-    this.partialRegionalExpansionStats.resumes += 1
-    let exactScorings = 0
-    while (exactScorings < PARTIAL_REGIONAL_RESUME_BATCH) {
-      const successor = ticket.successors[ticket.index++]
-      if (!successor) break
-      const bestCost = this.getCandidateBestCost(successor.hopId)
-      if (
-        !queue.isClosedHopId(successor.hopId) &&
-        successor.lowerBoundG < bestCost
-      ) {
-        exactScorings += 1
-        const g = this.computeG(
-          ticket.parent,
-          successor.portId,
-          bestCost,
-          successor.segmentDistance,
-        )
-        this.partialRegionalExpansionStats.exactScorings += 1
-        if (Number.isFinite(g) && g < bestCost) {
-          this.setCandidateBestCost(successor.hopId, g)
-          queue.queue({
-            hopId: successor.hopId,
-            prevRegionId: ticket.parent.nextRegionId,
-            nextRegionId: successor.nextRegionId,
-            portId: successor.portId,
-            g,
-            h: successor.h,
-            f: g + successor.h,
-            prevCandidate: ticket.parent,
-          })
-        }
-      }
-      const remaining = ticket.successors[ticket.index]
-      if (!remaining) return true
-      const candidate = queue.peek()
-      const anotherTicket = this.regionalExpansionQueue.peek()
-      if (
-        (candidate && remaining.f > candidate.f) ||
-        (anotherTicket && remaining.f > anotherTicket.f)
-      ) {
-        break
-      }
-    }
-    const remaining = ticket.successors[ticket.index]
-    if (remaining) {
-      ticket.f = remaining.f
-      this.regionalExpansionQueue.queue(ticket)
-    }
-    return true
-  }
-
   private getRegionalHopFrontier(
     regionId: RegionId,
     neighbors: PortId[],
@@ -1272,19 +1008,32 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     let frontier = this.regionalHopFrontiers.get(regionId)
     if (!frontier || frontier.neighbors !== neighbors) {
-      const next = new Int32Array(neighbors.length)
+      const indices = new Int32Array(neighbors.length)
       for (let index = 0; index < neighbors.length; index++) {
-        next[index] = index + 1 < neighbors.length ? index + 1 : -1
+        indices[index] = index
       }
       frontier = {
         neighbors,
-        next,
+        indices,
         prepared: new Uint8Array(neighbors.length),
         nextRegionIds: new Float64Array(neighbors.length),
         hopIds: new Float64Array(neighbors.length),
-        head: neighbors.length > 0 ? 0 : -1,
+        length: neighbors.length,
+        firstRetiredIndex: -1,
       }
       this.regionalHopFrontiers.set(regionId, frontier)
+    } else if (frontier.firstRetiredIndex !== -1) {
+      // Retire immediately during a scan, then pack before its next reuse.
+      // An early goal or throw therefore leaves every unvisited index intact.
+      let length = frontier.firstRetiredIndex
+      for (let index = length + 1; index < frontier.length; index++) {
+        const originalIndex = frontier.indices[index]!
+        if (originalIndex !== -1) {
+          frontier.indices[length++] = originalIndex
+        }
+      }
+      frontier.length = length
+      frontier.firstRetiredIndex = -1
     }
     return frontier
   }
@@ -1294,14 +1043,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     frontier: RegionalHopFrontier,
   ): void {
     const { problem, topology, state } = this
-    const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
-    let neighborIndex = frontier.head
-    let previousNeighborIndex = -1
-    while (neighborIndex !== -1) {
-      const currentNeighborIndex = neighborIndex
-      neighborIndex = next[currentNeighborIndex]!
-      const previousIndex = previousNeighborIndex
-      previousNeighborIndex = currentNeighborIndex
+    const { neighbors, indices, prepared, nextRegionIds, hopIds } = frontier
+    for (let index = 0; index < frontier.length; index++) {
+      const currentNeighborIndex = indices[index]!
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
@@ -1333,12 +1077,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         ? state.candidateQueue.isClosedHopId(candidateHopId)
         : state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId)
       if (candidateHopIsClosed === true) {
-        if (previousIndex === -1) {
-          frontier.head = neighborIndex
-        } else {
-          next[previousIndex] = neighborIndex
+        indices[index] = -1
+        if (frontier.firstRetiredIndex === -1) {
+          frontier.firstRetiredIndex = index
         }
-        previousNeighborIndex = previousIndex
         continue
       }
       if (!prepared[currentNeighborIndex]) {

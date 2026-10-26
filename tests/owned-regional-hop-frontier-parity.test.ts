@@ -138,17 +138,15 @@ const remainingFrontierPorts = (solver: TinyHyperGraphSolver): number[] => {
     solver as unknown as {
       regionalHopFrontiers: Map<
         number,
-        { neighbors: number[]; next: Int32Array; head: number }
+        { neighbors: number[]; indices: Int32Array; length: number }
       >
     }
   ).regionalHopFrontiers.get(0)!
   const ports: number[] = []
-  let index = frontier.head
-  while (index !== -1 && ports.length <= frontier.neighbors.length) {
-    ports.push(frontier.neighbors[index]!)
-    index = frontier.next[index]!
+  for (let index = 0; index < frontier.length; index++) {
+    const originalIndex = frontier.indices[index]!
+    if (originalIndex !== -1) ports.push(frontier.neighbors[originalIndex]!)
   }
-  expect(index).toBe(-1)
   return ports
 }
 

@@ -44,10 +44,6 @@ export class IndexedCandidateHeap {
     return this.items.length
   }
 
-  peek(): Candidate | undefined {
-    return this.items[0]
-  }
-
   toArray(): Candidate[] {
     return [...this.items]
   }
