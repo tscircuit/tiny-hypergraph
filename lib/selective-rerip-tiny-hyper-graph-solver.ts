@@ -629,7 +629,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         continue
       }
 
-      const resources = this.getHopBlockerResources({
+      const resourceAlternatives = this.getHopBlockerResources({
         regionId: state.nextRegionId,
         fromPortId: state.portId,
         toPortId: neighborPortId,
@@ -638,21 +638,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         portResources: context.portResources,
         ignoredRouteIds: input.ignoredRouteIds,
       })
-      if (!resources) continue
-      const owners: RouteId[] = []
-      for (const resource of resources) {
-        for (const owner of resource.owners) {
-          if (!owners.includes(owner)) owners.push(owner)
-        }
-      }
-      if (
-        owners.some((ownerRouteId) =>
-          context.forbiddenOwnerRouteIds.has(ownerRouteId),
-        )
-      ) {
-        continue
-      }
-
       let nextRegionId = state.nextRegionId
       if (neighborPortId !== goalPortId) {
         const [firstRegionId, secondRegionId] =
@@ -667,17 +652,32 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         }
       }
 
-      hops.push({
-        state: { portId: neighborPortId, nextRegionId },
-        distance: Math.hypot(
-          this.topology.portX[state.portId]! -
-            this.topology.portX[neighborPortId]!,
-          this.topology.portY[state.portId]! -
-            this.topology.portY[neighborPortId]!,
-        ),
-        owners,
-        data: { resources },
-      })
+      for (const resources of resourceAlternatives) {
+        const owners: RouteId[] = []
+        for (const resource of resources) {
+          for (const owner of resource.owners) {
+            if (!owners.includes(owner)) owners.push(owner)
+          }
+        }
+        if (
+          owners.some((ownerRouteId) =>
+            context.forbiddenOwnerRouteIds.has(ownerRouteId),
+          )
+        ) {
+          continue
+        }
+        hops.push({
+          state: { portId: neighborPortId, nextRegionId },
+          distance: Math.hypot(
+            this.topology.portX[state.portId]! -
+              this.topology.portX[neighborPortId]!,
+            this.topology.portY[state.portId]! -
+              this.topology.portY[neighborPortId]!,
+          ),
+          owners,
+          data: { resources },
+        })
+      }
     }
 
     return hops
@@ -691,7 +691,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
     ignoredRouteIds?: ReadonlySet<RouteId>
-  }): SelectiveReripBlockerResource[] | undefined {
+  }): SelectiveReripBlockerResource[][] {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
     if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
@@ -733,48 +733,91 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       for (const resource of resources) {
         for (const owner of resource.owners) ignoredRouteIds.add(owner)
       }
-      const owners: RouteId[] = []
-      while (true) {
+      const branches = [{ ignoredRouteIds, owners: [] as RouteId[] }]
+      const seenOwnerSets = new Set([""])
+      const alternatives: SelectiveReripBlockerResource[][] = []
+      for (let index = 0; index < branches.length; index++) {
+        const branch = branches[index]!
         const feasibility = this.getRegionSegmentFeasibility(
           params.regionId,
           params.fromPortId,
           params.toPortId,
-          ignoredRouteIds,
+          branch.ignoredRouteIds,
         )
-        if (feasibility.feasible) break
-        let addedOwner = false
-        for (const owner of feasibility.blockerRouteIds) {
-          if (
-            !Number.isInteger(owner) ||
-            owner < 0 ||
-            owner >= this.problem.routeCount ||
-            owner === this.state.currentRouteId ||
-            !this.state.regionSegments[params.regionId]!.some(
-              ([routeId]) => routeId === owner,
-            )
+        if (feasibility.feasible) {
+          alternatives.push(
+            branch.owners.length === 0
+              ? resources
+              : [
+                  ...resources,
+                  {
+                    kind: "region_segment_feasibility",
+                    regionId: params.regionId,
+                    fromPortId: params.fromPortId,
+                    toPortId: params.toPortId,
+                    owners: branch.owners,
+                  },
+                ],
           )
-            throw new Error(
-              "Region segment feasibility returned an invalid blocker route",
-            )
-          if (ignoredRouteIds.has(owner)) continue
-          ignoredRouteIds.add(owner)
-          owners.push(owner)
-          addedOwner = true
+          continue
         }
-        if (!addedOwner) return undefined
+        const mandatory = feasibility.blockerRouteIds
+        const choices = feasibility.alternativeBlockerRouteIdSets
+        if (
+          (mandatory !== undefined && choices !== undefined) ||
+          (mandatory === undefined && !Array.isArray(choices)) ||
+          (mandatory !== undefined && !Array.isArray(mandatory))
+        )
+          throw new Error(
+            "Region segment feasibility returned invalid blocker choices",
+          )
+        const removalSets =
+          mandatory !== undefined
+            ? mandatory.length === 0
+              ? []
+              : [mandatory]
+            : choices!
+        for (const removalSet of removalSets) {
+          if (!Array.isArray(removalSet) || removalSet.length === 0)
+            throw new Error(
+              "Region segment feasibility returned an empty blocker choice",
+            )
+          const nextIgnoredRouteIds = new Set(branch.ignoredRouteIds)
+          const nextOwners = [...branch.owners]
+          for (const owner of removalSet) {
+            if (
+              !Number.isInteger(owner) ||
+              owner < 0 ||
+              owner >= this.problem.routeCount ||
+              owner === this.state.currentRouteId ||
+              !this.state.regionSegments[params.regionId]!.some(
+                ([routeId]) => routeId === owner,
+              )
+            )
+              throw new Error(
+                "Region segment feasibility returned an invalid blocker route",
+              )
+            if (nextIgnoredRouteIds.has(owner)) continue
+            nextIgnoredRouteIds.add(owner)
+            nextOwners.push(owner)
+          }
+          if (nextIgnoredRouteIds.size === branch.ignoredRouteIds.size)
+            throw new Error(
+              "Region segment feasibility blocker choice made no progress",
+            )
+          const key = [...nextOwners].sort((a, b) => a - b).join(",")
+          if (seenOwnerSets.has(key)) continue
+          seenOwnerSets.add(key)
+          branches.push({
+            ignoredRouteIds: nextIgnoredRouteIds,
+            owners: nextOwners,
+          })
+        }
       }
-      if (owners.length > 0) {
-        resources.push({
-          kind: "region_segment_feasibility",
-          regionId: params.regionId,
-          fromPortId: params.fromPortId,
-          toPortId: params.toPortId,
-          owners,
-        })
-      }
+      return alternatives
     }
 
-    return resources
+    return [resources]
   }
 
   private getPortOwners(): Map<PortId, Set<RouteId>> {

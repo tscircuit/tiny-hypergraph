@@ -107,7 +107,16 @@ export type TinyHyperGraphRegionSegmentFeasibilityContext = {
 
 export type TinyHyperGraphRegionSegmentFeasibilityResult =
   | { feasible: true }
-  | { feasible: false; blockerRouteIds: readonly RouteId[] }
+  | {
+      feasible: false
+      blockerRouteIds: readonly RouteId[]
+      alternativeBlockerRouteIdSets?: never
+    }
+  | {
+      feasible: false
+      blockerRouteIds?: never
+      alternativeBlockerRouteIdSets: readonly (readonly RouteId[])[]
+    }
 
 export interface TinyHyperGraphTopology {
   portCount: number
@@ -145,10 +154,12 @@ export interface TinyHyperGraphTopology {
 
   /**
    * Runtime-only, read-only hard constraint; install locally after loading.
-   * Every returned blocker is a mandatory committed route removal for this hop;
-   * alternative removal choices are not represented by this callback.
+   * blockerRouteIds are mandatory removals. alternativeBlockerRouteIdSets
+   * instead branches over concrete removal choices; every feasible removal
+   * must contain at least one of those sets. Each set must make progress.
    * Removing additional owners must never make a segment less feasible. Return
-   * no blockers for a permanent constraint. Rechecked after hypothetical rips.
+   * no blockers or no alternatives for a permanent constraint. Rechecked after
+   * hypothetical rips, including after each alternative choice.
    */
   regionSegmentFeasibility?: (
     context: TinyHyperGraphRegionSegmentFeasibilityContext,
