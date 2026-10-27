@@ -22,7 +22,6 @@
     "@tscircuit/capacity-autorouter": "^0.0.557",
     "@tscircuit/find-convex-regions": "^0.1.3",
     "@tscircuit/hypergraph": "^0.0.71",
-    "@tscircuit/solver-utils": "^0.0.17",
     "@types/bun": "latest",
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
@@ -35,5 +34,8 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@tscircuit/solver-utils": "^0.0.23"
   }
 }
