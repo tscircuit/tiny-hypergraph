@@ -25,9 +25,12 @@ test("candidate zero preserves the baseline and exactly three alternatives have 
     candidates.every(({ RIP_THRESHOLD_END }) => RIP_THRESHOLD_END === 0.8),
   ).toBe(true)
   expect(
-    candidates.slice(1).every(({ ACCEPT_BEST_SOLUTION_ON_TIMEOUT }) =>
-      ACCEPT_BEST_SOLUTION_ON_TIMEOUT === false,
-    ),
+    candidates
+      .slice(1)
+      .every(
+        ({ ACCEPT_BEST_SOLUTION_ON_TIMEOUT }) =>
+          ACCEPT_BEST_SOLUTION_ON_TIMEOUT === false,
+      ),
   ).toBe(true)
   expect(candidates[0].state.unroutedRoutes).toEqual([0, 1])
   expect(candidates[1].state.unroutedRoutes).toEqual([1, 0])

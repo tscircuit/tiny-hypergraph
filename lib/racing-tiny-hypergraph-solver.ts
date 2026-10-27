@@ -71,9 +71,7 @@ export function createTinyHyperGraphRaceCandidate(
       (hasPreloadedCopper ? 1 : [1, 4, 4, 10][candidateIndex]),
     // A speculative timeout must not win by accepting an unfinished search.
     // The original lane retains the caller's complete-graph timeout policy.
-    ...(candidateIndex > 0
-      ? { ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false }
-      : {}),
+    ...(candidateIndex > 0 ? { ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false } : {}),
   })
   // Bound speculative search effort. For preloaded copper, preserve the
   // original topology and vary only strict budgets; lane zero wins any tie.
