@@ -119,3 +119,49 @@ const solvedGraph = convertToSerializedHyperGraph(solver)
 ```
 
 The converter expects the solver to be fully solved and not failed.
+
+## Deterministic four-candidate race
+
+`RacingTinyHyperGraphSolver(topology, problem, options)` supports synchronous
+`.step()` / `.solve()` and `.solveAsync(runtime)` with identical routed output.
+Exactly four candidates are initialized in every mode, independent of worker
+count. The successful candidate with the fewest native logical steps wins;
+ties use the lower index. Scheduling and elapsed time never select routing.
+
+| Candidate | Initial order | Distance heuristic multiplier | Native step budget |
+| --- | --- | --- | --- |
+| 0 | Original | 1 | Original |
+| 1 | Reverse | 4 | One eighth |
+| 2 | Original | 4 | One eighth |
+| 3 | Original | 10 | One eighth |
+
+Speculative candidates require native completion and cannot win by accepting
+a timeout result. Candidate zero retains the caller's original timeout policy.
+All candidates compete from the start; no exception is swallowed. Three
+bounded candidates add at most 37.5% of the original search-step budget if all
+fail, excluding ceiling rounding, initialization and native finalization costs.
+This is not a wall-time bound.
+
+For preloaded copper, all four retain the original heuristic and ordering.
+The three strict alternatives use budgets of one eighth, one tenth and one
+twelfth, so they can only tie the original topology; lane zero wins the tie.
+This preserves existing copper repair behavior while retaining four candidates.
+Set `raceUseSelectiveRerip: true` to restore initial copper assignments on global
+retries while preserving the existing selective-blocker policy.
+
+Synchronous execution batches 128 native steps per lane to keep each frontier
+hot and amortize pipeline bookkeeping. Every lane reaches the earliest successful
+native step before the winner is selected. Wrapper iteration counts are batch
+counts; `stats.raceWinningIterations` reports native steps. A partially stepped
+race resumes the same synchronous schedule.
+
+Import `tiny-hypergraph/lib/racing-tiny-hypergraph-solver` in host and worker
+entrypoints to register `TinyHyperGraphRaceCandidateSolver`. Workers share an
+atomic best-completion-step bound. The default library does not import Node
+worker APIs. Browsers without a runtime or shared memory use the synchronous
+four-candidate implementation.
+
+The initial prototype allowed bounded timeout acceptance and obtained a 60.1%
+port-point phase reduction on SRJ18, but regressed routing completion. That
+prototype was rejected. Timing results for it do not validate this stricter
+candidate policy; end-to-end completion and DRC remain required checks.
