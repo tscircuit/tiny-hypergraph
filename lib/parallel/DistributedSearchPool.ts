@@ -27,6 +27,7 @@ export class DistributedSearchPool {
   private readonly graph: SharedRouteGraph
   private readonly control = new Int32Array(new SharedArrayBuffer(12 * 4))
   private readonly published: Float64Array
+  private readonly settled: Uint8Array
   private readonly parents: Int32Array
   private readonly bounds: Float64Array
   private readonly work: Int32Array
@@ -69,6 +70,7 @@ export class DistributedSearchPool {
     )
     this.capacity = this.batchSize * (degree + 2)
     this.published = new Float64Array(new SharedArrayBuffer(hops * 8))
+    this.settled = new Uint8Array(new SharedArrayBuffer(hops))
     this.parents = new Int32Array(new SharedArrayBuffer(hops * 4))
     this.bounds = new Float64Array(new SharedArrayBuffer((count + 1) * 8))
     this.work = new Int32Array(new SharedArrayBuffer(count * 4))
@@ -110,6 +112,7 @@ export class DistributedSearchPool {
             context: this.graph.context,
             control: this.control,
             published: this.published,
+            settled: this.settled,
             parents: this.parents,
             bounds: this.bounds,
             work: this.work,
@@ -165,6 +168,7 @@ export class DistributedSearchPool {
       previous = Array.from(this.counters)
     this.graph.sync()
     this.published.fill(Infinity)
+    this.settled.fill(0)
     this.parents.fill(-1)
     this.bounds.fill(Infinity)
     this.work.fill(0)

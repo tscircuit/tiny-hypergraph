@@ -32,6 +32,7 @@ export type DistributedSearchInput = {
   context: SharedRouteContext
   control: Int32Array
   published: Float64Array
+  settled: Uint8Array
   parents: Int32Array
   bounds: Float64Array
   work: Int32Array
@@ -55,7 +56,14 @@ class DistributedHeap extends IndexedCandidateHeap {
     super(regionCount, index)
   }
   override isClosedHopId(hopId: number): boolean {
-    return this.solver.input.workers === 1 ? super.isClosedHopId(hopId) : false
+    return this.solver.input.workers === 1
+      ? super.isClosedHopId(hopId)
+      : this.solver.input.settled[hopId] === 1
+  }
+  override dequeue(): Candidate | undefined {
+    const candidate = super.dequeue()
+    if (candidate) this.solver.expanded.push(candidate)
+    return candidate
   }
   override queue(candidate: Candidate): void {
     this.solver.enqueue(candidate)
@@ -70,6 +78,7 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
   readonly best: Float64Array
   readonly sent: Float64Array
   readonly changed: number[] = []
+  readonly expanded: Candidate[] = []
   readonly versions: Int32Array
   heap!: DistributedHeap
   goalBest = Infinity
@@ -83,7 +92,6 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
     super(input.topology, input.problem, {
       ...input.options,
       STATIC_REACHABILITY_PRECHECK: false,
-      OWNED_REGIONAL_HOP_FRONTIER: false,
       ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
       GREEDY_FINAL_ROUTE_ITERS: 0,
       MAX_ITERATIONS: Infinity,
@@ -194,6 +202,21 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
       this.input.bounds[this.input.workers] = this.goalBest
   }
 
+  private publishSettled(lowerBound: number): void {
+    // All incoming messages have been drained. With a consistent heuristic,
+    // no future relaxation can improve an expanded label below the previous
+    // global frontier bound. Publish these permanent closures only between
+    // expansion phases so the regional frontier can safely prune them.
+    let retained = 0
+    for (const candidate of this.expanded) {
+      const hop = candidate.hopId!
+      if (candidate.g !== this.best[hop]) continue
+      if (candidate.f <= lowerBound) this.input.settled[hop] = 1
+      else this.expanded[retained++] = candidate
+    }
+    this.expanded.length = retained
+  }
+
   private finishRound(): void {
     if (this.input.owner !== 0) return
     const { control: c, work, bounds, workers } = this.input,
@@ -229,6 +252,7 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
     this.sent.fill(Infinity)
     this.heap.clear()
     this.changed.length = 0
+    this.expanded.length = 0
     this.solved = false
     this.failed = false
     this.error = null
@@ -356,6 +380,7 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
           })
         }
       }
+      this.publishSettled(minimum)
       this.publish()
       this.barrier()
       this.finishRound()

@@ -17,7 +17,7 @@ test("distributed A* retains the serial single-route cost on weighted cyclic gra
       const options = {
         MAX_ITERATIONS: 100000,
         STATIC_REACHABILITY_PRECHECK: false,
-        OWNED_REGIONAL_HOP_FRONTIER: false,
+        OWNED_REGIONAL_HOP_FRONTIER: seed % 2 === 0,
         VERBOSE: false,
       }
       const serial = new DistanceAwareTinyHyperGraphSolver(
