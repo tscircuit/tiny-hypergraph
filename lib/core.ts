@@ -1,4 +1,6 @@
-import { BaseSolver } from "@tscircuit/solver-utils"
+import "./parallel/TinyHyperGraphRegionCostWorker"
+import { ParallelRegionCosts } from "./parallel/ParallelRegionCosts"
+import { BaseSolver, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
@@ -812,6 +814,76 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected parallelRegionCosts?: ParallelRegionCosts
+
+  private parallelSolveRunning = false
+
+  async solveAsync(runtime?: SolverRuntimeExecutor): Promise<void> {
+    await this.withParallelRegionCosts(runtime, () => this.solve())
+  }
+
+  /**
+   * Run the original stepping loop while workers prepare immutable transition
+   * costs. The caller owns stepping, including nested pipeline iteration limits.
+   * A worker miss uses the original cost calculation; it never changes search
+   * order, cost arithmetic, or the route selected by the coordinator.
+   */
+  async withParallelRegionCosts(
+    runtime: SolverRuntimeExecutor | undefined,
+    run: () => void,
+  ): Promise<void> {
+    if (this.parallelSolveRunning) {
+      throw new Error("Parallel pathing is already running")
+    }
+    if (this.solved || this.failed) return
+    this.parallelSolveRunning = true
+    let accelerator: ParallelRegionCosts | undefined
+    try {
+      // Custom cost functions cannot use tables implementing the base formula.
+      const supported =
+        this.computeG === TinyHyperGraphSolver.prototype.computeG &&
+        this.computeRegionCostForRegion ===
+          TinyHyperGraphSolver.prototype.computeRegionCostForRegion &&
+        this.isKnownSingleLayerRegion ===
+          TinyHyperGraphSolver.prototype.isKnownSingleLayerRegion
+      if (
+        runtime && supported && typeof SharedArrayBuffer !== "undefined" &&
+        await runtime.executeAsync("TinyHyperGraphRegionCostCapabilities", {})
+      ) {
+        accelerator = new ParallelRegionCosts(
+          this.topology, this.minViaPadDiameter, this.TRACE_DENSITY_COST_FACTOR,
+        )
+        await accelerator.start(runtime)
+        this.parallelRegionCosts = accelerator
+      }
+      run()
+    } catch (error) {
+      this.solved = false
+      this.failed = true
+      this.error = `Parallel pathing error: ${error}`
+      throw error
+    } finally {
+      this.parallelRegionCosts = undefined
+      try {
+        if (accelerator) {
+          // Record actual workers before queued service tasks drain on close.
+          this.stats.parallelRegionCostWorkers = Atomics.load(accelerator.input.control, 2)
+          await accelerator.close()
+          this.stats.parallelRegionCostRowsUsed = accelerator.readyRows
+          this.stats.parallelRegionCostTables = accelerator.queued
+          this.stats.parallelRegionCostCompletedTables = Atomics.load(accelerator.input.control, 3)
+        }
+      } catch (error) {
+        this.solved = false
+        this.failed = true
+        this.error = `Parallel pathing worker error: ${error}`
+        throw error
+      } finally {
+        this.parallelSolveRunning = false
+      }
+    }
+  }
+
   override _step() {
     const { problem, topology, state } = this
 
@@ -869,6 +941,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (this.isRegionReservedForDifferentNet(currentCandidate.nextRegionId)) {
       return
     }
+
+    this.parallelRegionCosts?.prepare(
+      currentCandidate.nextRegionId, state.currentRouteNetId!,
+      state.regionIntersectionCaches[currentCandidate.nextRegionId]!,
+    )
 
     const neighbors =
       topology.regionIncidentPorts[currentCandidate.nextRegionId]
@@ -1030,6 +1107,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ): void {
     const { problem, topology, state } = this
     const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
+    const costRow = this.parallelRegionCosts?.getReadyRow(
+      currentCandidate.nextRegionId, currentCandidate.portId,
+      state.regionIntersectionCaches[currentCandidate.nextRegionId]!,
+      state.currentRouteNetId!,
+    ) ?? -1
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
     while (neighborIndex !== -1) {
@@ -1106,12 +1188,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
         lowerBoundCost += knownSegmentDistance * this.DISTANCE_TO_COST
       }
       if (lowerBoundCost >= previousBestCost) continue
-      const g = this.computeG(
-        currentCandidate,
-        neighborPortId,
-        previousBestCost,
-        knownSegmentDistance,
-      )
+      const cachedCost = costRow < 0 ? NaN
+        : this.parallelRegionCosts!.input.scores[costRow + currentNeighborIndex]!
+      // Preserve computeG's addition order. The lower-bound cutoff above is
+      // stricter than computeG's cutoff, so a ready table can bypass that call.
+      const g = Number.isNaN(cachedCost)
+        ? this.computeG(
+            currentCandidate, neighborPortId, previousBestCost, knownSegmentDistance,
+          )
+        : currentCandidate.g + cachedCost +
+          state.regionCongestionCost[currentCandidate.nextRegionId]! +
+          (problem.portPenalty?.[neighborPortId] ?? 0) +
+          (this.ADD_SEGMENT_DISTANCE_TO_G
+            ? knownSegmentDistance! * this.DISTANCE_TO_COST : 0)
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       const h = this.computeH(neighborPortId)
 
@@ -1770,6 +1859,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
       )
       greedyFinalRouteMaxIterations = greedySolver.MAX_ITERATIONS
 
+      if (greedySolver.topology === this.topology &&
+          greedySolver.computeG === TinyHyperGraphSolver.prototype.computeG &&
+          greedySolver.computeRegionCostForRegion === TinyHyperGraphSolver.prototype.computeRegionCostForRegion &&
+          greedySolver.isKnownSingleLayerRegion === TinyHyperGraphSolver.prototype.isKnownSingleLayerRegion &&
+          greedySolver.minViaPadDiameter === this.minViaPadDiameter &&
+          greedySolver.TRACE_DENSITY_COST_FACTOR === this.TRACE_DENSITY_COST_FACTOR) {
+        greedySolver.parallelRegionCosts = this.parallelRegionCosts
+      }
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
         startingSnapshot,
