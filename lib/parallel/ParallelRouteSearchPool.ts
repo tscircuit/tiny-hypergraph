@@ -121,6 +121,11 @@ export class ParallelRouteSearchPool {
         dependencies: new Int32Array(
           new SharedArrayBuffer(solver.topology.regionCount * 2 * 4),
         ),
+        liveRegions: new Int32Array(
+          new SharedArrayBuffer(
+            this.workerCount > 1 ? solver.topology.regionCount * 4 : 0,
+          ),
+        ),
       }
       const slot: Slot = { input, busy: false, completion: Promise.resolve() }
       this.slots.push(slot)
@@ -222,6 +227,11 @@ export class ParallelRouteSearchPool {
       slot.busy = true
       free--
       slot.input.control[1] = route
+      slot.input.control[2] = (slot.input.control[2]! + 1) | 0
+      if (slot.input.control[2] === 0) {
+        slot.input.liveRegions.fill(0)
+        slot.input.control[2] = 1
+      }
       slot.input.budget[0] = this.budget
       Atomics.store(slot.input.control, 9, 0)
       Atomics.store(slot.input.control, 0, 1)
@@ -236,6 +246,14 @@ export class ParallelRouteSearchPool {
         job.result = result
         job.done = true
         slot.busy = false
+        if (
+          result.status === "canceled" &&
+          route !== this.solver.state.unroutedRoutes[0] &&
+          this.jobs.get(route) === job
+        ) {
+          this.jobs.delete(route)
+          this.staleSearches++
+        }
         this.schedule()
         return result
       })
@@ -263,6 +281,17 @@ export class ParallelRouteSearchPool {
     const syncStart = performance.now()
     this.graph.sync()
     this.graphSyncMs += performance.now() - syncStart
+    for (const job of this.jobs.values()) {
+      if (job.done) continue
+      const { liveRegions, control } = job.slot.input
+      if (liveRegions.length === 0) continue
+      if (
+        this.graph.changedRegions.some(
+          (region) => Atomics.load(liveRegions, region) === control[2],
+        )
+      )
+        Atomics.store(control, 9, 1)
+    }
     const waitStart = performance.now()
     const pendingRoutes = new Set(this.solver.state.unroutedRoutes)
     for (const [route, job] of this.jobs) {

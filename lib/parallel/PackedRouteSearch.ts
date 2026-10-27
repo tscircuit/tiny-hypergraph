@@ -194,6 +194,7 @@ export class PackedRouteSearch {
     budget: number,
     control: Int32Array,
     regions: Set<number>,
+    onRegionRead?: (region: number) => boolean,
   ): Result {
     if (++this.generation === 0xffffffff) {
       this.stamps.fill(0)
@@ -235,6 +236,8 @@ export class PackedRouteSearch {
       const hop = this.pop(),
         port = Math.floor(hop / this.stride)
       const region = topology.incidentPortRegion[port]![hop % this.stride]!
+      if (onRegionRead && !regions.has(region) && !onRegionRead(region))
+        return { exhausted: false, canceled: true, iterations }
       regions.add(region)
       if (
         problem.regionNetId[region] !== -1 &&

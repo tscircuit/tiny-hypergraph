@@ -19,6 +19,7 @@ export type ParallelRouteSearchInput = {
   pathIds: Int32Array
   pathCosts: Float64Array
   dependencies: Int32Array
+  liveRegions: Int32Array
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
@@ -44,7 +45,12 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
 
   override tryFinalAcceptance(): void {}
 
-  search(routeId: number, budget: number, control: Int32Array): void {
+  search(
+    routeId: number,
+    budget: number,
+    control: Int32Array,
+    onRegionRead?: (region: number) => boolean,
+  ): void {
     this.candidate = undefined
     this.exhausted = false
     this.regions.clear()
@@ -54,7 +60,13 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
     this.failed = false
     this.error = null
     this.packed ??= new PackedRouteSearch(this)
-    const result = this.packed.search(routeId, budget, control, this.regions)
+    const result = this.packed.search(
+      routeId,
+      budget,
+      control,
+      this.regions,
+      onRegionRead,
+    )
     this.candidate = result.candidate
     this.exhausted = result.exhausted
     this.iterations = result.iterations
@@ -104,7 +116,24 @@ export class ParallelRouteSearchTask {
         snapshot.refresh()
         const initialCopyMs = snapshot.timeMs - snapshotTimeStart
         const searchStart = performance.now()
-        solver.search(control[1]!, budget[0]!, control)
+        solver.search(
+          control[1]!,
+          budget[0]!,
+          control,
+          this.input.liveRegions.length > 0
+            ? (region): boolean => {
+                // Publish before checking the version: a concurrent update either
+                // sees this read or is detected by the following version check.
+                Atomics.store(this.input.liveRegions, region, control[2]!)
+                if (
+                  Atomics.load(context.headers, region * 8) === versions[region]
+                )
+                  return true
+                Atomics.store(control, 9, 1)
+                return false
+              }
+            : undefined,
+        )
         const elapsed = performance.now() - searchStart
         budget[1] = snapshot.timeMs - snapshotTimeStart
         budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))

@@ -10,6 +10,7 @@ export type SharedRouteContext = {
 }
 
 export class SharedRouteGraph {
+  readonly changedRegions: number[] = []
   generation = 0
   readonly context: SharedRouteContext
   private usedWords = 0
@@ -43,6 +44,7 @@ export class SharedRouteGraph {
     this.generation++
   }
   sync(): void {
+    this.changedRegions.length = 0
     const ctx = this.context
     Atomics.add(ctx.epoch, 0, 1)
     try {
@@ -98,6 +100,7 @@ export class SharedRouteGraph {
           this.caches[region] !==
             this.solver.state.regionIntersectionCaches[region]
         ) {
+          this.changedRegions.push(region)
           Atomics.add(ctx.headers, region * 8, 1)
           this.writeRegion(region)
           Atomics.add(ctx.headers, region * 8, 1)
