@@ -13,12 +13,18 @@ export class SharedRouteGraph {
   readonly context: SharedRouteContext
   private usedWords = 0
   private caches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"] = []
-  constructor(private solver: TinyHyperGraphSolver, context?: SharedRouteContext) {
-    const topology = solver.topology, regions = topology.regionCount
+  constructor(
+    private solver: TinyHyperGraphSolver,
+    context?: SharedRouteContext,
+  ) {
+    const topology = solver.topology,
+      regions = topology.regionCount
     this.context = context ?? {
       headers: new Int32Array(new SharedArrayBuffer(regions * 8 * 4)),
       costs: new Float64Array(new SharedArrayBuffer(regions * 8)),
-      storage: new Int32Array(new SharedArrayBuffer(Math.max(1024, topology.portCount * 64) * 4 * 4)),
+      storage: new Int32Array(
+        new SharedArrayBuffer(Math.max(1024, topology.portCount * 64) * 4 * 4),
+      ),
       assignment: new Int32Array(new SharedArrayBuffer(topology.portCount * 4)),
       congestion: new Float64Array(new SharedArrayBuffer(regions * 8)),
       epoch: new Int32Array(new SharedArrayBuffer(4)),
@@ -26,7 +32,11 @@ export class SharedRouteGraph {
     this.sync()
   }
   rebind(solver: TinyHyperGraphSolver): void {
-    if (solver.topology !== this.solver.topology || solver.problem !== this.solver.problem) throw new Error("Cannot rebind a different route graph")
+    if (
+      solver.topology !== this.solver.topology ||
+      solver.problem !== this.solver.problem
+    )
+      throw new Error("Cannot rebind a different route graph")
     this.solver = solver
     this.caches = []
   }
@@ -34,22 +44,32 @@ export class SharedRouteGraph {
     const ctx = this.context
     Atomics.add(ctx.epoch, 0, 1)
     try {
-    const dirty = new Uint8Array(this.solver.topology.regionCount)
-    for (let port = 0; port < ctx.assignment.length; port++) {
-      if (ctx.assignment[port] !== this.solver.state.portAssignment[port]) {
-        for (const region of this.solver.topology.incidentPortRegion[port]) dirty[region] = 1
+      const dirty = new Uint8Array(this.solver.topology.regionCount)
+      for (let port = 0; port < ctx.assignment.length; port++) {
+        if (ctx.assignment[port] !== this.solver.state.portAssignment[port]) {
+          for (const region of this.solver.topology.incidentPortRegion[port])
+            dirty[region] = 1
+        }
       }
-    }
-    for (let region = 0; region < this.solver.topology.regionCount; region++) {
-      if (dirty[region] || ctx.congestion[region] !== this.solver.state.regionCongestionCost[region] ||
-          this.caches[region] !== this.solver.state.regionIntersectionCaches[region]) {
-        Atomics.add(ctx.headers, region * 8, 1)
-        this.writeRegion(region)
-        Atomics.add(ctx.headers, region * 8, 1)
+      for (
+        let region = 0;
+        region < this.solver.topology.regionCount;
+        region++
+      ) {
+        if (
+          dirty[region] ||
+          ctx.congestion[region] !==
+            this.solver.state.regionCongestionCost[region] ||
+          this.caches[region] !==
+            this.solver.state.regionIntersectionCaches[region]
+        ) {
+          Atomics.add(ctx.headers, region * 8, 1)
+          this.writeRegion(region)
+          Atomics.add(ctx.headers, region * 8, 1)
+        }
       }
-    }
-    ctx.assignment.set(this.solver.state.portAssignment)
-    ctx.congestion.set(this.solver.state.regionCongestionCost)
+      ctx.assignment.set(this.solver.state.portAssignment)
+      ctx.congestion.set(this.solver.state.regionCongestionCost)
     } finally {
       Atomics.add(ctx.epoch, 0, 1)
       Atomics.notify(ctx.epoch, 0)
@@ -66,7 +86,8 @@ export class SharedRouteGraph {
       capacity = 2 ** Math.ceil(Math.log2(count))
       offset = this.usedWords
       this.usedWords += capacity * 4
-      if (this.usedWords > ctx.storage.length) throw new Error("Shared route-cache storage exhausted")
+      if (this.usedWords > ctx.storage.length)
+        throw new Error("Shared route-cache storage exhausted")
       ctx.headers[row + 1] = offset
       ctx.headers[row + 2] = capacity
     }

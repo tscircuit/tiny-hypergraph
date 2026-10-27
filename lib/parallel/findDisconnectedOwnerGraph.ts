@@ -1,23 +1,28 @@
-import type { DistinctOwnerBlockerSearchOptions as SearchOptions, DistinctOwnerBlockerSearchFailure } from "../find-distinct-owner-blocker-path"
+import type {
+  DistinctOwnerBlockerSearchOptions as SearchOptions,
+  DistinctOwnerBlockerSearchFailure,
+} from "../find-distinct-owner-blocker-path"
 
-export type CompiledOwnerSearchOptions<TState, TKey, TOwner, TData = unknown> = SearchOptions<TState, TKey, TOwner, TData> & {
+export type CompiledOwnerSearchOptions<
+  TState,
+  TKey,
+  TOwner,
+  TData = unknown,
+> = SearchOptions<TState, TKey, TOwner, TData> & {
   /** The caller proves these states equivalent for unweighted connectivity. */
   getReachabilityStateKey?: (state: TState) => unknown
 }
 
 export const findDisconnectedOwnerGraph = <TState, TStateKey, TOwner, THopData>(
-  options: CompiledOwnerSearchOptions<
-    TState,
-    TStateKey,
-    TOwner,
-    THopData
-  >,
+  options: CompiledOwnerSearchOptions<TState, TStateKey, TOwner, THopData>,
   maxExpandedStates: number,
 ): DistinctOwnerBlockerSearchFailure | undefined => {
   const queue = [options.start]
   const reachabilityKey = options.getReachabilityStateKey ?? options.getStateKey
   const seenStateKeys = new Set([reachabilityKey(options.start)])
-  const originalStateKeys = options.getReachabilityStateKey ? new Set([options.getStateKey(options.start)]) : undefined
+  const originalStateKeys = options.getReachabilityStateKey
+    ? new Set([options.getStateKey(options.start)])
+    : undefined
   let expandedStateCount = 0
   let totalHopDistance = 0
 
@@ -53,4 +58,3 @@ export const findDisconnectedOwnerGraph = <TState, TStateKey, TOwner, THopData>(
     expandedLabelCount: originalStateKeys?.size ?? expandedStateCount,
   }
 }
-

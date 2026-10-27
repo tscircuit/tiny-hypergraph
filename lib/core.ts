@@ -1157,9 +1157,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  acceptParallelRouteSearch(routeId: RouteId, candidate: Candidate | undefined, iterations: number): void {
-    if (this.state.currentRouteId !== undefined || this.state.unroutedRoutes[0] !== routeId ||
-        iterations < 1 || this.iterations + iterations > this.MAX_ITERATIONS) throw new Error("Route replay does not match the routing state")
+  acceptParallelRouteSearch(
+    routeId: RouteId,
+    candidate: Candidate | undefined,
+    iterations: number,
+  ): void {
+    if (
+      this.state.currentRouteId !== undefined ||
+      this.state.unroutedRoutes[0] !== routeId ||
+      iterations < 1 ||
+      this.iterations + iterations > this.MAX_ITERATIONS
+    )
+      throw new Error("Route replay does not match the routing state")
     this.state.unroutedRoutes.shift()
     this.state.currentRouteId = routeId
     this.state.currentRouteNetId = this.problem.routeNet[routeId]
@@ -1173,8 +1182,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   expireParallelRouteSearch(routeId: RouteId, iterations: number): void {
-    if (this.state.currentRouteId !== undefined || this.state.unroutedRoutes[0] !== routeId ||
-        iterations < 1 || this.iterations + iterations !== this.MAX_ITERATIONS) throw new Error("Route timeout does not match the remaining budget")
+    if (
+      this.state.currentRouteId !== undefined ||
+      this.state.unroutedRoutes[0] !== routeId ||
+      iterations < 1 ||
+      this.iterations + iterations !== this.MAX_ITERATIONS
+    )
+      throw new Error("Route timeout does not match the remaining budget")
     this.state.unroutedRoutes.shift()
     this.state.currentRouteId = routeId
     this.state.currentRouteNetId = this.problem.routeNet[routeId]
@@ -1182,7 +1196,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.routeAttemptCountByRouteId[routeId] += 1
     this.iterations += iterations
     this.tryFinalAcceptance()
-    if (!this.solved) { this.failed = true; this.error = `${this.getSolverName()} ran out of iterations` }
+    if (!this.solved) {
+      this.failed = true
+      this.error = `${this.getSolverName()} ran out of iterations`
+    }
   }
 
   resetCandidateBestCosts() {
@@ -1766,23 +1783,39 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   getFinalRouteRequest(): FinalRouteRequest {
-    if (!this.hasDeferredFinalRouteAcceptance) throw new Error("No deferred completion search")
+    if (!this.hasDeferredFinalRouteAcceptance)
+      throw new Error("No deferred completion search")
     return {
-      topology: this.topology, problem: this.problem, options: getTinyHyperGraphSolverOptions(this),
+      topology: this.topology,
+      problem: this.problem,
+      options: getTinyHyperGraphSolverOptions(this),
       snapshot: this.getFinalRouteResult().snapshot,
-      routeIds: this.getRemainingRouteIdsForGreedyFinalRoute(), ripCount: this.state.ripCount,
-      firstAttempt: this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0,
+      routeIds: this.getRemainingRouteIdsForGreedyFinalRoute(),
+      ripCount: this.state.ripCount,
+      firstAttempt:
+        this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0,
       summary: this.summarizeSolvedState(this),
     }
   }
 
-  createFinalRouteCandidate(attempt: number, snapshot: SolvedStateSnapshot, routeIds: RouteId[]): TinyHyperGraphSolver {
-    const solver = this.createGreedyFinalRouteSolver({
-      ...getTinyHyperGraphSolverOptions(this), ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-      GREEDY_FINAL_ROUTE_ITERS: 0, MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-      RIP_THRESHOLD_RAMP_ATTEMPTS: 0, STATIC_REACHABILITY_PRECHECK: false,
-      OUTSIDE_IN_ROUTING: false, PARTIAL_RIP_ENABLED: false,
-    }, attempt)
+  createFinalRouteCandidate(
+    attempt: number,
+    snapshot: SolvedStateSnapshot,
+    routeIds: RouteId[],
+  ): TinyHyperGraphSolver {
+    const solver = this.createGreedyFinalRouteSolver(
+      {
+        ...getTinyHyperGraphSolverOptions(this),
+        ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+        GREEDY_FINAL_ROUTE_ITERS: 0,
+        MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
+        STATIC_REACHABILITY_PRECHECK: false,
+        OUTSIDE_IN_ROUTING: false,
+        PARTIAL_RIP_ENABLED: false,
+      },
+      attempt,
+    )
     this.applySnapshotToGreedyFinalRouteSolver(solver, snapshot, routeIds)
     return solver
   }
@@ -1790,26 +1823,41 @@ export class TinyHyperGraphSolver extends BaseSolver {
   getFinalRouteResult(): FinalRouteResult {
     return {
       snapshot: cloneSolvedStateSnapshot({
-        portAssignment: this.state.portAssignment, regionSegments: this.state.regionSegments,
+        portAssignment: this.state.portAssignment,
+        regionSegments: this.state.regionSegments,
         regionIntersectionCaches: this.state.regionIntersectionCaches,
-        regionCongestionCost: this.state.regionCongestionCost, ripCount: this.state.ripCount,
-      }), summary: this.summarizeSolvedState(this), maxIterations: this.MAX_ITERATIONS,
+        regionCongestionCost: this.state.regionCongestionCost,
+        ripCount: this.state.ripCount,
+      }),
+      summary: this.summarizeSolvedState(this),
+      maxIterations: this.MAX_ITERATIONS,
     }
   }
 
-  acceptFinalRouteResult(result: FinalRouteResult, attempt: number, remainingCount: number): void {
+  acceptFinalRouteResult(
+    result: FinalRouteResult,
+    attempt: number,
+    remainingCount: number,
+  ): void {
     this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot(result.snapshot)
     this.bestSolvedStateSummary = result.summary
     this.restoreBestSolvedState()
     this.stats = {
-      ...this.stats, acceptedGreedyFinalRouteOnTimeout: true,
-      greedyFinalRouteIter: Math.max(0, attempt), finalRoutingStrategy: attempt < 0 ? "congestion-aware" : "greedy",
-      greedyFinalRouteRemainingRouteCount: remainingCount, greedyFinalRouteMaxIterations: result.maxIterations,
-      neverSuccessfullyRoutedRouteCount: 0, maxRegionCost: result.summary.maxRegionCost,
-      totalRegionCost: result.summary.totalRegionCost, bestMaxRegionCost: result.summary.maxRegionCost,
+      ...this.stats,
+      acceptedGreedyFinalRouteOnTimeout: true,
+      greedyFinalRouteIter: Math.max(0, attempt),
+      finalRoutingStrategy: attempt < 0 ? "congestion-aware" : "greedy",
+      greedyFinalRouteRemainingRouteCount: remainingCount,
+      greedyFinalRouteMaxIterations: result.maxIterations,
+      neverSuccessfullyRoutedRouteCount: 0,
+      maxRegionCost: result.summary.maxRegionCost,
+      totalRegionCost: result.summary.totalRegionCost,
+      bestMaxRegionCost: result.summary.maxRegionCost,
       bestTotalRegionCost: result.summary.totalRegionCost,
     }
-    this.solved = true; this.failed = false; this.error = null
+    this.solved = true
+    this.failed = false
+    this.error = null
     this.hasDeferredFinalRouteAcceptance = false
   }
 
@@ -1857,7 +1905,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = this.createFinalRouteCandidate(greedyFinalRouteIter, startingSnapshot, routeIds)
+      const greedySolver = this.createFinalRouteCandidate(
+        greedyFinalRouteIter,
+        startingSnapshot,
+        routeIds,
+      )
       greedyFinalRouteMaxIterations = greedySolver.MAX_ITERATIONS
       greedySolver.solve()
 
@@ -1865,7 +1917,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
 
-      this.acceptFinalRouteResult(greedySolver.getFinalRouteResult(), greedyFinalRouteIter, remainingRouteIds.length)
+      this.acceptFinalRouteResult(
+        greedySolver.getFinalRouteResult(),
+        greedyFinalRouteIter,
+        remainingRouteIds.length,
+      )
       return true
     }
 

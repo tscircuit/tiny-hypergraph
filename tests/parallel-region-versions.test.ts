@@ -3,8 +3,13 @@ import { SharedRouteGraph } from "../lib/parallel/SharedRouteGraph"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
 
 test("snapshot versions cover assignments and congestion as well as segment caches", () => {
-  const solver = createCompletionFixture(), graph = new SharedRouteGraph(solver)
-  const versions = (): number[] => Array.from({ length: solver.topology.regionCount }, (_, r) => graph.context.headers[r * 8])
+  const solver = createCompletionFixture(),
+    graph = new SharedRouteGraph(solver)
+  const versions = (): number[] =>
+    Array.from(
+      { length: solver.topology.regionCount },
+      (_, r) => graph.context.headers[r * 8],
+    )
   const initial = versions()
   graph.sync()
   expect(versions()).toEqual(initial)
