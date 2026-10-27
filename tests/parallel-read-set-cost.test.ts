@@ -56,7 +56,6 @@ test("increasing a nonterminal path cost requires a new search", async () => {
     const result = await pool.search(1, 10000)
     expect(result.status).toBe("found")
     expect(pool.staleSearches).toBeGreaterThan(0)
-    expect(pool.certifiedSearches).toBe(0)
     expect(result.candidate!.g).toBeLessThan(originalCost + 1)
   } finally {
     await pool.dispose()

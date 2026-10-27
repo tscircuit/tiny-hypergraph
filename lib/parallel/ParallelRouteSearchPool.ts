@@ -10,10 +10,6 @@ import {
 } from "./ParallelRouteSearchTask"
 import { SharedRouteGraph } from "./SharedRouteGraph"
 
-export interface ParallelSearchOptions {
-  maxRelativeCostIncrease?: number
-}
-
 export interface ParallelSearchExecutor {
   persistentWorkerCount?: number
   executeAsync(
@@ -26,8 +22,6 @@ export type RouteSearchResult = {
   iterations: number
   candidate?: Candidate
   dependencies: Int32Array
-  terminalRegions?: Int32Array
-  terminalCosts?: Float64Array
 }
 type Slot = {
   input: ParallelRouteSearchInput
@@ -63,9 +57,6 @@ export class ParallelRouteSearchPool {
   searches = 0
   finishedSearches = 0
   acceptedExpansions = 0
-  certifiedSearches = 0
-  boundedCostSearches = 0
-  readonly maxRelativeCostIncrease: number
   private readonly participatingSlots = new Set<Slot>()
   acceptedSearches = 0
   staleSearches = 0
@@ -87,16 +78,7 @@ export class ParallelRouteSearchPool {
   constructor(
     private solver: TinyHyperGraphSolver,
     private readonly executor: ParallelSearchExecutor,
-    options: ParallelSearchOptions = {},
   ) {
-    this.maxRelativeCostIncrease = options.maxRelativeCostIncrease ?? 0.05
-    if (
-      !Number.isFinite(this.maxRelativeCostIncrease) ||
-      this.maxRelativeCostIncrease < 0
-    )
-      throw new Error(
-        "Relative route cost increase must be finite and nonnegative",
-      )
     const count = executor.persistentWorkerCount
     if (count !== 1 && count !== 4)
       throw new Error("Parallel routing requires one or four verified workers")
@@ -136,12 +118,6 @@ export class ParallelRouteSearchPool {
         budget: new Float64Array(new SharedArrayBuffer(3 * 8)),
         pathIds: new Int32Array(new SharedArrayBuffer(capacity * 4 * 4)),
         pathCosts: new Float64Array(new SharedArrayBuffer(capacity * 3 * 8)),
-        terminalRegions: new Int32Array(
-          new SharedArrayBuffer((stride + 1) * 4),
-        ),
-        terminalCosts: new Float64Array(
-          new SharedArrayBuffer((stride + 1) * 8),
-        ),
         dependencies: new Int32Array(
           new SharedArrayBuffer(solver.topology.regionCount * 2 * 4),
         ),
@@ -211,8 +187,6 @@ export class ParallelRouteSearchPool {
       iterations: control[4]!,
       candidate,
       dependencies: dependencies.slice(0, control[6]! * 2),
-      terminalRegions: slot.input.terminalRegions.slice(0, control[8]!),
-      terminalCosts: slot.input.terminalCosts.slice(0, control[8]!),
     }
     this.finishedSearches++
     if (result.iterations > 0) this.participatingSlots.add(slot)
@@ -324,25 +298,6 @@ export class ParallelRouteSearchPool {
         valid =
           dependencies[index + 1] ===
           Atomics.load(this.graph.context.headers, dependencies[index]! * 8)
-      if (
-        !valid &&
-        result.status === "found" &&
-        job.generation === this.graph.generation &&
-        result.candidate
-      ) {
-        const candidate = this.certifyPath(routeId, result)
-        if (candidate) {
-          result.candidate = candidate
-          valid = true
-          this.certifiedSearches++
-        }
-      }
-      if (
-        !valid &&
-        result.status === "exhausted" &&
-        job.generation === this.graph.generation
-      )
-        valid = true
       if (!valid) {
         this.staleSearches++
         continue
@@ -365,80 +320,6 @@ export class ParallelRouteSearchPool {
     )
   }
 
-  private certifyPath(
-    route: number,
-    result: RouteSearchResult,
-  ): Candidate | undefined {
-    const candidate = result.candidate!
-    if (
-      this.solver.TRACE_DENSITY_COST_FACTOR < 0 ||
-      this.solver.DISTANCE_TO_COST < 0 ||
-      this.solver.problem.portPenalty?.some((cost) => cost < 0)
-    )
-      return undefined
-    const path: Candidate[] = []
-    for (
-      let node: Candidate | undefined = candidate;
-      node;
-      node = node.prevCandidate
-    )
-      path.unshift(node)
-    const net = this.solver.problem.routeNet[route]!
-    for (const node of path) {
-      const assigned = this.solver.state.portAssignment[node.portId]
-      if (assigned !== -1 && assigned !== net) return undefined
-    }
-    const previousNet = this.solver.state.currentRouteNetId
-    this.solver.state.currentRouteNetId = net
-    try {
-      let updated: Candidate = { ...path[0]!, prevCandidate: undefined }
-      for (let i = 1; i < path.length; i++) {
-        const node = path[i]!,
-          g = this.solver.computeG(updated, node.portId)
-        if (!Number.isFinite(g)) return undefined
-        updated = { ...node, g, f: g + node.h, prevCandidate: updated }
-      }
-      if (updated.g === candidate.g) return updated
-      const regions = result.terminalRegions!,
-        costs = result.terminalCosts!
-      if (!regions?.length || regions.length !== costs?.length)
-        throw new Error("Route certificate is missing terminal bounds")
-      // Every path traverses the chosen source region and at least one goal
-      // region. The zero-length transition isolates each region's uniform
-      // marginal cost; other increases from crossings and vias are nonnegative.
-      const deltas: number[] = []
-      for (let i = 0; i < regions.length; i++) {
-        const port =
-          i === 0
-            ? this.solver.problem.routeStartPort[route]!
-            : this.solver.problem.routeEndPort[route]!
-        const current =
-          this.solver.computeG(
-            { portId: port, nextRegionId: regions[i]!, g: 0, h: 0, f: 0 },
-            port,
-          ) - (this.solver.problem.portPenalty?.[port] ?? 0)
-        deltas.push(current - costs[i]!)
-      }
-      let unavoidable = deltas[0]!
-      const goalRegions =
-        this.solver.topology.incidentPortRegion[
-          this.solver.problem.routeEndPort[route]!
-        ]!
-      if (!goalRegions.includes(regions[0]!) && deltas.length < 2)
-        throw new Error("Route certificate has no reachable goal region")
-      if (!goalRegions.includes(regions[0]!))
-        unavoidable += Math.min(...deltas.slice(1))
-      if (!Number.isFinite(unavoidable)) return undefined
-      const lowerBound = candidate.g + unavoidable
-      if (updated.g <= lowerBound * (1 + this.maxRelativeCostIncrease) + 1e-9) {
-        if (updated.g > lowerBound + 1e-9) this.boundedCostSearches++
-        return updated
-      }
-      return undefined
-    } finally {
-      this.solver.state.currentRouteNetId = previousNet
-    }
-  }
   get searchMs(): number {
     return this.waitForRouteMs + this.graphSyncMs
   }

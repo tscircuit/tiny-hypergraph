@@ -3,7 +3,7 @@ import { createEmptyRegionIntersectionCache } from "../lib/core"
 import { SharedRouteGraph } from "../lib/parallel/SharedRouteGraph"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
 
-test("path certificates expire on releases, removals and congestion decreases", () => {
+test("speculative jobs are invalidated on releases, removals and congestion decreases", () => {
   const solver = createCompletionFixture()
   const graph = new SharedRouteGraph(solver)
   const initial = graph.generation

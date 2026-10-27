@@ -4,7 +4,7 @@ import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-
 import { createParallelGrid } from "./fixtures/createParallelGrid"
 import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("a packed single worker preserves negotiated rerips and best-state acceptance", async () => {
+test("four packed workers preserve negotiated rerips and best-state acceptance", async () => {
   const { topology, problem } = createParallelGrid(2)
   const options = {
     MAX_ITERATIONS: 5000,
@@ -27,7 +27,7 @@ test("a packed single worker preserves negotiated rerips and best-state acceptan
     options,
   )
   reference.solve()
-  const executor = createRouteSearchExecutor(1)
+  const executor = createRouteSearchExecutor(4)
   try {
     await solveWithParallelSearch(parallel, executor)
     expect(Number(reference.stats.ripCount)).toBeGreaterThan(0)

@@ -19,8 +19,6 @@ export type ParallelRouteSearchInput = {
   pathIds: Int32Array
   pathCosts: Float64Array
   dependencies: Int32Array
-  terminalRegions: Int32Array
-  terminalCosts: Float64Array
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
@@ -45,30 +43,6 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
   }
 
   override tryFinalAcceptance(): void {}
-
-  terminalBounds(route: number): Array<[number, number]> {
-    const start = this.problem.routeStartPort[route]!,
-      goal = this.problem.routeEndPort[route]!
-    const source = this.getStartingNextRegionId(route, start)
-    if (source === undefined)
-      throw new Error("Route source has no incident region")
-    const regions = [
-      source,
-      ...this.topology.incidentPortRegion[goal]!.filter(
-        (region) =>
-          region !== source && !this.isRegionReservedForDifferentNet(region),
-      ),
-    ]
-    return regions.map((region, index) => {
-      const port = index === 0 ? start : goal
-      const cost =
-        this.computeG(
-          { portId: port, nextRegionId: region, g: 0, h: 0, f: 0 },
-          port,
-        ) - (this.problem.portPenalty?.[port] ?? 0)
-      return [region, cost]
-    })
-  }
 
   search(routeId: number, budget: number, control: Int32Array): void {
     this.candidate = undefined
@@ -136,15 +110,6 @@ export class ParallelRouteSearchTask {
         budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
         if (Atomics.load(control, 0) === 3) return
         const canceled = Atomics.load(control, 9) !== 0
-        control[8] = 0
-        if (solver.candidate) {
-          for (const [region, cost] of solver.terminalBounds(control[1]!)) {
-            const index = control[8]!
-            this.input.terminalRegions[index] = region
-            this.input.terminalCosts[index] = cost
-            control[8] = index + 1
-          }
-        }
         let count = 0
         for (
           let candidate = solver.candidate;
