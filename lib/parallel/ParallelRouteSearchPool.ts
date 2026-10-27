@@ -74,6 +74,7 @@ export class ParallelRouteSearchPool {
   private disposed = false
   private budget = 0
   private readonly signature: string
+  private readonly routeBounds: Float64Array
 
   constructor(
     private solver: TinyHyperGraphSolver,
@@ -85,6 +86,27 @@ export class ParallelRouteSearchPool {
     this.workerCount = count
     this.graph = new SharedRouteGraph(solver)
     this.signature = getSearchSignature(solver)
+    this.routeBounds = new Float64Array(solver.problem.routeCount * 4)
+    for (let route = 0; route < solver.problem.routeCount; route++) {
+      const start = solver.problem.routeStartPort[route]!
+      const end = solver.problem.routeEndPort[route]!
+      const region = solver.topology.incidentPortRegion[start]![0]!
+      const marginX = Math.max(1e-6, solver.topology.regionWidth[region]!)
+      const marginY = Math.max(1e-6, solver.topology.regionHeight[region]!)
+      const x1 = solver.topology.portX[start]!,
+        x2 = solver.topology.portX[end]!
+      const y1 = solver.topology.portY[start]!,
+        y2 = solver.topology.portY[end]!
+      this.routeBounds.set(
+        [
+          Math.min(x1, x2) - marginX,
+          Math.min(y1, y2) - marginY,
+          Math.max(x1, x2) + marginX,
+          Math.max(y1, y2) + marginY,
+        ],
+        route * 4,
+      )
+    }
   }
 
   canReuse(solver: TinyHyperGraphSolver): boolean {
@@ -224,18 +246,17 @@ export class ParallelRouteSearchPool {
     const head = this.solver.state.unroutedRoutes[0]
     const completedHead = head === undefined ? undefined : this.jobs.get(head)
     if (completedHead?.done && completedHead.result?.status !== "found") return
-    const reserveRetry = completedHead?.done === true
+    const reserveRetry =
+      completedHead?.done === true || this.committing.size > 0
     let free = this.slots.filter((slot) => !slot.busy).length
-    const routes = this.solver.state.unroutedRoutes.slice(0, this.workerCount)
+    const routes = this.solver.state.unroutedRoutes.slice(
+      0,
+      this.workerCount === 4 ? 16 : 1,
+    )
     for (const slot of this.slots) {
       if (slot.busy) continue
       if (reserveRetry && free <= 1) break
-      const route = routes.find(
-        (routeId) =>
-          !this.jobs.has(routeId) &&
-          !this.committing.has(routeId) &&
-          this.canSearch(routeId),
-      )
+      const route = this.selectRoute(routes)
       if (route === undefined) break
       slot.busy = true
       free--
@@ -281,6 +302,59 @@ export class ParallelRouteSearchPool {
     }
   }
 
+  private selectRoute(routes: number[]): number | undefined {
+    const eligible = routes.filter(
+      (route) =>
+        !this.jobs.has(route) &&
+        !this.committing.has(route) &&
+        this.canSearch(route),
+    )
+    if (eligible[0] === routes[0]) return eligible[0]
+    const occupied = [...this.jobs.keys(), routes[0]!]
+    const bounds = this.routeBounds
+    let selected: number | undefined
+    let best = Infinity
+    for (const route of eligible) {
+      const a = route * 4
+      const area =
+        (bounds[a + 2]! - bounds[a]!) * (bounds[a + 3]! - bounds[a + 1]!)
+      let score = routes.indexOf(route) / 1000
+      for (const other of occupied) {
+        const b = other * 4
+        const width = Math.max(
+          0,
+          Math.min(bounds[a + 2]!, bounds[b + 2]!) -
+            Math.max(bounds[a]!, bounds[b]!),
+        )
+        const height = Math.max(
+          0,
+          Math.min(bounds[a + 3]!, bounds[b + 3]!) -
+            Math.max(bounds[a + 1]!, bounds[b + 1]!),
+        )
+        const otherArea =
+          (bounds[b + 2]! - bounds[b]!) * (bounds[b + 3]! - bounds[b + 1]!)
+        score += (width * height) / Math.min(area, otherArea)
+      }
+      if (score < best) {
+        best = score
+        selected = route
+      }
+    }
+    return selected
+  }
+
+  private validResult(result: RouteSearchResult): boolean {
+    if (result.status === "canceled" || result.status === "stale") return false
+    const dependencies = result.dependencies
+    for (let index = 0; index < dependencies.length; index += 2)
+      if (
+        dependencies[index + 1] !==
+        Atomics.load(this.graph.context.headers, dependencies[index]! * 8)
+      )
+        return false
+    return true
+  }
+
   private cancelJobs(): void {
     for (const job of this.jobs.values())
       if (!job.done) Atomics.store(job.slot.input.control, 9, 1)
@@ -294,8 +368,14 @@ export class ParallelRouteSearchPool {
     const syncStart = performance.now()
     this.graph.sync()
     this.graphSyncMs += performance.now() - syncStart
-    for (const job of this.jobs.values()) {
-      if (job.done) continue
+    for (const [route, job] of this.jobs) {
+      if (job.done) {
+        if (!this.validResult(job.result!)) {
+          this.jobs.delete(route)
+          this.staleSearches++
+        }
+        continue
+      }
       const { liveRegions, control } = job.slot.input
       if (liveRegions.length === 0) continue
       if (
@@ -334,13 +414,7 @@ export class ParallelRouteSearchPool {
       }
       const result = await job.promise
       this.jobs.delete(routeId)
-      const dependencies = result.dependencies
-      let valid = result.status !== "canceled" && result.status !== "stale"
-      for (let index = 0; valid && index < dependencies.length; index += 2)
-        valid =
-          dependencies[index + 1] ===
-          Atomics.load(this.graph.context.headers, dependencies[index]! * 8)
-      if (!valid) {
+      if (!this.validResult(result)) {
         this.staleSearches++
         continue
       }
