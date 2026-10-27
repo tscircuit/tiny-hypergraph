@@ -214,6 +214,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    this.clearConnectedTreeGoals()
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
