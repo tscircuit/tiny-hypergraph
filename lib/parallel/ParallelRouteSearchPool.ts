@@ -108,10 +108,23 @@ export class ParallelRouteSearchPool {
       1,
     )
     const capacity = solver.topology.portCount * stride + 1
+    // Worker searches only need numeric routing data. The snapshot supplies all
+    // committed segments, including initial assignments, without replaying them
+    // in every worker or cloning visualization metadata into every isolate.
+    const topology = {
+      ...solver.topology,
+      regionMetadata: undefined,
+      portMetadata: undefined,
+    }
+    const problem = {
+      ...solver.problem,
+      routeMetadata: undefined,
+      initialAssignments: undefined,
+    }
     for (let index = 0; index < this.workerCount; index++) {
       const input: ParallelRouteSearchInput = {
-        topology: solver.topology,
-        problem: solver.problem,
+        topology,
+        problem,
         options: getTinyHyperGraphSolverOptions(solver),
         context: this.graph.context,
         control: new Int32Array(new SharedArrayBuffer(10 * 4)),
