@@ -3,7 +3,11 @@ import {
   type TinyHyperGraphSolver,
   getTinyHyperGraphSolverOptions,
 } from "../core"
-import type { OutsideInPartialRipTinyHyperGraphSolver } from "../outside-in-partial-rip-tiny-hypergraph-solver"
+import type {
+  OutsideInPartialRipTinyHyperGraphSolver,
+  PartialRouteSearchState,
+  PartialRouteSearchStats,
+} from "../outside-in-partial-rip-tiny-hypergraph-solver"
 import {
   ParallelRouteSearchTask,
   type ParallelRouteSearchInput,
@@ -22,6 +26,7 @@ export type RouteSearchResult = {
   iterations: number
   candidate?: Candidate
   dependencies: Int32Array
+  partial?: PartialRouteSearchStats
 }
 type Slot = {
   input: ParallelRouteSearchInput
@@ -36,6 +41,7 @@ type Job = {
   done: boolean
   generation: number
   result?: RouteSearchResult
+  planKey: string
 }
 
 // Completion candidates change rerip policies and iteration limits, but the
@@ -58,6 +64,7 @@ export class ParallelRouteSearchPool {
   finishedSearches = 0
   acceptedExpansions = 0
   private readonly participatingSlots = new Set<Slot>()
+  private readonly partialSlots = new Set<Slot>()
   acceptedSearches = 0
   staleSearches = 0
   speculativeExpansions = 0
@@ -126,6 +133,8 @@ export class ParallelRouteSearchPool {
             this.workerCount > 1 ? solver.topology.regionCount * 4 : 0,
           ),
         ),
+        partialPlan: new Float64Array(new SharedArrayBuffer(12 * 8)),
+        partialStats: new Float64Array(new SharedArrayBuffer(8 * 8)),
       }
       const slot: Slot = { input, busy: false, completion: Promise.resolve() }
       this.slots.push(slot)
@@ -194,6 +203,20 @@ export class ParallelRouteSearchPool {
       dependencies: dependencies.slice(0, control[6]! * 2),
     }
     this.finishedSearches++
+    if (slot.input.partialPlan[0] === 1) {
+      const stats = slot.input.partialStats
+      result.partial = {
+        routes: stats[0]!,
+        completed: stats[1]!,
+        fallbacks: stats[2]!,
+        forward: stats[3]!,
+        reverse: stats[4]!,
+        pruned: stats[5]!,
+        attempts: stats[6]!,
+        oneSidedFallbackRouteId: stats[7]! < 0 ? undefined : stats[7]!,
+      }
+      if (result.iterations > 0) this.partialSlots.add(slot)
+    }
     if (result.iterations > 0) this.participatingSlots.add(slot)
     this.speculativeExpansions += result.iterations
     this.workerSnapshotMs += slot.input.budget[1]!
@@ -227,6 +250,23 @@ export class ParallelRouteSearchPool {
       slot.busy = true
       free--
       slot.input.control[1] = route
+      const partial = this.getPartialState(route)
+      slot.input.partialPlan.fill(0)
+      if (partial)
+        slot.input.partialPlan.set([
+          1,
+          partial.activeStartPortId,
+          partial.activeEndPortId,
+          partial.forcedStartRegionId,
+          partial.forcedEndRegionId,
+          partial.rippedSegmentCount,
+          partial.retainedSegmentCount,
+          partial.ripCount,
+          partial.oneSidedFallbackRouteId ?? -1,
+          partial.partialRipEnabled ? 1 : 0,
+          partial.outsideInRouting ? 1 : 0,
+          partial.maxDistance,
+        ])
       slot.input.control[2] = (slot.input.control[2]! + 1) | 0
       if (slot.input.control[2] === 0) {
         slot.input.liveRegions.fill(0)
@@ -263,7 +303,13 @@ export class ParallelRouteSearchPool {
         this.failure = { error }
       })
       slot.active = promise
-      job = { slot, promise, done: false, generation: this.graph.generation }
+      job = {
+        slot,
+        promise,
+        done: false,
+        generation: this.graph.generation,
+        planKey: this.planKey(partial),
+      }
       this.jobs.set(route, job)
     }
   }
@@ -298,11 +344,16 @@ export class ParallelRouteSearchPool {
       if (
         pendingRoutes.has(route) &&
         this.canSearch(route) &&
+        job.planKey === this.planKey(this.getPartialState(route)) &&
         (job.done || job.generation === this.graph.generation)
       )
         continue
       if (!job.done) Atomics.store(job.slot.input.control, 9, 1)
-      if (job.generation !== this.graph.generation) this.staleSearches++
+      if (
+        job.generation !== this.graph.generation ||
+        job.planKey !== this.planKey(this.getPartialState(route))
+      )
+        this.staleSearches++
       this.jobs.delete(route)
     }
     while (true) {
@@ -323,6 +374,7 @@ export class ParallelRouteSearchPool {
       this.jobs.delete(routeId)
       const dependencies = result.dependencies
       let valid = result.status !== "canceled" && result.status !== "stale"
+      if (result.partial && result.iterations > budget) valid = false
       for (let index = 0; valid && index < dependencies.length; index += 2)
         valid =
           dependencies[index + 1] ===
@@ -349,11 +401,40 @@ export class ParallelRouteSearchPool {
     )
   }
 
+  private getPartialState(route: number): PartialRouteSearchState | undefined {
+    return "getPartialRouteSearchState" in this.solver
+      ? (
+          this.solver as OutsideInPartialRipTinyHyperGraphSolver
+        ).getPartialRouteSearchState(route)
+      : undefined
+  }
+
+  private planKey(plan: PartialRouteSearchState | undefined): string {
+    return plan
+      ? [
+          plan.activeStartPortId,
+          plan.activeEndPortId,
+          plan.forcedStartRegionId,
+          plan.forcedEndRegionId,
+          plan.rippedSegmentCount,
+          plan.retainedSegmentCount,
+          plan.ripCount,
+          plan.oneSidedFallbackRouteId ?? -1,
+          plan.partialRipEnabled ? 1 : 0,
+          plan.outsideInRouting ? 1 : 0,
+          plan.maxDistance,
+        ].join(",")
+      : "whole"
+  }
+
   get searchMs(): number {
     return this.waitForRouteMs + this.graphSyncMs
   }
   get maximumParticipatingWorkers(): number {
     return this.participatingSlots.size
+  }
+  get maximumParticipatingPartialWorkers(): number {
+    return this.partialSlots.size
   }
   get totals(): { expansions: number; messages: number; batches: number } {
     return {

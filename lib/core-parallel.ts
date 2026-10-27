@@ -83,6 +83,8 @@ async function solve(
         "parallelSearchMs",
         "parallelRouteSearches",
         "parallelRouteExpansions",
+        "parallelPartialSearches",
+        "parallelPartialExpansions",
         "speculativeRouteSearches",
         "speculativeRouteExpansions",
         "staleRouteSearches",
@@ -96,6 +98,7 @@ async function solve(
         "parallelRouteWorkers",
         "maximumParticipatingSearchWorkers",
         "maximumConcurrentRouteSearches",
+        "maximumParticipatingPartialWorkers",
       ])
         solver.stats[key] = Math.max(
           Number(solver.stats[key] ?? 0),
@@ -138,6 +141,8 @@ async function route(
   let pool: ParallelRouteSearchPool | undefined
   let searches = 0
   let chargedExpansions = 0
+  let partialSearches = 0
+  let partialExpansions = 0
   let initial = {
     searchMs: 0,
     expansions: 0,
@@ -187,6 +192,11 @@ async function route(
         result = await pool.search(routeId, remaining)
       searches++
       chargedExpansions += Math.min(remaining, result.iterations)
+      if (result.partial) {
+        partialSearches++
+        partialExpansions += Math.min(remaining, result.iterations)
+        solver.applyPartialRouteSearchStats(routeId, result.partial)
+      }
       if (result.status === "budget" || result.iterations > remaining)
         solver.expireParallelRouteSearch(routeId, remaining)
       else
@@ -202,6 +212,10 @@ async function route(
       parallelRouteWorkers: searches > 0 ? pool!.workerCount : 0,
       parallelSearchMs: (pool?.searchMs ?? 0) - initial.searchMs,
       parallelRouteSearches: searches,
+      parallelPartialSearches: partialSearches,
+      parallelPartialExpansions: partialExpansions,
+      maximumParticipatingPartialWorkers:
+        pool?.maximumParticipatingPartialWorkers ?? 0,
       parallelRouteExpansions: chargedExpansions,
       speculativeRouteSearches:
         (pool?.searches ?? 0) - initial.physicalSearches,

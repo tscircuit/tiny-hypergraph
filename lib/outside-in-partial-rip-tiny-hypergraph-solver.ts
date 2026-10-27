@@ -26,6 +26,25 @@ type PartialRipRoutePlan = {
   retainedSegmentCount: number
 }
 
+export type PartialRouteSearchState = PartialRipRoutePlan & {
+  oneSidedFallbackRouteId?: RouteId
+  ripCount: number
+  partialRipEnabled: boolean
+  outsideInRouting: boolean
+  maxDistance: number
+}
+
+export type PartialRouteSearchStats = {
+  routes: number
+  completed: number
+  fallbacks: number
+  forward: number
+  reverse: number
+  pruned: number
+  attempts: number
+  oneSidedFallbackRouteId?: RouteId
+}
+
 type OutsideInCandidate = Candidate & {
   travelDistance: number
 }
@@ -79,19 +98,20 @@ const NO_PREFERRED_PRESERVED_ROUTE_IDS = new Set<RouteId>()
  */
 export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHyperGraphSolver {
   protected partialRipRoutePlans = new Map<RouteId, PartialRipRoutePlan>()
-  private outsideInRouteSearch?: OutsideInRouteSearch
-  private oneSidedFallbackRouteId?: RouteId
+  protected outsideInRouteSearch?: OutsideInRouteSearch
+  protected oneSidedFallbackRouteId?: RouteId
+  private replayingPartialSearch = false
   private partialRipWindowDistance?: number
   private partialRipCount = 0
   private partiallyRippedRouteCount = 0
   private partiallyRippedSegmentCount = 0
   private retainedPartialRipSegmentCount = 0
-  private outsideInRouteCount = 0
-  private outsideInCompletedRouteCount = 0
-  private outsideInFallbackRouteCount = 0
-  private outsideInForwardExpansionCount = 0
-  private outsideInReverseExpansionCount = 0
-  private outsideInDistancePruneCount = 0
+  protected outsideInRouteCount = 0
+  protected outsideInCompletedRouteCount = 0
+  protected outsideInFallbackRouteCount = 0
+  protected outsideInForwardExpansionCount = 0
+  protected outsideInReverseExpansionCount = 0
+  protected outsideInDistancePruneCount = 0
   private completedRoundSummaries: CompletedRoundSummary[] = []
   private firstCompletedRoundSummary?: CompletedRoundSummary
   private partialRipQualityBaselineSummary?: CompletedRoundSummary
@@ -130,7 +150,51 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   canSearchRouteInParallel(routeId: RouteId): boolean {
-    return !this.partialRipRoutePlans.has(routeId)
+    const plan = this.partialRipRoutePlans.get(routeId)
+    return !plan || plan.activeStartPortId !== plan.activeEndPortId
+  }
+
+  getPartialRouteSearchState(
+    routeId: RouteId,
+  ): PartialRouteSearchState | undefined {
+    const plan = this.partialRipRoutePlans.get(routeId)
+    if (!plan) return undefined
+    return {
+      ...plan,
+      oneSidedFallbackRouteId: this.oneSidedFallbackRouteId,
+      ripCount: this.state.ripCount,
+      partialRipEnabled: this.PARTIAL_RIP_ENABLED,
+      outsideInRouting: this.OUTSIDE_IN_ROUTING,
+      maxDistance: this.OUTSIDE_IN_MAX_DISTANCE,
+    }
+  }
+
+  applyPartialRouteSearchStats(
+    routeId: RouteId,
+    stats: PartialRouteSearchStats,
+  ): void {
+    this.outsideInRouteCount += stats.routes
+    this.outsideInCompletedRouteCount += stats.completed
+    this.outsideInFallbackRouteCount += stats.fallbacks
+    this.outsideInForwardExpansionCount += stats.forward
+    this.outsideInReverseExpansionCount += stats.reverse
+    this.outsideInDistancePruneCount += stats.pruned
+    this.routeAttemptCountByRouteId[routeId]! += stats.attempts - 1
+    this.oneSidedFallbackRouteId = stats.oneSidedFallbackRouteId
+    this.publishOutsideInStats()
+  }
+
+  override acceptParallelRouteSearch(
+    routeId: RouteId,
+    candidate: Candidate | undefined,
+    iterations: number,
+  ): void {
+    this.replayingPartialSearch = this.partialRipRoutePlans.has(routeId)
+    try {
+      super.acceptParallelRouteSearch(routeId, candidate, iterations)
+    } finally {
+      this.replayingPartialSearch = false
+    }
   }
 
   protected override getRouteStartPortId(routeId: RouteId): PortId {
@@ -958,6 +1022,12 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
   }
 
   override _step(): void {
+    if (this.replayingPartialSearch) {
+      const candidate = this.state.candidateQueue.dequeue()
+      if (candidate) this.onPathFound(candidate)
+      else this.onOutOfCandidates()
+      return
+    }
     if (!this.OUTSIDE_IN_ROUTING) {
       super._step()
       return

@@ -8,6 +8,7 @@ import { DistanceAwareTinyHyperGraphSolver } from "../distance-aware-tiny-hyperg
 import { PackedRouteSearch } from "./PackedRouteSearch"
 import type { SharedRouteContext } from "./SharedRouteGraph"
 import { RouteSnapshot } from "./RouteSnapshot"
+import { PartialRouteSearchSolver } from "./PartialRouteSearchSolver"
 
 export type ParallelRouteSearchInput = {
   topology: TinyHyperGraphTopology
@@ -20,6 +21,8 @@ export type ParallelRouteSearchInput = {
   pathCosts: Float64Array
   dependencies: Int32Array
   liveRegions: Int32Array
+  partialPlan: Float64Array
+  partialStats: Float64Array
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
@@ -93,16 +96,22 @@ export class ParallelRouteSearchTask {
       dependencies,
     } = this.input
     try {
-      const solver = new RouteSearchSolver(topology, problem, {
+      const workerOptions = {
         ...options,
         STATIC_REACHABILITY_PRECHECK: false,
         GREEDY_FINAL_ROUTE_ITERS: 0,
         ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
         VERBOSE: false,
-      })
-      const snapshot = new RouteSnapshot(solver, context)
-      solver.setup()
-      const versions = snapshot.versions
+      }
+      const wholeSolver = new RouteSearchSolver(
+        topology,
+        problem,
+        workerOptions,
+      )
+      const wholeSnapshot = new RouteSnapshot(wholeSolver, context)
+      wholeSolver.setup()
+      let partialSolver: PartialRouteSearchSolver | undefined
+      let partialSnapshot: RouteSnapshot | undefined
       Atomics.store(control, 7, 1)
       Atomics.notify(control, 7)
       while (true) {
@@ -112,16 +121,28 @@ export class ParallelRouteSearchTask {
           Atomics.wait(control, 0, state, 100)
           continue
         }
+        const isPartial = this.input.partialPlan[0] === 1
+        if (isPartial && !partialSolver) {
+          partialSolver = new PartialRouteSearchSolver(
+            topology,
+            problem,
+            workerOptions,
+          )
+          partialSolver.PARTIAL_RIP_ENABLED = wholeSolver.PARTIAL_RIP_ENABLED
+          partialSolver.OUTSIDE_IN_ROUTING = wholeSolver.OUTSIDE_IN_ROUTING
+          partialSolver.setup()
+          partialSnapshot = new RouteSnapshot(partialSolver, context)
+        }
+        const solver = isPartial ? partialSolver! : wholeSolver
+        const snapshot = isPartial ? partialSnapshot! : wholeSnapshot
+        const versions = snapshot.versions
         const snapshotTimeStart = snapshot.timeMs
         snapshot.refresh()
         const initialCopyMs = snapshot.timeMs - snapshotTimeStart
         const searchStart = performance.now()
-        solver.search(
-          control[1]!,
-          budget[0]!,
-          control,
+        const observer =
           this.input.liveRegions.length > 0
-            ? (region): boolean => {
+            ? (region: number): boolean => {
                 // Publish before checking the version: a concurrent update either
                 // sees this read or is detected by the following version check.
                 Atomics.store(this.input.liveRegions, region, control[2]!)
@@ -132,8 +153,30 @@ export class ParallelRouteSearchTask {
                 Atomics.store(control, 9, 1)
                 return false
               }
-            : undefined,
-        )
+            : undefined
+        if (isPartial)
+          partialSolver!.search(
+            control[1]!,
+            budget[0]!,
+            control,
+            this.input.partialPlan,
+            observer,
+          )
+        else wholeSolver.search(control[1]!, budget[0]!, control, observer)
+        this.input.partialStats.fill(0)
+        if (isPartial) {
+          const stats = partialSolver!.getSearchStats(control[1]!)
+          this.input.partialStats.set([
+            stats.routes,
+            stats.completed,
+            stats.fallbacks,
+            stats.forward,
+            stats.reverse,
+            stats.pruned,
+            stats.attempts,
+            stats.oneSidedFallbackRouteId ?? -1,
+          ])
+        }
         const elapsed = performance.now() - searchStart
         budget[1] = snapshot.timeMs - snapshotTimeStart
         budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
