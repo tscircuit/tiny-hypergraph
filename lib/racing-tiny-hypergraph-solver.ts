@@ -147,7 +147,10 @@ export class TinyHyperGraphRaceCandidateSolver extends BaseSolver {
       let previous = Atomics.load(bound, 0)
       while (solver.iterations < previous) {
         const observed = Atomics.compareExchange(
-          bound, 0, previous, solver.iterations,
+          bound,
+          0,
+          previous,
+          solver.iterations,
         )
         if (observed === previous) break
         previous = observed
@@ -188,7 +191,10 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
       { length: TINY_HYPERGRAPH_RACE_CANDIDATE_COUNT },
       (_, index) =>
         createTinyHyperGraphRaceCandidate(
-          this.topology, this.problem, this.raceOptions, index,
+          this.topology,
+          this.problem,
+          this.raceOptions,
+          index,
         ),
     )
   }
@@ -225,14 +231,20 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
       raceWinningIterations: winner?.iterations,
       raceCandidates: results.map(
         ({ candidateIndex, iterations, status, error }) => ({
-          candidateIndex, iterations, status, error,
+          candidateIndex,
+          iterations,
+          status,
+          error,
         }),
       ),
     }
     if (!winner) {
       this.failed = true
       this.error = results
-        .map(({ candidateIndex, error }) => "Candidate " + candidateIndex + ": " + error)
+        .map(
+          ({ candidateIndex, error }) =>
+            "Candidate " + candidateIndex + ": " + error,
+        )
         .join("; ")
       return
     }
@@ -256,19 +268,15 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
   ): Promise<void> {
     if (this.asyncRunning)
       throw new Error("Hypergraph race solveAsync is already running")
-    if (this.solved || this.failed || this.iterations >= stopAtIteration)
-      return
+    if (this.solved || this.failed || this.iterations >= stopAtIteration) return
     if (
       runtime === undefined ||
       typeof SharedArrayBuffer === "undefined" ||
       this.iterations > 0 ||
       stopAtIteration < this.MAX_ITERATIONS
     ) {
-      while (
-        !this.solved &&
-        !this.failed &&
-        this.iterations < stopAtIteration
-      ) this.step()
+      while (!this.solved && !this.failed && this.iterations < stopAtIteration)
+        this.step()
       return
     }
     this.asyncRunning = true

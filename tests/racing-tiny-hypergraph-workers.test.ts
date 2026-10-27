@@ -24,7 +24,11 @@ test("real worker pools with one, two and four workers preserve all routed outpu
       startupFailure: "throw",
     })
     try {
-      const parallel = new RacingTinyHyperGraphSolver(topology, problem, options)
+      const parallel = new RacingTinyHyperGraphSolver(
+        topology,
+        problem,
+        options,
+      )
       await parallel.solveAsync(runtime)
       expect(parallel.solved).toBe(true)
       expect(parallel.stats.raceCandidateCount).toBe(4)
