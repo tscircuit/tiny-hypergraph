@@ -177,6 +177,7 @@ async function route(
         result = await pool.search(routeId, remaining)
       searches++
       expansions += result.iterations
+      const commitStart = performance.now()
       if (result.status === "budget" || result.iterations > remaining)
         solver.expireParallelRouteSearch(routeId, remaining)
       else
@@ -185,6 +186,7 @@ async function route(
           result.candidate,
           result.iterations,
         )
+      serialRoutingMs += performance.now() - commitStart
     }
   } finally {
     solver.stats = {
