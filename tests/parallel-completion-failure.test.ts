@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { solveWithWasmRoutes } from "../lib/core-parallel"
+import { solveWithParallelRoutes } from "../lib/core-parallel"
 
 test("exhausted asynchronous completion retains serial failure diagnostics and route state", async () => {
   const reference = createCompletionFixture(),
@@ -10,12 +11,12 @@ test("exhausted asynchronous completion retains serial failure diagnostics and r
     for (const port of [4, 5, 6]) solver.problem.portSectionMask[port] = 0
   }
   reference.solve()
-  await solveWithWasmRoutes(actual, {
-    persistentWorkerCount: 1,
-    executeAsync: async () => {
-      throw new Error("Single-thread mode must not dispatch a worker")
-    },
-  })
+  const executor = createRouteSearchExecutor(1)
+  try {
+    await solveWithParallelRoutes(actual, executor)
+  } finally {
+    executor.dispose()
+  }
   expect(actual.solved).toBe(false)
   expect(actual.failed).toBe(reference.failed)
   expect(actual.error).toBe(reference.error)

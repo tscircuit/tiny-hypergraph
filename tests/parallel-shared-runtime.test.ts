@@ -1,51 +1,21 @@
 import { expect, test } from "bun:test"
-import { solveWithWasmRoutes } from "../lib/core-parallel"
+import { solveWithParallelRoutes } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import type {
-  WasmRouteInput,
-  WasmRouteTask,
-} from "../lib/parallel/WasmRouteTask"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("concurrent solves reserve the shared worker pool for one port phase at a time", async () => {
-  const workers = [0, 1, 2].map(
-      () =>
-        new Worker(new URL("./fixtures/wasmRoute.worker.ts", import.meta.url)),
-    ),
-    free = [...workers]
-  let submitted = 0
-  const executor = {
-    persistentWorkerCount: 4,
-    executeAsync(
-      _Task: typeof WasmRouteTask,
-      input: WasmRouteInput,
-    ): Promise<unknown> {
-      const worker = free.pop()
-      if (!worker) throw new Error("Persistent workers were overcommitted")
-      submitted++
-      return new Promise((resolve, reject) => {
-        worker.onmessage = (event: MessageEvent): void => {
-          free.push(worker)
-          event.data.error
-            ? reject(new Error(event.data.error))
-            : resolve(event.data.output)
-        }
-        worker.onerror = reject
-        worker.postMessage(input)
-      })
-    },
-  }
+test("concurrent solves reserve one group of actual route workers at a time", async () => {
+  const executor = createRouteSearchExecutor(4)
   try {
     const reference = createCompletionFixture()
     reference.MAX_ITERATIONS = 1
     reference.solve()
     const solvers = [createCompletionFixture(), createCompletionFixture()]
-    solvers.forEach((solver) => {
-      solver.MAX_ITERATIONS = 1
-    })
+    for (const solver of solvers) solver.MAX_ITERATIONS = 1
     await Promise.all(
-      solvers.map((solver) => solveWithWasmRoutes(solver, executor)),
+      solvers.map((solver) => solveWithParallelRoutes(solver, executor)),
     )
-    expect(submitted).toBe(6)
+    expect(executor.maximumActive).toBe(4)
+    expect(executor.submitted).toBeGreaterThanOrEqual(8)
     for (const solver of solvers) {
       expect(solver.solved).toBe(true)
       expect(solver.state.regionSegments).toEqual(
@@ -54,6 +24,6 @@ test("concurrent solves reserve the shared worker pool for one port phase at a t
       expect(solver.iterations).toBe(reference.iterations)
     }
   } finally {
-    workers.forEach((worker) => worker.terminate())
+    executor.dispose()
   }
 })

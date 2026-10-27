@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 
-test("serial browser bundles exclude kernels while the explicit parallel entry includes them", async () => {
+test("only the explicit parallel entry includes worker code and both entries use TypeScript", async () => {
   const [serial, parallel] = await Promise.all(
     ["../lib/index.ts", "../lib/core-parallel.ts"].map((entrypoint) =>
       Bun.build({
@@ -15,7 +15,8 @@ test("serial browser bundles exclude kernels while the explicit parallel entry i
   const serialSource = await serial.outputs[0]!.text()
   const parallelSource = await parallel.outputs[0]!.text()
   expect(serialSource).not.toContain("AGFzbQE")
-  expect(serialSource).not.toContain("WasmRouteTask")
-  expect(parallelSource).toContain("AGFzbQE")
-  expect(parallelSource).toContain("WasmRouteTask")
+  expect(serialSource).not.toContain("RouteSearchTask")
+  expect(parallelSource).not.toContain("AGFzbQE")
+  expect(parallelSource).not.toContain("WebAssembly")
+  expect(parallelSource).toContain("RouteSearchTask")
 })
