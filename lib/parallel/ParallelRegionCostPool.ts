@@ -34,6 +34,11 @@ export class ParallelRegionCostPool {
   private readonly preparedOwned: Uint8Array
   private readonly preparedNets: Int32Array
   private activeNet?: number
+  private lastFrom = -1
+  private lastRegion = -1
+  private lastCache?: object
+  private lastNet?: number
+  private rowBase = -1
   private readonly portIndex: Int32Array
   private readonly stride: number
   private readonly completions: Array<Promise<unknown>> = []
@@ -168,6 +173,7 @@ export class ParallelRegionCostPool {
     const start = performance.now()
     this.graph.sync()
     this.activeNet = net
+    this.lastRegion = -1
     const dirty: number[] = []
     let count = 0
     for (let region = 0; region < this.offsets.length; region++) {
@@ -230,25 +236,41 @@ export class ParallelRegionCostPool {
   lookup(candidate: Candidate, neighbor: number): number | undefined {
     const region = candidate.nextRegionId
     const cache = this.solver.state.regionIntersectionCaches[region]!
-    if (this.offsets[region] === -1 || this.caches[region] !== cache) {
+    const net = this.solver.state.currentRouteNetId
+    if (
+      this.lastFrom !== candidate.portId ||
+      this.lastRegion !== region ||
+      this.lastCache !== cache ||
+      this.lastNet !== net
+    ) {
+      this.lastFrom = candidate.portId
+      this.lastRegion = region
+      this.lastCache = cache
+      this.lastNet = net
+      this.rowBase = -1
+      if (
+        this.offsets[region] !== -1 &&
+        this.caches[region] === cache &&
+        this.activeNet === net
+      ) {
+        const from =
+          this.portIndex[this.solver.getHopId(candidate.portId, region)]
+        if (from === undefined || from < 0)
+          throw new Error("Region cost lookup uses a non-incident source")
+        this.rowBase =
+          this.offsets[region]! +
+          from * this.solver.topology.regionIncidentPorts[region]!.length
+      }
+    }
+    if (this.rowBase < 0) {
       this.cacheMisses++
       return undefined
     }
-    if (this.activeNet !== this.solver.state.currentRouteNetId) {
-      this.cacheMisses++
-      return undefined
-    }
-    const fromSlot =
-      this.solver.topology.incidentPortRegion[candidate.portId]!.indexOf(region)
-    const toSlot =
-      this.solver.topology.incidentPortRegion[neighbor]!.indexOf(region)
-    if (fromSlot < 0 || toSlot < 0)
-      throw new Error("Region cost lookup uses a non-incident port")
-    const from = this.portIndex[candidate.portId * this.stride + fromSlot]!
-    const to = this.portIndex[neighbor * this.stride + toSlot]!
-    const width = this.solver.topology.regionIncidentPorts[region]!.length
+    const to = this.portIndex[this.solver.getHopId(neighbor, region)]
+    if (to === undefined || to < 0)
+      throw new Error("Region cost lookup uses a non-incident destination")
     this.cacheHits++
-    return this.values[this.offsets[region]! + from * width + to]!
+    return this.values[this.rowBase + to]!
   }
 
   get totals(): { workerMs: number; tables: number; cells: number } {
