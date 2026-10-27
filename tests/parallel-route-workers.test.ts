@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { solveWithParallelSearch } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
 test("TypeScript route workers retain exact completion output and iteration budgets", async () => {
-  const executor = createDistributedSearchExecutor(4)
+  const executor = createRouteSearchExecutor(4)
   try {
     const baseline = createCompletionFixture(),
       parallel = createCompletionFixture()

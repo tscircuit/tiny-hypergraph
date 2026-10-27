@@ -1,20 +1,26 @@
 import { expect, test } from "bun:test"
-import { DistributedSearchPool } from "../lib/parallel/DistributedSearchPool"
+import {
+  ParallelRouteSearchPool,
+  type ParallelSearchExecutor,
+} from "../lib/parallel/ParallelRouteSearchPool"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("a real worker failure stops the entire barrier group and propagates", async () => {
+test("a real worker startup failure propagates and releases the group", async () => {
   const solver = createCompletionFixture()
   solver.setup()
-  const executor = createDistributedSearchExecutor(4)
-  const pool = new DistributedSearchPool(solver, executor)
+  const executor = createRouteSearchExecutor(4)
+  const broken: ParallelSearchExecutor = {
+    persistentWorkerCount: 4,
+    executeAsync: (Task, input) =>
+      executor.executeAsync(Task, {
+        ...input,
+        topology: { ...input.topology, regionCount: -1 },
+      }),
+  }
+  const pool = new ParallelRouteSearchPool(solver, broken)
   try {
-    await pool.start()
-    // A query outside the immutable problem must fail in a worker and wake
-    // owners that are already waiting at their first barrier.
-    await expect(
-      pool.search(solver.problem.routeCount + 1, 100),
-    ).rejects.toThrow()
+    await expect(pool.start()).rejects.toThrow()
     await expect(pool.dispose()).rejects.toThrow()
   } finally {
     executor.dispose()

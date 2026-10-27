@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
 import { DistanceAwareTinyHyperGraphSolver } from "../lib/distance-aware-tiny-hypergraph-solver"
-import { DistributedSearchPool } from "../lib/parallel/DistributedSearchPool"
+import { ParallelRouteSearchPool } from "../lib/parallel/ParallelRouteSearchPool"
 import type { Candidate } from "../lib/core"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 import { createParallelGrid } from "./fixtures/createParallelGrid"
 
 test("distributed A* retains the serial single-route cost on weighted cyclic graphs", async () => {
-  const executor = createDistributedSearchExecutor(4)
+  const executor = createRouteSearchExecutor(4)
   try {
     for (let seed = 1; seed <= 12; seed++) {
       const { topology, problem } = createParallelGrid(seed)
@@ -41,7 +41,7 @@ test("distributed A* retains the serial single-route cost on weighted cyclic gra
         options,
       )
       frozen.setup()
-      const pool = new DistributedSearchPool(frozen, executor)
+      const pool = new ParallelRouteSearchPool(frozen, executor)
       try {
         await pool.start()
         const result = await pool.search(0, 100000)

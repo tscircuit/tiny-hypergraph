@@ -10,6 +10,7 @@ export type SharedRouteContext = {
 }
 
 export class SharedRouteGraph {
+  generation = 0
   readonly context: SharedRouteContext
   private usedWords = 0
   private caches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"] = []
@@ -39,14 +40,17 @@ export class SharedRouteGraph {
       throw new Error("Cannot rebind a different route graph")
     this.solver = solver
     this.caches = []
+    this.generation++
   }
   sync(): void {
     const ctx = this.context
     Atomics.add(ctx.epoch, 0, 1)
     try {
+      let additive = true
       const dirty = new Uint8Array(this.solver.topology.regionCount)
       for (let port = 0; port < ctx.assignment.length; port++) {
         if (ctx.assignment[port] !== this.solver.state.portAssignment[port]) {
+          if (ctx.assignment[port] !== -1) additive = false
           for (const region of this.solver.topology.incidentPortRegion[port])
             dirty[region] = 1
         }
@@ -56,6 +60,37 @@ export class SharedRouteGraph {
         region < this.solver.topology.regionCount;
         region++
       ) {
+        const previous = this.caches[region]
+        const next = this.solver.state.regionIntersectionCaches[region]!
+        if (
+          ctx.congestion[region]! >
+          this.solver.state.regionCongestionCost[region]!
+        )
+          additive = false
+        if (previous && previous !== next) {
+          if (
+            previous.netIds.length > next.netIds.length ||
+            next.existingRegionCost < ctx.costs[region]! ||
+            next.existingCrossingLayerIntersections <
+              ctx.headers[region * 8 + 4]! ||
+            next.existingSameLayerIntersections <
+              ctx.headers[region * 8 + 5]! ||
+            next.existingEntryExitLayerChanges < ctx.headers[region * 8 + 6]!
+          )
+            additive = false
+          else
+            for (let i = 0; i < previous.netIds.length; i++) {
+              if (
+                previous.netIds[i] !== next.netIds[i] ||
+                previous.lesserAngles[i] !== next.lesserAngles[i] ||
+                previous.greaterAngles[i] !== next.greaterAngles[i] ||
+                previous.layerMasks[i] !== next.layerMasks[i]
+              ) {
+                additive = false
+                break
+              }
+            }
+        }
         if (
           dirty[region] ||
           ctx.congestion[region] !==
@@ -70,6 +105,7 @@ export class SharedRouteGraph {
       }
       ctx.assignment.set(this.solver.state.portAssignment)
       ctx.congestion.set(this.solver.state.regionCongestionCost)
+      if (!additive) this.generation++
     } finally {
       Atomics.add(ctx.epoch, 0, 1)
       Atomics.notify(ctx.epoch, 0)

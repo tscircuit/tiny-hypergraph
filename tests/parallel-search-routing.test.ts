@@ -2,12 +2,12 @@ import { expect, test } from "bun:test"
 import { solveWithParallelSearch } from "../lib/core-parallel"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 import { createParallelGrid } from "./fixtures/createParallelGrid"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
 test("distributed search routes overlapping nets within the shared budget", async () => {
-  const executor = createDistributedSearchExecutor(4)
+  const executor = createRouteSearchExecutor(4)
   try {
-    let messages = 0
+    let searches = 0
     for (let seed = 1; seed <= 12; seed++) {
       const { topology, problem } = createParallelGrid(seed)
       const options = {
@@ -52,9 +52,9 @@ test("distributed search routes overlapping nets within the shared budget", asyn
           )
         }
       }
-      messages += Number(parallel.stats.parallelSearchMessages)
+      searches += Number(parallel.stats.parallelRouteSearches)
     }
-    expect(messages).toBeGreaterThan(0)
+    expect(searches).toBeGreaterThan(0)
   } finally {
     executor.dispose()
   }

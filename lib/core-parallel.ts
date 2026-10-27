@@ -1,13 +1,13 @@
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import { shuffle } from "./shuffle"
 import {
-  DistributedSearchPool,
+  ParallelRouteSearchPool,
   type ParallelSearchExecutor,
-} from "./parallel/DistributedSearchPool"
+} from "./parallel/ParallelRouteSearchPool"
 import { acquireWorkerRuntime } from "./parallel/acquireWorkerRuntime"
 
-export { DistributedSearchTask } from "./parallel/DistributedSearchTask"
-export type { ParallelSearchExecutor } from "./parallel/DistributedSearchPool"
+export { ParallelRouteSearchTask } from "./parallel/ParallelRouteSearchTask"
+export type { ParallelSearchExecutor } from "./parallel/ParallelRouteSearchPool"
 
 const activeSolvers = new WeakSet<OutsideInPartialRipTinyHyperGraphSolver>()
 
@@ -21,7 +21,7 @@ export async function solveWithParallelSearch(
     throw new Error("Parallel routing is already running")
   activeSolvers.add(solver)
   const release = await acquireWorkerRuntime(executor)
-  const service: { pool?: DistributedSearchPool } = {}
+  const service: { pool?: ParallelRouteSearchPool } = {}
   try {
     await solve(solver, executor, stopAtIteration, service)
   } finally {
@@ -42,7 +42,7 @@ async function solve(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
   executor: ParallelSearchExecutor,
   stopAtIteration: number,
-  service: { pool?: DistributedSearchPool },
+  service: { pool?: ParallelRouteSearchPool },
 ): Promise<void> {
   if (solver.deferFinalRouteAcceptance)
     throw new Error("Parallel routing is already running")
@@ -79,14 +79,20 @@ async function solve(
         "parallelSearchMs",
         "parallelRouteSearches",
         "parallelRouteExpansions",
-        "parallelSearchMessages",
-        "parallelSearchBatches",
+        "speculativeRouteSearches",
+        "speculativeRouteExpansions",
+        "staleRouteSearches",
+        "certifiedRouteSearches",
+        "parallelWorkerSearchMs",
+        "parallelWorkerSnapshotMs",
+        "parallelGraphSyncMs",
       ])
         solver.stats[key] =
           Number(solver.stats[key] ?? 0) + Number(candidate.stats[key] ?? 0)
       for (const key of [
         "parallelRouteWorkers",
         "maximumParticipatingSearchWorkers",
+        "maximumConcurrentRouteSearches",
       ])
         solver.stats[key] = Math.max(
           Number(solver.stats[key] ?? 0),
@@ -118,7 +124,7 @@ async function route(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
   executor: ParallelSearchExecutor,
   limit: number,
-  service: { pool?: DistributedSearchPool },
+  service: { pool?: ParallelRouteSearchPool },
 ): Promise<void> {
   solver.setup()
   if (limit < solver.MAX_ITERATIONS) {
@@ -126,9 +132,22 @@ async function route(
       solver.step()
     return
   }
-  let pool: DistributedSearchPool | undefined
+  let pool: ParallelRouteSearchPool | undefined
   let searches = 0
-  let initial = { searchMs: 0, expansions: 0, messages: 0, batches: 0 }
+  let chargedExpansions = 0
+  let initial = {
+    searchMs: 0,
+    expansions: 0,
+    messages: 0,
+    batches: 0,
+    physicalSearches: 0,
+    physicalExpansions: 0,
+    stale: 0,
+    certified: 0,
+    workerMs: 0,
+    snapshotMs: 0,
+    syncMs: 0,
+  }
   try {
     while (!solver.solved && !solver.failed && solver.iterations < limit) {
       const routeId = solver.state.unroutedRoutes[0]
@@ -146,15 +165,27 @@ async function route(
           pool.rebind(solver)
         } else {
           if (service.pool) await service.pool.dispose()
-          pool = new DistributedSearchPool(solver, executor)
+          pool = new ParallelRouteSearchPool(solver, executor)
           service.pool = pool
           await pool.start()
         }
       }
-      if (searches === 0) initial = { searchMs: pool.searchMs, ...pool.totals }
+      if (searches === 0)
+        initial = {
+          searchMs: pool.searchMs,
+          ...pool.totals,
+          physicalSearches: pool.searches,
+          physicalExpansions: pool.speculativeExpansions,
+          stale: pool.staleSearches,
+          certified: pool.certifiedSearches,
+          workerMs: pool.workerSearchMs,
+          snapshotMs: pool.workerSnapshotMs,
+          syncMs: pool.graphSyncMs,
+        }
       const remaining = limit - solver.iterations,
         result = await pool.search(routeId, remaining)
       searches++
+      chargedExpansions += Math.min(remaining, result.iterations)
       if (result.status === "budget" || result.iterations > remaining)
         solver.expireParallelRouteSearch(routeId, remaining)
       else
@@ -170,10 +201,19 @@ async function route(
       parallelRouteWorkers: searches > 0 ? pool!.workerCount : 0,
       parallelSearchMs: (pool?.searchMs ?? 0) - initial.searchMs,
       parallelRouteSearches: searches,
-      parallelRouteExpansions:
-        (pool?.totals.expansions ?? 0) - initial.expansions,
-      parallelSearchMessages: (pool?.totals.messages ?? 0) - initial.messages,
-      parallelSearchBatches: (pool?.totals.batches ?? 0) - initial.batches,
+      parallelRouteExpansions: chargedExpansions,
+      speculativeRouteSearches:
+        (pool?.searches ?? 0) - initial.physicalSearches,
+      speculativeRouteExpansions:
+        (pool?.speculativeExpansions ?? 0) - initial.physicalExpansions,
+      staleRouteSearches: (pool?.staleSearches ?? 0) - initial.stale,
+      certifiedRouteSearches:
+        (pool?.certifiedSearches ?? 0) - initial.certified,
+      parallelWorkerSearchMs: (pool?.workerSearchMs ?? 0) - initial.workerMs,
+      parallelWorkerSnapshotMs:
+        (pool?.workerSnapshotMs ?? 0) - initial.snapshotMs,
+      parallelGraphSyncMs: (pool?.graphSyncMs ?? 0) - initial.syncMs,
+      maximumConcurrentRouteSearches: pool?.maximumConcurrentSearches ?? 0,
       maximumParticipatingSearchWorkers: pool?.maximumParticipatingWorkers ?? 0,
     }
   }

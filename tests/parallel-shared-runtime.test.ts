@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
 import { solveWithParallelSearch } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
 test("concurrent solves reserve one group of actual route workers at a time", async () => {
-  const executor = createDistributedSearchExecutor(4)
+  const executor = createRouteSearchExecutor(4)
   try {
     const reference = createCompletionFixture()
     reference.MAX_ITERATIONS = 1

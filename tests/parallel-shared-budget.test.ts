@@ -2,9 +2,9 @@ import { expect, test } from "bun:test"
 import { solveWithParallelSearch } from "../lib/core-parallel"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 import { createParallelGrid } from "./fixtures/createParallelGrid"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("a four-worker executor shares one expansion budget across active owners", async () => {
+test("prefetching workers respects the coordinator iteration budget", async () => {
   const { topology, problem } = createParallelGrid(1)
   const solver = new SelectiveReripTinyHyperGraphSolver(topology, problem, {
     MAX_ITERATIONS: 17,
@@ -14,7 +14,7 @@ test("a four-worker executor shares one expansion budget across active owners", 
     PARTIAL_RIP_ENABLED: false,
     VERBOSE: false,
   })
-  const executor = createDistributedSearchExecutor(4)
+  const executor = createRouteSearchExecutor(4)
   try {
     await solveWithParallelSearch(solver, executor)
     expect(solver.failed).toBe(true)
@@ -22,7 +22,7 @@ test("a four-worker executor shares one expansion budget across active owners", 
     expect(solver.iterations).toBe(17)
     expect(solver.stats.parallelRouteExpansions).toBeLessThanOrEqual(17)
     expect(solver.stats.parallelRouteWorkers).toBe(4)
-    expect(solver.stats.maximumParticipatingSearchWorkers).toBeGreaterThan(1)
+    expect(solver.stats.maximumConcurrentRouteSearches).toBe(4)
   } finally {
     executor.dispose()
   }

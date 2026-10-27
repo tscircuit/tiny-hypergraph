@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
+import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
 import { solveWithParallelSearch } from "../lib/core-parallel"
 
@@ -11,7 +11,7 @@ test("exhausted asynchronous completion retains serial failure diagnostics and r
     for (const port of [4, 5, 6]) solver.problem.portSectionMask[port] = 0
   }
   reference.solve()
-  const executor = createDistributedSearchExecutor(1)
+  const executor = createRouteSearchExecutor(1)
   try {
     await solveWithParallelSearch(actual, executor)
   } finally {

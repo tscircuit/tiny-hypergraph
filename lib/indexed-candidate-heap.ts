@@ -48,10 +48,6 @@ export class IndexedCandidateHeap {
     return [...this.items]
   }
 
-  peek(): Candidate | undefined {
-    return this.items[0]
-  }
-
   clear(): void {
     this.closureEpochToken = {}
     this.items.length = 0
@@ -73,17 +69,6 @@ export class IndexedCandidateHeap {
 
   isClosedHopId(hopId: number): boolean {
     return this.isHopClosed(hopId)
-  }
-
-  /** Allow label-correcting searches to reconsider an improved closed hop. */
-  reopenHop(hopId: number): void {
-    if (hopId >= 0 && this.hopStateGeneration) {
-      if (
-        this.hopStateGeneration[hopId] === this.currentHopStateGeneration &&
-        this.hopIndexOrClosed![hopId] === -1
-      )
-        this.hopIndexOrClosed![hopId] = -2
-    } else this.closedHopIds.delete(hopId)
   }
 
   queue(candidate: Candidate): void {
