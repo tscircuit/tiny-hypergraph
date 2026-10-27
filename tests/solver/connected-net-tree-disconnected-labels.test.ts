@@ -15,7 +15,8 @@ test("same-net terminal assignments and coincident XY ports cannot create connec
   topology.portX[1] = topology.portX[3]!
   topology.portZ[1] = 1
   const solver = new DistanceAwareTinyHyperGraphSolver(topology, problem, {
-    DYNAMIC_CONNECTED_NET_TREES: true, STATIC_REACHABILITY_PRECHECK: false,
+    DYNAMIC_CONNECTED_NET_TREES: true,
+    STATIC_REACHABILITY_PRECHECK: false,
   })
   solver._setup()
   solver.state.portAssignment.fill(7)

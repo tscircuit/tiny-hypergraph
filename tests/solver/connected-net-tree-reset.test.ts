@@ -5,7 +5,8 @@ import { createConnectedNetTreeFixture } from "tests/fixtures/connected-net-tree
 test("full rerips and problem resets discard old connected-tree membership", () => {
   const { topology, problem } = createConnectedNetTreeFixture()
   const options = {
-    DYNAMIC_CONNECTED_NET_TREES: true, STATIC_REACHABILITY_PRECHECK: false,
+    DYNAMIC_CONNECTED_NET_TREES: true,
+    STATIC_REACHABILITY_PRECHECK: false,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
   }
   const solver = new TinyHyperGraphSolver(topology, problem, options)

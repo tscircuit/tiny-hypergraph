@@ -30,8 +30,15 @@ export class CommittedNetTreeIndex {
     this.adjacency.clear()
     this.edgeKeys.clear()
     for (let regionId = 0; regionId < args.regionSegments.length; regionId++) {
-      for (const [routeId, fromPortId, toPortId] of args.regionSegments[regionId]!) {
-        this.add({ netId: args.routeNet[routeId]!, regionId, fromPortId, toPortId })
+      for (const [routeId, fromPortId, toPortId] of args.regionSegments[
+        regionId
+      ]!) {
+        this.add({
+          netId: args.routeNet[routeId]!,
+          regionId,
+          fromPortId,
+          toPortId,
+        })
       }
     }
   }

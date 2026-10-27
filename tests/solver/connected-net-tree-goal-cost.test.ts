@@ -15,7 +15,8 @@ test("pays the final attachment edge and port penalty before committing a tree g
   const { topology, problem } = createConnectedNetTreeFixture()
   problem.portPenalty = new Float64Array([0, 20, 0, 0, 0])
   const solver = new GoalCostSolver(topology, problem, {
-    DYNAMIC_CONNECTED_NET_TREES: true, STATIC_REACHABILITY_PRECHECK: false,
+    DYNAMIC_CONNECTED_NET_TREES: true,
+    STATIC_REACHABILITY_PRECHECK: false,
     RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
   })
   solver.solve()

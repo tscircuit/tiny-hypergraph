@@ -1,6 +1,9 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
-import { CommittedNetTreeIndex, type CommittedTreeStep } from "./CommittedNetTreeIndex"
+import {
+  CommittedNetTreeIndex,
+  type CommittedTreeStep,
+} from "./CommittedNetTreeIndex"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
   computeRegionCost,
@@ -1429,7 +1432,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   protected canAttachToCommittedTree(routeId: RouteId): boolean {
     return (
-      this.getRouteStartPortId(routeId) === this.problem.routeStartPort[routeId] &&
+      this.getRouteStartPortId(routeId) ===
+        this.problem.routeStartPort[routeId] &&
       this.getRouteEndPortId(routeId) === this.problem.routeEndPort[routeId]
     )
   }
@@ -1446,7 +1450,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (
       !this.DYNAMIC_CONNECTED_NET_TREES ||
       !this.canAttachToCommittedTree(routeId)
-    ) return
+    )
+      return
     this.committedNetTreeIndex.synchronize({
       regionSegments: this.state.regionSegments,
       routeNet: this.problem.routeNet,
@@ -1496,13 +1501,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (
       goalPortId !== this.state.goalPortId &&
       this.problem.portSectionMask[goalPortId] === 0
-    ) return
+    )
+      return
     const assignedNetId = this.state.portAssignment[goalPortId]
     if (this.isPortReservedForDifferentNet(goalPortId)) return
-    if (
-      assignedNetId !== -1 &&
-      assignedNetId !== this.state.currentRouteNetId
-    ) return
+    if (assignedNetId !== -1 && assignedNetId !== this.state.currentRouteNetId)
+      return
     const hopId = this.getHopId(goalPortId, currentCandidate.nextRegionId)
     const previousBestCost = this.getCandidateBestCost(hopId)
     const g = this.computeG(currentCandidate, goalPortId, previousBestCost)
@@ -1563,7 +1567,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       })
     }
 
-    if (this.isDynamicTreeGoal(finalCandidate.portId) && this.treeSearchReversed) {
+    if (
+      this.isDynamicTreeGoal(finalCandidate.portId) &&
+      this.treeSearchReversed
+    ) {
       solvedSegments.reverse()
       return solvedSegments.map(({ regionId, fromPortId, toPortId }) => ({
         regionId,
@@ -2086,22 +2093,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
       while (tail) {
         copiedSegmentCount += 1
         copiedDistance += Math.hypot(
-          this.topology.portX[tail.fromPortId]! - this.topology.portX[tail.toPortId]!,
-          this.topology.portY[tail.fromPortId]! - this.topology.portY[tail.toPortId]!,
+          this.topology.portX[tail.fromPortId]! -
+            this.topology.portX[tail.toPortId]!,
+          this.topology.portY[tail.fromPortId]! -
+            this.topology.portY[tail.toPortId]!,
         )
         copiedLayerChangeCount += Number(
-          this.topology.portZ[tail.fromPortId] !== this.topology.portZ[tail.toPortId],
+          this.topology.portZ[tail.fromPortId] !==
+            this.topology.portZ[tail.toPortId],
         )
         tail = this.treeSuccessors!.get(tail.toPortId)
       }
       this.stats = {
         ...this.stats,
         connectedTreeCopiedSegmentCount:
-          Number(this.stats.connectedTreeCopiedSegmentCount ?? 0) + copiedSegmentCount,
+          Number(this.stats.connectedTreeCopiedSegmentCount ?? 0) +
+          copiedSegmentCount,
         connectedTreeCopiedDistance:
           Number(this.stats.connectedTreeCopiedDistance ?? 0) + copiedDistance,
         connectedTreeCopiedLayerChangeCount:
-          Number(this.stats.connectedTreeCopiedLayerChangeCount ?? 0) + copiedLayerChangeCount,
+          Number(this.stats.connectedTreeCopiedLayerChangeCount ?? 0) +
+          copiedLayerChangeCount,
         connectedTreeInteriorAttachments:
           Number(this.stats.connectedTreeInteriorAttachments ?? 0) +
           Number(finalCandidate.portId !== state.goalPortId),
@@ -2290,9 +2302,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       let distance = Number.POSITIVE_INFINITY
       for (const goalPortId of this.treeSuccessors.keys()) {
         const dx =
-          this.topology.portX[neighborPortId]! - this.topology.portX[goalPortId]!
+          this.topology.portX[neighborPortId]! -
+          this.topology.portX[goalPortId]!
         const dy =
-          this.topology.portY[neighborPortId]! - this.topology.portY[goalPortId]!
+          this.topology.portY[neighborPortId]! -
+          this.topology.portY[goalPortId]!
         distance = Math.min(distance, Math.sqrt(dx * dx + dy * dy))
       }
       const cost = distance * this.DISTANCE_TO_COST
