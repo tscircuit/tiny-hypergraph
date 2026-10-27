@@ -506,12 +506,11 @@ type SegmentGeometryScratch = MutableIntersectionCount
 
 type RegionalHopFrontier = {
   neighbors: PortId[]
-  indices: Int32Array
+  next: Int32Array
   prepared: Uint8Array
   nextRegionIds: Float64Array
   hopIds: Float64Array
-  length: number
-  firstRetiredIndex: number
+  head: number
 }
 
 export class TinyHyperGraphSolver extends BaseSolver {
@@ -1008,32 +1007,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     let frontier = this.regionalHopFrontiers.get(regionId)
     if (!frontier || frontier.neighbors !== neighbors) {
-      const indices = new Int32Array(neighbors.length)
+      const next = new Int32Array(neighbors.length)
       for (let index = 0; index < neighbors.length; index++) {
-        indices[index] = index
+        next[index] = index + 1 < neighbors.length ? index + 1 : -1
       }
       frontier = {
         neighbors,
-        indices,
+        next,
         prepared: new Uint8Array(neighbors.length),
         nextRegionIds: new Float64Array(neighbors.length),
         hopIds: new Float64Array(neighbors.length),
-        length: neighbors.length,
-        firstRetiredIndex: -1,
+        head: neighbors.length > 0 ? 0 : -1,
       }
       this.regionalHopFrontiers.set(regionId, frontier)
-    } else if (frontier.firstRetiredIndex !== -1) {
-      // Retire immediately during a scan, then pack before its next reuse.
-      // An early goal or throw therefore leaves every unvisited index intact.
-      let length = frontier.firstRetiredIndex
-      for (let index = length + 1; index < frontier.length; index++) {
-        const originalIndex = frontier.indices[index]!
-        if (originalIndex !== -1) {
-          frontier.indices[length++] = originalIndex
-        }
-      }
-      frontier.length = length
-      frontier.firstRetiredIndex = -1
     }
     return frontier
   }
@@ -1043,9 +1029,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     frontier: RegionalHopFrontier,
   ): void {
     const { problem, topology, state } = this
-    const { neighbors, indices, prepared, nextRegionIds, hopIds } = frontier
-    for (let index = 0; index < frontier.length; index++) {
-      const currentNeighborIndex = indices[index]!
+    const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
+    let neighborIndex = frontier.head
+    let previousNeighborIndex = -1
+    while (neighborIndex !== -1) {
+      const currentNeighborIndex = neighborIndex
+      neighborIndex = next[currentNeighborIndex]!
+      const previousIndex = previousNeighborIndex
+      previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
@@ -1077,10 +1068,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         ? state.candidateQueue.isClosedHopId(candidateHopId)
         : state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId)
       if (candidateHopIsClosed === true) {
-        indices[index] = -1
-        if (frontier.firstRetiredIndex === -1) {
-          frontier.firstRetiredIndex = index
+        if (previousIndex === -1) {
+          frontier.head = neighborIndex
+        } else {
+          next[previousIndex] = neighborIndex
         }
+        previousNeighborIndex = previousIndex
         continue
       }
       if (!prepared[currentNeighborIndex]) {
