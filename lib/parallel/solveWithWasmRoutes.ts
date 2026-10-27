@@ -196,6 +196,8 @@ async function route(
       solver.parallelOwnerSearch = priorOwnerHook
     solver.stats = {
       ...solver.stats,
+      // A search starts only after every persistent helper acknowledges startup.
+      parallelRouteWorkers: searches > 0 ? pool!.threads - 1 : 0,
       wasmRouteSearches: searches,
       wasmRouteExpansions: expansions,
       wasmRouteWaves: waves,

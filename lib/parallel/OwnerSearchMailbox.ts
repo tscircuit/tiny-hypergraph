@@ -45,7 +45,7 @@ export class OwnerSearchRunner {
     private readonly mailbox: OwnerSearchMailbox,
     private readonly owner: number,
   ) {
-    compiled ??= new WebAssembly.Module(ownerKernelSharedBytes)
+    compiled ??= new WebAssembly.Module(ownerKernelSharedBytes())
     this.top = mailbox.arenas[owner]!
     const config = mailbox.config,
       memory = mailbox.memory

@@ -23,7 +23,7 @@ class Engine {
   callbacks?: Callbacks
   busy = false
   constructor() {
-    module ??= new WebAssembly.Module(ownerKernelBytes)
+    module ??= new WebAssembly.Module(ownerKernelBytes())
     this.exports = new WebAssembly.Instance(module, {
       env: {
         memory: this.memory,

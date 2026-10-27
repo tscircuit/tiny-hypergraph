@@ -59,7 +59,7 @@ async function compile(
   const bytes = Buffer.from(await Bun.file(output).arrayBuffer())
   await Bun.write(
     resolve(root, `lib/parallel/wasm/${name}Bytes.ts`),
-    `// Generated from ${source}.cpp; see scripts/build-route-kernel.ts.\nexport const ${exportName} = Uint8Array.from(\n  atob(\n    "${bytes.toString("base64")}",\n  ),\n  (character) => character.charCodeAt(0),\n)\n`,
+    `// Generated from ${source}.cpp; see scripts/build-route-kernel.ts.\nexport const ${exportName} = (): Uint8Array<ArrayBuffer> =>\n  Uint8Array.from(\n    atob(\n      "${bytes.toString("base64")}",\n    ),\n    (character) => character.charCodeAt(0),\n  )\n`,
   )
 }
 

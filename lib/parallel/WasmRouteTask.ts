@@ -54,7 +54,7 @@ export class WasmRouteTask {
     }
   }
   private run(): void {
-    compiled ??= new WebAssembly.Module(routeKernelBytes)
+    compiled ??= new WebAssembly.Module(routeKernelBytes())
     const config = new Int32Array(
       this.input.memory.buffer,
       this.input.config,

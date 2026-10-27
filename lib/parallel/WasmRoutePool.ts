@@ -66,7 +66,7 @@ export class WasmRoutePool {
     this.ownerMailbox.config[19] = this.threads > 1 ? 1 : 0
     this.ownerRunner = new OwnerSearchRunner(this.ownerMailbox, 0)
     const module = (compiledRouteModule ??= new WebAssembly.Module(
-      routeKernelBytes,
+      routeKernelBytes(),
     ))
     const temporary = new WebAssembly.Instance(module, {
       env: {
