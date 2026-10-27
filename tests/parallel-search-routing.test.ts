@@ -15,6 +15,8 @@ test("distributed search routes overlapping nets within the shared budget", asyn
         PARTIAL_RIP_ENABLED: false,
         OUTSIDE_IN_ROUTING: false,
         MAX_ITERATIONS: 100000,
+        RIP_THRESHOLD_START: Infinity,
+        RIP_THRESHOLD_END: Infinity,
         VERBOSE: false,
       }
       const serial = new SelectiveReripTinyHyperGraphSolver(
@@ -29,11 +31,27 @@ test("distributed search routes overlapping nets within the shared budget", asyn
       )
       serial.solve()
       await solveWithParallelSearch(parallel, executor)
+      expect(serial.solved).toBe(true)
       expect(parallel.solved).toBe(serial.solved)
       expect(parallel.failed).toBe(serial.failed)
       expect(parallel.iterations).toBeLessThanOrEqual(options.MAX_ITERATIONS)
       expect(parallel.stats.parallelRouteWorkers).toBe(4)
       expect(parallel.stats.maximumParticipatingSearchWorkers).toBe(4)
+      for (const [
+        region,
+        segments,
+      ] of parallel.state.regionSegments.entries()) {
+        for (const [route, from, to] of segments) {
+          expect(topology.regionIncidentPorts[region]).toContain(from)
+          expect(topology.regionIncidentPorts[region]).toContain(to)
+          expect(parallel.state.portAssignment[from]).toBe(
+            problem.routeNet[route]!,
+          )
+          expect(parallel.state.portAssignment[to]).toBe(
+            problem.routeNet[route]!,
+          )
+        }
+      }
       messages += Number(parallel.stats.parallelSearchMessages)
     }
     expect(messages).toBeGreaterThan(0)
