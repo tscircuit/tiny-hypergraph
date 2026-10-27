@@ -6,6 +6,8 @@ import type {
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 
+type SerializedRegionId = SerializedHyperGraph["regions"][number]["regionId"]
+
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
 ) => {
@@ -308,20 +310,6 @@ const getCentermostPortIdForRegion = (
   return sortedPortIds[0]
 }
 
-const getSharedPortIdsForConnection = (
-  serializedHyperGraph: SerializedHyperGraph,
-  connection: NonNullable<SerializedHyperGraph["connections"]>[number],
-): string[] =>
-  serializedHyperGraph.ports
-    .filter(
-      (port) =>
-        (port.region1Id === connection.startRegionId &&
-          port.region2Id === connection.endRegionId) ||
-        (port.region2Id === connection.startRegionId &&
-          port.region1Id === connection.endRegionId),
-    )
-    .map((port) => port.portId)
-
 export const loadSerializedHyperGraph = (
   serializedHyperGraph: SerializedHyperGraph,
 ): {
@@ -478,23 +466,38 @@ export const loadSerializedHyperGraph = (
     }
   })
 
+  // Only connection start regions need an adjacency entry. Avoid scanning all
+  // ports separately for each connection, including when no shared port exists.
+  const sharedPortRegions = new Map<
+    SerializedRegionId,
+    Set<SerializedRegionId>
+  >()
+  for (const connection of connections) {
+    if (!sharedPortRegions.has(connection.startRegionId)) {
+      sharedPortRegions.set(connection.startRegionId, new Set())
+    }
+  }
+  for (const port of filteredHyperGraph.ports) {
+    sharedPortRegions.get(port.region1Id)?.add(port.region2Id)
+    sharedPortRegions.get(port.region2Id)?.add(port.region1Id)
+  }
+
   const routableConnections = connections
     .map((connection) => {
       const solvedRoute = solvedRouteByConnectionId.get(connection.connectionId)
-      const sharedPortIds = getSharedPortIdsForConnection(
-        filteredHyperGraph,
-        connection,
-      )
+      const hasSharedPort = sharedPortRegions
+        .get(connection.startRegionId)!
+        .has(connection.endRegionId)
 
       return {
         connection,
         solvedRoute,
-        sharedPortIds,
+        hasSharedPort,
       }
     })
     .filter(
-      ({ solvedRoute, sharedPortIds }) =>
-        sharedPortIds.length === 0 || (solvedRoute?.path.length ?? 0) > 1,
+      ({ solvedRoute, hasSharedPort }) =>
+        !hasSharedPort || (solvedRoute?.path.length ?? 0) > 1,
     )
 
   const routeCount = routableConnections.length
