@@ -113,30 +113,21 @@ export class ParallelRouteSearchTask {
           continue
         }
         const snapshotTimeStart = snapshot.timeMs
-        snapshot.refresh()
-        const initialCopyMs = snapshot.timeMs - snapshotTimeStart
         const searchStart = performance.now()
-        solver.search(
-          control[1]!,
-          budget[0]!,
-          control,
-          this.input.liveRegions.length > 0
-            ? (region): boolean => {
-                // Publish before checking the version: a concurrent update either
-                // sees this read or is detected by the following version check.
-                Atomics.store(this.input.liveRegions, region, control[2]!)
-                if (
-                  Atomics.load(context.headers, region * 8) === versions[region]
-                )
-                  return true
-                Atomics.store(control, 9, 1)
-                return false
-              }
-            : undefined,
-        )
+        solver.search(control[1]!, budget[0]!, control, (region): boolean => {
+          // Publish before reading. A concurrent update either cancels this
+          // search or is detected by version validation before its commit.
+          if (this.input.liveRegions.length > 0)
+            Atomics.store(this.input.liveRegions, region, control[2]!)
+          snapshot.read(region)
+          if (Atomics.load(context.headers, region * 8) === versions[region])
+            return true
+          Atomics.store(control, 9, 1)
+          return false
+        })
         const elapsed = performance.now() - searchStart
         budget[1] = snapshot.timeMs - snapshotTimeStart
-        budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
+        budget[2] = Math.max(0, elapsed - budget[1]!)
         if (Atomics.load(control, 0) === 3) return
         const canceled = Atomics.load(control, 9) !== 0
         let count = 0
