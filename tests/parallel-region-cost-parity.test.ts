@@ -47,8 +47,8 @@ test("parallel region tables preserve exact costs for owned nets, crossing restr
       try {
         await pool.start()
         for (let update = 0; update < 2; update++) {
-          await pool.prepare()
-          for (const net of [7, 11, 12])
+          for (const net of [7, 11, 12]) {
+            await pool.prepare(net)
             for (let from = 0; from < 4; from++)
               for (let to = 0; to < 4; to++) {
                 solver.state.currentRouteNetId = net
@@ -66,6 +66,7 @@ test("parallel region tables preserve exact costs for owned nets, crossing restr
                 expect(solver.computeG(candidate, to)).toBe(expected)
                 solver.regionCostProvider = undefined
               }
+          }
           if (update === 0) {
             solver.state.currentRouteNetId = 12
             solver.appendSegmentToRegionCache(0, 1, 3)
@@ -73,6 +74,10 @@ test("parallel region tables preserve exact costs for owned nets, crossing restr
           }
         }
         expect(pool.cacheHits).toBeGreaterThan(0)
+        solver.state.currentRouteNetId = 999
+        expect(
+          pool.lookup({ portId: 0, nextRegionId: 0, f: 0, g: 0, h: 0 }, 1),
+        ).toBeUndefined()
         expect(pool.cacheMisses).toBeGreaterThan(0)
       } finally {
         solver.regionCostProvider = undefined

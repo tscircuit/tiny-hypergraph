@@ -14,6 +14,7 @@ export type RegionCostInput = {
   context: SharedRouteContext
   control: Int32Array
   jobs: Int32Array
+  owned: Int32Array
   offsets: Int32Array
   values: Float64Array
   counters: Float64Array
@@ -34,6 +35,7 @@ export class RegionCostTask {
       control,
       jobs,
       offsets,
+      owned,
       values,
       counters,
       worker,
@@ -68,7 +70,12 @@ export class RegionCostTask {
           tables = 0
         let index = worker
         while (index < control[1]!) {
-          const region = jobs[index]!
+          const region = jobs[index * 3]!
+          const firstRow = jobs[index * 3 + 1]!
+          const lastRow = jobs[index * 3 + 2]!
+          solver.state.currentRouteNetId = owned[region]
+            ? control[7]!
+            : Number.NaN
           const row = region * 8
           const version = Atomics.load(context.headers, row)
           if (version !== versions[region]) {
@@ -109,7 +116,7 @@ export class RegionCostTask {
             g: 0,
             h: 0,
           }
-          for (let from = 0; from < count; from++) {
+          for (let from = firstRow; from < lastRow; from++) {
             candidate.portId = ports[from]!
             for (let to = from; to < count; to++) {
               const cost = solver.computeG(candidate, ports[to]!, Infinity, 0)
@@ -118,7 +125,7 @@ export class RegionCostTask {
               cells++
             }
           }
-          tables++
+          if (firstRow === 0) tables++
           index = Atomics.add(control, 2, 1)
         }
         counters[worker * 3] += performance.now() - start

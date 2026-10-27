@@ -157,7 +157,7 @@ async function route(
           solver.regionCostProvider = (candidate, neighbor) =>
             pool!.lookup(candidate, neighbor)
         }
-        await pool.prepare()
+        await pool.prepare(solver.problem.routeNet[routeId]!)
       }
       const start = performance.now()
       do {

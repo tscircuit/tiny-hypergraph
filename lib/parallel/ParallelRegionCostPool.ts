@@ -22,7 +22,7 @@ export class ParallelRegionCostPool {
   cacheMisses = 0
   maximumParticipatingWorkers = 0
   private readonly graph: SharedRouteGraph
-  private readonly control = new Int32Array(new SharedArrayBuffer(7 * 4))
+  private readonly control = new Int32Array(new SharedArrayBuffer(8 * 4))
   private readonly jobs: Int32Array
   private readonly offsets: Int32Array
   private readonly values: Float64Array
@@ -30,9 +30,10 @@ export class ParallelRegionCostPool {
   private readonly versions: Int32Array
   private readonly caches: TinyHyperGraphSolver["state"]["regionIntersectionCaches"] =
     []
-  private readonly netChecks: Array<
-    { cache: object; net: number; containsNet: boolean } | undefined
-  >
+  private readonly owned: Int32Array
+  private readonly preparedOwned: Uint8Array
+  private readonly preparedNets: Int32Array
+  private activeNet?: number
   private readonly portIndex: Int32Array
   private readonly stride: number
   private readonly completions: Array<Promise<unknown>> = []
@@ -50,24 +51,40 @@ export class ParallelRegionCostPool {
     this.signature = this.getSignature(solver)
     this.graph = new SharedRouteGraph(solver)
     const { topology } = solver
-    this.jobs = new Int32Array(new SharedArrayBuffer(topology.regionCount * 4))
     this.offsets = new Int32Array(
       new SharedArrayBuffer(topology.regionCount * 4),
     ).fill(-1)
     this.versions = new Int32Array(topology.regionCount).fill(-1)
-    this.netChecks = new Array(topology.regionCount)
+    this.owned = new Int32Array(new SharedArrayBuffer(topology.regionCount * 4))
+    this.preparedOwned = new Uint8Array(topology.regionCount)
+    this.preparedNets = new Int32Array(topology.regionCount)
     this.stride = Math.max(
       1,
       ...topology.incidentPortRegion.map((regions) => regions.length),
     )
     this.portIndex = new Int32Array(topology.portCount * this.stride).fill(-1)
     let cells = 0
-    // Bound quadratic storage. Larger regions keep their ordinary exact scorer.
-    for (let region = 0; region < topology.regionCount; region++) {
+    let jobCapacity = 0
+    // Allocate smaller regions first and cap the shared score arena at 256 MiB.
+    // Dense regions are split into row chunks so all workers share their work.
+    const regions = Array.from(
+      { length: topology.regionCount },
+      (_, region) => region,
+    ).sort(
+      (a, b) =>
+        topology.regionIncidentPorts[a]!.length -
+        topology.regionIncidentPorts[b]!.length,
+    )
+    for (const region of regions) {
       const ports = topology.regionIncidentPorts[region]!
-      if (ports.length > 128) continue
+      if (
+        ports.length === 0 ||
+        cells + ports.length * ports.length > 32 * 1024 * 1024
+      )
+        continue
       this.offsets[region] = cells
       cells += ports.length * ports.length
+      jobCapacity += Math.ceil(ports.length / 16)
       for (let index = 0; index < ports.length; index++) {
         const port = ports[index]!
         const slot = topology.incidentPortRegion[port]!.indexOf(region)
@@ -76,6 +93,7 @@ export class ParallelRegionCostPool {
         this.portIndex[port * this.stride + slot] = index
       }
     }
+    this.jobs = new Int32Array(new SharedArrayBuffer(jobCapacity * 3 * 4))
     this.values = new Float64Array(new SharedArrayBuffer(cells * 8))
     this.counters = new Float64Array(new SharedArrayBuffer(count * 3 * 8))
   }
@@ -110,6 +128,7 @@ export class ParallelRegionCostPool {
         control: this.control,
         jobs: this.jobs,
         offsets: this.offsets,
+        owned: this.owned,
         values: this.values,
         counters: this.counters,
         worker,
@@ -145,22 +164,43 @@ export class ParallelRegionCostPool {
       })
   }
 
-  async prepare(): Promise<void> {
+  async prepare(net: number): Promise<void> {
     const start = performance.now()
     this.graph.sync()
+    this.activeNet = net
+    const dirty: number[] = []
     let count = 0
     for (let region = 0; region < this.offsets.length; region++) {
       if (this.offsets[region] === -1) continue
       const version = Atomics.load(this.graph.context.headers, region * 8)
-      if (version === this.versions[region]) continue
-      this.jobs[count++] = region
+      const own = this.solver.state.regionIntersectionCaches[
+        region
+      ]!.netIds.includes(net)
+        ? 1
+        : 0
+      if (
+        version === this.versions[region] &&
+        own === this.preparedOwned[region] &&
+        (!own || this.preparedNets[region] === net)
+      )
+        continue
+      this.owned[region] = own
+      dirty.push(region)
+      const degree = this.solver.topology.regionIncidentPorts[region]!.length
+      for (let row = 0; row < degree; row += 16) {
+        this.jobs[count * 3] = region
+        this.jobs[count * 3 + 1] = row
+        this.jobs[count * 3 + 2] = Math.min(degree, row + 16)
+        count++
+      }
     }
     if (count > 0) {
       const previous = Array.from(
         { length: this.workerCount },
-        (_, worker) => this.counters[worker * 3 + 1]!,
+        (_, worker) => this.counters[worker * 3 + 2]!,
       )
       this.control[1] = count
+      this.control[7] = net
       Atomics.store(this.control, 2, this.workerCount)
       Atomics.store(this.control, 3, 0)
       Atomics.add(this.control, 0, 1)
@@ -168,19 +208,20 @@ export class ParallelRegionCostPool {
       await this.waitFor(3, this.workerCount)
       let participants = 0
       for (let worker = 0; worker < this.workerCount; worker++)
-        if (this.counters[worker * 3 + 1]! > previous[worker]!) participants++
+        if (this.counters[worker * 3 + 2]! > previous[worker]!) participants++
       this.maximumParticipatingWorkers = Math.max(
         this.maximumParticipatingWorkers,
         participants,
       )
-      for (let index = 0; index < count; index++) {
-        const region = this.jobs[index]!
+      for (const region of dirty) {
         this.versions[region] = Atomics.load(
           this.graph.context.headers,
           region * 8,
         )
         this.caches[region] =
           this.solver.state.regionIntersectionCaches[region]!
+        this.preparedOwned[region] = this.owned[region]!
+        this.preparedNets[region] = net
       }
     }
     this.prepareMs += performance.now() - start
@@ -193,13 +234,7 @@ export class ParallelRegionCostPool {
       this.cacheMisses++
       return undefined
     }
-    const net = this.solver.state.currentRouteNetId!
-    let check = this.netChecks[region]
-    if (!check || check.cache !== cache || check.net !== net) {
-      check = { cache, net, containsNet: cache.netIds.includes(net) }
-      this.netChecks[region] = check
-    }
-    if (check.containsNet) {
+    if (this.activeNet !== this.solver.state.currentRouteNetId) {
       this.cacheMisses++
       return undefined
     }
