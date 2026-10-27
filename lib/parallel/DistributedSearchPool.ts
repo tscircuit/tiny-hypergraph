@@ -184,7 +184,9 @@ export class DistributedSearchPool {
     this.labelVersions.fill(0)
     this.parents.fill(-1)
     this.bounds.fill(Infinity)
-    this.activity.fill(1)
+    this.activity.fill(0)
+    for (let owner = 0; owner < this.workerCount; owner++)
+      this.activity[owner * 16] = 1
     this.heads.fill(0)
     this.tails.fill(0)
     for (const index of [C.done, C.tokens, C.result, C.stopped, C.paused])
@@ -219,7 +221,8 @@ export class DistributedSearchPool {
               : this.control[C.tokens]! >= budget
                 ? 3
                 : 0
-        this.activity.fill(1)
+        for (let owner = 0; owner < this.workerCount; owner++)
+          this.activity[owner * 16] = 1
         this.control[C.stopped] = 0
         this.control[C.paused] = 0
         Atomics.store(this.control, C.pause, 0)

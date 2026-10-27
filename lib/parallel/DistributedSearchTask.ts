@@ -270,6 +270,36 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
     const bound = this.input.bounds[this.input.workers * 8]!
     return version === Atomics.load(c, C.goalVersion) ? bound : Infinity
   }
+
+  private publishFrontier(): void {
+    const index = this.input.owner * 16 + 1
+    const previous = this.input.bounds[this.input.owner * 8]!
+    const next = this.heap.peek()?.f ?? Infinity
+    Atomics.add(this.input.activity, index, 1)
+    this.input.bounds[this.input.owner * 8] = next
+    Atomics.add(this.input.activity, index, 1)
+    if (next > previous) {
+      for (let owner = 0; owner < this.input.workers; owner++) {
+        if (Atomics.load(this.input.activity, owner * 16) !== 0) continue
+        Atomics.add(this.input.wake, owner * 16, 1)
+        Atomics.notify(this.input.wake, owner * 16)
+      }
+    }
+  }
+
+  private schedulingBound(): number {
+    let minimum = this.heap.peek()?.f ?? Infinity
+    for (let owner = 0; owner < this.input.workers; owner++) {
+      if (owner === this.input.owner) continue
+      const index = owner * 16 + 1
+      const version = Atomics.load(this.input.activity, index)
+      if (version & 1) continue
+      const value = this.input.bounds[owner * 8]!
+      if (version === Atomics.load(this.input.activity, index))
+        minimum = Math.min(minimum, value)
+    }
+    return minimum + Math.max(1e-9, this.DISTANCE_TO_COST)
+  }
   override onPathFound(candidate: Candidate): void {
     if (candidate.portId !== this.state.goalPortId) super.onPathFound(candidate)
   }
@@ -386,22 +416,37 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
         this.remoteGeneration = 1
       }
       this.drain()
+      this.publishFrontier()
       const goal = this.goalBound()
+      const cutoff = this.schedulingBound()
       let used = 0
       while (used < this.input.batchSize) {
         const candidate = this.heap.peek()
-        if (!candidate || candidate.f >= (owner === 0 ? this.goalBest : goal))
+        if (
+          !candidate ||
+          candidate.f > cutoff ||
+          candidate.f >= (owner === 0 ? this.goalBest : goal)
+        )
           break
         if (Atomics.add(c, C.tokens, 1) >= c[C.budget]!) break
         this.step()
         used++
       }
       this.batches++
+      this.publishFrontier()
       if (used === this.input.batchSize) continue
       const epoch = Atomics.load(this.input.wake, owner * 16)
       Atomics.store(this.input.activity, owner * 16, 0)
       this.signal()
       if (this.hasMessages() || Atomics.load(c, C.pause)) continue
+      const candidate = this.heap.peek()
+      if (
+        candidate &&
+        candidate.f < this.goalBound() &&
+        candidate.f <= this.schedulingBound() &&
+        Atomics.load(c, C.tokens) < c[C.budget]!
+      )
+        continue
       Atomics.wait(this.input.wake, owner * 16, epoch, 100)
     }
     this.input.counters[owner * 4] += this.iterations
