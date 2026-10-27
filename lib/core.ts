@@ -184,12 +184,29 @@ export interface RegionCostSummary {
   totalRegionCost: number
 }
 
-interface SolvedStateSnapshot {
+export interface SolvedStateSnapshot {
   portAssignment: Int32Array
   regionSegments: Array<[RouteId, PortId, PortId][]>
   regionIntersectionCaches: RegionIntersectionCache[]
   regionCongestionCost: Float64Array
   ripCount: number
+}
+
+export interface FinalRouteRequest {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  options: TinyHyperGraphSolverOptions
+  snapshot: SolvedStateSnapshot
+  routeIds: RouteId[]
+  ripCount: number
+  firstAttempt: number
+  summary: RegionCostSummary
+}
+
+export interface FinalRouteResult {
+  snapshot: SolvedStateSnapshot
+  summary: RegionCostSummary
+  maxIterations: number
 }
 
 export interface NeverSuccessfullyRoutedRouteSummary {
@@ -538,6 +555,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hCostEndY = 0
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
+  /** The async coordinator resolves this explicit completion stage. */
+  deferFinalRouteAcceptance = false
+  hasDeferredFinalRouteAcceptance = false
+
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
@@ -1136,6 +1157,34 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  acceptParallelRouteSearch(routeId: RouteId, candidate: Candidate | undefined, iterations: number): void {
+    if (this.state.currentRouteId !== undefined || this.state.unroutedRoutes[0] !== routeId ||
+        iterations < 1 || this.iterations + iterations > this.MAX_ITERATIONS) throw new Error("Route replay does not match the routing state")
+    this.state.unroutedRoutes.shift()
+    this.state.currentRouteId = routeId
+    this.state.currentRouteNetId = this.problem.routeNet[routeId]
+    this.state.goalPortId = this.getRouteEndPortId(routeId)
+    this.routeAttemptCountByRouteId[routeId] += 1
+    this.resetCandidateBestCosts()
+    this.state.candidateQueue.clear()
+    if (candidate) this.state.candidateQueue.queue(candidate)
+    this.iterations += iterations - 1
+    this.step()
+  }
+
+  expireParallelRouteSearch(routeId: RouteId, iterations: number): void {
+    if (this.state.currentRouteId !== undefined || this.state.unroutedRoutes[0] !== routeId ||
+        iterations < 1 || this.iterations + iterations !== this.MAX_ITERATIONS) throw new Error("Route timeout does not match the remaining budget")
+    this.state.unroutedRoutes.shift()
+    this.state.currentRouteId = routeId
+    this.state.currentRouteNetId = this.problem.routeNet[routeId]
+    this.state.goalPortId = this.getRouteEndPortId(routeId)
+    this.routeAttemptCountByRouteId[routeId] += 1
+    this.iterations += iterations
+    this.tryFinalAcceptance()
+    if (!this.solved) { this.failed = true; this.error = `${this.getSolverName()} ran out of iterations` }
+  }
+
   resetCandidateBestCosts() {
     const { state } = this
 
@@ -1716,6 +1765,54 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return new GreedyFinalRouteSolver(this.topology, this.problem, options)
   }
 
+  getFinalRouteRequest(): FinalRouteRequest {
+    if (!this.hasDeferredFinalRouteAcceptance) throw new Error("No deferred completion search")
+    return {
+      topology: this.topology, problem: this.problem, options: getTinyHyperGraphSolverOptions(this),
+      snapshot: this.getFinalRouteResult().snapshot,
+      routeIds: this.getRemainingRouteIdsForGreedyFinalRoute(), ripCount: this.state.ripCount,
+      firstAttempt: this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0,
+      summary: this.summarizeSolvedState(this),
+    }
+  }
+
+  createFinalRouteCandidate(attempt: number, snapshot: SolvedStateSnapshot, routeIds: RouteId[]): TinyHyperGraphSolver {
+    const solver = this.createGreedyFinalRouteSolver({
+      ...getTinyHyperGraphSolverOptions(this), ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
+      GREEDY_FINAL_ROUTE_ITERS: 0, MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+      RIP_THRESHOLD_RAMP_ATTEMPTS: 0, STATIC_REACHABILITY_PRECHECK: false,
+      OUTSIDE_IN_ROUTING: false, PARTIAL_RIP_ENABLED: false,
+    }, attempt)
+    this.applySnapshotToGreedyFinalRouteSolver(solver, snapshot, routeIds)
+    return solver
+  }
+
+  getFinalRouteResult(): FinalRouteResult {
+    return {
+      snapshot: cloneSolvedStateSnapshot({
+        portAssignment: this.state.portAssignment, regionSegments: this.state.regionSegments,
+        regionIntersectionCaches: this.state.regionIntersectionCaches,
+        regionCongestionCost: this.state.regionCongestionCost, ripCount: this.state.ripCount,
+      }), summary: this.summarizeSolvedState(this), maxIterations: this.MAX_ITERATIONS,
+    }
+  }
+
+  acceptFinalRouteResult(result: FinalRouteResult, attempt: number, remainingCount: number): void {
+    this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot(result.snapshot)
+    this.bestSolvedStateSummary = result.summary
+    this.restoreBestSolvedState()
+    this.stats = {
+      ...this.stats, acceptedGreedyFinalRouteOnTimeout: true,
+      greedyFinalRouteIter: Math.max(0, attempt), finalRoutingStrategy: attempt < 0 ? "congestion-aware" : "greedy",
+      greedyFinalRouteRemainingRouteCount: remainingCount, greedyFinalRouteMaxIterations: result.maxIterations,
+      neverSuccessfullyRoutedRouteCount: 0, maxRegionCost: result.summary.maxRegionCost,
+      totalRegionCost: result.summary.totalRegionCost, bestMaxRegionCost: result.summary.maxRegionCost,
+      bestTotalRegionCost: result.summary.totalRegionCost,
+    }
+    this.solved = true; this.failed = false; this.error = null
+    this.hasDeferredFinalRouteAcceptance = false
+  }
+
   protected tryGreedyFinalRouteAcceptance(): boolean {
     const greedyFinalRouteIters = Math.max(
       0,
@@ -1727,6 +1824,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
     if (remainingRouteIds.length === 0) {
+      return false
+    }
+
+    if (this.deferFinalRouteAcceptance) {
+      this.hasDeferredFinalRouteAcceptance = true
       return false
     }
 
@@ -1755,58 +1857,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
               remainingRouteIds,
               this.state.ripCount + greedyFinalRouteIter,
             )
-      const greedySolver = this.createGreedyFinalRouteSolver(
-        {
-          ...getTinyHyperGraphSolverOptions(this),
-          ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
-          GREEDY_FINAL_ROUTE_ITERS: 0,
-          MAX_ITERATIONS: GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
-          RIP_THRESHOLD_RAMP_ATTEMPTS: 0,
-          STATIC_REACHABILITY_PRECHECK: false,
-          OUTSIDE_IN_ROUTING: false,
-          PARTIAL_RIP_ENABLED: false,
-        },
-        greedyFinalRouteIter,
-      )
+      const greedySolver = this.createFinalRouteCandidate(greedyFinalRouteIter, startingSnapshot, routeIds)
       greedyFinalRouteMaxIterations = greedySolver.MAX_ITERATIONS
-
-      this.applySnapshotToGreedyFinalRouteSolver(
-        greedySolver,
-        startingSnapshot,
-        routeIds,
-      )
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
         continue
       }
 
-      this.bestSolvedStateSnapshot = cloneSolvedStateSnapshot({
-        portAssignment: greedySolver.state.portAssignment,
-        regionSegments: greedySolver.state.regionSegments,
-        regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
-        regionCongestionCost: greedySolver.state.regionCongestionCost,
-        ripCount: greedySolver.state.ripCount,
-      })
-      this.bestSolvedStateSummary = this.summarizeSolvedState(greedySolver)
-      this.restoreBestSolvedState()
-      this.stats = {
-        ...this.stats,
-        acceptedGreedyFinalRouteOnTimeout: true,
-        greedyFinalRouteIter: Math.max(0, greedyFinalRouteIter),
-        finalRoutingStrategy:
-          greedyFinalRouteIter < 0 ? "congestion-aware" : "greedy",
-        greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
-        greedyFinalRouteMaxIterations,
-        neverSuccessfullyRoutedRouteCount: 0,
-        maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
-        totalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
-        bestMaxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
-        bestTotalRegionCost: this.bestSolvedStateSummary.totalRegionCost,
-      }
-      this.solved = true
-      this.failed = false
-      this.error = null
+      this.acceptFinalRouteResult(greedySolver.getFinalRouteResult(), greedyFinalRouteIter, remainingRouteIds.length)
       return true
     }
 

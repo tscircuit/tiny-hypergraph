@@ -1,3 +1,5 @@
+import type { CompiledOwnerSearchOptions } from "./parallel/findDisconnectedOwnerGraph"
+import { findOwnerPathInWasm, type OwnerGeometry } from "./parallel/findOwnerPathInWasm"
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
@@ -21,11 +23,13 @@ import type {
 } from "./selective-rerip/relaxedBlockerSearchTypes"
 import type { HopId, PortId, RegionId, RouteId } from "./types"
 
+
 export type { SelectiveReripBlockerResource } from "./selective-rerip/relaxedBlockerSearchTypes"
 
 type ReachabilityTerminals = {
   startPortId: PortId
   goalPortId: PortId
+
 }
 
 type RelaxedSearchHopContext = {
@@ -150,6 +154,10 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * known set of committed blockers.
  */
 export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
+  /** Enabled by the asynchronous compiled routing driver. */
+  private blockerSearchSession?: object
+  useCompiledOwnerSearch = false
+  parallelOwnerSearch?: (options: DistinctOwnerBlockerSearchOptions<RelaxedSearchState, number, RouteId, RelaxedSearchHopData>, geometry: OwnerGeometry<RelaxedSearchState, RouteId, RelaxedSearchHopData>, forbidden: ReadonlySet<RouteId>) => DistinctOwnerBlockerSearchResult<RelaxedSearchState, RouteId, RelaxedSearchHopData>
   protected override costAwareFinalReripBudget = 8
   private readonly failedOwnerPairCounts = new Map<
     RouteId,
@@ -214,6 +222,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   override onOutOfCandidates(): void {
+    this.blockerSearchSession = {}
+    try {
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
       throw new Error(
@@ -345,6 +355,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     this.selectiveReripStats.lastAlternateSearchExpandedLabelCount =
       alternatePath?.expandedLabelCount ?? 0
     this.publishSelectiveReripStats()
+    } finally { this.blockerSearchSession = undefined }
   }
 
   private addCongestionCostForSelectiveRerip(): void {
@@ -389,6 +400,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
     // Occupancy stays fixed during this synchronous search. Distinct owner
     // labels revisit the same hop, but their outgoing resources are identical.
+
     const hopsByState = new Map<HopId, RelaxedSearchHop[]>()
     const remainingDistanceByPort = new Map<PortId, number>()
     const goalX = this.topology.portX[goalPortId]!
@@ -402,12 +414,13 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       forbiddenOwnerRouteIds,
     }
     const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
-    const searchOptions: DistinctOwnerBlockerSearchOptions<
+    const searchOptions: CompiledOwnerSearchOptions<
       RelaxedSearchState,
       HopId,
       RouteId,
       RelaxedSearchHopData
     > = {
+
       start: { portId: startPortId, nextRegionId: startRegionId },
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
@@ -420,6 +433,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         hopsByState.set(key, hops)
         return hops
       },
+
       maxExpandedLabels,
       getRemainingDistance: boundedReachabilityGeometry
         ? ({ portId }): number => {
@@ -446,6 +460,38 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
             return remainingDistance
           }
         : undefined,
+    }
+    if (this.useCompiledOwnerSearch) {
+      searchOptions.checkReachability = true
+    const firstReachabilityPort = new Int32Array(this.topology.regionCount).fill(-1)
+    searchOptions.getReachabilityStateKey = (state): number => {
+      if (this.isKnownSingleLayerRegion(state.nextRegionId)) return this.getHopId(state.portId, state.nextRegionId) * 2 + 1
+      const first = firstReachabilityPort[state.nextRegionId]
+      if (first === -1) firstReachabilityPort[state.nextRegionId] = state.portId
+      return state.nextRegionId * 4 + (first === -1 || first === state.portId ? 0 : 2)
+    }
+    const stride = Math.max(1, ...this.topology.incidentPortRegion.map((regions) => regions.length))
+    const geometry: OwnerGeometry<RelaxedSearchState, RouteId, RelaxedSearchHopData> = {
+      stride, goal: goalPortId,
+      nativeGraph: { cacheToken: this.blockerSearchSession, assignment: this.state.portAssignment, portOwners, segments: this.state.regionSegments, net: routeNetId, forbidden: forbiddenOwnerRouteIds },
+      stateId: (state) => this.getHopId(state.portId, state.nextRegionId),
+      state: (id) => {
+        const portId = Math.floor(id / stride), nextRegionId = this.topology.incidentPortRegion[portId]![id % stride]!
+        return { portId, nextRegionId }
+      },
+      templateKey: (state) => state.nextRegionId,
+      templates: (state) => {
+        if (this.isKnownSingleLayerRegion(state.nextRegionId)) return undefined
+        let templates = hopTemplatesByRegion.get(state.nextRegionId)
+        if (!templates) {
+          templates = this.getRelaxedSearchHops({ state, buildRegionTemplates: true }, hopContext)
+          hopTemplatesByRegion.set(state.nextRegionId, templates)
+        }
+        return templates
+      },
+      distance: (a, b) => Math.hypot(this.topology.portX[a]! - this.topology.portX[b]!, this.topology.portY[a]! - this.topology.portY[b]!),
+    }
+    return this.parallelOwnerSearch ? this.parallelOwnerSearch(searchOptions, geometry, forbiddenOwnerRouteIds) : findOwnerPathInWasm(searchOptions, geometry)
     }
     if (!boundedReachabilityGeometry) {
       return findDistinctOwnerBlockerPath({
@@ -475,6 +521,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ...searchOptions,
       minimumOwnerCount: reachability.minimumOwnerCount,
     })
+
   }
 
   protected findRelaxedBlockerPathPreferringPreservedRoutes(
