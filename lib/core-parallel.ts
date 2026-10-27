@@ -3,13 +3,16 @@ import { shuffle } from "./shuffle"
 import {
   ParallelRouteSearchPool,
   type ParallelSearchExecutor,
+  type ParallelSearchOptions,
 } from "./parallel/ParallelRouteSearchPool"
 import { acquireWorkerRuntime } from "./parallel/acquireWorkerRuntime"
 
 export { ParallelRouteSearchTask } from "./parallel/ParallelRouteSearchTask"
 export type { ParallelSearchExecutor } from "./parallel/ParallelRouteSearchPool"
+export type { ParallelSearchOptions } from "./parallel/ParallelRouteSearchPool"
 
 type ParallelService = {
+  options: ParallelSearchOptions
   pool?: ParallelRouteSearchPool
 }
 
@@ -20,12 +23,13 @@ export async function solveWithParallelSearch(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
   executor: ParallelSearchExecutor,
   stopAtIteration = solver.MAX_ITERATIONS,
+  options: ParallelSearchOptions = {},
 ): Promise<void> {
   if (activeSolvers.has(solver))
     throw new Error("Parallel routing is already running")
   activeSolvers.add(solver)
   const release = await acquireWorkerRuntime(executor)
-  const service: ParallelService = {}
+  const service: ParallelService = { options: { ...options } }
   try {
     await solve(solver, executor, stopAtIteration, service)
   } finally {
@@ -167,7 +171,7 @@ async function route(
           pool.rebind(solver)
         } else {
           if (service.pool) await service.pool.dispose()
-          pool = new ParallelRouteSearchPool(solver, executor)
+          pool = new ParallelRouteSearchPool(solver, executor, service.options)
           service.pool = pool
           await pool.start()
         }

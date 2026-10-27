@@ -8,12 +8,20 @@ import { DistanceAwareTinyHyperGraphSolver } from "../distance-aware-tiny-hyperg
 import { PackedRouteSearch } from "./PackedRouteSearch"
 import type { SharedRouteContext } from "./SharedRouteGraph"
 import { RouteSnapshot } from "./RouteSnapshot"
+import {
+  landmarkHeuristic,
+  prepareStaticLandmarks,
+  type StaticLandmarks,
+} from "./StaticLandmarks"
 
 export type ParallelRouteSearchInput = {
   topology: TinyHyperGraphTopology
   problem: TinyHyperGraphProblem
   options: TinyHyperGraphSolverOptions
   context: SharedRouteContext
+  landmarks: StaticLandmarks
+  workerIndex: number
+  workerCount: number
   control: Int32Array
   budget: Float64Array
   pathIds: Int32Array
@@ -23,6 +31,13 @@ export type ParallelRouteSearchInput = {
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
 class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
+  landmarks?: StaticLandmarks
+  override computeH(port: number): number {
+    const original = super.computeH(port)
+    return this.landmarks
+      ? Math.max(original, landmarkHeuristic(this, this.landmarks, port))
+      : original
+  }
   readonly regions = new Set<number>()
   candidate?: Candidate
   exhausted = false
@@ -90,6 +105,19 @@ export class ParallelRouteSearchTask {
       })
       const snapshot = new RouteSnapshot(solver, context)
       solver.setup()
+      if (
+        !prepareStaticLandmarks(
+          solver,
+          this.input.landmarks,
+          this.input.workerIndex,
+          this.input.workerCount,
+          control,
+        )
+      )
+        return
+      solver.landmarks = this.input.landmarks.sources.length
+        ? this.input.landmarks
+        : undefined
       const versions = snapshot.versions
       Atomics.store(control, 7, 1)
       Atomics.notify(control, 7)

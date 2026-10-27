@@ -9,6 +9,7 @@ import {
   type ParallelRouteSearchInput,
 } from "./ParallelRouteSearchTask"
 import { SharedRouteGraph } from "./SharedRouteGraph"
+import { createStaticLandmarks } from "./StaticLandmarks"
 
 export interface ParallelSearchExecutor {
   persistentWorkerCount?: number
@@ -16,6 +17,9 @@ export interface ParallelSearchExecutor {
     Task: typeof ParallelRouteSearchTask,
     input: ParallelRouteSearchInput,
   ): Promise<unknown>
+}
+export interface ParallelSearchOptions {
+  useStaticLandmarks?: boolean
 }
 export type RouteSearchResult = {
   status: "found" | "exhausted" | "budget" | "canceled" | "stale"
@@ -78,6 +82,7 @@ export class ParallelRouteSearchPool {
   constructor(
     private solver: TinyHyperGraphSolver,
     private readonly executor: ParallelSearchExecutor,
+    private readonly options: ParallelSearchOptions = {},
   ) {
     const count = executor.persistentWorkerCount
     if (count !== 1 && count !== 4)
@@ -108,12 +113,19 @@ export class ParallelRouteSearchPool {
       1,
     )
     const capacity = solver.topology.portCount * stride + 1
+    const landmarks = createStaticLandmarks(
+      solver,
+      this.options.useStaticLandmarks ? 8 : 0,
+    )
     for (let index = 0; index < this.workerCount; index++) {
       const input: ParallelRouteSearchInput = {
         topology: solver.topology,
         problem: solver.problem,
         options: getTinyHyperGraphSolverOptions(solver),
         context: this.graph.context,
+        landmarks,
+        workerIndex: index,
+        workerCount: this.workerCount,
         control: new Int32Array(new SharedArrayBuffer(10 * 4)),
         budget: new Float64Array(new SharedArrayBuffer(3 * 8)),
         pathIds: new Int32Array(new SharedArrayBuffer(capacity * 4 * 4)),
