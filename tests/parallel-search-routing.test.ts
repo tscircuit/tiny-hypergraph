@@ -4,8 +4,9 @@ import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-
 import { createParallelGrid } from "./fixtures/createParallelGrid"
 import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("distributed search routes overlapping nets within the shared budget", async () => {
+test("worker routing preserves serial behavior and routes overlapping nets within budget", async () => {
   const executor = createRouteSearchExecutor(4)
+  const singleWorker = createRouteSearchExecutor(1)
   try {
     let searches = 0
     for (let seed = 1; seed <= 12; seed++) {
@@ -15,6 +16,7 @@ test("distributed search routes overlapping nets within the shared budget", asyn
         PARTIAL_RIP_ENABLED: false,
         OUTSIDE_IN_ROUTING: false,
         MAX_ITERATIONS: 100000,
+        TRACE_DENSITY_COST_FACTOR: (seed % 3) / 4,
         RIP_THRESHOLD_START: Infinity,
         RIP_THRESHOLD_END: Infinity,
         VERBOSE: false,
@@ -30,6 +32,16 @@ test("distributed search routes overlapping nets within the shared budget", asyn
         options,
       )
       serial.solve()
+      const packed = new SelectiveReripTinyHyperGraphSolver(
+        topology,
+        problem,
+        options,
+      )
+      await solveWithParallelSearch(packed, singleWorker)
+      expect(packed.solved).toBe(serial.solved)
+      expect(packed.iterations).toBe(serial.iterations)
+      expect(packed.state.regionSegments).toEqual(serial.state.regionSegments)
+      expect(packed.state.portAssignment).toEqual(serial.state.portAssignment)
       await solveWithParallelSearch(parallel, executor)
       expect(serial.solved).toBe(true)
       expect(parallel.solved).toBe(serial.solved)
@@ -57,5 +69,6 @@ test("distributed search routes overlapping nets within the shared budget", asyn
     expect(searches).toBeGreaterThan(0)
   } finally {
     executor.dispose()
+    singleWorker.dispose()
   }
 })

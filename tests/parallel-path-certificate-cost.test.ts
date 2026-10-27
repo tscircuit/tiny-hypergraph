@@ -8,7 +8,7 @@ import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-
 import { createParallelGrid } from "./fixtures/createParallelGrid"
 import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 
-test("increasing a cached winning path's cost forces a new search", async () => {
+test("increasing a nonterminal path cost requires a new search", async () => {
   const { topology, problem } = createParallelGrid(1)
   problem.routeCount = 4
   problem.routeStartPort = problem.routeStartPort.slice(0, 4)
@@ -41,13 +41,23 @@ test("increasing a cached winning path's cost forces a new search", async () => 
     const cached = inputs.find((input) => input.control[1] === 1)!
     const originalCost = cached.pathCosts[1]!
     solver.acceptParallelRouteSearch(0, first.candidate, first.iterations)
-    expect(cached.pathIds[0]).toBe(problem.routeEndPort[1])
-    solver.state.regionCongestionCost[cached.pathIds[1]!]! += 1
+    const sourceRegion = cached.pathIds[(cached.control[5]! - 1) * 4 + 1]!
+    const goalRegion = cached.pathIds[1]!
+    let changedRegion = -1
+    for (let i = 1; i + 1 < cached.control[5]!; i++) {
+      const region = cached.pathIds[i * 4 + 1]!
+      if (region !== sourceRegion && region !== goalRegion) {
+        changedRegion = region
+        break
+      }
+    }
+    expect(changedRegion).toBeGreaterThanOrEqual(0)
+    solver.state.regionCongestionCost[changedRegion]! += 1
     const result = await pool.search(1, 10000)
     expect(result.status).toBe("found")
     expect(pool.staleSearches).toBeGreaterThan(0)
     expect(pool.certifiedSearches).toBe(0)
-    expect(result.candidate!.g).toBeCloseTo(originalCost + 1, 10)
+    expect(result.candidate!.g).toBeLessThan(originalCost + 1)
   } finally {
     await pool.dispose()
     executor.dispose()

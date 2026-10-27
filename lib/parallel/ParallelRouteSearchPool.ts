@@ -22,6 +22,8 @@ export type RouteSearchResult = {
   iterations: number
   candidate?: Candidate
   dependencies: Int32Array
+  terminalRegions?: Int32Array
+  terminalCosts?: Float64Array
 }
 type Slot = {
   input: ParallelRouteSearchInput
@@ -103,9 +105,9 @@ export class ParallelRouteSearchPool {
 
   async start(): Promise<void> {
     const solver = this.solver
-    const stride = Math.max(
+    const stride = solver.topology.incidentPortRegion.reduce(
+      (max, regions) => Math.max(max, regions.length),
       1,
-      ...solver.topology.incidentPortRegion.map((regions) => regions.length),
     )
     const capacity = solver.topology.portCount * stride + 1
     for (let index = 0; index < this.workerCount; index++) {
@@ -118,6 +120,12 @@ export class ParallelRouteSearchPool {
         budget: new Float64Array(new SharedArrayBuffer(3 * 8)),
         pathIds: new Int32Array(new SharedArrayBuffer(capacity * 4 * 4)),
         pathCosts: new Float64Array(new SharedArrayBuffer(capacity * 3 * 8)),
+        terminalRegions: new Int32Array(
+          new SharedArrayBuffer((stride + 1) * 4),
+        ),
+        terminalCosts: new Float64Array(
+          new SharedArrayBuffer((stride + 1) * 8),
+        ),
         dependencies: new Int32Array(
           new SharedArrayBuffer(solver.topology.regionCount * 2 * 4),
         ),
@@ -187,6 +195,8 @@ export class ParallelRouteSearchPool {
       iterations: control[4]!,
       candidate,
       dependencies: dependencies.slice(0, control[6]! * 2),
+      terminalRegions: slot.input.terminalRegions.slice(0, control[8]!),
+      terminalCosts: slot.input.terminalCosts.slice(0, control[8]!),
     }
     this.finishedSearches++
     if (result.iterations > 0) this.participatingSlots.add(slot)
@@ -303,11 +313,14 @@ export class ParallelRouteSearchPool {
         !valid &&
         result.status === "found" &&
         job.generation === this.graph.generation &&
-        result.candidate &&
-        this.hasUnchangedPathCost(routeId, result.candidate)
+        result.candidate
       ) {
-        valid = true
-        this.certifiedSearches++
+        const candidate = this.certifyPath(routeId, result)
+        if (candidate) {
+          result.candidate = candidate
+          valid = true
+          this.certifiedSearches++
+        }
       }
       if (
         !valid &&
@@ -336,16 +349,17 @@ export class ParallelRouteSearchPool {
     )
   }
 
-  private hasUnchangedPathCost(route: number, candidate: Candidate): boolean {
-    // Under additions, the via/intersection and quadratic density marginal
-    // costs only increase. An old minimum path with unchanged cost is still
-    // minimum. Releases, removals and cost decreases invalidate generation.
+  private certifyPath(
+    route: number,
+    result: RouteSearchResult,
+  ): Candidate | undefined {
+    const candidate = result.candidate!
     if (
       this.solver.TRACE_DENSITY_COST_FACTOR < 0 ||
       this.solver.DISTANCE_TO_COST < 0 ||
       this.solver.problem.portPenalty?.some((cost) => cost < 0)
     )
-      return false
+      return undefined
     const path: Candidate[] = []
     for (
       let node: Candidate | undefined = candidate;
@@ -356,15 +370,50 @@ export class ParallelRouteSearchPool {
     const net = this.solver.problem.routeNet[route]!
     for (const node of path) {
       const assigned = this.solver.state.portAssignment[node.portId]
-      if (assigned !== -1 && assigned !== net) return false
+      if (assigned !== -1 && assigned !== net) return undefined
     }
     const previousNet = this.solver.state.currentRouteNetId
     this.solver.state.currentRouteNetId = net
     try {
-      for (let i = 1; i < path.length; i++)
-        if (this.solver.computeG(path[i - 1]!, path[i]!.portId) !== path[i]!.g)
-          return false
-      return true
+      let updated: Candidate = { ...path[0]!, prevCandidate: undefined }
+      for (let i = 1; i < path.length; i++) {
+        const node = path[i]!,
+          g = this.solver.computeG(updated, node.portId)
+        if (!Number.isFinite(g)) return undefined
+        updated = { ...node, g, f: g + node.h, prevCandidate: updated }
+      }
+      if (updated.g === candidate.g) return updated
+      const regions = result.terminalRegions!,
+        costs = result.terminalCosts!
+      if (!regions?.length || regions.length !== costs?.length)
+        throw new Error("Route certificate is missing terminal bounds")
+      // Every path traverses the chosen source region and at least one goal
+      // region. The zero-length transition isolates each region's uniform
+      // marginal cost; other increases from crossings and vias are nonnegative.
+      const deltas: number[] = []
+      for (let i = 0; i < regions.length; i++) {
+        const port =
+          i === 0
+            ? this.solver.problem.routeStartPort[route]!
+            : this.solver.problem.routeEndPort[route]!
+        const current =
+          this.solver.computeG(
+            { portId: port, nextRegionId: regions[i]!, g: 0, h: 0, f: 0 },
+            port,
+          ) - (this.solver.problem.portPenalty?.[port] ?? 0)
+        deltas.push(current - costs[i]!)
+      }
+      let unavoidable = deltas[0]!
+      const goalRegions =
+        this.solver.topology.incidentPortRegion[
+          this.solver.problem.routeEndPort[route]!
+        ]!
+      if (!goalRegions.includes(regions[0]!) && deltas.length < 2)
+        throw new Error("Route certificate has no reachable goal region")
+      if (!goalRegions.includes(regions[0]!))
+        unavoidable += Math.min(...deltas.slice(1))
+      if (!Number.isFinite(unavoidable)) return undefined
+      return updated.g - candidate.g <= unavoidable + 1e-9 ? updated : undefined
     } finally {
       this.solver.state.currentRouteNetId = previousNet
     }

@@ -5,14 +5,15 @@ import type { Candidate } from "../lib/core"
 import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
 import { createParallelGrid } from "./fixtures/createParallelGrid"
 
-test("distributed A* retains the serial single-route cost on weighted cyclic graphs", async () => {
+test("packed worker A* preserves serial paths, costs and iteration counts", async () => {
   const executor = createRouteSearchExecutor(4)
   try {
     for (let seed = 1; seed <= 12; seed++) {
       const { topology, problem } = createParallelGrid(seed)
+      if (seed % 3 === 0) topology.portZ.fill(0)
       problem.portPenalty = Float64Array.from(
         { length: topology.portCount },
-        (_, port) => ((port * seed * 17) % 29) / 31,
+        (_, port) => (seed % 2 ? ((port * seed * 17) % 29) / 31 : 0),
       )
       const options = {
         MAX_ITERATIONS: 100000,
@@ -47,6 +48,21 @@ test("distributed A* retains the serial single-route cost on weighted cyclic gra
         const result = await pool.search(0, 100000)
         expect(result.status).toBe("found")
         expect(result.candidate!.g).toBeCloseTo(expected!.g, 10)
+        expect(result.iterations).toBe(serial.iterations)
+        const summarize = (leaf: Candidate | undefined): unknown[] => {
+          const nodes = []
+          for (let node = leaf; node; node = node.prevCandidate)
+            nodes.push([
+              node.portId,
+              node.nextRegionId,
+              node.hopId,
+              node.g,
+              node.h,
+              node.f,
+            ])
+          return nodes
+        }
+        expect(summarize(result.candidate)).toEqual(summarize(expected))
         frozen.state.currentRouteId = 0
         frozen.state.currentRouteNetId = problem.routeNet[0]
         const path: Candidate[] = []

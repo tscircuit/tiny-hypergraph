@@ -5,10 +5,7 @@ import {
   type TinyHyperGraphTopology,
 } from "../core"
 import { DistanceAwareTinyHyperGraphSolver } from "../distance-aware-tiny-hypergraph-solver"
-import {
-  IndexedCandidateHeap,
-  type CompactCandidateHopIndex,
-} from "../indexed-candidate-heap"
+import { PackedRouteSearch } from "./PackedRouteSearch"
 import type { SharedRouteContext } from "./SharedRouteGraph"
 import { RouteSnapshot } from "./RouteSnapshot"
 
@@ -22,24 +19,8 @@ export type ParallelRouteSearchInput = {
   pathIds: Int32Array
   pathCosts: Float64Array
   dependencies: Int32Array
-}
-
-class ObservedCandidateHeap extends IndexedCandidateHeap {
-  constructor(
-    regionCount: number,
-    index: CompactCandidateHopIndex,
-    private readonly regions: Set<number>,
-  ) {
-    super(regionCount, index)
-  }
-
-  override dequeue(): Candidate | undefined {
-    const candidate = super.dequeue()
-    if (candidate) {
-      this.regions.add(candidate.nextRegionId)
-    }
-    return candidate
-  }
+  terminalRegions: Int32Array
+  terminalCosts: Float64Array
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
@@ -48,21 +29,7 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
   candidate?: Candidate
   exhausted = false
 
-  override _setup(): void {
-    super._setup()
-    this.state.candidateQueue = new ObservedCandidateHeap(
-      this.topology.regionCount,
-      {
-        hopCapacity: this.candidateHopCapacity,
-        hopSlotStride: this.candidateHopSlotStride,
-        firstRegionByPortId: this.candidateFirstRegionByPortId,
-        secondRegionByPortId: this.candidateSecondRegionByPortId,
-        incidentPortRegion: this.topology.incidentPortRegion,
-      },
-      this.regions,
-    )
-  }
-
+  private packed?: PackedRouteSearch
   override onPathFound(candidate: Candidate): void {
     if (candidate.portId !== this.state.goalPortId) {
       super.onPathFound(candidate)
@@ -79,6 +46,30 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
 
   override tryFinalAcceptance(): void {}
 
+  terminalBounds(route: number): Array<[number, number]> {
+    const start = this.problem.routeStartPort[route]!,
+      goal = this.problem.routeEndPort[route]!
+    const source = this.getStartingNextRegionId(route, start)
+    if (source === undefined)
+      throw new Error("Route source has no incident region")
+    const regions = [
+      source,
+      ...this.topology.incidentPortRegion[goal]!.filter(
+        (region) =>
+          region !== source && !this.isRegionReservedForDifferentNet(region),
+      ),
+    ]
+    return regions.map((region, index) => {
+      const port = index === 0 ? start : goal
+      const cost =
+        this.computeG(
+          { portId: port, nextRegionId: region, g: 0, h: 0, f: 0 },
+          port,
+        ) - (this.problem.portPenalty?.[port] ?? 0)
+      return [region, cost]
+    })
+  }
+
   search(routeId: number, budget: number, control: Int32Array): void {
     this.candidate = undefined
     this.exhausted = false
@@ -88,20 +79,13 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
     this.solved = false
     this.failed = false
     this.error = null
-    this.state.currentRouteId = undefined
-    this.state.currentRouteNetId = undefined
-    this.state.unroutedRoutes = [routeId]
-    this.state.candidateQueue.clear()
-    while (!this.solved && !this.failed) {
-      if (
-        (this.iterations & 255) === 0 &&
-        (Atomics.load(control, 0) === 3 || Atomics.load(control, 9) !== 0)
-      )
-        return
-      this.step()
-    }
-    if (this.failed && this.iterations < budget)
-      throw new Error(this.error ?? "Route search failed")
+    this.packed ??= new PackedRouteSearch(this)
+    const result = this.packed.search(routeId, budget, control, this.regions)
+    this.candidate = result.candidate
+    this.exhausted = result.exhausted
+    this.iterations = result.iterations
+    this.solved = !!result.candidate || result.exhausted
+    this.failed = !this.solved && !result.canceled
   }
 }
 
@@ -152,6 +136,15 @@ export class ParallelRouteSearchTask {
         budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
         if (Atomics.load(control, 0) === 3) return
         const canceled = Atomics.load(control, 9) !== 0
+        control[8] = 0
+        if (solver.candidate) {
+          for (const [region, cost] of solver.terminalBounds(control[1]!)) {
+            const index = control[8]!
+            this.input.terminalRegions[index] = region
+            this.input.terminalCosts[index] = cost
+            control[8] = index + 1
+          }
+        }
         let count = 0
         for (
           let candidate = solver.candidate;
