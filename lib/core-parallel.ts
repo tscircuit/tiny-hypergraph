@@ -227,7 +227,7 @@ async function route(
       parallelMaxRelativeCostIncrease:
         pool?.maxRelativeCostIncrease ??
         service.options.maxRelativeCostIncrease ??
-        0.05,
+        0,
       parallelWorkerSearchMs: (pool?.workerSearchMs ?? 0) - initial.workerMs,
       parallelWorkerSnapshotMs:
         (pool?.workerSnapshotMs ?? 0) - initial.snapshotMs,

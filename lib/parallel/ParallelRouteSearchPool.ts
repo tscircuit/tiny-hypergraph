@@ -11,6 +11,7 @@ import {
 import { SharedRouteGraph } from "./SharedRouteGraph"
 
 export interface ParallelSearchOptions {
+  /** Defaults to zero. A positive value explicitly permits bounded cost inflation. */
   maxRelativeCostIncrease?: number
 }
 
@@ -89,7 +90,7 @@ export class ParallelRouteSearchPool {
     private readonly executor: ParallelSearchExecutor,
     options: ParallelSearchOptions = {},
   ) {
-    this.maxRelativeCostIncrease = options.maxRelativeCostIncrease ?? 0.05
+    this.maxRelativeCostIncrease = options.maxRelativeCostIncrease ?? 0
     if (
       !Number.isFinite(this.maxRelativeCostIncrease) ||
       this.maxRelativeCostIncrease < 0

@@ -4,7 +4,7 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "../core"
-import { DistanceAwareTinyHyperGraphSolver } from "../distance-aware-tiny-hypergraph-solver"
+import { CachedRouteSearchSolver } from "./CachedRouteSearchSolver"
 import { PackedRouteSearch } from "./PackedRouteSearch"
 import type { SharedRouteContext } from "./SharedRouteGraph"
 import { RouteSnapshot } from "./RouteSnapshot"
@@ -24,7 +24,7 @@ export type ParallelRouteSearchInput = {
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
-class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
+class RouteSearchSolver extends CachedRouteSearchSolver {
   readonly regions = new Set<number>()
   candidate?: Candidate
   exhausted = false
