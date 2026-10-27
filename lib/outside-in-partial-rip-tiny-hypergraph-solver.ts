@@ -852,12 +852,21 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       return true
     }
 
+    this.parallelRegionCosts?.prepare(
+      candidate.nextRegionId, this.state.currentRouteNetId!,
+      this.state.regionIntersectionCaches[candidate.nextRegionId]!,
+    )
     this.recordSettledCandidate(frontier, candidate)
     this.considerOutsideInJoins(candidate, expandingForward)
 
-    for (const neighborPortId of this.topology.regionIncidentPorts[
-      candidate.nextRegionId
-    ] ?? []) {
+    const neighbors = this.topology.regionIncidentPorts[candidate.nextRegionId] ?? []
+    const costRow = this.parallelRegionCosts?.getReadyRow(
+      candidate.nextRegionId, candidate.portId,
+      this.state.regionIntersectionCaches[candidate.nextRegionId]!,
+      this.state.currentRouteNetId!,
+    ) ?? -1
+    for (let neighborIndex = 0; neighborIndex < neighbors.length; neighborIndex++) {
+      const neighborPortId = neighbors[neighborIndex]!
       if (neighborPortId === candidate.portId) continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       const assignedNetId = this.state.portAssignment[neighborPortId]!
@@ -906,12 +915,15 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       const previousBestCost = frontier.bestCostByHopId.get(hopId) ?? Infinity
       if (candidate.g >= previousBestCost) continue
 
-      const g = this.computeG(
-        candidate,
-        neighborPortId,
-        previousBestCost,
-        segmentDistance,
-      )
+      const cachedCost = costRow < 0 ? NaN : this.parallelRegionCosts!.input.scores[costRow + neighborIndex]!
+      const congestion = this.state.regionCongestionCost[candidate.nextRegionId]!
+      const penalty = this.problem.portPenalty?.[neighborPortId] ?? 0
+      const distanceCost = this.ADD_SEGMENT_DISTANCE_TO_G ? segmentDistance * this.DISTANCE_TO_COST : 0
+      const g = Number.isNaN(cachedCost)
+        ? this.computeG(candidate, neighborPortId, previousBestCost, segmentDistance)
+        : candidate.g + congestion + penalty + distanceCost > previousBestCost + 1e-9
+          ? Infinity
+          : candidate.g + cachedCost + congestion + penalty + distanceCost
       if (!Number.isFinite(g) || g >= previousBestCost) continue
       frontier.bestCostByHopId.set(hopId, g)
       const heuristicDx =

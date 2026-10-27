@@ -13,7 +13,8 @@
     "benchmark:srj13": "./benchmark-srj13.sh",
     "benchmark:section": "bun run scripts/benchmarking/hg07-section-pipeline.ts",
     "benchmark:section:profile": "bun run scripts/benchmarking/hg07-first40-section-profile.ts",
-    "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts"
+    "benchmark:port-point-pathing": "bun run scripts/benchmarking/port-point-pathing-section-pipeline.ts",
+    "build:region-cost-kernel": "bun scripts/parallel/buildRegionCostKernel.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
@@ -22,7 +23,7 @@
     "@tscircuit/capacity-autorouter": "^0.0.557",
     "@tscircuit/find-convex-regions": "^0.1.3",
     "@tscircuit/hypergraph": "^0.0.71",
-    "@tscircuit/solver-utils": "^0.0.17",
+    "@tscircuit/solver-utils": "^0.0.23",
     "@types/bun": "latest",
     "cosmos": "^0.1.2",
     "dataset-hg07": "https://github.com/tscircuit/dataset-hg07#6adb2ed998a16675b11cf59c25789ae95f0e1a6f",
@@ -31,9 +32,11 @@
     "react-cosmos-plugin-vite": "^7.2.0",
     "stack-svgs": "^0.0.1",
     "tiny-hypergraph-repros": "https://github.com/tscircuit/tiny-hypergraph-repros#b97e503be77470c0ddae83e32a23d6d01998be06",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "assemblyscript": "0.28.20"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5",
+    "@tscircuit/solver-utils": "^0.0.23"
   }
 }
