@@ -28,3 +28,9 @@ export {
   type TinyHyperGraphSectionPipelineInput,
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
+export { PreparedPortPointRoutingSolver } from "./prepared/PreparedPortPointRoutingSolver"
+export { SelectiveReripTinyHyperGraphSolverWithStableInitialAssignments } from "./prepared/SelectiveReripTinyHyperGraphSolverWithStableInitialAssignments"
+export {
+  RegionDistancePreparationSolver,
+  type RegionDistancePreparationInput,
+} from "./prepared/RegionDistancePreparationSolver"
