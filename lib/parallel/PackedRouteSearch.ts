@@ -25,7 +25,7 @@ export class PackedRouteSearch {
   private readonly next: Int32Array
   private readonly heads: Int32Array
   private readonly regionStamps: Uint32Array
-  private readonly allowed: Uint8Array
+  private readonly portPenalties: Float64Array
   private generation = 0
   private length = 0
 
@@ -54,7 +54,7 @@ export class PackedRouteSearch {
     this.nextRegions = new Int32Array(count).fill(-1)
     this.hops = new Int32Array(count).fill(-1)
     this.next = new Int32Array(count)
-    this.allowed = new Uint8Array(count)
+    this.portPenalties = new Float64Array(count)
     this.heads = new Int32Array(topology.regionCount)
     this.regionStamps = new Uint32Array(topology.regionCount)
     for (let region = 0; region < topology.regionCount; region++) {
@@ -63,6 +63,7 @@ export class PackedRouteSearch {
         const position = this.offsets[region]! + i,
           port = ports[i]!
         this.ports[position] = port
+        this.portPenalties[position] = solver.problem.portPenalty?.[port] ?? 0
         const incident = topology.incidentPortRegion[port]!
         const nextRegion = incident[0] === region ? incident[1] : incident[0]
         if (nextRegion !== undefined) {
@@ -141,16 +142,16 @@ export class PackedRouteSearch {
     this.regionStamps[region] = this.generation
     const start = this.offsets[region]!,
       end = this.offsets[region + 1]!
-    this.heads[region] = start < end ? start : -1
+    this.heads[region] = -1
     const { problem, state, problemSetup } = this.solver
     const reserved = problemSetup.portEndpointReservationNetId
+    let previous = -1
     for (let position = start; position < end; position++) {
-      this.next[position] = position + 1 < end ? position + 1 : -1
       const port = this.ports[position]!,
         nextRegion = this.nextRegions[position]!
       const assigned = state.portAssignment[port]!,
         reservation = reserved[port] ?? -1
-      this.allowed[position] =
+      const allowed =
         problem.portSectionMask[port] !== 0 &&
         nextRegion >= 0 &&
         (assigned === -1 || assigned === net) &&
@@ -158,9 +159,12 @@ export class PackedRouteSearch {
         (reservation === -1 || reservation === net) &&
         (problem.regionNetId[nextRegion] === -1 ||
           problem.regionNetId[nextRegion] === net)
-          ? 1
-          : 0
+      if (port !== state.goalPortId && !allowed) continue
+      if (previous === -1) this.heads[region] = position
+      else this.next[previous] = position
+      previous = position
     }
+    if (previous !== -1) this.next[previous] = -1
   }
   private candidate(hop: number): Candidate {
     const chain: number[] = []
@@ -223,6 +227,12 @@ export class PackedRouteSearch {
       h: 0,
     }
     const reserved = solver.problemSetup.portEndpointReservationNetId
+    const distanceFactor = solver.DISTANCE_TO_COST
+    const nonnegativeDistance = distanceFactor >= 0
+    const portX = topology.portX,
+      portY = topology.portY
+    const portPenalties = this.portPenalties
+    const generation = this.generation
     let iterations = 0
     while (iterations < budget) {
       if (
@@ -252,6 +262,9 @@ export class PackedRouteSearch {
           iterations,
         }
       const currentG = this.g[hop]!
+      const lowerBase = currentG + state.regionCongestionCost[region]!
+      const sourceX = portX[port]!,
+        sourceY = portY[port]!
       view.portId = port
       view.nextRegionId = region
       view.g = currentG
@@ -286,7 +299,7 @@ export class PackedRouteSearch {
         const nextHop = this.hops[current]!
         if (
           nextHop >= 0 &&
-          this.stamps[nextHop] === this.generation &&
+          this.stamps[nextHop] === generation &&
           this.index[nextHop] === -1
         ) {
           if (before === -1) this.heads[region] = position
@@ -294,18 +307,15 @@ export class PackedRouteSearch {
           previous = before
           continue
         }
-        if (!this.allowed[current]) continue
         const best =
-          this.stamps[nextHop] === this.generation ? this.g[nextHop]! : Infinity
+          this.stamps[nextHop] === generation ? this.g[nextHop]! : Infinity
         if (currentG >= best) continue
-        const dx = topology.portX[port]! - topology.portX[neighbor]!,
-          dy = topology.portY[port]! - topology.portY[neighbor]!
+        const lowerWithoutDistance = lowerBase + portPenalties[current]!
+        if (nonnegativeDistance && lowerWithoutDistance >= best) continue
+        const dx = sourceX - portX[neighbor]!,
+          dy = sourceY - portY[neighbor]!
         const distance = Math.sqrt(dx * dx + dy * dy)
-        const lower =
-          currentG +
-          state.regionCongestionCost[region]! +
-          (problem.portPenalty?.[neighbor] ?? 0) +
-          distance * solver.DISTANCE_TO_COST
+        const lower = lowerWithoutDistance + distance * distanceFactor
         if (lower >= best) continue
         const g = solver.computeG(view, neighbor, best, distance)
         if (!Number.isFinite(g) || g >= best) continue
