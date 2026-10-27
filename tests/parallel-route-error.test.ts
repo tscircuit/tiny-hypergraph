@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
-import { solveWithParallelCosts } from "../lib/core-parallel"
+import { solveWithParallelSearch } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
 
 test("route worker errors propagate and release deferred acceptance", async () => {
   const solver = createCompletionFixture(),
     error = new Error("worker transport failed")
   await expect(
-    solveWithParallelCosts(solver, {
+    solveWithParallelSearch(solver, {
       persistentWorkerCount: 4,
       executeAsync: async () => {
         throw error

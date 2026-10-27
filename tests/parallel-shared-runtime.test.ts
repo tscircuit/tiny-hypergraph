@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test"
-import { solveWithParallelCosts } from "../lib/core-parallel"
+import { solveWithParallelSearch } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { createRegionCostExecutor } from "./fixtures/createRegionCostExecutor"
+import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
 
 test("concurrent solves reserve one group of actual route workers at a time", async () => {
-  const executor = createRegionCostExecutor(4)
+  const executor = createDistributedSearchExecutor(4)
   try {
     const reference = createCompletionFixture()
     reference.MAX_ITERATIONS = 1
@@ -12,7 +12,7 @@ test("concurrent solves reserve one group of actual route workers at a time", as
     const solvers = [createCompletionFixture(), createCompletionFixture()]
     for (const solver of solvers) solver.MAX_ITERATIONS = 1
     await Promise.all(
-      solvers.map((solver) => solveWithParallelCosts(solver, executor)),
+      solvers.map((solver) => solveWithParallelSearch(solver, executor)),
     )
     expect(executor.maximumActive).toBe(4)
     expect(executor.submitted).toBeGreaterThanOrEqual(8)

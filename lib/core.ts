@@ -572,10 +572,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     sameLayerIntersectionCount: 0,
     crossingLayerIntersectionCount: 0,
   }
-  regionCostProvider?: (
-    candidate: Candidate,
-    neighborPortId: PortId,
-  ) => number | undefined
   protected ADD_SEGMENT_DISTANCE_TO_G = false
   protected costAwareFinalReripBudget = 0
 
@@ -1158,6 +1154,51 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.setCandidateBestCost(candidateHopId, g)
       state.candidateQueue.queue(newCandidate)
+    }
+  }
+
+  acceptParallelRouteSearch(
+    routeId: RouteId,
+    candidate: Candidate | undefined,
+    iterations: number,
+  ): void {
+    if (
+      this.state.currentRouteId !== undefined ||
+      this.state.unroutedRoutes[0] !== routeId ||
+      iterations < 1 ||
+      this.iterations + iterations > this.MAX_ITERATIONS
+    )
+      throw new Error("Route replay does not match the routing state")
+    this.state.unroutedRoutes.shift()
+    this.state.currentRouteId = routeId
+    this.state.currentRouteNetId = this.problem.routeNet[routeId]
+    this.state.goalPortId = this.getRouteEndPortId(routeId)
+    this.routeAttemptCountByRouteId[routeId] += 1
+    this.resetCandidateBestCosts()
+    this.state.candidateQueue.clear()
+    if (candidate) this.state.candidateQueue.queue(candidate)
+    this.iterations += iterations - 1
+    this.step()
+  }
+
+  expireParallelRouteSearch(routeId: RouteId, iterations: number): void {
+    if (
+      this.state.currentRouteId !== undefined ||
+      this.state.unroutedRoutes[0] !== routeId ||
+      iterations < 1 ||
+      this.iterations + iterations !== this.MAX_ITERATIONS
+    )
+      throw new Error("Route timeout does not match the remaining budget")
+    this.state.unroutedRoutes.shift()
+    this.state.currentRouteId = routeId
+    this.state.currentRouteNetId = this.problem.routeNet[routeId]
+    this.state.goalPortId = this.getRouteEndPortId(routeId)
+    this.routeAttemptCountByRouteId[routeId] += 1
+    this.iterations += iterations
+    this.tryFinalAcceptance()
+    if (!this.solved) {
+      this.failed = true
+      this.error = `${this.getSolverName()} ran out of iterations`
     }
   }
 
@@ -2063,51 +2104,43 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (lowerBoundCost > maximumCost + 1e-9) {
       return Number.POSITIVE_INFINITY
     }
-    let newRegionCost = this.regionCostProvider?.(
-      currentCandidate,
-      neighborPortId,
-    )
-    if (newRegionCost === undefined) {
-      let newSameLayerIntersections = 0
-      let newCrossLayerIntersections = 0
-      let newEntryExitLayerChanges =
-        topology.portZ[currentCandidate.portId] !==
-        topology.portZ[neighborPortId]
-          ? 1
-          : 0
-      if (regionCache.existingSegmentCount > 0) {
-        // Candidate scoring uses topology angles even when a subclass supplies
-        // different geometry for inserting completed segments.
-        const segmentGeometry = this.populateBaseSegmentGeometryScratch(
-          nextRegionId,
-          currentCandidate.portId,
-          neighborPortId,
-        )
-        setNewIntersectionCounts(regionCache, segmentGeometry)
-        newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
-        newCrossLayerIntersections =
-          segmentGeometry.crossingLayerIntersectionCount
-        newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
-      }
-
-      if (
-        newSameLayerIntersections > 0 &&
-        this.isKnownSingleLayerRegion(nextRegionId)
-      ) {
-        return Number.POSITIVE_INFINITY
-      }
-
-      newRegionCost =
-        this.computeRegionCostForRegion(
-          nextRegionId,
-          regionCache.existingSameLayerIntersections +
-            newSameLayerIntersections,
-          regionCache.existingCrossingLayerIntersections +
-            newCrossLayerIntersections,
-          regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
-          regionCache.existingSegmentCount + 1,
-        ) - regionCache.existingRegionCost
+    let newSameLayerIntersections = 0
+    let newCrossLayerIntersections = 0
+    let newEntryExitLayerChanges =
+      topology.portZ[currentCandidate.portId] !== topology.portZ[neighborPortId]
+        ? 1
+        : 0
+    if (regionCache.existingSegmentCount > 0) {
+      // Candidate scoring uses topology angles even when a subclass supplies
+      // different geometry for inserting completed segments.
+      const segmentGeometry = this.populateBaseSegmentGeometryScratch(
+        nextRegionId,
+        currentCandidate.portId,
+        neighborPortId,
+      )
+      setNewIntersectionCounts(regionCache, segmentGeometry)
+      newSameLayerIntersections = segmentGeometry.sameLayerIntersectionCount
+      newCrossLayerIntersections =
+        segmentGeometry.crossingLayerIntersectionCount
+      newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
     }
+
+    if (
+      newSameLayerIntersections > 0 &&
+      this.isKnownSingleLayerRegion(nextRegionId)
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
+
+    const newRegionCost =
+      this.computeRegionCostForRegion(
+        nextRegionId,
+        regionCache.existingSameLayerIntersections + newSameLayerIntersections,
+        regionCache.existingCrossingLayerIntersections +
+          newCrossLayerIntersections,
+        regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
+        regionCache.existingSegmentCount + 1,
+      ) - regionCache.existingRegionCost
 
     return (
       currentCandidate.g +

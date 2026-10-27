@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test"
-import { solveWithParallelCosts } from "../lib/core-parallel"
+import { solveWithParallelSearch } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { createRegionCostExecutor } from "./fixtures/createRegionCostExecutor"
+import { createDistributedSearchExecutor } from "./fixtures/createDistributedSearchExecutor"
 
 test("TypeScript route workers retain exact completion output and iteration budgets", async () => {
-  const executor = createRegionCostExecutor(4)
+  const executor = createDistributedSearchExecutor(4)
   try {
     const baseline = createCompletionFixture(),
       parallel = createCompletionFixture()
     baseline.MAX_ITERATIONS = parallel.MAX_ITERATIONS = 1
     baseline.solve()
-    await solveWithParallelCosts(parallel, executor)
+    await solveWithParallelSearch(parallel, executor)
     expect(executor.submitted).toBeGreaterThan(0)
     expect(executor.maximumActive).toBe(4)
     expect(parallel.solved).toBe(baseline.solved)
