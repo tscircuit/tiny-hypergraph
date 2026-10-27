@@ -265,15 +265,14 @@ export interface TinyHyperGraphSolverOptions {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
-  /** Cache exact default region scores for owned, plain occupancy generations.
-   * Accessor/proxy side effects and mutation during scoring are unsupported. */
-  USE_REGION_COST_LOOKUP?: boolean
   /**
    * Retain ordered regional occurrences after observing their native hop closed,
    * and reuse successful static neighbor checks during the owned search epoch.
    * The caller owns ordinary topology/problem/state and plain native queued
    * candidates for the entire queue epoch. Key mappings and metadata remain
-   * fixed between steps, and IndexedCandidateHeap methods retain their standard
+   * fixed between steps, including assignments, reservations, section masks
+   * and incidence. Permanently rejected non-goal occurrences are retired until
+   * the epoch changes. IndexedCandidateHeap methods retain their standard
    * key and closure behavior. No external candidate injection or mutation of
    * queued references is allowed. Pure scoring overrides are allowed when they
    * preserve this contract.
@@ -331,9 +330,6 @@ export interface TinyHyperGraphSolverOptionTarget {
   TRACE_DENSITY_COST_FACTOR?: number
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
-  /** Cache exact default region scores for owned, plain occupancy generations.
-   * Accessor/proxy side effects and mutation during scoring are unsupported. */
-  USE_REGION_COST_LOOKUP?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
@@ -394,9 +390,6 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.USE_SPARSE_CANDIDATE_STORAGE !== undefined) {
     solver.USE_SPARSE_CANDIDATE_STORAGE = options.USE_SPARSE_CANDIDATE_STORAGE
-  }
-  if (options.USE_REGION_COST_LOOKUP !== undefined) {
-    solver.USE_REGION_COST_LOOKUP = options.USE_REGION_COST_LOOKUP
   }
   if (options.OWNED_REGIONAL_HOP_FRONTIER !== undefined) {
     solver.OWNED_REGIONAL_HOP_FRONTIER = options.OWNED_REGIONAL_HOP_FRONTIER
@@ -481,7 +474,6 @@ export const getTinyHyperGraphSolverOptions = (
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
-  USE_REGION_COST_LOOKUP: solver.USE_REGION_COST_LOOKUP,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -523,20 +515,6 @@ type RegionalHopFrontier = {
   head: number
 }
 
-type RegionCostLookup = {
-  occupancy: RegionIntersectionCache
-  width: number
-  height: number
-  layerMask: number
-  viaDiameter: number
-  densityFactor: number
-  same: number
-  cross: number
-  entry: number
-  count: number
-  values: Float64Array
-}
-
 export class TinyHyperGraphSolver extends BaseSolver {
   state: TinyHyperGraphWorkingState
   /** Number of incident-region slots reserved for each port. */
@@ -554,7 +532,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierNetId?: NetId
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
-  private regionCostLookups: Array<RegionCostLookup | undefined> = []
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
@@ -590,7 +567,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   TRACE_DENSITY_COST_FACTOR = 0
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
-  USE_REGION_COST_LOOKUP = false
   OWNED_REGIONAL_HOP_FRONTIER = false
 
   override MAX_ITERATIONS = 1e6
@@ -1080,13 +1056,29 @@ export class TinyHyperGraphSolver extends BaseSolver {
         nextRegionId = nextRegionIds[currentNeighborIndex]!
         candidateHopId = hopIds[currentNeighborIndex]!
       } else {
-        if (problem.portSectionMask[neighborPortId] === 0) continue
+        if (problem.portSectionMask[neighborPortId] === 0) {
+          if (previousIndex === -1) {
+            frontier.head = neighborIndex
+          } else {
+            next[previousIndex] = neighborIndex
+          }
+          previousNeighborIndex = previousIndex
+          continue
+        }
         const nextRegion =
           topology.incidentPortRegion[neighborPortId][0] ===
           currentCandidate.nextRegionId
             ? topology.incidentPortRegion[neighborPortId][1]
             : topology.incidentPortRegion[neighborPortId][0]
-        if (nextRegion === undefined) continue
+        if (nextRegion === undefined) {
+          if (previousIndex === -1) {
+            frontier.head = neighborIndex
+          } else {
+            next[previousIndex] = neighborIndex
+          }
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionId = nextRegion
         candidateHopId = this.getHopId(neighborPortId, nextRegionId)
       }
@@ -1104,11 +1096,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
       }
       if (!prepared[currentNeighborIndex]) {
         const assignedNetId = state.portAssignment[neighborPortId]
-        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (
+          this.isPortReservedForDifferentNet(neighborPortId) ||
+          (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) ||
+          this.isRegionReservedForDifferentNet(nextRegionId)
+        ) {
+          if (previousIndex === -1) {
+            frontier.head = neighborIndex
+          } else {
+            next[previousIndex] = neighborIndex
+          }
+          previousNeighborIndex = previousIndex
           continue
         }
-        if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
         nextRegionIds[currentNeighborIndex] = nextRegionId
         hopIds[currentNeighborIndex] = candidateHopId
         prepared[currentNeighborIndex] = 1
@@ -1319,101 +1319,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
-  private getCandidateRegionCost(
-    regionId: RegionId,
-    occupancy: RegionIntersectionCache,
-    newSame: number,
-    newCross: number,
-    newEntry: number,
-  ): number {
-    const same = occupancy.existingSameLayerIntersections
-    const cross = occupancy.existingCrossingLayerIntersections
-    const entry = occupancy.existingEntryExitLayerChanges
-    const count = occupancy.existingSegmentCount
-    const k = newSame * 2 + newCross + newEntry
-    const layerMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
-    // Custom cost models retain their original arguments and call sequence.
-    if (
-      this.computeRegionCostForRegion !== defaultRegionCostForRegion ||
-      count > 256 ||
-      k < 0 ||
-      k >= 2 * count + 2 ||
-      !Number.isInteger(k) ||
-      (newSame > 0 && isKnownSingleLayerMask(layerMask))
-    ) {
-      return this.computeRegionCostForRegion(
-        regionId,
-        same + newSame,
-        cross + newCross,
-        entry + newEntry,
-        count + 1,
-      )
-    }
-    const width = this.topology.regionWidth[regionId]
-    const height = this.topology.regionHeight[regionId]
-    let lookup = this.regionCostLookups[regionId]
-    if (
-      !lookup ||
-      lookup.occupancy !== occupancy ||
-      !Object.is(lookup.width, width) ||
-      !Object.is(lookup.height, height) ||
-      !Object.is(lookup.layerMask, layerMask) ||
-      !Object.is(lookup.viaDiameter, this.minViaPadDiameter) ||
-      !Object.is(lookup.densityFactor, this.TRACE_DENSITY_COST_FACTOR) ||
-      !Object.is(lookup.same, same) ||
-      !Object.is(lookup.cross, cross) ||
-      !Object.is(lookup.entry, entry) ||
-      !Object.is(lookup.count, count)
-    ) {
-      if (
-        !Number.isSafeInteger(count) ||
-        !Number.isSafeInteger(same) ||
-        !Number.isSafeInteger(cross) ||
-        !Number.isSafeInteger(entry) ||
-        count < 0 ||
-        same < 0 ||
-        cross < 0 ||
-        entry < 0 ||
-        !Number.isSafeInteger(same * 2 + cross + entry + 2 * count + 1)
-      ) {
-        return this.computeRegionCostForRegion(
-          regionId,
-          same + newSame,
-          cross + newCross,
-          entry + newEntry,
-          count + 1,
-        )
-      }
-      const values = new Float64Array(2 * count + 2)
-      for (let index = 0; index < values.length; index++) {
-        // The default formula depends on added intersections only through k.
-        // Keep all floating-point operations inside the unchanged formula.
-        values[index] = this.computeRegionCostForRegion(
-          regionId,
-          same,
-          cross + index,
-          entry,
-          count + 1,
-        )
-      }
-      lookup = {
-        occupancy,
-        width,
-        height,
-        layerMask,
-        viaDiameter: this.minViaPadDiameter,
-        densityFactor: this.TRACE_DENSITY_COST_FACTOR,
-        same,
-        cross,
-        entry,
-        count,
-        values,
-      }
-      this.regionCostLookups[regionId] = lookup
-    }
-    return lookup.values[k]!
-  }
-
   populateSegmentGeometryScratch(
     regionId: RegionId,
     port1Id: PortId,
@@ -1496,7 +1401,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges
     const existingSegmentCount = lesserAngles.length
 
-    this.regionCostLookups[regionId] = undefined
     state.regionIntersectionCaches[regionId] = {
       netIds,
       lesserAngles,
@@ -1557,7 +1461,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   resetRoutingStateForRerip() {
-    this.regionCostLookups = []
     const { topology, problem, state } = this
 
     state.portAssignment.fill(-1)
@@ -1764,7 +1667,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   protected restoreBestSolvedState() {
-    this.regionCostLookups = []
     if (!this.bestSolvedStateSnapshot) {
       return
     }
@@ -2142,24 +2044,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const newRegionCost =
-      (this.USE_REGION_COST_LOOKUP
-        ? this.getCandidateRegionCost(
-            nextRegionId,
-            regionCache,
-            newSameLayerIntersections,
-            newCrossLayerIntersections,
-            newEntryExitLayerChanges,
-          )
-        : this.computeRegionCostForRegion(
-            nextRegionId,
-            regionCache.existingSameLayerIntersections +
-              newSameLayerIntersections,
-            regionCache.existingCrossingLayerIntersections +
-              newCrossLayerIntersections,
-            regionCache.existingEntryExitLayerChanges +
-              newEntryExitLayerChanges,
-            regionCache.existingSegmentCount + 1,
-          )) - regionCache.existingRegionCost
+      this.computeRegionCostForRegion(
+        nextRegionId,
+        regionCache.existingSameLayerIntersections + newSameLayerIntersections,
+        regionCache.existingCrossingLayerIntersections +
+          newCrossLayerIntersections,
+        regionCache.existingEntryExitLayerChanges + newEntryExitLayerChanges,
+        regionCache.existingSegmentCount + 1,
+      ) - regionCache.existingRegionCost
 
     return (
       currentCandidate.g +
@@ -2243,10 +2135,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return convertToSerializedHyperGraph(this)
   }
 }
-
-// Capture the audited default once; later prototype replacements are custom.
-const defaultRegionCostForRegion =
-  TinyHyperGraphSolver.prototype["computeRegionCostForRegion"]
 
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
