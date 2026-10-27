@@ -119,3 +119,38 @@ const solvedGraph = convertToSerializedHyperGraph(solver)
 ```
 
 The converter expects the solver to be fully solved and not failed.
+
+## Deterministic four-candidate race
+
+`RacingTinyHyperGraphSolver(topology, problem, options)` provides synchronous
+`.step()` / `.solve()` and `.solveAsync(runtime)` with the same routed output.
+Exactly four candidate solvers are initialized in every mode, independent of
+the number of workers. The winner is the successful candidate with the fewest
+logical steps, breaking ties by candidate index. Worker completion order and
+elapsed time never select the output.
+
+| Candidate | Initial route order | Distance heuristic multiplier | Search step budget |
+| --- | --- | --- | --- |
+| 0 | Original | 1 | Original |
+| 1 | Reverse | 4 | One eighth |
+| 2 | Shortest first | 10 | One eighth |
+| 3 | Longest first | 20 | One eighth |
+
+The bounded alternatives are intentionally different search-effort parameters.
+They may accept the native complete-graph timeout result earlier, so routing
+quality and end-to-end completion must be benchmarked alongside phase time.
+The original candidate remains available when all bounded alternatives fail;
+no exception is swallowed. The 37.5% bound on speculative logical search work
+does not bound wall time: initialization and native timeout finalization also
+have a cost.
+
+Register/import `tiny-hypergraph/lib/racing-tiny-hypergraph-solver` in the host
+and worker entrypoints. `TinyHyperGraphRaceCandidateSolver` uses SolverRuntime
+and an atomic shared best-step bound to stop candidates that cannot win.
+Importing the default library does not import Node-specific worker APIs.
+Browsers without a runtime or shared memory use the synchronous four-way race.
+Partially stepped solvers resume the same synchronous logical schedule.
+
+Set `raceUseSelectiveRerip: true` to use selective reripping with stable initial
+copper assignments. This preserves serialized preloaded copper on global
+retries while allowing the existing selective-blocker policy to move it.

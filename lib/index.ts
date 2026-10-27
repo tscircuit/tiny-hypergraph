@@ -1,4 +1,6 @@
 export * from "./core"
+export * from "./racing-tiny-hypergraph-solver"
+export * from "./stable-initial-assignments-tiny-hypergraph-solver"
 export * from "./distance-aware-tiny-hypergraph-solver"
 export * from "./outside-in-partial-rip-tiny-hypergraph-solver"
 export * from "./DuplicateCongestedPortSolver"
