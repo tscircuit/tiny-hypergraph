@@ -4,7 +4,8 @@ import {
   type TinyHyperGraphSolverOptions,
   type TinyHyperGraphTopology,
 } from "../core"
-import { DistanceAwareTinyHyperGraphSolver } from "../distance-aware-tiny-hypergraph-solver"
+import { SharedScoreSearchSolver } from "./SharedScoreSearchSolver"
+import type { SharedTransitionScores } from "./SharedTransitionScores"
 import { PackedRouteSearch } from "./PackedRouteSearch"
 import type { SharedRouteContext } from "./SharedRouteGraph"
 import { RouteSnapshot } from "./RouteSnapshot"
@@ -14,6 +15,9 @@ export type ParallelRouteSearchInput = {
   problem: TinyHyperGraphProblem
   options: TinyHyperGraphSolverOptions
   context: SharedRouteContext
+  transitionScores: SharedTransitionScores
+  scoreStats: Float64Array
+  workerIndex: number
   control: Int32Array
   budget: Float64Array
   pathIds: Int32Array
@@ -23,7 +27,7 @@ export type ParallelRouteSearchInput = {
 }
 
 /** Runs the original TypeScript A*, capturing a result without committing it. */
-class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
+class RouteSearchSolver extends SharedScoreSearchSolver {
   readonly regions = new Set<number>()
   candidate?: Candidate
   exhausted = false
@@ -103,6 +107,9 @@ export class ParallelRouteSearchTask {
       const snapshot = new RouteSnapshot(solver, context)
       solver.setup()
       const versions = snapshot.versions
+      solver.transitionScores = this.input.transitionScores
+      solver.regionVersions = versions
+      solver.scoreWorkerIndex = this.input.workerIndex
       Atomics.store(control, 7, 1)
       Atomics.notify(control, 7)
       while (true) {
@@ -116,6 +123,9 @@ export class ParallelRouteSearchTask {
         snapshot.refresh()
         const initialCopyMs = snapshot.timeMs - snapshotTimeStart
         const searchStart = performance.now()
+        solver.sharedScoreHits = 0
+        solver.crossWorkerScoreHits = 0
+        solver.sharedScoreMisses = 0
         solver.search(
           control[1]!,
           budget[0]!,
@@ -135,6 +145,9 @@ export class ParallelRouteSearchTask {
             : undefined,
         )
         const elapsed = performance.now() - searchStart
+        this.input.scoreStats[0] = solver.sharedScoreHits
+        this.input.scoreStats[1] = solver.crossWorkerScoreHits
+        this.input.scoreStats[2] = solver.sharedScoreMisses
         budget[1] = snapshot.timeMs - snapshotTimeStart
         budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
         if (Atomics.load(control, 0) === 3) return

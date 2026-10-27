@@ -9,6 +9,7 @@ import {
   type ParallelRouteSearchInput,
 } from "./ParallelRouteSearchTask"
 import { SharedRouteGraph } from "./SharedRouteGraph"
+import { createSharedTransitionScores } from "./SharedTransitionScores"
 
 export interface ParallelSearchExecutor {
   persistentWorkerCount?: number
@@ -60,6 +61,9 @@ export class ParallelRouteSearchPool {
   private readonly participatingSlots = new Set<Slot>()
   acceptedSearches = 0
   staleSearches = 0
+  sharedScoreHits = 0
+  crossWorkerScoreHits = 0
+  sharedScoreMisses = 0
   speculativeExpansions = 0
   maximumConcurrentSearches = 0
   workerSearchMs = 0
@@ -108,12 +112,16 @@ export class ParallelRouteSearchPool {
       1,
     )
     const capacity = solver.topology.portCount * stride + 1
+    const transitionScores = createSharedTransitionScores(solver)
     for (let index = 0; index < this.workerCount; index++) {
       const input: ParallelRouteSearchInput = {
         topology: solver.topology,
         problem: solver.problem,
         options: getTinyHyperGraphSolverOptions(solver),
         context: this.graph.context,
+        transitionScores,
+        workerIndex: index,
+        scoreStats: new Float64Array(new SharedArrayBuffer(3 * 8)),
         control: new Int32Array(new SharedArrayBuffer(10 * 4)),
         budget: new Float64Array(new SharedArrayBuffer(3 * 8)),
         pathIds: new Int32Array(new SharedArrayBuffer(capacity * 4 * 4)),
@@ -194,6 +202,9 @@ export class ParallelRouteSearchPool {
       dependencies: dependencies.slice(0, control[6]! * 2),
     }
     this.finishedSearches++
+    this.sharedScoreHits += slot.input.scoreStats[0]!
+    this.crossWorkerScoreHits += slot.input.scoreStats[1]!
+    this.sharedScoreMisses += slot.input.scoreStats[2]!
     if (result.iterations > 0) this.participatingSlots.add(slot)
     this.speculativeExpansions += result.iterations
     this.workerSnapshotMs += slot.input.budget[1]!

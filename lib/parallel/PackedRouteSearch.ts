@@ -216,6 +216,7 @@ export class PackedRouteSearch {
       throw new Error("Route source has no incident region")
     this.queue(solver.getHopId(start, startingRegion), 0, 0, -1)
     const view: Candidate = {
+      hopId: -1,
       portId: start,
       nextRegionId: startingRegion,
       g: 0,
@@ -253,6 +254,7 @@ export class PackedRouteSearch {
         }
       const currentG = this.g[hop]!
       view.portId = port
+      view.hopId = hop
       view.nextRegionId = region
       view.g = currentG
       this.prepare(region, net)

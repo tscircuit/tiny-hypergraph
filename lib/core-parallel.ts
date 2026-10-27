@@ -86,6 +86,9 @@ async function solve(
         "speculativeRouteSearches",
         "speculativeRouteExpansions",
         "staleRouteSearches",
+        "sharedScoreHits",
+        "crossWorkerScoreHits",
+        "sharedScoreMisses",
         "parallelWorkerSearchMs",
         "parallelWorkerSnapshotMs",
         "parallelGraphSyncMs",
@@ -146,6 +149,9 @@ async function route(
     physicalSearches: 0,
     physicalExpansions: 0,
     stale: 0,
+    sharedScoreHits: 0,
+    crossWorkerScoreHits: 0,
+    sharedScoreMisses: 0,
     workerMs: 0,
     snapshotMs: 0,
     syncMs: 0,
@@ -179,6 +185,9 @@ async function route(
           physicalSearches: pool.searches,
           physicalExpansions: pool.speculativeExpansions,
           stale: pool.staleSearches,
+          sharedScoreHits: pool.sharedScoreHits,
+          crossWorkerScoreHits: pool.crossWorkerScoreHits,
+          sharedScoreMisses: pool.sharedScoreMisses,
           workerMs: pool.workerSearchMs,
           snapshotMs: pool.workerSnapshotMs,
           syncMs: pool.graphSyncMs,
@@ -208,6 +217,11 @@ async function route(
       speculativeRouteExpansions:
         (pool?.speculativeExpansions ?? 0) - initial.physicalExpansions,
       staleRouteSearches: (pool?.staleSearches ?? 0) - initial.stale,
+      sharedScoreHits: (pool?.sharedScoreHits ?? 0) - initial.sharedScoreHits,
+      crossWorkerScoreHits:
+        (pool?.crossWorkerScoreHits ?? 0) - initial.crossWorkerScoreHits,
+      sharedScoreMisses:
+        (pool?.sharedScoreMisses ?? 0) - initial.sharedScoreMisses,
       parallelWorkerSearchMs: (pool?.workerSearchMs ?? 0) - initial.workerMs,
       parallelWorkerSnapshotMs:
         (pool?.workerSnapshotMs ?? 0) - initial.snapshotMs,
