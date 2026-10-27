@@ -1024,12 +1024,27 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return frontier
   }
 
+  private unlinkRegionalHopFrontierNeighbor(
+    frontier: RegionalHopFrontier,
+    previousIndex: number,
+    nextIndex: number,
+  ): void {
+    if (previousIndex === -1) {
+      frontier.head = nextIndex
+    } else {
+      frontier.next[previousIndex] = nextIndex
+    }
+  }
+
   private expandRegionalHopFrontier(
     currentCandidate: Candidate,
     frontier: RegionalHopFrontier,
   ): void {
     const { problem, topology, state } = this
     const { neighbors, next, prepared, nextRegionIds, hopIds } = frontier
+    // Occupancy, reservations and section membership remain fixed until the
+    // current search ends. Remove rejected occurrences as well as closed hops;
+    // the frontier epoch restores them for the next route or rerip.
     let neighborIndex = frontier.head
     let previousNeighborIndex = -1
     while (neighborIndex !== -1) {
@@ -1040,8 +1055,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
-        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+        if (this.isPortReservedForDifferentNet(neighborPortId)) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
+          continue
+        }
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
           continue
         }
         this.onPathFound(currentCandidate)
@@ -1054,13 +1083,29 @@ export class TinyHyperGraphSolver extends BaseSolver {
         nextRegionId = nextRegionIds[currentNeighborIndex]!
         candidateHopId = hopIds[currentNeighborIndex]!
       } else {
-        if (problem.portSectionMask[neighborPortId] === 0) continue
+        if (problem.portSectionMask[neighborPortId] === 0) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
+          continue
+        }
         const nextRegion =
           topology.incidentPortRegion[neighborPortId][0] ===
           currentCandidate.nextRegionId
             ? topology.incidentPortRegion[neighborPortId][1]
             : topology.incidentPortRegion[neighborPortId][0]
-        if (nextRegion === undefined) continue
+        if (nextRegion === undefined) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionId = nextRegion
         candidateHopId = this.getHopId(neighborPortId, nextRegionId)
       }
@@ -1068,21 +1113,43 @@ export class TinyHyperGraphSolver extends BaseSolver {
         ? state.candidateQueue.isClosedHopId(candidateHopId)
         : state.candidateQueue.isClosedHop?.(neighborPortId, nextRegionId)
       if (candidateHopIsClosed === true) {
-        if (previousIndex === -1) {
-          frontier.head = neighborIndex
-        } else {
-          next[previousIndex] = neighborIndex
-        }
+        this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
         previousNeighborIndex = previousIndex
         continue
       }
       if (!prepared[currentNeighborIndex]) {
         const assignedNetId = state.portAssignment[neighborPortId]
-        if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (this.isPortReservedForDifferentNet(neighborPortId)) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
           continue
         }
-        if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
+        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
+          continue
+        }
+        if (this.isRegionReservedForDifferentNet(nextRegionId)) {
+          this.unlinkRegionalHopFrontierNeighbor(
+            frontier,
+            previousIndex,
+            neighborIndex,
+          )
+          previousNeighborIndex = previousIndex
+          continue
+        }
         nextRegionIds[currentNeighborIndex] = nextRegionId
         hopIds[currentNeighborIndex] = candidateHopId
         prepared[currentNeighborIndex] = 1
