@@ -10,6 +10,10 @@ import {
 } from "./ParallelRouteSearchTask"
 import { SharedRouteGraph } from "./SharedRouteGraph"
 
+export interface ParallelSearchOptions {
+  maxRelativeCostIncrease?: number
+}
+
 export interface ParallelSearchExecutor {
   persistentWorkerCount?: number
   executeAsync(
@@ -37,6 +41,7 @@ type Job = {
   promise: Promise<RouteSearchResult>
   done: boolean
   generation: number
+  result?: RouteSearchResult
 }
 
 // Completion candidates change rerip policies and iteration limits, but the
@@ -59,6 +64,8 @@ export class ParallelRouteSearchPool {
   finishedSearches = 0
   acceptedExpansions = 0
   certifiedSearches = 0
+  boundedCostSearches = 0
+  readonly maxRelativeCostIncrease: number
   private readonly participatingSlots = new Set<Slot>()
   acceptedSearches = 0
   staleSearches = 0
@@ -80,7 +87,16 @@ export class ParallelRouteSearchPool {
   constructor(
     private solver: TinyHyperGraphSolver,
     private readonly executor: ParallelSearchExecutor,
+    options: ParallelSearchOptions = {},
   ) {
+    this.maxRelativeCostIncrease = options.maxRelativeCostIncrease ?? 0.05
+    if (
+      !Number.isFinite(this.maxRelativeCostIncrease) ||
+      this.maxRelativeCostIncrease < 0
+    )
+      throw new Error(
+        "Relative route cost increase must be finite and nonnegative",
+      )
     const count = executor.persistentWorkerCount
     if (count !== 1 && count !== 4)
       throw new Error("Parallel routing requires one or four verified workers")
@@ -214,17 +230,14 @@ export class ParallelRouteSearchPool {
     // Otherwise speculative lookahead can occupy every worker before a stale
     // head is retried, putting unrelated searches on the commit critical path.
     const head = this.solver.state.unroutedRoutes[0]
-    if (
-      head !== undefined &&
-      (this.jobs.get(head)?.done || this.committing.has(head))
-    )
-      return
-    const routes = this.solver.state.unroutedRoutes.slice(
-      0,
-      this.workerCount * 4,
-    )
+    const completedHead = head === undefined ? undefined : this.jobs.get(head)
+    if (completedHead?.done && completedHead.result?.status !== "found") return
+    const reserveRetry = completedHead?.done === true
+    let free = this.slots.filter((slot) => !slot.busy).length
+    const routes = this.solver.state.unroutedRoutes.slice(0, this.workerCount)
     for (const slot of this.slots) {
       if (slot.busy) continue
+      if (reserveRetry && free <= 1) break
       const route = routes.find(
         (routeId) =>
           !this.jobs.has(routeId) &&
@@ -233,6 +246,7 @@ export class ParallelRouteSearchPool {
       )
       if (route === undefined) break
       slot.busy = true
+      free--
       slot.input.control[1] = route
       slot.input.budget[0] = this.budget
       Atomics.store(slot.input.control, 9, 0)
@@ -245,6 +259,7 @@ export class ParallelRouteSearchPool {
       )
       let job!: Job
       const promise = this.execute(slot).then((result) => {
+        job.result = result
         job.done = true
         slot.busy = false
         this.schedule()
@@ -336,6 +351,7 @@ export class ParallelRouteSearchPool {
       this.acceptedSearches++
       this.acceptedExpansions += result.iterations
       this.waitForRouteMs += performance.now() - waitStart
+      if (result.status === "found") this.schedule()
       return result
     }
   }
@@ -413,7 +429,12 @@ export class ParallelRouteSearchPool {
       if (!goalRegions.includes(regions[0]!))
         unavoidable += Math.min(...deltas.slice(1))
       if (!Number.isFinite(unavoidable)) return undefined
-      return updated.g - candidate.g <= unavoidable + 1e-9 ? updated : undefined
+      const lowerBound = candidate.g + unavoidable
+      if (updated.g <= lowerBound * (1 + this.maxRelativeCostIncrease) + 1e-9) {
+        if (updated.g > lowerBound + 1e-9) this.boundedCostSearches++
+        return updated
+      }
+      return undefined
     } finally {
       this.solver.state.currentRouteNetId = previousNet
     }
