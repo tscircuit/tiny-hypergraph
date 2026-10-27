@@ -122,35 +122,46 @@ The converter expects the solver to be fully solved and not failed.
 
 ## Deterministic four-candidate race
 
-`RacingTinyHyperGraphSolver(topology, problem, options)` provides synchronous
-`.step()` / `.solve()` and `.solveAsync(runtime)` with the same routed output.
-Exactly four candidate solvers are initialized in every mode, independent of
-the number of workers. The winner is the successful candidate with the fewest
-logical steps, breaking ties by candidate index. Worker completion order and
-elapsed time never select the output.
+`RacingTinyHyperGraphSolver(topology, problem, options)` supports synchronous
+`.step()` / `.solve()` and `.solveAsync(runtime)` with identical routed output.
+Exactly four candidates are initialized in every mode, independent of worker
+count. The successful candidate with the fewest native logical steps wins;
+ties use the lower index. Scheduling and elapsed time never select routing.
 
-| Candidate | Initial route order | Distance heuristic multiplier | Search step budget |
+| Candidate | Initial order | Distance heuristic multiplier | Native step budget |
 | --- | --- | --- | --- |
 | 0 | Original | 1 | Original |
 | 1 | Reverse | 4 | One eighth |
-| 2 | Shortest first | 10 | One eighth |
-| 3 | Longest first | 20 | One eighth |
+| 2 | Original | 4 | One eighth |
+| 3 | Original | 10 | One eighth |
 
-The bounded alternatives are intentionally different search-effort parameters.
-They may accept the native complete-graph timeout result earlier, so routing
-quality and end-to-end completion must be benchmarked alongside phase time.
-The original candidate remains available when all bounded alternatives fail;
-no exception is swallowed. The 37.5% bound on speculative logical search work
-does not bound wall time: initialization and native timeout finalization also
-have a cost.
+Speculative candidates require native completion and cannot win by accepting
+a timeout result. Candidate zero retains the caller's original timeout policy.
+All candidates compete from the start; no exception is swallowed. Three
+bounded candidates add at most 37.5% of the original search-step budget if all
+fail, excluding ceiling rounding, initialization and native finalization costs.
+This is not a wall-time bound.
 
-Register/import `tiny-hypergraph/lib/racing-tiny-hypergraph-solver` in the host
-and worker entrypoints. `TinyHyperGraphRaceCandidateSolver` uses SolverRuntime
-and an atomic shared best-step bound to stop candidates that cannot win.
-Importing the default library does not import Node-specific worker APIs.
-Browsers without a runtime or shared memory use the synchronous four-way race.
-Partially stepped solvers resume the same synchronous logical schedule.
+For preloaded copper, all four retain the original heuristic and ordering.
+The three strict alternatives use budgets of one eighth, one tenth and one
+twelfth, so they can only tie the original topology; lane zero wins the tie.
+This preserves existing copper repair behavior while retaining four candidates.
+Set `raceUseSelectiveRerip: true` to restore initial copper assignments on global
+retries while preserving the existing selective-blocker policy.
 
-Set `raceUseSelectiveRerip: true` to use selective reripping with stable initial
-copper assignments. This preserves serialized preloaded copper on global
-retries while allowing the existing selective-blocker policy to move it.
+Synchronous execution batches 128 native steps per lane to keep each frontier
+hot and amortize pipeline bookkeeping. Every lane reaches the earliest successful
+native step before the winner is selected. Wrapper iteration counts are batch
+counts; `stats.raceWinningIterations` reports native steps. A partially stepped
+race resumes the same synchronous schedule.
+
+Import `tiny-hypergraph/lib/racing-tiny-hypergraph-solver` in host and worker
+entrypoints to register `TinyHyperGraphRaceCandidateSolver`. Workers share an
+atomic best-completion-step bound. The default library does not import Node
+worker APIs. Browsers without a runtime or shared memory use the synchronous
+four-candidate implementation.
+
+The initial prototype allowed bounded timeout acceptance and obtained a 60.1%
+port-point phase reduction on SRJ18, but regressed routing completion. That
+prototype was rejected. Timing results for it do not validate this stricter
+candidate policy; end-to-end completion and DRC remain required checks.

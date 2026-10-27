@@ -19,10 +19,15 @@ test("candidate zero preserves the baseline and exactly three alternatives have 
     20_000, 2_500, 2_500, 2_500,
   ])
   expect(candidates.map(({ DISTANCE_TO_COST }) => DISTANCE_TO_COST)).toEqual([
-    0.05, 0.2, 0.5, 1,
+    0.05, 0.2, 0.2, 0.5,
   ])
   expect(
     candidates.every(({ RIP_THRESHOLD_END }) => RIP_THRESHOLD_END === 0.8),
+  ).toBe(true)
+  expect(
+    candidates.slice(1).every(({ ACCEPT_BEST_SOLUTION_ON_TIMEOUT }) =>
+      ACCEPT_BEST_SOLUTION_ON_TIMEOUT === false,
+    ),
   ).toBe(true)
   expect(candidates[0].state.unroutedRoutes).toEqual([0, 1])
   expect(candidates[1].state.unroutedRoutes).toEqual([1, 0])

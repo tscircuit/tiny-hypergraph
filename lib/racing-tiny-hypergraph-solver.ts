@@ -13,6 +13,7 @@ import {
 import { StableInitialAssignmentsTinyHyperGraphSolver } from "./stable-initial-assignments-tiny-hypergraph-solver"
 
 export const TINY_HYPERGRAPH_RACE_CANDIDATE_COUNT = 4
+export const TINY_HYPERGRAPH_RACE_STEPS_PER_ROUND = 128
 
 export type TinyHyperGraphRaceOptions = TinyHyperGraphSolverOptions & {
   /** Preserve serialized copper across global retries. */
@@ -62,31 +63,30 @@ export function createTinyHyperGraphRaceCandidate(
   const Solver = options.raceUseSelectiveRerip
     ? StableInitialAssignmentsTinyHyperGraphSolver
     : TinyHyperGraphSolver
+  const hasPreloadedCopper = (problem.initialAssignments?.length ?? 0) > 0
   const solver = new Solver(topology, problem, {
     ...options,
     DISTANCE_TO_COST:
-      (options.DISTANCE_TO_COST ?? 0.05) * [1, 4, 10, 20][candidateIndex],
+      (options.DISTANCE_TO_COST ?? 0.05) *
+      (hasPreloadedCopper ? 1 : [1, 4, 4, 10][candidateIndex]),
+    // A speculative timeout must not win by accepting an unfinished search.
+    // The original lane retains the caller's complete-graph timeout policy.
+    ...(candidateIndex > 0
+      ? { ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false }
+      : {}),
   })
-  // Three 1/8-budget alternatives add at most 37.5% logical search work if
-  // all fail. Native timeout finalization still requires a complete graph.
+  // Bound speculative search effort. For preloaded copper, preserve the
+  // original topology and vary only strict budgets; lane zero wins any tie.
   if (candidateIndex > 0)
-    solver.MAX_ITERATIONS = Math.max(1, Math.ceil(solver.MAX_ITERATIONS / 8))
-  const routeDistance = (routeId: number): number => {
-    const start = problem.routeStartPort[routeId]
-    const end = problem.routeEndPort[routeId]
-    return Math.hypot(
-      topology.portX[start] - topology.portX[end],
-      topology.portY[start] - topology.portY[end],
+    solver.MAX_ITERATIONS = Math.max(
+      1,
+      Math.ceil(
+        solver.MAX_ITERATIONS /
+          (hasPreloadedCopper ? [1, 8, 10, 12][candidateIndex] : 8),
+      ),
     )
-  }
-  if (candidateIndex === 1) solver.state.unroutedRoutes.reverse()
-  if (candidateIndex >= 2) {
-    solver.state.unroutedRoutes.sort(
-      (a, b) =>
-        (candidateIndex === 2 ? 1 : -1) *
-          (routeDistance(a) - routeDistance(b)) || a - b,
-    )
-  }
+  if (candidateIndex === 1 && !hasPreloadedCopper)
+    solver.state.unroutedRoutes.reverse()
   return solver
 }
 
@@ -183,7 +183,8 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
     super(topology, problem, options)
     this.raceOptions = options
     // Preserve detailed candidate errors when their final step exhausts work.
-    this.MAX_ITERATIONS += 1
+    this.MAX_ITERATIONS =
+      Math.ceil(this.MAX_ITERATIONS / TINY_HYPERGRAPH_RACE_STEPS_PER_ROUND) + 1
   }
 
   override _setup(): void {
@@ -207,8 +208,21 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
     if (this.asyncRunning)
       throw new Error("Cannot step an asynchronously running hypergraph race")
     const candidates = this.candidates!
-    // Finish the whole logical round before selecting a tied winner.
-    for (const candidate of candidates) candidate.step()
+    // Keep each frontier hot and amortize host bookkeeping. Every lane still
+    // reaches the earliest successful logical step before winner selection.
+    const roundEnd = this.iterations * TINY_HYPERGRAPH_RACE_STEPS_PER_ROUND
+    let bestIteration = roundEnd
+    for (const candidate of candidates) {
+      while (
+        !candidate.solved &&
+        !candidate.failed &&
+        candidate.iterations < bestIteration
+      )
+        candidate.step()
+      if (candidate.solved && !candidate.failed) {
+        bestIteration = Math.min(bestIteration, candidate.iterations)
+      }
+    }
     if (
       candidates.some(({ solved }) => solved) ||
       candidates.every(({ failed }) => failed)
@@ -299,13 +313,16 @@ export class RacingTinyHyperGraphSolver extends TinyHyperGraphSolver {
       )
       this.acceptResults(results)
       this._setupDone = true
-      this.iterations = Math.max(
+      const completedIterations = Math.max(
         ...results
           .filter(({ status }) => status !== "superseded")
           .map(({ iterations }) => iterations),
       )
-      if (this.solved)
-        this.iterations = Number(this.stats.raceWinningIterations)
+      this.iterations = Math.ceil(
+        (this.solved
+          ? Number(this.stats.raceWinningIterations)
+          : completedIterations) / TINY_HYPERGRAPH_RACE_STEPS_PER_ROUND,
+      )
     } catch (error) {
       this.failed = true
       this.error = "Tiny hypergraph asynchronous race failed: " + error
