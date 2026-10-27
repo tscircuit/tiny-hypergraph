@@ -10,6 +10,7 @@ import {
   type CompactCandidateHopIndex,
 } from "../indexed-candidate-heap"
 import type { SharedRouteContext } from "./SharedRouteGraph"
+import { RouteSnapshot } from "./RouteSnapshot"
 
 export type RouteSearchInput = {
   topology: TinyHyperGraphTopology
@@ -28,13 +29,18 @@ class ObservedCandidateHeap extends IndexedCandidateHeap {
     regionCount: number,
     index: CompactCandidateHopIndex,
     private readonly regions: Set<number>,
+    private readonly beforeRead: (region: number) => void,
   ) {
     super(regionCount, index)
   }
 
   override dequeue(): Candidate | undefined {
     const candidate = super.dequeue()
-    if (candidate) this.regions.add(candidate.nextRegionId)
+    if (candidate) {
+      if (!this.regions.has(candidate.nextRegionId))
+        this.beforeRead(candidate.nextRegionId)
+      this.regions.add(candidate.nextRegionId)
+    }
     return candidate
   }
 }
@@ -42,8 +48,10 @@ class ObservedCandidateHeap extends IndexedCandidateHeap {
 /** Runs the original TypeScript A*, capturing a result without committing it. */
 class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
   readonly regions = new Set<number>()
+  snapshot!: RouteSnapshot
   candidate?: Candidate
   exhausted = false
+  invalidated = false
 
   override _setup(): void {
     super._setup()
@@ -57,6 +65,14 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
         incidentPortRegion: this.topology.incidentPortRegion,
       },
       this.regions,
+      (region) => {
+        if (
+          Atomics.load(this.snapshot.context.headers, region * 8) !==
+            this.snapshot.versions[region] &&
+          !this.snapshot.refresh(this.regions)
+        )
+          this.invalidated = true
+      },
     )
   }
 
@@ -79,6 +95,7 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
   search(routeId: number, budget: number, control: Int32Array): void {
     this.candidate = undefined
     this.exhausted = false
+    this.invalidated = false
     this.regions.clear()
     this.iterations = 0
     this.MAX_ITERATIONS = budget
@@ -95,6 +112,15 @@ class RouteSearchSolver extends DistanceAwareTinyHyperGraphSolver {
         (Atomics.load(control, 0) === 3 || Atomics.load(control, 9) !== 0)
       )
         return
+      if (this.invalidated) return
+      if (
+        (this.iterations & 255) === 0 &&
+        Atomics.load(this.snapshot.context.epoch, 0) !== this.snapshot.epoch &&
+        !this.snapshot.refresh(this.regions)
+      ) {
+        this.invalidated = true
+        return
+      }
       this.step()
     }
     if (this.failed && this.iterations < budget)
@@ -127,8 +153,10 @@ export class RouteSearchTask {
         ACCEPT_BEST_SOLUTION_ON_TIMEOUT: false,
         VERBOSE: false,
       })
+      const snapshot = new RouteSnapshot(solver, context)
+      solver.snapshot = snapshot
       solver.setup()
-      const versions = new Int32Array(topology.regionCount).fill(-1)
+      const versions = snapshot.versions
       Atomics.store(control, 7, 1)
       Atomics.notify(control, 7)
       while (true) {
@@ -138,51 +166,14 @@ export class RouteSearchTask {
           Atomics.wait(control, 0, state, 100)
           continue
         }
-        // Copy an immutable local view. The writer's epoch covers assignment,
-        // congestion and every changed region-cache row as one transaction.
-        while (true) {
-          const epoch = Atomics.load(context.epoch, 0)
-          if (epoch & 1) {
-            Atomics.wait(context.epoch, 0, epoch, 100)
-            continue
-          }
-          solver.state.portAssignment.set(context.assignment)
-          solver.state.regionCongestionCost.set(context.congestion)
-          const changed: Array<[number, number]> = []
-          for (let region = 0; region < topology.regionCount; region++) {
-            const row = region * 8
-            const version = Atomics.load(context.headers, row)
-            if (version === versions[region]) continue
-            const offset = context.headers[row + 1]!,
-              capacity = context.headers[row + 2]!,
-              count = context.headers[row + 3]!
-            solver.state.regionIntersectionCaches[region] = {
-              netIds: context.storage.slice(offset, offset + count),
-              lesserAngles: context.storage.slice(
-                offset + capacity,
-                offset + capacity + count,
-              ),
-              greaterAngles: context.storage.slice(
-                offset + capacity * 2,
-                offset + capacity * 2 + count,
-              ),
-              layerMasks: context.storage.slice(
-                offset + capacity * 3,
-                offset + capacity * 3 + count,
-              ),
-              existingCrossingLayerIntersections: context.headers[row + 4]!,
-              existingSameLayerIntersections: context.headers[row + 5]!,
-              existingEntryExitLayerChanges: context.headers[row + 6]!,
-              existingSegmentCount: context.headers[row + 7]!,
-              existingRegionCost: context.costs[region]!,
-            }
-            changed.push([region, version])
-          }
-          if (epoch !== Atomics.load(context.epoch, 0)) continue
-          for (const [region, version] of changed) versions[region] = version
-          break
-        }
+        const snapshotTimeStart = snapshot.timeMs
+        snapshot.refresh()
+        const initialCopyMs = snapshot.timeMs - snapshotTimeStart
+        const searchStart = performance.now()
         solver.search(control[1]!, budget[0]!, control)
+        const elapsed = performance.now() - searchStart
+        budget[1] = snapshot.timeMs - snapshotTimeStart
+        budget[2] = Math.max(0, elapsed - (budget[1]! - initialCopyMs))
         if (Atomics.load(control, 0) === 3) return
         const canceled = Atomics.load(control, 9) !== 0
         let count = 0
@@ -212,11 +203,13 @@ export class RouteSearchTask {
         }
         control[3] = canceled
           ? 4
-          : solver.candidate
-            ? 1
-            : solver.exhausted
-              ? 2
-              : 3
+          : solver.invalidated
+            ? 5
+            : solver.candidate
+              ? 1
+              : solver.exhausted
+                ? 2
+                : 3
         control[4] = solver.iterations
         control[5] = count
         control[6] = index

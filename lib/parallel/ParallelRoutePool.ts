@@ -11,7 +11,7 @@ export interface ParallelRouteExecutor {
   ): Promise<unknown>
 }
 export type RouteSearchResult = {
-  status: "found" | "exhausted" | "budget" | "canceled"
+  status: "found" | "exhausted" | "budget" | "canceled" | "stale"
   iterations: number
   candidate?: Candidate
   dependencies: Int32Array
@@ -25,6 +25,21 @@ type Slot = {
 }
 type Job = { slot: Slot; promise: Promise<RouteSearchResult>; done: boolean }
 
+// Completion candidates change rerip policies and iteration limits, but the
+// persistent worker only needs a new solver when A* scoring/storage changes.
+function getSearchSignature(
+  solver: OutsideInPartialRipTinyHyperGraphSolver,
+): string {
+  return JSON.stringify({
+    distance: solver.DISTANCE_TO_COST,
+    lazyHeuristic: solver.USE_LAZY_ROUTE_HEURISTIC,
+    sparseStorage: solver.USE_SPARSE_CANDIDATE_STORAGE,
+    regionalFrontier: solver.OWNED_REGIONAL_HOP_FRONTIER,
+    viaDiameter: solver.minViaPadDiameter,
+    traceDensity: solver.TRACE_DENSITY_COST_FACTOR,
+  })
+}
+
 /** Optimistic searches run concurrently; only the coordinator commits routes. */
 export class ParallelRoutePool {
   readonly workerCount: number
@@ -33,6 +48,10 @@ export class ParallelRoutePool {
   staleSearches = 0
   speculativeExpansions = 0
   maximumConcurrentSearches = 0
+  workerSearchMs = 0
+  workerSnapshotMs = 0
+  graphSyncMs = 0
+  waitForRouteMs = 0
   private readonly graph: SharedRouteGraph
   private readonly slots: Slot[] = []
   private readonly jobs = new Map<number, Job>()
@@ -51,14 +70,14 @@ export class ParallelRoutePool {
       throw new Error("Parallel routing requires one or four verified workers")
     this.workerCount = count
     this.graph = new SharedRouteGraph(solver)
-    this.signature = JSON.stringify(getTinyHyperGraphSolverOptions(solver))
+    this.signature = getSearchSignature(solver)
   }
 
   canReuse(solver: OutsideInPartialRipTinyHyperGraphSolver): boolean {
     return (
       this.solver.topology === solver.topology &&
       this.solver.problem === solver.problem &&
-      this.signature === JSON.stringify(getTinyHyperGraphSolverOptions(solver))
+      this.signature === getSearchSignature(solver)
     )
   }
 
@@ -82,7 +101,7 @@ export class ParallelRoutePool {
         options: getTinyHyperGraphSolverOptions(solver),
         context: this.graph.context,
         control: new Int32Array(new SharedArrayBuffer(10 * 4)),
-        budget: new Float64Array(new SharedArrayBuffer(8)),
+        budget: new Float64Array(new SharedArrayBuffer(3 * 8)),
         pathIds: new Int32Array(new SharedArrayBuffer(capacity * 4 * 4)),
         pathCosts: new Float64Array(new SharedArrayBuffer(capacity * 3 * 8)),
         dependencies: new Int32Array(
@@ -144,7 +163,7 @@ export class ParallelRoutePool {
       }
     }
     const result: RouteSearchResult = {
-      status: (["found", "exhausted", "budget", "canceled"] as const)[
+      status: (["found", "exhausted", "budget", "canceled", "stale"] as const)[
         control[3]! - 1
       ]!,
       iterations: control[4]!,
@@ -152,6 +171,8 @@ export class ParallelRoutePool {
       dependencies: dependencies.slice(0, control[6]! * 2),
     }
     this.speculativeExpansions += result.iterations
+    this.workerSnapshotMs += slot.input.budget[1]!
+    this.workerSearchMs += slot.input.budget[2]!
     Atomics.store(control, 0, 0)
     Atomics.notify(control, 0)
     return result
@@ -159,6 +180,11 @@ export class ParallelRoutePool {
 
   private schedule(): void {
     if (this.disposed || this.failure) return
+    // Leave a completed head's worker free until the coordinator validates it.
+    // Otherwise speculative lookahead can occupy every worker before a stale
+    // head is retried, putting unrelated searches on the commit critical path.
+    const head = this.solver.state.unroutedRoutes[0]
+    if (head !== undefined && this.jobs.get(head)?.done) return
     const routes = this.solver.state.unroutedRoutes.slice(
       0,
       this.workerCount * 4,
@@ -211,7 +237,10 @@ export class ParallelRoutePool {
   async search(routeId: number, budget: number): Promise<RouteSearchResult> {
     this.budget = budget
     this.committing.clear()
+    const syncStart = performance.now()
     this.graph.sync()
+    this.graphSyncMs += performance.now() - syncStart
+    const waitStart = performance.now()
     const pendingRoutes = new Set(this.solver.state.unroutedRoutes)
     for (const [route, job] of this.jobs) {
       if (
@@ -239,7 +268,7 @@ export class ParallelRoutePool {
       const result = await job.promise
       this.jobs.delete(routeId)
       const dependencies = result.dependencies
-      let valid = result.status !== "canceled"
+      let valid = result.status !== "canceled" && result.status !== "stale"
       for (let index = 0; valid && index < dependencies.length; index += 2)
         valid =
           dependencies[index + 1] ===
@@ -250,6 +279,7 @@ export class ParallelRoutePool {
       }
       this.committing.add(routeId)
       this.acceptedSearches++
+      this.waitForRouteMs += performance.now() - waitStart
       return result
     }
   }
