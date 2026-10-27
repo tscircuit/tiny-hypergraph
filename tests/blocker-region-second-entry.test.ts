@@ -1,3 +1,4 @@
+import { findParallelBlockerPath } from "../lib/core-parallel"
 import { expect, test } from "bun:test"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 
@@ -39,7 +40,8 @@ test("region reachability retains an exit unlocked by a second incoming port", (
     },
     { STATIC_REACHABILITY_PRECHECK: false, VERBOSE: false },
   )
-  solver.useCompiledOwnerSearch = true
+  solver.blockerPathSearch = (context) =>
+    findParallelBlockerPath(solver, context)
   const result = solver.search()
   expect(result.found).toBe(true)
   if (!result.found)

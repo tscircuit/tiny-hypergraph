@@ -28,5 +28,3 @@ export {
   type TinyHyperGraphSectionPipelineInput,
   type TinyHyperGraphSectionPipelineSearchConfig,
 } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
-export * from "./parallel/solveWithWasmRoutes"
-export * from "./parallel/WasmRouteTask"

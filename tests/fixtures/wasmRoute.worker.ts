@@ -1,4 +1,4 @@
-import { WasmRouteTask } from "../../lib/parallel/WasmRouteTask"
+import { WasmRouteTask } from "../../lib/core-parallel"
 self.onmessage = (event: MessageEvent): void => {
   try {
     const task = new WasmRouteTask(event.data)

@@ -1,9 +1,15 @@
-import { SelectiveReripTinyHyperGraphSolver } from "../selective-rerip-tiny-hyper-graph-solver"
-import { OutsideInPartialRipTinyHyperGraphSolver } from "../outside-in-partial-rip-tiny-hypergraph-solver"
-import { shuffle } from "../shuffle"
-import { WasmRoutePool, type WasmRouteExecutor } from "./WasmRoutePool"
+import { findParallelBlockerPath } from "./parallel/findParallelBlockerPath"
 
-import { acquireWorkerRuntime } from "./acquireWorkerRuntime"
+import { SelectiveReripTinyHyperGraphSolver } from "./selective-rerip-tiny-hyper-graph-solver"
+import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
+import { shuffle } from "./shuffle"
+import { WasmRoutePool, type WasmRouteExecutor } from "./parallel/WasmRoutePool"
+
+import { acquireWorkerRuntime } from "./parallel/acquireWorkerRuntime"
+export { WasmRouteTask, WasmRouteReadyTask } from "./parallel/WasmRouteTask"
+export { findParallelBlockerPath } from "./parallel/findParallelBlockerPath"
+export type { WasmRouteExecutor } from "./parallel/WasmRoutePool"
+
 const activeSolvers = new WeakSet<OutsideInPartialRipTinyHyperGraphSolver>()
 
 /** Use compiled route searches and parallel region/blocker work, preserving route commit order. */
@@ -48,8 +54,10 @@ async function solve(
     throw new Error("Wasm routing is already running")
   const selective =
     solver instanceof SelectiveReripTinyHyperGraphSolver ? solver : undefined
-  const priorCompiled = selective?.useCompiledOwnerSearch
-  if (selective) selective.useCompiledOwnerSearch = true
+  const priorOwnerSearch = selective?.blockerPathSearch
+  if (selective)
+    selective.blockerPathSearch = (context) =>
+      findParallelBlockerPath(selective, context)
   solver.deferFinalRouteAcceptance = true
   try {
     await route(
@@ -111,7 +119,7 @@ async function solve(
         greedyFinalRouteMaxIterations: finalRouteMaxIterations,
       }
   } finally {
-    if (selective) selective.useCompiledOwnerSearch = priorCompiled!
+    if (selective) selective.blockerPathSearch = priorOwnerSearch
     solver.deferFinalRouteAcceptance = false
     solver.hasDeferredFinalRouteAcceptance = false
   }
@@ -130,7 +138,7 @@ async function route(
   }
   const priorOwnerHook =
     solver instanceof SelectiveReripTinyHyperGraphSolver
-      ? solver.parallelOwnerSearch
+      ? solver.blockerPathSearch
       : undefined
   let pool: WasmRoutePool | undefined,
     searches = 0,
@@ -175,8 +183,13 @@ async function route(
         ownerRowsStart = pool.ownerGraphRows
       }
       if (solver instanceof SelectiveReripTinyHyperGraphSolver)
-        solver.parallelOwnerSearch = (options, geometry, forbidden) =>
-          pool!.searchOwners(options, geometry, forbidden)
+        solver.blockerPathSearch = (context) =>
+          findParallelBlockerPath(
+            solver,
+            context,
+            (options, geometry, forbidden) =>
+              pool!.searchOwners(options, geometry, forbidden),
+          )
       const remaining = limit - solver.iterations,
         result = await pool.search(routeId, remaining)
       searches++
@@ -193,7 +206,7 @@ async function route(
     }
   } finally {
     if (solver instanceof SelectiveReripTinyHyperGraphSolver)
-      solver.parallelOwnerSearch = priorOwnerHook
+      solver.blockerPathSearch = priorOwnerHook
     solver.stats = {
       ...solver.stats,
       // A search starts only after every persistent helper acknowledges startup.

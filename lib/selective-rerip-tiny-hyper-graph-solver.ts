@@ -1,8 +1,3 @@
-import type { CompiledOwnerSearchOptions } from "./parallel/findDisconnectedOwnerGraph"
-import {
-  findOwnerPathInWasm,
-  type OwnerGeometry,
-} from "./parallel/findOwnerPathInWasm"
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
@@ -27,6 +22,22 @@ import type {
 import type { HopId, PortId, RegionId, RouteId } from "./types"
 
 export type { SelectiveReripBlockerResource } from "./selective-rerip/relaxedBlockerSearchTypes"
+
+/** Immutable graph context shared by alternative owner-search strategies. */
+export type RelaxedBlockerSearchContext = {
+  searchOptions: DistinctOwnerBlockerSearchOptions<
+    RelaxedSearchState,
+    HopId,
+    RouteId,
+    RelaxedSearchHopData
+  >
+  goalPortId: PortId
+  routeNetId: number
+  portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
+  forbiddenOwnerRouteIds: ReadonlySet<RouteId>
+  cacheToken?: object
+  getHopTemplates(state: RelaxedSearchState): RelaxedSearchHop[]
+}
 
 type ReachabilityTerminals = {
   startPortId: PortId
@@ -155,18 +166,10 @@ export function orderRoutesAfterSelectiveRerip(params: {
  * known set of committed blockers.
  */
 export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyHyperGraphSolver {
-  /** Enabled by the asynchronous compiled routing driver. */
   private blockerSearchSession?: object
-  useCompiledOwnerSearch = false
-  parallelOwnerSearch?: (
-    options: DistinctOwnerBlockerSearchOptions<
-      RelaxedSearchState,
-      number,
-      RouteId,
-      RelaxedSearchHopData
-    >,
-    geometry: OwnerGeometry<RelaxedSearchState, RouteId, RelaxedSearchHopData>,
-    forbidden: ReadonlySet<RouteId>,
+  /** Optional search strategy; omitted for the standard synchronous solver. */
+  blockerPathSearch?: (
+    context: RelaxedBlockerSearchContext,
   ) => DistinctOwnerBlockerSearchResult<
     RelaxedSearchState,
     RouteId,
@@ -432,7 +435,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       forbiddenOwnerRouteIds,
     }
     const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
-    const searchOptions: CompiledOwnerSearchOptions<
+    const searchOptions: DistinctOwnerBlockerSearchOptions<
       RelaxedSearchState,
       HopId,
       RouteId,
@@ -478,75 +481,17 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           }
         : undefined,
     }
-    if (this.useCompiledOwnerSearch) {
-      searchOptions.checkReachability = true
-      const firstReachabilityPort = new Int32Array(
-        this.topology.regionCount,
-      ).fill(-1)
-      searchOptions.getReachabilityStateKey = (state): number => {
-        if (this.isKnownSingleLayerRegion(state.nextRegionId))
-          return this.getHopId(state.portId, state.nextRegionId) * 2 + 1
-        const first = firstReachabilityPort[state.nextRegionId]
-        if (first === -1)
-          firstReachabilityPort[state.nextRegionId] = state.portId
-        return (
-          state.nextRegionId * 4 +
-          (first === -1 || first === state.portId ? 0 : 2)
-        )
-      }
-      const stride = Math.max(
-        1,
-        ...this.topology.incidentPortRegion.map((regions) => regions.length),
-      )
-      const geometry: OwnerGeometry<
-        RelaxedSearchState,
-        RouteId,
-        RelaxedSearchHopData
-      > = {
-        stride,
-        goal: goalPortId,
-        nativeGraph: {
-          cacheToken: this.blockerSearchSession,
-          assignment: this.state.portAssignment,
-          portOwners,
-          segments: this.state.regionSegments,
-          net: routeNetId,
-          forbidden: forbiddenOwnerRouteIds,
-        },
-        stateId: (state) => this.getHopId(state.portId, state.nextRegionId),
-        state: (id) => {
-          const portId = Math.floor(id / stride),
-            nextRegionId =
-              this.topology.incidentPortRegion[portId]![id % stride]!
-          return { portId, nextRegionId }
-        },
-        templateKey: (state) => state.nextRegionId,
-        templates: (state) => {
-          if (this.isKnownSingleLayerRegion(state.nextRegionId))
-            return undefined
-          let templates = hopTemplatesByRegion.get(state.nextRegionId)
-          if (!templates) {
-            templates = this.getRelaxedSearchHops(
-              { state, buildRegionTemplates: true },
-              hopContext,
-            )
-            hopTemplatesByRegion.set(state.nextRegionId, templates)
-          }
-          return templates
-        },
-        distance: (a, b) =>
-          Math.hypot(
-            this.topology.portX[a]! - this.topology.portX[b]!,
-            this.topology.portY[a]! - this.topology.portY[b]!,
-          ),
-      }
-      return this.parallelOwnerSearch
-        ? this.parallelOwnerSearch(
-            searchOptions,
-            geometry,
-            forbiddenOwnerRouteIds,
-          )
-        : findOwnerPathInWasm(searchOptions, geometry)
+    if (this.blockerPathSearch) {
+      return this.blockerPathSearch({
+        searchOptions,
+        goalPortId,
+        routeNetId,
+        portOwners,
+        forbiddenOwnerRouteIds,
+        cacheToken: this.blockerSearchSession,
+        getHopTemplates: (state) =>
+          this.getRelaxedSearchHopTemplates(state, hopContext),
+      })
     }
     if (!boundedReachabilityGeometry) {
       return findDistinctOwnerBlockerPath({

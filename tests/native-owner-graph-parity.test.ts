@@ -1,3 +1,4 @@
+import { findParallelBlockerPath } from "../lib/core-parallel"
 import { expect, test } from "bun:test"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 import { WasmRoutePool } from "../lib/parallel/WasmRoutePool"
@@ -122,19 +123,19 @@ test("native parallel graph construction preserves port and crossing owners, res
       solver.state.currentRouteNetId = 7
       solver.state.goalPortId = 1
       const forbidden = new Set(seed % 3 === 0 ? [1, 3] : [])
-      solver.useCompiledOwnerSearch = false
-      solver.parallelOwnerSearch = undefined
+      solver.blockerPathSearch = undefined
       const reference = solver.search(forbidden)
       const cacheToken = {}
-      solver.useCompiledOwnerSearch = true
-      solver.parallelOwnerSearch = (options, geometry, blocked) =>
-        pool.searchOwners(
-          options,
-          {
-            ...geometry,
-            nativeGraph: { ...geometry.nativeGraph!, cacheToken },
-          },
-          blocked,
+      solver.blockerPathSearch = (context) =>
+        findParallelBlockerPath(solver, context, (options, geometry, blocked) =>
+          pool.searchOwners(
+            options,
+            {
+              ...geometry,
+              nativeGraph: { ...geometry.nativeGraph!, cacheToken },
+            },
+            blocked,
+          ),
         )
       const actual = solver.search(forbidden)
       expect(actual.found).toBe(reference.found)
@@ -146,12 +147,10 @@ test("native parallel graph construction preserves port and crossing owners, res
       } else if (!actual.found && !reference.found)
         expect(actual.reason).toBe(reference.reason)
       const rows = pool.ownerGraphRows,
-        hook = solver.parallelOwnerSearch
-      solver.useCompiledOwnerSearch = false
-      solver.parallelOwnerSearch = undefined
+        hook = solver.blockerPathSearch
+      solver.blockerPathSearch = undefined
       const alternateReference = solver.search(new Set([1, 2, 3]))
-      solver.useCompiledOwnerSearch = true
-      solver.parallelOwnerSearch = hook
+      solver.blockerPathSearch = hook
       const { expandedLabelCount: nativeExpansions, ...alternateActual } =
         solver.search(new Set([1, 2, 3]))
       const { expandedLabelCount: serialExpansions, ...alternateExpected } =

@@ -1,3 +1,4 @@
+import { findParallelBlockerPath } from "../lib/core-parallel"
 import { expect, test } from "bun:test"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 import { WasmRoutePool } from "../lib/parallel/WasmRoutePool"
@@ -81,12 +82,15 @@ test("prepared native reachability preserves disconnected counts, budgets, and e
         expect(pool.geometryPairsByWorker.reduce((a, b) => a + b, 0)).toBe(0)
         for (const budget of [0, 1, 2, 3, 4, 5, 8, 100]) {
           solver.labelBudget = budget
-          solver.useCompiledOwnerSearch = false
-          solver.parallelOwnerSearch = undefined
+          solver.blockerPathSearch = undefined
           const reference = solver.search()
-          solver.useCompiledOwnerSearch = true
-          solver.parallelOwnerSearch = (options, geometry, forbidden) =>
-            pool.searchOwners(options, geometry, forbidden)
+          solver.blockerPathSearch = (context) =>
+            findParallelBlockerPath(
+              solver,
+              context,
+              (options, geometry, forbidden) =>
+                pool.searchOwners(options, geometry, forbidden),
+            )
           expect(solver.search()).toEqual(reference)
         }
         expect(pool.geometryPairsByWorker.reduce((a, b) => a + b, 0)).toBe(5)

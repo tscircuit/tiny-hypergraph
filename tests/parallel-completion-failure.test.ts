@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { solveWithWasmRoutes } from "../lib/parallel/solveWithWasmRoutes"
+import { solveWithWasmRoutes } from "../lib/core-parallel"
 
 test("exhausted asynchronous completion retains serial failure diagnostics and route state", async () => {
   const reference = createCompletionFixture(),

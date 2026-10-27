@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { solveWithWasmRoutes } from "../lib/parallel/solveWithWasmRoutes"
+import { solveWithWasmRoutes } from "../lib/core-parallel"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
 
 test("route worker errors propagate and release deferred acceptance", async () => {
