@@ -1,7 +1,7 @@
-import { RouteSearchTask } from "../../lib/core-parallel"
+import { RegionCostTask } from "../../lib/core-parallel"
 self.onmessage = (event: MessageEvent): void => {
   try {
-    const task = new RouteSearchTask(event.data)
+    const task = new RegionCostTask(event.data)
     task.solve()
     self.postMessage({ output: task.getOutput() })
   } catch (error) {

@@ -1,12 +1,12 @@
 import type {
-  RouteSearchInput,
-  RouteSearchTask,
-} from "../../lib/parallel/RouteSearchTask"
+  RegionCostInput,
+  RegionCostTask,
+} from "../../lib/parallel/RegionCostTask"
 
-export function createRouteSearchExecutor(workerCount: 1 | 4) {
+export function createRegionCostExecutor(workerCount: 1 | 4) {
   const workers = Array.from(
     { length: workerCount },
-    () => new Worker(new URL("./routeSearch.worker.ts", import.meta.url)),
+    () => new Worker(new URL("./regionCost.worker.ts", import.meta.url)),
   )
   const free = [...workers]
   let submitted = 0
@@ -20,8 +20,8 @@ export function createRouteSearchExecutor(workerCount: 1 | 4) {
       return maximumActive
     },
     executeAsync(
-      _Task: typeof RouteSearchTask,
-      input: RouteSearchInput,
+      _Task: typeof RegionCostTask,
+      input: RegionCostInput,
     ): Promise<unknown> {
       const worker = free.pop()
       if (!worker) throw new Error("Route workers overcommitted")

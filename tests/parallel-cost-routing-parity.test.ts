@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test"
-import { solveWithParallelRoutes } from "../lib/core-parallel"
+import { solveWithParallelCosts } from "../lib/core-parallel"
 import { SelectiveReripTinyHyperGraphSolver } from "../lib/selective-rerip-tiny-hyper-graph-solver"
 import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "../lib/core"
-import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
+import { createRegionCostExecutor } from "./fixtures/createRegionCostExecutor"
 
-test("speculative TypeScript searches revalidate overlapping routes and preserve serial output and budgets", async () => {
-  const executor = createRouteSearchExecutor(4)
+test("parallel region costs preserve exact TypeScript routes and budgets across overlapping nets", async () => {
+  const executor = createRegionCostExecutor(4)
   try {
-    let stale = 0
+    let hits = 0
     for (let seed = 1; seed <= 12; seed++) {
       const side = 5,
         regionCount = side * side
@@ -117,17 +117,17 @@ test("speculative TypeScript searches revalidate overlapping routes and preserve
         options,
       )
       serial.solve()
-      await solveWithParallelRoutes(parallel, executor)
+      await solveWithParallelCosts(parallel, executor)
       expect(parallel.solved).toBe(serial.solved)
       expect(parallel.failed).toBe(serial.failed)
       expect(parallel.iterations).toBe(serial.iterations)
       expect(parallel.state.regionSegments).toEqual(serial.state.regionSegments)
       expect(parallel.state.portAssignment).toEqual(serial.state.portAssignment)
       expect(parallel.stats.parallelRouteWorkers).toBe(4)
-      expect(parallel.stats.maximumConcurrentRouteSearches).toBe(4)
-      stale += Number(parallel.stats.staleRouteSearches)
+      expect(parallel.stats.maximumParticipatingCostWorkers).toBe(4)
+      hits += Number(parallel.stats.parallelCostCacheHits)
     }
-    expect(stale).toBeGreaterThan(0)
+    expect(hits).toBeGreaterThan(0)
   } finally {
     executor.dispose()
   }

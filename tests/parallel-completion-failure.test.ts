@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { createRouteSearchExecutor } from "./fixtures/createRouteSearchExecutor"
+import { createRegionCostExecutor } from "./fixtures/createRegionCostExecutor"
 import { createCompletionFixture } from "./fixtures/createCompletionFixture"
-import { solveWithParallelRoutes } from "../lib/core-parallel"
+import { solveWithParallelCosts } from "../lib/core-parallel"
 
 test("exhausted asynchronous completion retains serial failure diagnostics and route state", async () => {
   const reference = createCompletionFixture(),
@@ -11,9 +11,9 @@ test("exhausted asynchronous completion retains serial failure diagnostics and r
     for (const port of [4, 5, 6]) solver.problem.portSectionMask[port] = 0
   }
   reference.solve()
-  const executor = createRouteSearchExecutor(1)
+  const executor = createRegionCostExecutor(1)
   try {
-    await solveWithParallelRoutes(actual, executor)
+    await solveWithParallelCosts(actual, executor)
   } finally {
     executor.dispose()
   }

@@ -1,30 +1,27 @@
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
 import { shuffle } from "./shuffle"
 import {
-  ParallelRoutePool,
-  type ParallelRouteExecutor,
-} from "./parallel/ParallelRoutePool"
+  ParallelRegionCostPool,
+  type ParallelCostExecutor,
+} from "./parallel/ParallelRegionCostPool"
 import { acquireWorkerRuntime } from "./parallel/acquireWorkerRuntime"
 
-export {
-  RouteSearchTask,
-  RouteSearchReadyTask,
-} from "./parallel/RouteSearchTask"
-export type { ParallelRouteExecutor } from "./parallel/ParallelRoutePool"
+export { RegionCostTask, RegionCostReadyTask } from "./parallel/RegionCostTask"
+export type { ParallelCostExecutor } from "./parallel/ParallelRegionCostPool"
 
 const activeSolvers = new WeakSet<OutsideInPartialRipTinyHyperGraphSolver>()
 
-/** Run the TypeScript route search in workers and commit valid results in serial order. */
-export async function solveWithParallelRoutes(
+/** Prepare exact region scores in workers while retaining the original ordered TypeScript search. */
+export async function solveWithParallelCosts(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
-  executor: ParallelRouteExecutor,
+  executor: ParallelCostExecutor,
   stopAtIteration = solver.MAX_ITERATIONS,
 ): Promise<void> {
   if (activeSolvers.has(solver))
     throw new Error("Parallel routing is already running")
   activeSolvers.add(solver)
   const release = await acquireWorkerRuntime(executor)
-  const service: { pool?: ParallelRoutePool } = {}
+  const service: { pool?: ParallelRegionCostPool } = {}
   try {
     await solve(solver, executor, stopAtIteration, service)
   } finally {
@@ -43,9 +40,9 @@ export async function solveWithParallelRoutes(
 }
 async function solve(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
-  executor: ParallelRouteExecutor,
+  executor: ParallelCostExecutor,
   stopAtIteration: number,
-  service: { pool?: ParallelRoutePool },
+  service: { pool?: ParallelRegionCostPool },
 ): Promise<void> {
   if (solver.deferFinalRouteAcceptance)
     throw new Error("Parallel routing is already running")
@@ -79,16 +76,13 @@ async function solve(
         await solve(candidate, executor, candidate.MAX_ITERATIONS, service)
       else candidate.solve()
       for (const key of [
-        "parallelWorkerSearchMs",
-        "parallelWorkerSnapshotMs",
-        "parallelGraphSyncMs",
-        "parallelWaitForRouteMs",
-        "parallelCoordinatorSerialMs",
-        "parallelRouteSearches",
-        "parallelRouteExpansions",
-        "speculativeRouteSearches",
-        "staleRouteSearches",
-        "speculativeRouteExpansions",
+        "parallelCostTables",
+        "parallelCostCells",
+        "parallelCostWorkerMs",
+        "parallelCostPrepareMs",
+        "parallelCostCacheHits",
+        "parallelCostCacheMisses",
+        "parallelOriginalSearchMs",
       ])
         solver.stats[key] =
           Number(solver.stats[key] ?? 0) + Number(candidate.stats[key] ?? 0)
@@ -116,95 +110,80 @@ async function solve(
 }
 async function route(
   solver: OutsideInPartialRipTinyHyperGraphSolver,
-  executor: ParallelRouteExecutor,
+  executor: ParallelCostExecutor,
   limit: number,
-  service: { pool?: ParallelRoutePool },
+  service: { pool?: ParallelRegionCostPool },
 ): Promise<void> {
   solver.setup()
-  if (limit < solver.MAX_ITERATIONS) {
-    while (!solver.solved && !solver.failed && solver.iterations < limit)
-      solver.step()
-    return
-  }
-  let pool: ParallelRoutePool | undefined
-  let searches = 0
-  let expansions = 0
-  let serialRoutingMs = 0
+  const previousProvider = solver.regionCostProvider
+  let pool: ParallelRegionCostPool | undefined
+  let searchMs = 0
   let initial = {
-    searches: 0,
-    stale: 0,
-    expansions: 0,
-    searchMs: 0,
-    snapshotMs: 0,
-    syncMs: 0,
-    waitMs: 0,
+    prepareMs: 0,
+    workerMs: 0,
+    tables: 0,
+    cells: 0,
+    hits: 0,
+    misses: 0,
   }
   try {
     while (!solver.solved && !solver.failed && solver.iterations < limit) {
       const routeId = solver.state.unroutedRoutes[0]
       if (
-        solver.state.currentRouteId !== undefined ||
-        routeId === undefined ||
-        !solver.canSearchRouteInParallel(routeId)
+        limit === solver.MAX_ITERATIONS &&
+        solver.state.currentRouteId === undefined &&
+        routeId !== undefined &&
+        solver.canPrepareRouteCostsInParallel(routeId)
       ) {
-        const serialStart = performance.now()
+        if (!pool) {
+          if (service.pool && service.pool.canReuse(solver)) {
+            pool = service.pool
+            pool.rebind(solver)
+          } else {
+            if (service.pool) await service.pool.dispose()
+            pool = new ParallelRegionCostPool(solver, executor)
+            service.pool = pool
+            await pool.start()
+          }
+          const totals = pool.totals
+          initial = {
+            prepareMs: pool.prepareMs,
+            workerMs: totals.workerMs,
+            tables: totals.tables,
+            cells: totals.cells,
+            hits: pool.cacheHits,
+            misses: pool.cacheMisses,
+          }
+          solver.regionCostProvider = (candidate, neighbor) =>
+            pool!.lookup(candidate, neighbor)
+        }
+        await pool.prepare()
+      }
+      const start = performance.now()
+      do {
         solver.step()
-        serialRoutingMs += performance.now() - serialStart
-        continue
-      }
-      if (!pool) {
-        if (service.pool && service.pool.canReuse(solver)) {
-          pool = service.pool
-          pool.rebind(solver)
-        } else {
-          if (service.pool) await service.pool.dispose()
-          pool = new ParallelRoutePool(solver, executor)
-          service.pool = pool
-          await pool.start()
-        }
-      }
-      if (searches === 0)
-        initial = {
-          searches: pool.searches,
-          stale: pool.staleSearches,
-          expansions: pool.speculativeExpansions,
-          searchMs: pool.workerSearchMs,
-          snapshotMs: pool.workerSnapshotMs,
-          syncMs: pool.graphSyncMs,
-          waitMs: pool.waitForRouteMs,
-        }
-      const remaining = limit - solver.iterations,
-        result = await pool.search(routeId, remaining)
-      searches++
-      expansions += result.iterations
-      const commitStart = performance.now()
-      if (result.status === "budget" || result.iterations > remaining)
-        solver.expireParallelRouteSearch(routeId, remaining)
-      else
-        solver.acceptParallelRouteSearch(
-          routeId,
-          result.candidate,
-          result.iterations,
-        )
-      serialRoutingMs += performance.now() - commitStart
+      } while (
+        !solver.solved &&
+        !solver.failed &&
+        solver.iterations < limit &&
+        solver.state.currentRouteId !== undefined
+      )
+      searchMs += performance.now() - start
     }
   } finally {
+    solver.regionCostProvider = previousProvider
+    const totals = pool?.totals
     solver.stats = {
       ...solver.stats,
-      parallelRouteWorkers: searches > 0 ? pool!.workerCount : 0,
-      parallelWorkerSearchMs: (pool?.workerSearchMs ?? 0) - initial.searchMs,
-      parallelWorkerSnapshotMs:
-        (pool?.workerSnapshotMs ?? 0) - initial.snapshotMs,
-      parallelGraphSyncMs: (pool?.graphSyncMs ?? 0) - initial.syncMs,
-      parallelWaitForRouteMs: (pool?.waitForRouteMs ?? 0) - initial.waitMs,
-      parallelCoordinatorSerialMs: serialRoutingMs,
-      parallelRouteSearches: searches,
-      parallelRouteExpansions: expansions,
-      speculativeRouteSearches: (pool?.searches ?? 0) - initial.searches,
-      staleRouteSearches: (pool?.staleSearches ?? 0) - initial.stale,
-      speculativeRouteExpansions:
-        (pool?.speculativeExpansions ?? 0) - initial.expansions,
-      maximumConcurrentRouteSearches: pool?.maximumConcurrentSearches ?? 0,
+      parallelRouteWorkers: pool?.workerCount ?? 0,
+      parallelCostTables: (totals?.tables ?? 0) - initial.tables,
+      parallelCostCells: (totals?.cells ?? 0) - initial.cells,
+      parallelCostWorkerMs: (totals?.workerMs ?? 0) - initial.workerMs,
+      parallelCostPrepareMs: (pool?.prepareMs ?? 0) - initial.prepareMs,
+      parallelCostCacheHits: (pool?.cacheHits ?? 0) - initial.hits,
+      parallelCostCacheMisses: (pool?.cacheMisses ?? 0) - initial.misses,
+      parallelOriginalSearchMs: searchMs,
+      maximumParticipatingCostWorkers: pool?.maximumParticipatingWorkers ?? 0,
     }
   }
 }
