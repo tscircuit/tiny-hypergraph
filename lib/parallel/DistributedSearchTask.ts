@@ -19,11 +19,15 @@ export const SEARCH_CONTROL = {
   error: 4,
   route: 5,
   budget: 6,
-  tokens: 7,
-  result: 8,
-  goal: 9,
-  barrierCount: 10,
-  barrierEpoch: 11,
+  result: 7,
+  goal: 8,
+  pause: 9,
+  stopped: 10,
+  paused: 11,
+  event: 12,
+  goalVersion: 13,
+  pauseEpoch: 14,
+  tokens: 32,
 } as const
 export type DistributedSearchInput = {
   topology: TinyHyperGraphTopology
@@ -32,11 +36,13 @@ export type DistributedSearchInput = {
   context: SharedRouteContext
   control: Int32Array
   published: Float64Array
-  settled: Uint8Array
+  labelVersions: Int32Array
   parents: Int32Array
   bounds: Float64Array
-  work: Int32Array
-  messageCounts: Int32Array
+  activity: Int32Array
+  wake: Int32Array
+  heads: Int32Array
+  tails: Int32Array
   messageIds: Int32Array
   messageCosts: Float64Array
   counters: Float64Array
@@ -44,6 +50,7 @@ export type DistributedSearchInput = {
   workers: number
   capacity: number
   batchSize: number
+  hops: number
 }
 type SearchCandidate = Candidate & { parentHop?: number }
 
@@ -55,15 +62,8 @@ class DistributedHeap extends IndexedCandidateHeap {
   ) {
     super(regionCount, index)
   }
-  override isClosedHopId(hopId: number): boolean {
-    return this.solver.input.workers === 1
-      ? super.isClosedHopId(hopId)
-      : this.solver.input.settled[hopId] === 1
-  }
-  override dequeue(): Candidate | undefined {
-    const candidate = super.dequeue()
-    if (candidate) this.solver.expanded.push(candidate)
-    return candidate
+  override isClosedHopId(hop: number): boolean {
+    return this.solver.input.workers === 1 ? super.isClosedHopId(hop) : false
   }
   override queue(candidate: Candidate): void {
     this.solver.enqueue(candidate)
@@ -77,16 +77,17 @@ class DistributedHeap extends IndexedCandidateHeap {
 class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
   readonly best: Float64Array
   readonly sent: Float64Array
-  readonly changed: number[] = []
-  readonly expanded: Candidate[] = []
   readonly versions: Int32Array
+  private readonly remoteCosts: Float64Array
+  private readonly remoteStamps: Uint32Array
+  private remoteGeneration = 1
   heap!: DistributedHeap
   goalBest = Infinity
   goalFirst = 0
   goalLast = 0
-  batches = 0
-  relaxations = 0
   messages = 0
+  relaxations = 0
+  batches = 0
 
   constructor(readonly input: DistributedSearchInput) {
     super(input.topology, input.problem, {
@@ -97,11 +98,12 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
       MAX_ITERATIONS: Infinity,
       VERBOSE: false,
     })
-    this.best = new Float64Array(input.published.length)
-    this.sent = new Float64Array(input.published.length)
+    this.best = new Float64Array(input.hops)
+    this.sent = new Float64Array(input.hops)
     this.versions = new Int32Array(input.topology.regionCount).fill(-1)
+    this.remoteCosts = new Float64Array(input.hops)
+    this.remoteStamps = new Uint32Array(input.hops)
   }
-
   override _setup(): void {
     super._setup()
     this.heap = new DistributedHeap(
@@ -117,23 +119,47 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
     )
     this.state.candidateQueue = this.heap
   }
-
   owner(hop: number): number {
     return hop >= this.goalFirst && hop < this.goalLast
       ? 0
       : hop & (this.input.workers - 1)
   }
   override getCandidateBestCost(hop: number): number {
-    if (this.owner(hop) === this.input.owner) return this.best[hop]!
-    return Math.min(this.input.published[hop]!, this.sent[hop]!)
+    const owner = this.owner(hop)
+    if (owner === this.input.owner) return this.best[hop]!
+    if (this.remoteStamps[hop] === this.remoteGeneration)
+      return Math.min(this.remoteCosts[hop]!, this.sent[hop]!)
+    const offset = owner * this.input.hops + hop
+    const version = Atomics.load(this.input.labelVersions, offset)
+    this.remoteStamps[hop] = this.remoteGeneration
+    if (version & 1) {
+      this.remoteCosts[hop] = Infinity
+      return this.sent[hop]!
+    }
+    const value = this.input.published[offset]!
+    // A concurrent update may tear a Float64. Reject that sample rather than
+    // using it to prune; the sender's own bound is always a valid path cost.
+    this.remoteCosts[hop] =
+      version === Atomics.load(this.input.labelVersions, offset)
+        ? value
+        : Infinity
+    return Math.min(this.remoteCosts[hop]!, this.sent[hop]!)
   }
   override setCandidateBestCost(hop: number, value: number): void {
-    if (this.owner(hop) === this.input.owner) {
-      this.best[hop] = value
-      this.changed.push(hop)
-    } else this.sent[hop] = value
+    if (this.owner(hop) !== this.input.owner) {
+      this.sent[hop] = value
+      return
+    }
+    this.best[hop] = value
+    const offset = this.input.owner * this.input.hops + hop
+    Atomics.add(this.input.labelVersions, offset, 1)
+    this.input.published[offset] = value
+    Atomics.add(this.input.labelVersions, offset, 1)
   }
-
+  private signal(): void {
+    Atomics.add(this.input.control, SEARCH_CONTROL.event, 1)
+    Atomics.notify(this.input.control, SEARCH_CONTROL.event)
+  }
   enqueue(candidate: SearchCandidate): void {
     const hop =
       candidate.hopId ?? this.getHopId(candidate.portId, candidate.nextRegionId)
@@ -145,7 +171,7 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
       if (candidate.g > this.best[hop]!) return
       if (candidate.g < this.best[hop]!)
         this.setCandidateBestCost(hop, candidate.g)
-      this.input.parents[hop] = parent
+      this.input.parents[destination * this.input.hops + hop] = parent
       candidate.hopId = hop
       candidate.prevCandidate = undefined
       this.heap.queueLocal(candidate)
@@ -154,112 +180,146 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
         candidate.g < this.goalBest
       ) {
         this.goalBest = candidate.g
-        this.input.control[SEARCH_CONTROL.goal] = hop
+        const c = this.input.control,
+          C = SEARCH_CONTROL
+        Atomics.add(c, C.goalVersion, 1)
+        this.input.bounds[this.input.workers * 8] = candidate.g
+        c[C.goal] = hop
+        Atomics.add(c, C.goalVersion, 1)
+        this.signal()
       }
       this.relaxations++
       return
     }
-    const queue = this.input.owner * this.input.workers + destination
-    const index = this.input.messageCounts[queue]!
-    if (index >= this.input.capacity)
-      throw new Error("Distributed search message capacity exceeded")
-    const offset = (queue * this.input.capacity + index) * 2
+    const queue = this.input.owner * this.input.workers + destination,
+      index = queue * 16
+    const tail = Atomics.load(this.input.tails, index)
+    while (
+      tail - Atomics.load(this.input.heads, index) >=
+      this.input.capacity
+    ) {
+      this.checkFailure()
+      this.drain()
+      const head = Atomics.load(this.input.heads, index)
+      if (tail - head >= this.input.capacity)
+        Atomics.wait(this.input.heads, index, head, 1)
+    }
+    const offset =
+      (queue * this.input.capacity + (tail % this.input.capacity)) * 2
     this.input.messageIds[offset] = hop
     this.input.messageIds[offset + 1] = parent
     this.input.messageCosts[offset] = candidate.g
     this.input.messageCosts[offset + 1] = candidate.h
-    this.input.messageCounts[queue] = index + 1
+    // Payload publication and slot reuse use release/acquire operations.
+    Atomics.store(this.input.tails, index, tail + 1)
+    if (Atomics.load(this.input.activity, destination * 16) === 0) {
+      Atomics.add(this.input.wake, destination * 16, 1)
+      Atomics.notify(this.input.wake, destination * 16)
+    }
     this.messages++
   }
-
+  private drain(): void {
+    for (let source = 0; source < this.input.workers; source++) {
+      const queue = source * this.input.workers + this.input.owner,
+        index = queue * 16
+      let head = Atomics.load(this.input.heads, index)
+      const tail = Atomics.load(this.input.tails, index)
+      for (; head < tail; head++) {
+        const offset =
+          (queue * this.input.capacity + (head % this.input.capacity)) * 2
+        const hop = this.input.messageIds[offset]!,
+          g = this.input.messageCosts[offset]!
+        if (g >= this.best[hop]!) continue
+        this.setCandidateBestCost(hop, g)
+        const port = Math.floor(hop / this.candidateHopSlotStride),
+          region =
+            this.topology.incidentPortRegion[port]![
+              hop % this.candidateHopSlotStride
+            ]!
+        const h = this.input.messageCosts[offset + 1]!
+        this.enqueue({
+          hopId: hop,
+          portId: port,
+          nextRegionId: region,
+          g,
+          h,
+          f: g + h,
+          parentHop: this.input.messageIds[offset + 1]!,
+        })
+      }
+      Atomics.store(this.input.heads, index, head)
+      Atomics.notify(this.input.heads, index)
+    }
+  }
+  private hasMessages(): boolean {
+    for (let source = 0; source < this.input.workers; source++) {
+      const index = (source * this.input.workers + this.input.owner) * 16
+      if (
+        Atomics.load(this.input.heads, index) !==
+        Atomics.load(this.input.tails, index)
+      )
+        return true
+    }
+    return false
+  }
+  private goalBound(): number {
+    const c = this.input.control,
+      C = SEARCH_CONTROL
+    const version = Atomics.load(c, C.goalVersion)
+    if (version & 1) return Infinity
+    const bound = this.input.bounds[this.input.workers * 8]!
+    return version === Atomics.load(c, C.goalVersion) ? bound : Infinity
+  }
   override onPathFound(candidate: Candidate): void {
     if (candidate.portId !== this.state.goalPortId) super.onPathFound(candidate)
   }
   override onOutOfCandidates(): void {}
   override tryFinalAcceptance(): void {}
-
-  private barrier(): void {
+  private checkFailure(): void {
+    if (
+      Atomics.load(this.input.control, SEARCH_CONTROL.stop) ||
+      Atomics.load(this.input.control, SEARCH_CONTROL.error)
+    )
+      throw new Error("Distributed search aborted")
+  }
+  private pause(): void {
     const c = this.input.control,
       C = SEARCH_CONTROL
-    const epoch = Atomics.load(c, C.barrierEpoch)
-    if (Atomics.add(c, C.barrierCount, 1) === this.input.workers - 1) {
-      Atomics.store(c, C.barrierCount, 0)
-      Atomics.add(c, C.barrierEpoch, 1)
-      Atomics.notify(c, C.barrierEpoch)
-    } else
-      while (Atomics.load(c, C.barrierEpoch) === epoch) {
-        if (Atomics.load(c, C.error) || Atomics.load(c, C.stop))
-          throw new Error("Distributed search barrier aborted")
-        Atomics.wait(c, C.barrierEpoch, epoch, 100)
-      }
-  }
-
-  private publish(): void {
-    for (const hop of this.changed) this.input.published[hop] = this.best[hop]!
-    this.changed.length = 0
-    this.input.bounds[this.input.owner] = this.heap.peek()?.f ?? Infinity
-    if (this.input.owner === 0)
-      this.input.bounds[this.input.workers] = this.goalBest
-  }
-
-  private publishSettled(lowerBound: number): void {
-    // All incoming messages have been drained. With a consistent heuristic,
-    // no future relaxation can improve an expanded label below the previous
-    // global frontier bound. Publish these permanent closures only between
-    // expansion phases so the regional frontier can safely prune them.
-    let retained = 0
-    for (const candidate of this.expanded) {
-      const hop = candidate.hopId!
-      if (candidate.g !== this.best[hop]) continue
-      if (candidate.f <= lowerBound) this.input.settled[hop] = 1
-      else this.expanded[retained++] = candidate
+    const epoch = Atomics.load(c, C.pauseEpoch)
+    // Stop expansion first, while still draining incoming rings so a sender
+    // finishing its current expansion cannot deadlock on a full channel.
+    Atomics.add(c, C.stopped, 1)
+    Atomics.notify(c, C.stopped)
+    while (Atomics.load(c, C.stopped) !== this.input.workers) {
+      this.checkFailure()
+      this.drain()
+      const count = Atomics.load(c, C.stopped)
+      if (count !== this.input.workers) Atomics.wait(c, C.stopped, count, 1)
     }
-    this.expanded.length = retained
-  }
-
-  private finishRound(): void {
-    if (this.input.owner !== 0) return
-    const { control: c, work, bounds, workers } = this.input,
-      C = SEARCH_CONTROL
-    let used = 0,
-      minimum = Infinity
-    for (let owner = 0; owner < workers; owner++) {
-      used += work[owner]!
-      minimum = Math.min(minimum, bounds[owner]!)
+    this.drain()
+    this.input.bounds[this.input.owner * 8] = this.heap.peek()?.f ?? Infinity
+    Atomics.add(c, C.paused, 1)
+    Atomics.notify(c, C.paused)
+    while (Atomics.load(c, C.pauseEpoch) === epoch) {
+      this.checkFailure()
+      Atomics.wait(c, C.pauseEpoch, epoch, 100)
     }
-    c[C.tokens] += used
-    c[C.result] =
-      Number.isFinite(this.goalBest) && minimum >= this.goalBest
-        ? 1
-        : minimum === Infinity
-          ? 2
-          : c[C.tokens]! >= c[C.budget]!
-            ? 3
-            : 0
   }
-
   search(): void {
-    const {
-        control: c,
-        context,
-        topology,
-        workers,
-        owner,
-        bounds,
-      } = this.input,
+    const { control: c, context, topology, owner, workers } = this.input,
       C = SEARCH_CONTROL
     this.best.fill(Infinity)
     this.sent.fill(Infinity)
+    this.remoteStamps.fill(0)
+    this.remoteGeneration = 1
     this.heap.clear()
-    this.changed.length = 0
-    this.expanded.length = 0
     this.solved = false
     this.failed = false
     this.error = null
     this.iterations = 0
-    this.batches = 0
     this.messages = 0
     this.relaxations = 0
+    this.batches = 0
     this.goalBest = Infinity
     const route = c[C.route]!
     this.state.currentRouteId = route
@@ -314,77 +374,35 @@ class DistributedSolver extends DistanceAwareTinyHyperGraphSolver {
         h: 0,
       })
     }
-    this.input.work[owner] = 0
-    this.publish()
-    this.barrier()
-    this.finishRound()
-    this.barrier()
-    while (c[C.result] === 0) {
-      const goalBound = bounds[workers]!
-      let minimum = Infinity
-      for (let i = 0; i < workers; i++) minimum = Math.min(minimum, bounds[i]!)
-      const threshold = minimum + Math.max(1e-9, this.DISTANCE_TO_COST * 0.5)
-      let active = 0,
-        rank = 0
-      for (let i = 0; i < workers; i++)
-        if (bounds[i]! <= threshold && bounds[i]! < goalBound) {
-          if (i < owner) rank++
-          active++
-        }
-      const remaining = c[C.budget]! - c[C.tokens]!
-      const eligible = bounds[owner]! <= threshold && bounds[owner]! < goalBound
-      const quota =
-        eligible && active
-          ? Math.min(
-              this.input.batchSize,
-              Math.floor(remaining / active) +
-                (rank < remaining % active ? 1 : 0),
-            )
-          : 0
-      for (let destination = 0; destination < workers; destination++)
-        this.input.messageCounts[owner * workers + destination] = 0
+    while (!c[C.result]) {
+      this.checkFailure()
+      if (Atomics.load(c, C.pause)) {
+        this.pause()
+        continue
+      }
+      Atomics.store(this.input.activity, owner * 16, 1)
+      if (++this.remoteGeneration === 0xffffffff) {
+        this.remoteStamps.fill(0)
+        this.remoteGeneration = 1
+      }
+      this.drain()
+      const goal = this.goalBound()
       let used = 0
-      while (used < quota) {
+      while (used < this.input.batchSize) {
         const candidate = this.heap.peek()
-        const limit = owner === 0 ? this.goalBest : goalBound
-        if (!candidate || candidate.f > threshold || candidate.f >= limit) break
+        if (!candidate || candidate.f >= (owner === 0 ? this.goalBest : goal))
+          break
+        if (Atomics.add(c, C.tokens, 1) >= c[C.budget]!) break
         this.step()
         used++
       }
-      this.input.work[owner] = used
       this.batches++
-      this.barrier()
-      for (let source = 0; source < workers; source++) {
-        const queue = source * workers + owner
-        const count = this.input.messageCounts[queue]!
-        for (let index = 0; index < count; index++) {
-          const offset = (queue * this.input.capacity + index) * 2
-          const target = this.input.messageIds[offset]!,
-            g = this.input.messageCosts[offset]!
-          if (g >= this.best[target]!) continue
-          this.setCandidateBestCost(target, g)
-          const port = Math.floor(target / this.candidateHopSlotStride)
-          const region =
-            topology.incidentPortRegion[port]![
-              target % this.candidateHopSlotStride
-            ]!
-          const h = this.input.messageCosts[offset + 1]!
-          this.enqueue({
-            hopId: target,
-            portId: port,
-            nextRegionId: region,
-            g,
-            h,
-            f: g + h,
-            parentHop: this.input.messageIds[offset + 1]!,
-          })
-        }
-      }
-      this.publishSettled(minimum)
-      this.publish()
-      this.barrier()
-      this.finishRound()
-      this.barrier()
+      if (used === this.input.batchSize) continue
+      const epoch = Atomics.load(this.input.wake, owner * 16)
+      Atomics.store(this.input.activity, owner * 16, 0)
+      this.signal()
+      if (this.hasMessages() || Atomics.load(c, C.pause)) continue
+      Atomics.wait(this.input.wake, owner * 16, epoch, 100)
     }
     this.input.counters[owner * 4] += this.iterations
     this.input.counters[owner * 4 + 1] += this.messages
@@ -419,20 +437,11 @@ export class DistributedSearchTask {
       }
     } catch (error) {
       Atomics.store(c, C.error, 1)
-      for (const index of [C.ready, C.done, C.barrierEpoch])
+      for (const index of [C.ready, C.done, C.paused, C.stopped, C.event])
         Atomics.notify(c, index)
       throw error
     }
   }
-  getOutput(): Record<string, never> {
-    return {}
-  }
-}
-
-export class DistributedSearchReadyTask {
-  static readonly solverName = "DistributedSearchReadyTask"
-  constructor(_input: Record<string, never>) {}
-  solve(): void {}
   getOutput(): Record<string, never> {
     return {}
   }

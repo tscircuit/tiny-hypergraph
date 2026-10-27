@@ -25,13 +25,15 @@ export class DistributedSearchPool {
   searchMs = 0
   maximumParticipatingWorkers = 0
   private readonly graph: SharedRouteGraph
-  private readonly control = new Int32Array(new SharedArrayBuffer(12 * 4))
+  private readonly control = new Int32Array(new SharedArrayBuffer(48 * 4))
   private readonly published: Float64Array
-  private readonly settled: Uint8Array
+  private readonly labelVersions: Int32Array
   private readonly parents: Int32Array
   private readonly bounds: Float64Array
-  private readonly work: Int32Array
-  private readonly messageCounts: Int32Array
+  private readonly activity: Int32Array
+  private readonly wake: Int32Array
+  private readonly heads: Int32Array
+  private readonly tails: Int32Array
   private readonly messageIds: Int32Array
   private readonly messageCosts: Float64Array
   private readonly counters: Float64Array
@@ -69,14 +71,14 @@ export class DistributedSearchPool {
       ),
     )
     this.capacity = this.batchSize * (degree + 2)
-    this.published = new Float64Array(new SharedArrayBuffer(hops * 8))
-    this.settled = new Uint8Array(new SharedArrayBuffer(hops))
-    this.parents = new Int32Array(new SharedArrayBuffer(hops * 4))
-    this.bounds = new Float64Array(new SharedArrayBuffer((count + 1) * 8))
-    this.work = new Int32Array(new SharedArrayBuffer(count * 4))
-    this.messageCounts = new Int32Array(
-      new SharedArrayBuffer(count * count * 4),
-    )
+    this.published = new Float64Array(new SharedArrayBuffer(count * hops * 8))
+    this.labelVersions = new Int32Array(new SharedArrayBuffer(count * hops * 4))
+    this.parents = new Int32Array(new SharedArrayBuffer(count * hops * 4))
+    this.bounds = new Float64Array(new SharedArrayBuffer((count * 8 + 1) * 8))
+    this.activity = new Int32Array(new SharedArrayBuffer(count * 16 * 4))
+    this.wake = new Int32Array(new SharedArrayBuffer(count * 16 * 4))
+    this.heads = new Int32Array(new SharedArrayBuffer(count * count * 16 * 4))
+    this.tails = new Int32Array(new SharedArrayBuffer(count * count * 16 * 4))
     this.messageIds = new Int32Array(
       new SharedArrayBuffer(count * count * this.capacity * 2 * 4),
     )
@@ -112,11 +114,13 @@ export class DistributedSearchPool {
             context: this.graph.context,
             control: this.control,
             published: this.published,
-            settled: this.settled,
+            labelVersions: this.labelVersions,
             parents: this.parents,
             bounds: this.bounds,
-            work: this.work,
-            messageCounts: this.messageCounts,
+            activity: this.activity,
+            wake: this.wake,
+            heads: this.heads,
+            tails: this.tails,
             messageIds: this.messageIds,
             messageCosts: this.messageCosts,
             counters: this.counters,
@@ -124,12 +128,21 @@ export class DistributedSearchPool {
             workers: this.workerCount,
             capacity: this.capacity,
             batchSize: this.batchSize,
+            hops: this.solver.topology.portCount * this.stride,
           })
           .catch((error) => {
             this.failure ??= { error }
             Atomics.store(this.control, C.error, 1)
             Atomics.store(this.control, C.stop, 1)
-            for (const index of [C.ready, C.done, C.barrierEpoch, C.query])
+            for (const index of [
+              C.ready,
+              C.done,
+              C.paused,
+              C.stopped,
+              C.event,
+              C.pauseEpoch,
+              C.query,
+            ])
               Atomics.notify(this.control, index)
           }),
       )
@@ -168,24 +181,52 @@ export class DistributedSearchPool {
       previous = Array.from(this.counters)
     this.graph.sync()
     this.published.fill(Infinity)
-    this.settled.fill(0)
+    this.labelVersions.fill(0)
     this.parents.fill(-1)
     this.bounds.fill(Infinity)
-    this.work.fill(0)
-    this.messageCounts.fill(0)
-    for (const index of [
-      C.done,
-      C.tokens,
-      C.result,
-      C.barrierCount,
-      C.barrierEpoch,
-    ])
+    this.activity.fill(1)
+    this.heads.fill(0)
+    this.tails.fill(0)
+    for (const index of [C.done, C.tokens, C.result, C.stopped, C.paused])
       this.control[index] = 0
     this.control[C.goal] = -1
     this.control[C.route] = route
     this.control[C.budget] = budget
     Atomics.add(this.control, C.query, 1)
     Atomics.notify(this.control, C.query)
+    while (!this.control[C.result]) {
+      this.throwIfFailed()
+      const epoch = Atomics.load(this.control, C.event)
+      let allIdle = true
+      for (let owner = 0; owner < this.workerCount; owner++)
+        if (Atomics.load(this.activity, owner * 16)) allIdle = false
+      if (allIdle || Atomics.load(this.control, C.tokens) >= budget) {
+        Atomics.store(this.control, C.pause, 1)
+        for (let owner = 0; owner < this.workerCount; owner++) {
+          Atomics.add(this.wake, owner * 16, 1)
+          Atomics.notify(this.wake, owner * 16)
+        }
+        await this.waitFor(C.paused, this.workerCount)
+        let minimum = Infinity
+        for (let owner = 0; owner < this.workerCount; owner++)
+          minimum = Math.min(minimum, this.bounds[owner * 8]!)
+        const goal = this.bounds[this.workerCount * 8]!
+        this.control[C.result] =
+          Number.isFinite(goal) && minimum >= goal
+            ? 1
+            : minimum === Infinity
+              ? 2
+              : this.control[C.tokens]! >= budget
+                ? 3
+                : 0
+        this.activity.fill(1)
+        this.control[C.stopped] = 0
+        this.control[C.paused] = 0
+        Atomics.store(this.control, C.pause, 0)
+        Atomics.add(this.control, C.pauseEpoch, 1)
+        Atomics.notify(this.control, C.pauseEpoch)
+      } else await Atomics.waitAsync(this.control, C.event, epoch, 100).value
+    }
     await this.waitFor(C.done, this.workerCount)
     this.searches++
     this.searchMs += performance.now() - start
@@ -197,7 +238,7 @@ export class DistributedSearchPool {
       participants,
     )
     const result = this.control[C.result]!,
-      tokens = this.control[C.tokens]!
+      tokens = Math.min(budget, this.control[C.tokens]!)
     if (result === 3) return { status: "budget", iterations: budget }
     if (result === 2) return { status: "exhausted", iterations: tokens + 1 }
     if (result !== 1) throw new Error("Invalid distributed search result")
@@ -206,9 +247,19 @@ export class DistributedSearchPool {
     for (
       let hop = this.control[C.goal]!;
       hop !== -1;
-      hop = this.parents[hop]!
+      hop =
+        this.parents[
+          this.owner(route, hop) *
+            this.solver.topology.portCount *
+            this.stride +
+            hop
+        ]!
     ) {
-      if (hop < 0 || hop >= this.parents.length || seen.has(hop))
+      if (
+        hop < 0 ||
+        hop >= this.solver.topology.portCount * this.stride ||
+        seen.has(hop)
+      )
         throw new Error("Invalid distributed search predecessor chain")
       path.push(hop)
       seen.add(hop)
@@ -224,9 +275,19 @@ export class DistributedSearchPool {
         portId: port,
         nextRegionId: region,
         prevRegionId: candidate?.nextRegionId,
-        g: this.published[hop]!,
+        g: this.published[
+          this.owner(route, hop) *
+            this.solver.topology.portCount *
+            this.stride +
+            hop
+        ]!,
         h: 0,
-        f: this.published[hop]!,
+        f: this.published[
+          this.owner(route, hop) *
+            this.solver.topology.portCount *
+            this.stride +
+            hop
+        ]!,
         prevCandidate: candidate,
       }
     }
@@ -236,6 +297,17 @@ export class DistributedSearchPool {
     )
       throw new Error("Distributed search omitted the goal")
     return { status: "found", candidate, iterations: tokens + 1 }
+  }
+  private owner(route: number, hop: number): number {
+    const goalFirst = this.solver.problem.routeEndPort[route]! * this.stride
+    return hop >= goalFirst && hop < goalFirst + this.stride
+      ? 0
+      : hop & (this.workerCount - 1)
+  }
+  private throwIfFailed(): void {
+    if (this.failure) throw this.failure.error
+    if (Atomics.load(this.control, C.error))
+      throw new Error("Distributed search worker failed")
   }
   get totals(): {
     expansions: number
@@ -259,7 +331,12 @@ export class DistributedSearchPool {
     Atomics.store(this.control, C.stop, 1)
     Atomics.add(this.control, C.query, 1)
     Atomics.notify(this.control, C.query)
-    Atomics.notify(this.control, C.barrierEpoch)
+    Atomics.notify(this.control, C.pauseEpoch)
+    Atomics.notify(this.control, C.stopped)
+    for (let owner = 0; owner < this.workerCount; owner++) {
+      Atomics.add(this.wake, owner * 16, 1)
+      Atomics.notify(this.wake, owner * 16)
+    }
     await Promise.all(this.completions)
     if (this.failure) throw this.failure.error
   }

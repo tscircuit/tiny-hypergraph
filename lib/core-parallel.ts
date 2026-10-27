@@ -6,10 +6,7 @@ import {
 } from "./parallel/DistributedSearchPool"
 import { acquireWorkerRuntime } from "./parallel/acquireWorkerRuntime"
 
-export {
-  DistributedSearchTask,
-  DistributedSearchReadyTask,
-} from "./parallel/DistributedSearchTask"
+export { DistributedSearchTask } from "./parallel/DistributedSearchTask"
 export type { ParallelSearchExecutor } from "./parallel/DistributedSearchPool"
 
 const activeSolvers = new WeakSet<OutsideInPartialRipTinyHyperGraphSolver>()
