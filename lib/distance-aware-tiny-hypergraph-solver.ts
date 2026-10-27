@@ -40,7 +40,10 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
 
   override onPathFound(finalCandidate: Candidate): void {
     const goalPortId = this.state.goalPortId
-    if (finalCandidate.portId === goalPortId) {
+    if (
+      this.isDynamicTreeGoal(finalCandidate.portId) ||
+      finalCandidate.portId === goalPortId
+    ) {
       super.onPathFound(finalCandidate)
       return
     }

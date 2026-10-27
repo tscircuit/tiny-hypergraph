@@ -26,10 +26,10 @@ exports[`owned metadata skips repeated static checks and resets at explicit sear
   },
   {
     "afterOwnedMetadataCache": {
-      "hopIdEvaluations": 161,
+      "hopIdEvaluations": 197,
     },
     "beforeRepeatedMetadata": {
-      "hopIdEvaluations": 1382,
+      "hopIdEvaluations": 1418,
     },
     "invalidationBoundary": "best-cost-reset",
     "repeatedHopIdEvaluationsAvoided": 1221,
