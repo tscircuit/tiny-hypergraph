@@ -3,16 +3,7 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "lib/compat/loadSerializedHyperGraph"
 
 test("shared-port routing retains exact region identities and solved-route exceptions", () => {
-  const regionIds = [
-    "a",
-    "b:c",
-    "a:b",
-    "c",
-    "hub",
-    "self",
-    "",
-    "__proto__",
-  ]
+  const regionIds = ["a", "b:c", "a:b", "c", "hub", "self", "", "__proto__"]
   const graph: SerializedHyperGraph = {
     regions: regionIds.map((regionId, index) => ({
       regionId,
