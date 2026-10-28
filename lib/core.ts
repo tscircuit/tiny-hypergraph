@@ -17,6 +17,11 @@ import {
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
 import { shuffle } from "./shuffle"
+import {
+  assertPortAllowsNet,
+  assertValidPortNetPermissions,
+  isPortAllowedForNet,
+} from "./portNetPermissions"
 import type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 import {
   createStaticallyUnroutableRouteSummary,
@@ -146,6 +151,9 @@ export interface TinyHyperGraphProblem {
   routeNet: Int32Array // NetId[]
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
   regionNetId: Int32Array
+
+  /** Optional immutable port net restrictions: -1 is free, -2 blocked, otherwise the sole allowed net. */
+  portNetId?: Int32Array
 
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
@@ -593,6 +601,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
+    assertValidPortNetPermissions(topology.portCount, problem)
+    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+      assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
+      assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
+    }
     applyTinyHyperGraphSolverOptions(this, options)
     let candidateHopSlotStride = 1
     const candidateFirstRegionByPortId = new Int32Array(
@@ -666,6 +679,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       throw new Error(
         "TinyHyperGraphSolver.resetForProblem cannot reset subclass routing state",
       )
+    }
+    assertValidPortNetPermissions(this.topology.portCount, problem)
+    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+      assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
+      assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
     }
     this.problem = problem
     this._problemSetup = undefined
@@ -1255,6 +1273,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
     return (
+      !isPortAllowedForNet(this.problem, portId, this.state.currentRouteNetId!) ||
       reservedNetId === -2 ||
       (reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId)
     )

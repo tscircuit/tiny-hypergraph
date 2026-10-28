@@ -1,4 +1,5 @@
 import { computeRegionCost } from "../computeRegionCost"
+import { isPortAllowedForNet } from "../portNetPermissions"
 import type { Candidate, TinyHyperGraphSolver } from "../core"
 import { IndexedCandidateHeap } from "../indexed-candidate-heap"
 import type { RegionIntersectionCache } from "../types"
@@ -77,6 +78,7 @@ export class DenseRoutingWorkspace {
         const port = neighbors[index]!
         const reservation = reserved[port]!
         if (
+          !isPortAllowedForNet(p, port, net) ||
           reservation === -2 ||
           (reservation !== -1 && reservation !== net) ||
           (assign[port] !== -1 && assign[port] !== net)

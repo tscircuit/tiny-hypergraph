@@ -1,6 +1,11 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { MinHeap } from "../MinHeap"
+import {
+  assertPortAllowsNet,
+  assertValidPortNetPermissions,
+  isPortAllowedForNet,
+} from "../portNetPermissions"
 import type { TinyHyperGraphProblem, TinyHyperGraphTopology } from "../core"
 import {
   createRegionGraph,
@@ -74,6 +79,12 @@ export class RegionPathSolver extends BaseSolver {
     options?: RegionPathSolverOptions,
   ) {
     super()
+
+    assertValidPortNetPermissions(topology.portCount, problem)
+    for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+      assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
+      assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
+    }
 
     this.regionGraph = createRegionGraph(topology)
     this.regionProblem = createRegionPathProblem(topology, problem)
@@ -191,6 +202,9 @@ export class RegionPathSolver extends BaseSolver {
     for (const edge of this.regionGraph.incidentEdges[
       currentCandidate.regionId
     ] ?? []) {
+      if (!edge.portIds.some((portId) =>
+        isPortAllowedForNet(this.problem, portId, state.currentRouteNetId!),
+      )) continue
       const nextRegionId =
         edge.regionIdA === currentCandidate.regionId
           ? edge.regionIdB

@@ -1,4 +1,5 @@
 import type { NetId, PortId, RegionId, RouteId } from "./types"
+import { assertPortAllowsNet } from "./portNetPermissions"
 
 export interface TinyHyperGraphInitialAssignment {
   routeId: RouteId
@@ -19,6 +20,7 @@ interface InitialAssignmentProblem {
   routeEndPort: Int32Array
   routeNet: Int32Array
   initialAssignments?: TinyHyperGraphInitialAssignment[]
+  portNetId?: Int32Array
 }
 
 interface InitialAssignmentState {
@@ -136,6 +138,7 @@ export const applyInitialAssignments = ({
           `Initial assignment port ${portId} is not incident to region ${regionId}`,
         )
       }
+      assertPortAllowsNet(problem, portId, problem.routeNet[routeId]!)
     }
 
     const routeAssignments = assignmentsByRoute.get(routeId) ?? []

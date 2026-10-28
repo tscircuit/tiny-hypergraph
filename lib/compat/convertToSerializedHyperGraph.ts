@@ -123,8 +123,33 @@ const getSerializedRegionData = (
 const getSerializedPortData = (
   solver: TinyHyperGraphSolver,
   portId: PortId,
+  netIdByIndex: ReadonlyMap<number, string>,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.portMetadata?.[portId])
+  const requiredNetId = solver.problem.portNetId?.[portId] ?? -1
+  const allowedNetId: unknown = data.allowedNetId
+  if (allowedNetId !== undefined && allowedNetId !== null &&
+    (typeof allowedNetId !== "string" || allowedNetId.length === 0)) {
+    throw new Error(`Port ${portId} allowedNetId must be a nonempty canonical net ID or null`)
+  }
+  if (requiredNetId === -1) {
+    delete data.allowedNetId
+  } else if (requiredNetId === -2) {
+    if (allowedNetId === undefined) {
+      data.allowedNetId = null
+    } else if (typeof allowedNetId === "string" && [...netIdByIndex.values()].includes(allowedNetId)) {
+      throw new Error(`Port ${portId} numeric restriction disagrees with canonical allowedNetId`)
+    }
+  } else {
+    const canonicalNetId = netIdByIndex.get(requiredNetId)
+    if (canonicalNetId === undefined) {
+      throw new Error(`Port ${portId} cannot serialize net ${requiredNetId} without a canonical identity`)
+    }
+    if (allowedNetId !== undefined && allowedNetId !== canonicalNetId) {
+      throw new Error(`Port ${portId} numeric restriction disagrees with canonical allowedNetId`)
+    }
+    data.allowedNetId = canonicalNetId
+  }
 
   if (typeof data.x !== "number") {
     data.x = solver.topology.portX[portId]
@@ -406,6 +431,14 @@ export const convertToSerializedHyperGraph = (
 
   const { topology } = solver
   const routeSegmentsByRoute = getRouteSegmentsByRoute(solver)
+  const netIdByIndex = new Map<number, string>()
+  for (let routeId = 0; routeId < solver.problem.routeCount; routeId++) {
+    const netIndex = solver.problem.routeNet[routeId]!
+    const metadata = solver.problem.routeMetadata?.[routeId]
+    netIdByIndex.set(netIndex,
+      typeof metadata?.mutuallyConnectedNetworkId === "string"
+        ? metadata.mutuallyConnectedNetworkId : `net-${netIndex}`)
+  }
 
   const regions = Array.from(
     { length: topology.regionCount },
@@ -440,7 +473,7 @@ export const convertToSerializedHyperGraph = (
       portId: getSerializedPortId(solver, portId),
       region1Id: getSerializedRegionId(solver, region1Id),
       region2Id: getSerializedRegionId(solver, region2Id),
-      d: getSerializedPortData(solver, portId),
+      d: getSerializedPortData(solver, portId, netIdByIndex),
     }
   })
 

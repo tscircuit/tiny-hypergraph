@@ -545,6 +545,27 @@ export const loadSerializedHyperGraph = (
     routeNet[routeIndex] = getNetIndex(connection)
   })
 
+  const routedNetIndexes = new Set(routeNet)
+  const portNetId = new Int32Array(portCount).fill(-1)
+  filteredHyperGraph.ports.forEach((port, portIndex) => {
+    const allowedNetId: unknown = port.d?.allowedNetId
+    if (allowedNetId === undefined) return
+    if (allowedNetId === null) {
+      portNetId[portIndex] = -2
+      return
+    }
+    if (typeof allowedNetId !== "string" || allowedNetId.length === 0) {
+      throw new Error(`Port "${port.portId}" allowedNetId must be a nonempty canonical net ID or null`)
+    }
+    // Permissions cannot allocate or renumber the established connection nets.
+    // Keep inactive owners in metadata while blocking all currently routed nets.
+    const netIndex = netIdToIndex.get(allowedNetId)
+    portNetId[portIndex] = netIndex === undefined || !routedNetIndexes.has(netIndex)
+      ? -2
+      : netIndex
+  })
+  const hasPortPermissions = portNetId.some((netId) => netId !== -1)
+
   const topology: TinyHyperGraphTopology = {
     portCount,
     regionCount,
@@ -612,6 +633,7 @@ export const loadSerializedHyperGraph = (
     routeEndPort,
     routeNet,
     regionNetId,
+    ...(hasPortPermissions && { portNetId }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
     ...(hasPortPenalties && { portPenalty }),
   }

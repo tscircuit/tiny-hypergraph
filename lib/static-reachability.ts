@@ -1,3 +1,4 @@
+import { isPortAllowedForNet } from "./portNetPermissions"
 import type {
   TinyHyperGraphProblem,
   TinyHyperGraphProblemSetup,
@@ -76,10 +77,12 @@ const getDefaultRouteConnectionId = (
 }
 
 const isPortEndpointReservedForStaticReachability = (
+  problem: TinyHyperGraphProblem,
   problemSetup: TinyHyperGraphProblemSetup,
   routeNetId: NetId,
   portId: PortId,
 ) => {
+  if (!isPortAllowedForNet(problem, portId, routeNetId)) return true
   const reservedNetIds = problemSetup.portEndpointNetIds[portId]
   if (!reservedNetIds) {
     return false
@@ -112,6 +115,11 @@ const hasStaticReachabilityPath = (
   const routeNetId = problem.routeNet[routeId]!
   const startPortId = problem.routeStartPort[routeId]!
   const goalPortId = problem.routeEndPort[routeId]!
+
+  if (
+    !isPortAllowedForNet(problem, startPortId, routeNetId) ||
+    !isPortAllowedForNet(problem, goalPortId, routeNetId)
+  ) return false
 
   if (startPortId === goalPortId) {
     return true
@@ -152,6 +160,7 @@ const hasStaticReachabilityPath = (
 
       if (
         isPortEndpointReservedForStaticReachability(
+          problem,
           problemSetup,
           routeNetId,
           neighborPortId,
