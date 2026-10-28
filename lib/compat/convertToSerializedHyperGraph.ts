@@ -83,8 +83,20 @@ const getSerializedConnectionId = (
 const getSerializedRegionData = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
+  netIdByIndex: ReadonlyMap<number, string>,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.regionMetadata?.[regionId])
+  const fixedSegments = solver.problem.fixedCopperSegmentsByRegion?.[regionId]
+  if (fixedSegments?.length) {
+    data.fixedCopperSegments = fixedSegments.map((segment) => ({
+      ...segment, netId: netIdByIndex.get(segment.netId) ?? null,
+    }))
+    data.fixedCopperTraceWidth = solver.problem.fixedCopperTraceWidthByRegion![regionId]
+  } else {
+    // Reused native problems must not re-export metadata from an older problem.
+    delete data.fixedCopperSegments
+    delete data.fixedCopperTraceWidth
+  }
 
   if (!isRecord(data.center)) {
     data.center = {
@@ -456,7 +468,7 @@ export const convertToSerializedHyperGraph = (
         pointIds: topology.regionIncidentPorts[regionId]!.map((portId) =>
           getSerializedPortId(solver, portId),
         ),
-        d: getSerializedRegionData(solver, regionId),
+        d: getSerializedRegionData(solver, regionId, netIdByIndex),
         ...(assignments.length > 0 && { assignments }),
       }
     },

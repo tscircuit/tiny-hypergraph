@@ -5,6 +5,7 @@ import {
   computeRegionCost,
   DEFAULT_MIN_VIA_PAD_DIAMETER,
   isKnownSingleLayerMask,
+  TRACE_VIA_MARGIN,
 } from "./computeRegionCost"
 import {
   type MutableIntersectionCount,
@@ -16,6 +17,11 @@ import {
 } from "./initialAssignments"
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
+import {
+  assertValidFixedCopperProblem,
+  fixedCopperCapsuleTouchesChord,
+  type FixedCopperProblem,
+} from "./fixedCopperCosts"
 import { shuffle } from "./shuffle"
 import {
   assertPortAllowsNet,
@@ -131,7 +137,7 @@ export interface TinyHyperGraphTopology {
   portMetadata?: any[]
 }
 
-export interface TinyHyperGraphProblem {
+export interface TinyHyperGraphProblem extends FixedCopperProblem {
   routeCount: number
 
   /**
@@ -617,6 +623,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
+    assertValidFixedCopperProblem(topology.regionCount, problem)
     assertValidPortNetPermissions(topology.portCount, problem)
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
@@ -697,6 +704,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       )
     }
     assertValidPortNetPermissions(this.topology.portCount, problem)
+    assertValidFixedCopperProblem(this.topology.regionCount, problem)
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
       assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
@@ -2021,6 +2029,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const currentRouteId = state.currentRouteId
 
     if (currentRouteId === undefined) return
+    const fixedGoalCost = finalCandidate.portId !== state.goalPortId
+      ? this.computeFixedCopperTransitionCost(finalCandidate.nextRegionId,
+        finalCandidate.portId, state.goalPortId, state.currentRouteNetId!) : 0
+    if (fixedGoalCost > 0) {
+      // Preserve this solver's existing final-hop policy: only the new fixed
+      // copper heuristic is added. DistanceAware already prices its full goal
+      // hop before arriving here, so it enters with portId === goalPortId.
+      const g = finalCandidate.g + fixedGoalCost
+      const hopId = this.getHopId(state.goalPortId, finalCandidate.nextRegionId)
+      if (!Number.isFinite(g) || g >= this.getCandidateBestCost(hopId)) return
+      this.setCandidateBestCost(hopId, g)
+      state.candidateQueue.queue({
+        hopId, prevRegionId: finalCandidate.nextRegionId,
+        nextRegionId: finalCandidate.nextRegionId, portId: state.goalPortId,
+        g, h: 0, f: g, prevCandidate: finalCandidate,
+      })
+      return
+    }
     this.routeSuccessCountByRouteId[currentRouteId] += 1
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
@@ -2119,8 +2145,63 @@ export class TinyHyperGraphSolver extends BaseSolver {
       newRegionCost +
       regionCongestionCost +
       neighborPortPenalty +
-      segmentDistanceCost
+      segmentDistanceCost +
+      this.computeFixedCopperTransitionCost(nextRegionId, currentCandidate.portId,
+        neighborPortId, state.currentRouteNetId!)
     )
+  }
+
+  /**
+   * Search-order heuristic, never a manufacturing feasibility certificate.
+   * A finite fixed segment may be detoured on the same layer. Pricing its
+   * straight-chord contact like two layer changes helps choose an existing
+   * alternative layer without declaring a same-layer hop impossible.
+   * This stays out of regional acceptance/rerip thresholds and live budgets.
+   */
+  computeFixedCopperTransitionCost(
+    regionId: RegionId, fromPortId: PortId, toPortId: PortId, netId: NetId,
+  ): number {
+    const segments = this.problem.fixedCopperSegmentsByRegion?.[regionId]
+    if (!segments?.length) return 0
+    this.stats.fixedCopperCandidateEvaluations =
+      Number(this.stats.fixedCopperCandidateEvaluations ?? 0) + 1
+    const z = this.topology.portZ[fromPortId]
+    // A mixed-layer chord may change layer before encountering the copper.
+    // Its existing transition cost already prices that opportunity.
+    if (z !== this.topology.portZ[toPortId]) return 0
+    const connection = this.problem.routeMetadata?.[this.state.currentRouteId!]?.simpleRouteConnection
+    const explicitWidth = connection?.nominalTraceWidth ?? connection?.width
+    if (explicitWidth !== undefined &&
+      (typeof explicitWidth !== "number" || !Number.isFinite(explicitWidth) || explicitWidth < 0)) {
+      throw new Error("Fixed copper candidate has an invalid explicit trace width")
+    }
+    const traceWidth = Math.max(this.problem.fixedCopperTraceWidthByRegion![regionId],
+      explicitWidth === undefined ? 0 : explicitWidth)
+    for (const segment of segments) {
+      if (segment.z !== z || (segment.netId >= 0 && segment.netId === netId) ||
+        !fixedCopperCapsuleTouchesChord(
+          this.topology.portX[fromPortId], this.topology.portY[fromPortId],
+          this.topology.portX[toPortId], this.topology.portY[toPortId],
+          segment, traceWidth,
+        )) continue
+      // One layer excursion can avoid multiple segments. Do not multiply the
+      // score when the same physical branch is subdivided or duplicated.
+      const viaArea = (this.minViaPadDiameter + TRACE_VIA_MARGIN) ** 2
+      const area = this.topology.regionWidth[regionId] * this.topology.regionHeight[regionId]
+      if (!Number.isFinite(viaArea) || viaArea <= 0 || !Number.isFinite(area) || area < 0) {
+        throw new Error(`Fixed copper region ${regionId} has invalid heuristic scale`)
+      }
+      // Match the ordinary one-trace two-change scale on normal regions, and
+      // normalize sub-footprint/degenerate regions by one via footprint. An
+      // arbitrarily tiny mesh cell is not a physical impossibility proof.
+      const cost = 2 * 1.2 * viaArea / Math.max(area, viaArea)
+      this.stats.fixedCopperPenalizedCandidateEvaluations =
+        Number(this.stats.fixedCopperPenalizedCandidateEvaluations ?? 0) + 1
+      this.stats.fixedCopperCandidatePenaltySum =
+        Number(this.stats.fixedCopperCandidatePenaltySum ?? 0) + cost
+      return cost
+    }
+    return 0
   }
 
   override tryFinalAcceptance() {
@@ -2200,8 +2281,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return currentCandidate.g + this.computeFixedCopperTransitionCost(
+      currentCandidate.nextRegionId, currentCandidate.portId,
+      neighborPortId, this.state.currentRouteNetId!,
+    )
   }
 }

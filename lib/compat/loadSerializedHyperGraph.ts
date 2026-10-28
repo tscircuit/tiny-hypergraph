@@ -5,6 +5,52 @@ import type {
   TinyHyperGraphTopology,
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
+import type { FixedCopperProblem, TinyHyperGraphFixedCopperSegment } from "../fixedCopperCosts"
+
+const loadFixedCopperProblem = (
+  regions: SerializedHyperGraph["regions"],
+  netIdToIndex: ReadonlyMap<string, number>,
+  routedNetIndexes: ReadonlySet<number>,
+): FixedCopperProblem => {
+  let hasSegments = false
+  const widths = new Float64Array(regions.length)
+  const segments = regions.map((region, regionId) => {
+    const source: unknown = region.d?.fixedCopperSegments
+    if (source === undefined) return []
+    if (!Array.isArray(source)) {
+      throw new Error(`Region ${region.regionId} fixedCopperSegments must be an array`)
+    }
+    if (source.length === 0) return []
+    hasSegments = true
+    const width: unknown = region.d?.fixedCopperTraceWidth
+    if (typeof width !== "number" || !Number.isFinite(width) || width < 0) {
+      throw new Error(`Region ${region.regionId} fixedCopperTraceWidth must be finite and nonnegative`)
+    }
+    widths[regionId] = width
+    return source.map((value: unknown): TinyHyperGraphFixedCopperSegment => {
+      if (typeof value !== "object" || value === null) {
+        throw new Error(`Region ${region.regionId} has invalid fixed copper segment`)
+      }
+      const segment = value as Record<string, unknown>
+      const owner = segment.netId
+      if (owner !== null && (typeof owner !== "string" || owner.length === 0)) {
+        throw new Error(`Region ${region.regionId} fixed copper owner must be a canonical string or null`)
+      }
+      const index = typeof owner === "string" ? netIdToIndex.get(owner) : undefined
+      return {
+        netId: index !== undefined && routedNetIndexes.has(index) ? index : -1,
+        x1: segment.x1 as number, y1: segment.y1 as number,
+        x2: segment.x2 as number, y2: segment.y2 as number,
+        z: segment.z as number, width: segment.width as number,
+        clearance: segment.clearance as number,
+      }
+    })
+  })
+  return hasSegments ? {
+    fixedCopperSegmentsByRegion: segments,
+    fixedCopperTraceWidthByRegion: widths,
+  } : {}
+}
 
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
@@ -636,6 +682,7 @@ export const loadSerializedHyperGraph = (
     ...(hasPortPermissions && { portNetId }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
     ...(hasPortPenalties && { portPenalty }),
+    ...loadFixedCopperProblem(filteredHyperGraph.regions, netIdToIndex, routedNetIndexes),
   }
 
   const solvedRoutePathSegments: TinyHyperGraphSolution["solvedRoutePathSegments"] =

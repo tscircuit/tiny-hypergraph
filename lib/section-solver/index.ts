@@ -570,6 +570,10 @@ const createSectionRoutePlans = (
       routeNet: new Int32Array(problem.routeNet),
       regionNetId: new Int32Array(problem.regionNetId),
       portNetId: problem.portNetId,
+      ...(problem.fixedCopperSegmentsByRegion === undefined ? {} : {
+        fixedCopperSegmentsByRegion: problem.fixedCopperSegmentsByRegion,
+        fixedCopperTraceWidthByRegion: problem.fixedCopperTraceWidthByRegion,
+      }),
       portPenalty:
         problem.portPenalty === undefined
           ? undefined
