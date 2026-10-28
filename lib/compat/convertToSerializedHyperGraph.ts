@@ -86,6 +86,15 @@ const getSerializedRegionData = (
   netIdByIndex: ReadonlyMap<number, string>,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.regionMetadata?.[regionId])
+  const declaredBoundaryOrder: unknown = data.boundaryPortOrderPreserved
+  if (declaredBoundaryOrder !== undefined && typeof declaredBoundaryOrder !== "boolean") {
+    throw new Error(`Region ${regionId} boundaryPortOrderPreserved metadata must be a boolean`)
+  }
+  if (solver.problem.regionBoundaryPortOrderPreserved?.[regionId] === 1) {
+    data.boundaryPortOrderPreserved = true
+  } else if (declaredBoundaryOrder !== undefined) {
+    data.boundaryPortOrderPreserved = false
+  }
   const allowed = solver.problem.regionLayerChangeAllowedNetIds?.[regionId]
   if (allowed === undefined) {
     delete data.layerChangeAllowedNetIds

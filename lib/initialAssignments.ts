@@ -1,6 +1,7 @@
+import type { TinyHyperGraphTopology } from "./core"
 import type { NetId, PortId, RegionId, RouteId } from "./types"
 import { assertPortAllowsNet } from "./portNetPermissions"
-import { assertRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
+import { assertRegionLayerChangeAllowed, assertRouteSegmentsAllowLayerChanges } from "./regionLayerChangePermissions"
 
 export interface TinyHyperGraphInitialAssignment {
   routeId: RouteId
@@ -9,12 +10,7 @@ export interface TinyHyperGraphInitialAssignment {
   toPortId: PortId
 }
 
-interface InitialAssignmentTopology {
-  portCount: number
-  regionCount: number
-  incidentPortRegion: RegionId[][]
-  portZ: Int32Array
-}
+type InitialAssignmentTopology = TinyHyperGraphTopology
 
 interface InitialAssignmentProblem {
   routeCount: number
@@ -24,6 +20,7 @@ interface InitialAssignmentProblem {
   initialAssignments?: TinyHyperGraphInitialAssignment[]
   portNetId?: Int32Array
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
+  regionBoundaryPortOrderPreserved?: Uint8Array
 }
 
 interface InitialAssignmentState {
@@ -152,6 +149,14 @@ export const applyInitialAssignments = ({
 
   for (const [routeId, routeAssignments] of assignmentsByRoute) {
     assertAssignmentsConnectRoute(problem, routeId, routeAssignments)
+  }
+
+  if (problem.regionLayerChangeAllowedNetIds !== undefined) {
+    const segments: Array<[RouteId, PortId, PortId][]> = Array.from({ length: topology.regionCount }, () => [])
+    for (const { routeId, regionId, fromPortId, toPortId } of assignments) {
+      segments[regionId].push([routeId, fromPortId, toPortId])
+    }
+    assertRouteSegmentsAllowLayerChanges(topology, problem, segments)
   }
 
   const initiallyRoutedRouteIds = new Set(assignmentsByRoute.keys())

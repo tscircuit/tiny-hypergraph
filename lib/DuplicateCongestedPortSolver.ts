@@ -1,3 +1,4 @@
+import { getCertifiedBoundaryDuplicatePoints } from "./certifiedBoundaryDuplicatePlacement"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
@@ -288,6 +289,7 @@ const createSingleRouteProblem = (
   regionNetId: problem.regionNetId,
   portNetId: problem.portNetId,
   regionLayerChangeAllowedNetIds: problem.regionLayerChangeAllowedNetIds,
+  regionBoundaryPortOrderPreserved: problem.regionBoundaryPortOrderPreserved,
   portPenalty: problem.portPenalty,
 })
 
@@ -438,6 +440,11 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         regionById,
       )
       const sourcePoint = getPortPoint(sourcePort)
+      const incidentRegions = [regionById.get(sourcePort.region1Id), regionById.get(sourcePort.region2Id)]
+      const certifiedOrder = incidentRegions.some((region) => region?.d?.boundaryPortOrderPreserved === true)
+      const certifiedPoints = certifiedOrder ? getCertifiedBoundaryDuplicatePoints(
+        sourcePort, incidentRegions[0], incidentRegions[1], duplicateDirection, duplicateCount, duplicatePortProximity,
+      ) : undefined
       const duplicatePortIds: string[] = []
 
       for (
@@ -455,8 +462,8 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
         const duplicatedPortData = toObjectRecord(
           cloneSerializableValue(sourcePort.d),
         )
-        duplicatedPortData.x = sourcePoint.x + duplicateDirection.x * offset
-        duplicatedPortData.y = sourcePoint.y + duplicateDirection.y * offset
+        duplicatedPortData.x = certifiedPoints !== undefined ? certifiedPoints[duplicateIndex - 1].x : sourcePoint.x + duplicateDirection.x * offset
+        duplicatedPortData.y = certifiedPoints !== undefined ? certifiedPoints[duplicateIndex - 1].y : sourcePoint.y + duplicateDirection.y * offset
         duplicatedPortData.duplicatedFromPortId = sourcePortId
         duplicatedPortData.duplicateIndex = duplicateIndex
         duplicatedPortData.duplicatePortUseCount = useCount

@@ -1,7 +1,10 @@
+import type { TinyHyperGraphTopology } from "./core"
+import { assertViaFreePlanarRouting } from "./viaFreePlanarCrossings"
 import type { NetId, PortId, RegionId, RouteId } from "./types"
 
 export interface RegionLayerChangeProblem {
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
+  regionBoundaryPortOrderPreserved?: Uint8Array
 }
 
 export const isRegionLayerChangeAllowed = (
@@ -21,6 +24,10 @@ export const assertValidRegionLayerChangePermissions = (
   regionCount: number,
   problem: RegionLayerChangeProblem,
 ): void => {
+  const order = problem.regionBoundaryPortOrderPreserved
+  if (order !== undefined && (!(order instanceof Uint8Array) || order.length !== regionCount || order.some((flag) => flag !== 0 && flag !== 1))) {
+    throw new Error("regionBoundaryPortOrderPreserved must have one boolean byte per region")
+  }
   const permissions = problem.regionLayerChangeAllowedNetIds
   if (permissions === undefined) return
   if (!Array.isArray(permissions) || permissions.length !== regionCount) {
@@ -53,11 +60,12 @@ export const assertRegionLayerChangeAllowed = (
 }
 
 export const assertRouteSegmentsAllowLayerChanges = (
-  topology: { portZ: Int32Array },
+  topology: TinyHyperGraphTopology,
   problem: RegionLayerChangeProblem & { routeNet: Int32Array },
   segments: Array<[RouteId, PortId, PortId][]>,
 ): void => {
   if (problem.regionLayerChangeAllowedNetIds === undefined) return
+  assertViaFreePlanarRouting(topology, problem, segments)
   for (let regionId = 0; regionId < segments.length; regionId++) {
     for (const [routeId, fromPortId, toPortId] of segments[regionId]) {
       assertRegionLayerChangeAllowed(topology, problem, regionId, fromPortId, toPortId, problem.routeNet[routeId])

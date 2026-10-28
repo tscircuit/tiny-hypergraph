@@ -1,3 +1,4 @@
+import { isViaFreePlanarCrossing } from "./viaFreePlanarCrossings"
 import { isRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import {
   createEmptyRegionIntersectionCache,
@@ -592,10 +593,21 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       for (const template of templates) {
         if (template.state.portId === state.portId) continue
         if (this.problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(this.topology, this.problem, state.nextRegionId, state.portId, template.state.portId, routeNetId)) continue
+        // Crossing resources depend on the incoming chord and cannot be cached
+        // with destination-only templates. They can be removed by a valid rerip.
+        const certified = this.problem.regionLayerChangeAllowedNetIds?.[state.nextRegionId] !== undefined
+        const crossingOwners = certified ? this.getHardBlockedCrossingOwners(state.nextRegionId, state.portId, template.state.portId) : []
+        const owners = crossingOwners.length === 0 ? template.owners : [...new Set([...template.owners, ...crossingOwners])]
+        if (certified && owners.some((owner) => context.forbiddenOwnerRouteIds.has(owner))) continue
+        const resources = crossingOwners.length === 0 ? template.data.resources : [
+          ...template.data.resources,
+          { kind: "same_layer_intersection" as const, regionId: state.nextRegionId,
+            fromPortId: state.portId, toPortId: template.state.portId, owners: crossingOwners },
+        ]
         hops.push({
           state: template.state,
-          owners: template.owners,
-          data: template.data,
+          owners,
+          data: { resources },
           distance: Math.hypot(
             this.topology.portX[state.portId]! -
               this.topology.portX[template.state.portId]!,
@@ -629,6 +641,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
         routeNetId,
         portOwners: context.portOwners,
         portResources: context.portResources,
+        includeCrossings: !input.buildRegionTemplates || this.problem.regionLayerChangeAllowedNetIds?.[state.nextRegionId] === undefined,
       })
       const owners: RouteId[] = []
       for (const resource of resources) {
@@ -681,6 +694,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     routeNetId: number
     portOwners: ReadonlyMap<PortId, ReadonlySet<RouteId>>
     portResources: Map<PortId, PortBlockerResource>
+    includeCrossings?: boolean
   }): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
     const assignedNetId = this.state.portAssignment[params.toPortId]!
@@ -703,7 +717,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       resources.push(resource)
     }
 
-    const sameLayerIntersectionOwners = this.getHardBlockedCrossingOwners(
+    const sameLayerIntersectionOwners = params.includeCrossings === false ? [] : this.getHardBlockedCrossingOwners(
       params.regionId,
       params.fromPortId,
       params.toPortId,
@@ -741,7 +755,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     fromPortId: PortId,
     toPortId: PortId,
   ): RouteId[] {
-    if (!this.isKnownSingleLayerRegion(regionId)) return []
+    const singleLayer = this.isKnownSingleLayerRegion(regionId)
+    if (!singleLayer && this.problem.regionLayerChangeAllowedNetIds?.[regionId] === undefined) return []
 
     const routeNetId = this.state.currentRouteNetId
     if (routeNetId === undefined) {
@@ -754,13 +769,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       .regionSegments[regionId] ?? []) {
       if (this.problem.routeNet[ownerRouteId] === routeNetId) continue
       if (
-        this.segmentsCrossOnSameLayer(
+        (singleLayer && this.segmentsCrossOnSameLayer(
           regionId,
           fromPortId,
           toPortId,
           ownerFromPortId,
           ownerToPortId,
-        )
+        )) || isViaFreePlanarCrossing(this.topology, this.problem, regionId,
+          fromPortId, toPortId, routeNetId, ownerFromPortId, ownerToPortId,
+          this.problem.routeNet[ownerRouteId])
       ) {
         owners.add(ownerRouteId)
       }
