@@ -8,6 +8,7 @@ import {
 } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import { MinHeap } from "./MinHeap"
+import { assertRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import type { PortId, RegionId, RouteId } from "./types"
 
 type CommittedRouteSegment = {
@@ -546,6 +547,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
         regionId
       ] ?? []) {
         const routeNetId = this.problem.routeNet[routeId]!
+        assertRegionLayerChangeAllowed(this.topology, this.problem, regionId, fromPortId, toPortId, routeNetId)
         this.state.currentRouteNetId = routeNetId
         for (const portId of [fromPortId, toPortId]) {
           const assignedNetId = this.state.portAssignment[portId]!

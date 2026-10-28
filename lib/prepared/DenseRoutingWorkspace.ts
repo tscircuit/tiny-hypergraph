@@ -1,5 +1,6 @@
 import { computeRegionCost } from "../computeRegionCost"
 import { isPortAllowedForNet } from "../portNetPermissions"
+import { isRegionLayerChangeAllowed } from "../regionLayerChangePermissions"
 import type { Candidate, TinyHyperGraphSolver } from "../core"
 import { IndexedCandidateHeap } from "../indexed-candidate-heap"
 import type { RegionIntersectionCache } from "../types"
@@ -183,6 +184,7 @@ export class DenseRoutingWorkspace {
       const before = previous
       previous = at
       const port = neighbors[at]!
+      if (p.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(t, p, region, c.portId, port, net!)) continue
       if (port === state.goalPortId) {
         solver.onPathFound(c)
         return

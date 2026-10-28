@@ -565,6 +565,20 @@ export const loadSerializedHyperGraph = (
       : netIndex
   })
   const hasPortPermissions = portNetId.some((netId) => netId !== -1)
+  const regionLayerChangeAllowedNetIds = filteredHyperGraph.regions.map((region) => {
+    const allowed: unknown = region.d?.layerChangeAllowedNetIds
+    if (allowed === undefined) return undefined
+    if (!Array.isArray(allowed) || allowed.some((netId) => typeof netId !== "string" || netId.length === 0)) {
+      throw new Error(`Region "${region.regionId}" layerChangeAllowedNetIds must be an array of canonical net IDs`)
+    }
+    const indexes = new Set<number>()
+    for (const netId of allowed) {
+      const index = netIdToIndex.get(netId)
+      if (index !== undefined && routedNetIndexes.has(index)) indexes.add(index)
+    }
+    return indexes
+  })
+  const hasLayerChangePermissions = regionLayerChangeAllowedNetIds.some((allowed) => allowed !== undefined)
 
   const topology: TinyHyperGraphTopology = {
     portCount,
@@ -634,6 +648,7 @@ export const loadSerializedHyperGraph = (
     routeNet,
     regionNetId,
     ...(hasPortPermissions && { portNetId }),
+    ...(hasLayerChangePermissions && { regionLayerChangeAllowedNetIds }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
     ...(hasPortPenalties && { portPenalty }),
   }

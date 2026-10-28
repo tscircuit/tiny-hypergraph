@@ -83,8 +83,33 @@ const getSerializedConnectionId = (
 const getSerializedRegionData = (
   solver: TinyHyperGraphSolver,
   regionId: RegionId,
+  netIdByIndex: ReadonlyMap<number, string>,
 ): Record<string, unknown> => {
   const data = toObjectRecord(solver.topology.regionMetadata?.[regionId])
+  const allowed = solver.problem.regionLayerChangeAllowedNetIds?.[regionId]
+  if (allowed === undefined) {
+    delete data.layerChangeAllowedNetIds
+  } else {
+    const canonical = [...allowed].map((netId) => {
+      const name = netIdByIndex.get(netId)
+      if (name === undefined) throw new Error(`Region ${regionId} cannot serialize layer-change net ${netId} without canonical identity`)
+      return name
+    })
+    const declared: unknown = data.layerChangeAllowedNetIds
+    if (declared !== undefined) {
+      if (!Array.isArray(declared) || declared.some((name) => typeof name !== "string" || name.length === 0)) {
+        throw new Error(`Region ${regionId} layer-change metadata must contain canonical net IDs`)
+      }
+      const active = new Set(netIdByIndex.values())
+      const declaredActive = new Set(declared.filter((name) => active.has(name)))
+      if (canonical.some((name) => !declaredActive.has(name)) || declaredActive.size !== canonical.length) {
+        throw new Error(`Region ${regionId} numeric layer-change restrictions disagree with canonical identities`)
+      }
+      data.layerChangeAllowedNetIds = [...new Set([...declared.filter((name) => !active.has(name)), ...canonical])]
+    } else {
+      data.layerChangeAllowedNetIds = canonical
+    }
+  }
 
   if (!isRecord(data.center)) {
     data.center = {
@@ -456,7 +481,7 @@ export const convertToSerializedHyperGraph = (
         pointIds: topology.regionIncidentPorts[regionId]!.map((portId) =>
           getSerializedPortId(solver, portId),
         ),
-        d: getSerializedRegionData(solver, regionId),
+        d: getSerializedRegionData(solver, regionId, netIdByIndex),
         ...(assignments.length > 0 && { assignments }),
       }
     },

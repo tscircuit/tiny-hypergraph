@@ -1,5 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { assertPortAllowsNet } from "../portNetPermissions"
+import { assertRegionLayerChangeAllowed } from "../regionLayerChangePermissions"
 import type { GraphicsObject } from "graphics-debug"
 import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
 import {
@@ -388,6 +389,7 @@ const applyRouteSegmentsToSolver = (
       solver.state.currentRouteNetId = solver.problem.routeNet[routeId]
       assertPortAllowsNet(solver.problem, fromPortId, solver.state.currentRouteNetId!)
       assertPortAllowsNet(solver.problem, toPortId, solver.state.currentRouteNetId!)
+      assertRegionLayerChangeAllowed(solver.topology, solver.problem, regionId, fromPortId, toPortId, solver.state.currentRouteNetId!)
       solver.state.regionSegments[regionId]!.push([
         routeId,
         fromPortId,
@@ -570,6 +572,7 @@ const createSectionRoutePlans = (
       routeNet: new Int32Array(problem.routeNet),
       regionNetId: new Int32Array(problem.regionNetId),
       portNetId: problem.portNetId,
+      regionLayerChangeAllowedNetIds: problem.regionLayerChangeAllowedNetIds,
       portPenalty:
         problem.portPenalty === undefined
           ? undefined
@@ -648,6 +651,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
         this.state.currentRouteNetId = this.problem.routeNet[routePlan.routeId]
         assertPortAllowsNet(this.problem, fromPortId, this.state.currentRouteNetId!)
         assertPortAllowsNet(this.problem, toPortId, this.state.currentRouteNetId!)
+        assertRegionLayerChangeAllowed(this.topology, this.problem, regionId, fromPortId, toPortId, this.state.currentRouteNetId!)
         this.state.regionSegments[regionId]!.push([
           routePlan.routeId,
           fromPortId,

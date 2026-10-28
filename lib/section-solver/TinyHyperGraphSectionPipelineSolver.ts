@@ -124,6 +124,7 @@ const createProblemWithPortSectionMask = (
   routeNet: new Int32Array(problem.routeNet),
   regionNetId: new Int32Array(problem.regionNetId),
   portNetId: problem.portNetId,
+  regionLayerChangeAllowedNetIds: problem.regionLayerChangeAllowedNetIds,
   portPenalty:
     problem.portPenalty === undefined
       ? undefined

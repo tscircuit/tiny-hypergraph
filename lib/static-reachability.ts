@@ -1,4 +1,5 @@
 import { isPortAllowedForNet } from "./portNetPermissions"
+import { isRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import type {
   TinyHyperGraphProblem,
   TinyHyperGraphProblemSetup,
@@ -157,6 +158,7 @@ const hasStaticReachabilityPath = (
       currentCandidate.nextRegionId
     ] ?? []) {
       const assignedNetId = portAssignment[neighborPortId]
+      if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, routeNetId)) continue
 
       if (
         isPortEndpointReservedForStaticReachability(
