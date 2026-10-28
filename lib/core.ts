@@ -200,6 +200,11 @@ interface SolvedStateSnapshot {
   ripCount: number
 }
 
+interface PartialRoutingSnapshot {
+  snapshot: SolvedStateSnapshot
+  remainingRouteIds: RouteId[]
+}
+
 export interface NeverSuccessfullyRoutedRouteSummary {
   routeId: RouteId
   connectionId: string
@@ -294,6 +299,8 @@ export interface TinyHyperGraphSolverOptions {
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
+  /** Keep a strictly improved partial incumbent for the existing final attempts. */
+  RETAIN_BEST_PARTIAL_ROUTING?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
   /** Preserve route prefixes/suffixes and reopen only a bounded hot span. */
   PARTIAL_RIP_ENABLED?: boolean
@@ -342,6 +349,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
+  RETAIN_BEST_PARTIAL_ROUTING?: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
   PARTIAL_RIP_ENABLED?: boolean
   PARTIAL_RIP_MIN_ROUTE_COUNT?: number
@@ -417,6 +425,9 @@ export const applyTinyHyperGraphSolverOptions = (
     solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT =
       options.ACCEPT_BEST_SOLUTION_ON_TIMEOUT
   }
+  if (options.RETAIN_BEST_PARTIAL_ROUTING !== undefined) {
+    solver.RETAIN_BEST_PARTIAL_ROUTING = options.RETAIN_BEST_PARTIAL_ROUTING
+  }
   if (options.GREEDY_FINAL_ROUTE_ITERS !== undefined) {
     solver.GREEDY_FINAL_ROUTE_ITERS = options.GREEDY_FINAL_ROUTE_ITERS
   }
@@ -486,6 +497,9 @@ export const getTinyHyperGraphSolverOptions = (
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
+  ...(solver.RETAIN_BEST_PARTIAL_ROUTING
+    ? { RETAIN_BEST_PARTIAL_ROUTING: true }
+    : {}),
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
   PARTIAL_RIP_ENABLED: solver.PARTIAL_RIP_ENABLED,
   PARTIAL_RIP_MIN_ROUTE_COUNT: solver.PARTIAL_RIP_MIN_ROUTE_COUNT,
@@ -548,6 +562,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
+  protected bestPartialRoutingSnapshot?: PartialRoutingSnapshot
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
   private staticallyUnroutableRoutes: StaticallyUnroutableRouteSummary[] = []
   private segmentGeometryScratch: SegmentGeometryScratch = {
@@ -580,6 +595,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
+  RETAIN_BEST_PARTIAL_ROUTING = false
   GREEDY_FINAL_ROUTE_ITERS = 4
   PARTIAL_RIP_ENABLED = false
   PARTIAL_RIP_MIN_ROUTE_COUNT = 0
@@ -714,6 +730,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
     this.bestSolvedStateSnapshot = undefined
     this.bestSolvedStateSummary = undefined
+    this.bestPartialRoutingSnapshot = undefined
     this.hasLoggedNeverSuccessfullyRoutedRoutes = false
     this.staticallyUnroutableRoutes = []
     this.candidateOverflowBestCost?.clear()
@@ -1454,6 +1471,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   resetRoutingStateForRerip() {
+    this.captureBestPartialRoutingState()
     const { topology, problem, state } = this
 
     state.portAssignment.fill(-1)
@@ -1688,6 +1706,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return [...routeIds]
   }
 
+  /** Capture only before a destructive rip, never on ordinary search expansions. */
+  protected captureBestPartialRoutingState(): void {
+    if (!this.RETAIN_BEST_PARTIAL_ROUTING || this.bestSolvedStateSnapshot) return
+    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    if (remainingRouteIds.length === 0 || remainingRouteIds.length >= this.problem.routeCount ||
+      (this.bestPartialRoutingSnapshot && remainingRouteIds.length >=
+        this.bestPartialRoutingSnapshot.remainingRouteIds.length)) return
+    this.bestPartialRoutingSnapshot = {
+      snapshot: cloneSolvedStateSnapshot({
+        portAssignment: this.state.portAssignment,
+        regionSegments: this.state.regionSegments,
+        regionIntersectionCaches: this.state.regionIntersectionCaches,
+        regionCongestionCost: this.state.regionCongestionCost,
+        ripCount: this.state.ripCount,
+      }),
+      remainingRouteIds,
+    }
+  }
+
   protected applySnapshotToGreedyFinalRouteSolver(
     solver: TinyHyperGraphSolver,
     snapshot: SolvedStateSnapshot,
@@ -1744,18 +1781,29 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
+    let remainingRouteIds = this.getRemainingRouteIdsForGreedyFinalRoute()
     if (remainingRouteIds.length === 0) {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
+    let startingSnapshot = cloneSolvedStateSnapshot({
       portAssignment: this.state.portAssignment,
       regionSegments: this.state.regionSegments,
       regionIntersectionCaches: this.state.regionIntersectionCaches,
       regionCongestionCost: this.state.regionCongestionCost,
       ripCount: this.state.ripCount,
     })
+    const retained = this.bestPartialRoutingSnapshot
+    if (this.RETAIN_BEST_PARTIAL_ROUTING && retained &&
+      retained.remainingRouteIds.length < remainingRouteIds.length) {
+      startingSnapshot = cloneSolvedStateSnapshot(retained.snapshot)
+      startingSnapshot.ripCount = this.state.ripCount
+      remainingRouteIds = [...retained.remainingRouteIds]
+      this.stats.retainedPartialRouteCount = this.problem.routeCount - remainingRouteIds.length
+      // The live state still owns the rerip budget and shuffle seeds. Its
+      // ripCount must never be replaced with the earlier incumbent's count.
+      this.stats.retainedPartialLiveRipCount = this.state.ripCount
+    }
 
     let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
     // Do not reset the rerip budget by opening a new cost-aware search after
@@ -1797,6 +1845,26 @@ export class TinyHyperGraphSolver extends BaseSolver {
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
+        if (this.RETAIN_BEST_PARTIAL_ROUTING && greedyFinalRouteIter < 0) {
+          greedySolver.captureBestPartialRoutingState()
+          let candidateRemaining = greedySolver.getRemainingRouteIdsForGreedyFinalRoute()
+          const retainedChild = greedySolver.bestPartialRoutingSnapshot
+          const useRetainedChild = retainedChild &&
+            retainedChild.remainingRouteIds.length < candidateRemaining.length
+          if (useRetainedChild) candidateRemaining = retainedChild.remainingRouteIds
+          if (candidateRemaining.length < remainingRouteIds.length) {
+            // Existing PR288 retains cost-aware completion when its child
+            // budget ends. Keep that work without adding an attempt or budget.
+            startingSnapshot = cloneSolvedStateSnapshot(useRetainedChild ? retainedChild.snapshot : {
+              portAssignment: greedySolver.state.portAssignment,
+              regionSegments: greedySolver.state.regionSegments,
+              regionIntersectionCaches: greedySolver.state.regionIntersectionCaches,
+              regionCongestionCost: greedySolver.state.regionCongestionCost,
+              ripCount: greedySolver.state.ripCount,
+            })
+            remainingRouteIds = [...candidateRemaining]
+          }
+        }
         continue
       }
 
