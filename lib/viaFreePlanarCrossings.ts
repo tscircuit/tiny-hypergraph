@@ -5,7 +5,7 @@ type Geometry = Pick<TinyHyperGraphTopology,
   "portX" | "portY" | "portZ" | "regionWidth" | "regionHeight" |
   "regionCenterX" | "regionCenterY">
 type Permissions = Pick<TinyHyperGraphProblem,
-  "routeNet" | "regionLayerChangeAllowedNetIds">
+  "routeNet" | "regionLayerChangeAllowedNetIds" | "regionBoundaryPortOrderPreserved">
 
 const getOpenBoundarySide = (t: Geometry, region: RegionId, port: PortId): number => {
   const x = t.portX[port], y = t.portY[port]
@@ -26,8 +26,9 @@ const getOpenBoundarySide = (t: Geometry, region: RegionId, port: PortId): numbe
 /** A hard planar obstruction requires two owners with no permitted via center.
  * Coarse layer masks alone are insufficient: detailed routing may use more layers.
  * Four distinct open rectangle sides preserve alternating order even when the
- * caller redistributes ports along an edge. Same-side order, interior, projected,
- * corner, tangent, and numerically uncertain cases remain unproven and stay free.
+ * caller redistributes ports along an edge. Same-side order additionally requires
+ * an explicit caller guarantee covering generated ports and fixed anchors.
+ * Interior, projected, corner, tangent, and uncertain cases remain unproven.
  */
 export const isViaFreePlanarCrossing = (
   t: Geometry, p: Permissions, region: RegionId,
@@ -41,7 +42,8 @@ export const isViaFreePlanarCrossing = (
   let sides = 0
   for (const port of [from, to, otherFrom, otherTo]) {
     const side = getOpenBoundarySide(t, region, port)
-    if (side === -1 || (sides & (1 << side)) !== 0) return false
+    if (side === -1) return false
+    if (p.regionBoundaryPortOrderPreserved?.[region] !== 1 && (sides & (1 << side)) !== 0) return false
     sides |= 1 << side
   }
   const ax = t.portX[from], ay = t.portY[from]

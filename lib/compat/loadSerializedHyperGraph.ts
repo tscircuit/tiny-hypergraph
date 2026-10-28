@@ -580,6 +580,15 @@ export const loadSerializedHyperGraph = (
   })
   const hasLayerChangePermissions = regionLayerChangeAllowedNetIds.some((allowed) => allowed !== undefined)
 
+  const regionBoundaryPortOrderPreserved = Uint8Array.from(filteredHyperGraph.regions, (region) => {
+    const flag: unknown = region.d?.boundaryPortOrderPreserved
+    if (flag !== undefined && typeof flag !== "boolean") {
+      throw new Error(`Region "${region.regionId}" boundaryPortOrderPreserved must be a boolean`)
+    }
+    return flag === true ? 1 : 0
+  })
+  const hasBoundaryOrder = regionBoundaryPortOrderPreserved.some((flag) => flag === 1)
+
   const topology: TinyHyperGraphTopology = {
     portCount,
     regionCount,
@@ -649,6 +658,7 @@ export const loadSerializedHyperGraph = (
     regionNetId,
     ...(hasPortPermissions && { portNetId }),
     ...(hasLayerChangePermissions && { regionLayerChangeAllowedNetIds }),
+    ...(hasBoundaryOrder && { regionBoundaryPortOrderPreserved }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
     ...(hasPortPenalties && { portPenalty }),
   }

@@ -575,6 +575,7 @@ const createSectionRoutePlans = (
       regionNetId: new Int32Array(problem.regionNetId),
       portNetId: problem.portNetId,
       regionLayerChangeAllowedNetIds: problem.regionLayerChangeAllowedNetIds,
+      regionBoundaryPortOrderPreserved: problem.regionBoundaryPortOrderPreserved,
       portPenalty:
         problem.portPenalty === undefined
           ? undefined

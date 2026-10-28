@@ -20,6 +20,7 @@ interface InitialAssignmentProblem {
   initialAssignments?: TinyHyperGraphInitialAssignment[]
   portNetId?: Int32Array
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
+  regionBoundaryPortOrderPreserved?: Uint8Array
 }
 
 interface InitialAssignmentState {

@@ -4,6 +4,7 @@ import type { NetId, PortId, RegionId, RouteId } from "./types"
 
 export interface RegionLayerChangeProblem {
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
+  regionBoundaryPortOrderPreserved?: Uint8Array
 }
 
 export const isRegionLayerChangeAllowed = (
@@ -23,6 +24,10 @@ export const assertValidRegionLayerChangePermissions = (
   regionCount: number,
   problem: RegionLayerChangeProblem,
 ): void => {
+  const order = problem.regionBoundaryPortOrderPreserved
+  if (order !== undefined && (!(order instanceof Uint8Array) || order.length !== regionCount || order.some((flag) => flag !== 0 && flag !== 1))) {
+    throw new Error("regionBoundaryPortOrderPreserved must have one boolean byte per region")
+  }
   const permissions = problem.regionLayerChangeAllowedNetIds
   if (permissions === undefined) return
   if (!Array.isArray(permissions) || permissions.length !== regionCount) {

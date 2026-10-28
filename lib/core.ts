@@ -163,6 +163,12 @@ export interface TinyHyperGraphProblem {
    */
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
 
+  /** Caller guarantees complete same-layer boundary order survives all port
+   * generation and downstream redistribution. 1 enables same-side planar proofs;
+   * 0 or a missing vector retains the four-distinct-open-sides restriction.
+   */
+  regionBoundaryPortOrderPreserved?: Uint8Array
+
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
 
