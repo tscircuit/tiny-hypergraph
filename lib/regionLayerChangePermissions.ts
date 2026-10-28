@@ -1,3 +1,5 @@
+import type { TinyHyperGraphTopology } from "./core"
+import { assertViaFreePlanarRouting } from "./viaFreePlanarCrossings"
 import type { NetId, PortId, RegionId, RouteId } from "./types"
 
 export interface RegionLayerChangeProblem {
@@ -53,11 +55,12 @@ export const assertRegionLayerChangeAllowed = (
 }
 
 export const assertRouteSegmentsAllowLayerChanges = (
-  topology: { portZ: Int32Array },
+  topology: TinyHyperGraphTopology,
   problem: RegionLayerChangeProblem & { routeNet: Int32Array },
   segments: Array<[RouteId, PortId, PortId][]>,
 ): void => {
   if (problem.regionLayerChangeAllowedNetIds === undefined) return
+  assertViaFreePlanarRouting(topology, problem, segments)
   for (let regionId = 0; regionId < segments.length; regionId++) {
     for (const [routeId, fromPortId, toPortId] of segments[regionId]) {
       assertRegionLayerChangeAllowed(topology, problem, regionId, fromPortId, toPortId, problem.routeNet[routeId])

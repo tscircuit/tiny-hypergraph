@@ -14,6 +14,7 @@ import {
   applyInitialAssignments,
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
+import { isViaFreePlanarHopAllowed } from "./viaFreePlanarCrossings"
 import { assertRegionLayerChangeAllowed, assertRouteSegmentsAllowLayerChanges, assertValidRegionLayerChangePermissions, isRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
@@ -156,7 +157,10 @@ export interface TinyHyperGraphProblem {
   /** Optional immutable port net restrictions: -1 is free, -2 blocked, otherwise the sole allowed net. */
   portNetId?: Int32Array
 
-  /** Optional owner-conditional layer-change permissions. Missing entries are unrestricted; empty sets prohibit layer changes only. */
+  /** Optional owner-conditional layer-change permissions. Missing entries are unrestricted.
+   * Empty sets prohibit layer changes, including internal via detours needed by
+   * alternating boundary paths. A coarse available-layer mask is not a certificate.
+   */
   regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
 
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
@@ -928,7 +932,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     for (const neighborPortId of neighbors) {
       if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
-        if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) continue
+        if (!this.isViaFreePlanarHopAllowed(currentCandidate, neighborPortId)) continue
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
@@ -1083,7 +1087,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
-        if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) continue
+        if (!this.isViaFreePlanarHopAllowed(currentCandidate, neighborPortId)) continue
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
@@ -2039,6 +2043,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (this.problem.regionLayerChangeAllowedNetIds) {
       for (const { regionId, fromPortId, toPortId } of solvedSegments) {
         assertRegionLayerChangeAllowed(this.topology, this.problem, regionId, fromPortId, toPortId, state.currentRouteNetId!)
+        if (!isViaFreePlanarHopAllowed(this.topology, this.problem, state.regionSegments, regionId, fromPortId, toPortId, state.currentRouteNetId!)) {
+          throw new Error(`Region ${regionId} cannot accept a crossing between nets that cannot change layers`)
+        }
       }
     }
 
@@ -2058,15 +2065,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteId = undefined
   }
 
-  /** Feasibility is independent of the final completion pass's cost policy. */
-  isSingleLayerHopAllowed(currentCandidate: Candidate, neighborPortId: PortId): boolean {
-    const regionId = currentCandidate.nextRegionId
-    if (!this.isKnownSingleLayerRegion(regionId)) return true
-    const regionCache = this.state.regionIntersectionCaches[regionId]
-    if (regionCache.existingSegmentCount === 0) return true
-    const geometry = this.populateBaseSegmentGeometryScratch(regionId, currentCandidate.portId, neighborPortId)
-    setNewIntersectionCounts(regionCache, geometry)
-    return geometry.sameLayerIntersectionCount === 0
+  isViaFreePlanarHopAllowed(currentCandidate: Candidate, neighborPortId: PortId): boolean {
+    return isViaFreePlanarHopAllowed(this.topology, this.problem, this.state.regionSegments,
+      currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, this.state.currentRouteNetId!)
   }
 
   computeG(
@@ -2079,6 +2080,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const nextRegionId = currentCandidate.nextRegionId
     if (this.problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, this.problem, nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) return Infinity
+    if (!this.isViaFreePlanarHopAllowed(currentCandidate, neighborPortId)) return Infinity
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
     const regionCongestionCost = state.regionCongestionCost[nextRegionId]!
@@ -2231,7 +2233,7 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     currentCandidate: Candidate,
     neighborPortId: PortId,
   ): number {
-    if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) return Infinity
+    if (!this.isViaFreePlanarHopAllowed(currentCandidate, neighborPortId)) return Infinity
     return currentCandidate.g
   }
 }

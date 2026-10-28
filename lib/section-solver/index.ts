@@ -1,6 +1,6 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import { assertPortAllowsNet } from "../portNetPermissions"
-import { assertRegionLayerChangeAllowed } from "../regionLayerChangePermissions"
+import { assertRegionLayerChangeAllowed, assertRouteSegmentsAllowLayerChanges } from "../regionLayerChangePermissions"
 import type { GraphicsObject } from "graphics-debug"
 import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
 import {
@@ -130,6 +130,7 @@ const restoreSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,
 ) => {
   const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
+  assertRouteSegmentsAllowLayerChanges(solver.topology, solver.problem, clonedSnapshot.regionSegments)
   solver.state.portAssignment = clonedSnapshot.portAssignment
   solver.state.regionSegments = clonedSnapshot.regionSegments
   solver.state.regionIntersectionCaches =
@@ -364,6 +365,7 @@ const applyRouteSegmentsToSolver = (
   solver: TinyHyperGraphSolver,
   routeSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
 ) => {
+  assertRouteSegmentsAllowLayerChanges(solver.topology, solver.problem, routeSegmentsByRegion)
   solver.state.portAssignment.fill(-1)
   solver.state.regionSegments = Array.from(
     { length: solver.topology.regionCount },
@@ -663,6 +665,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
       }
     }
 
+    assertRouteSegmentsAllowLayerChanges(this.topology, this.problem, this.state.regionSegments)
     this.state.currentRouteId = undefined
     this.state.currentRouteNetId = undefined
   }

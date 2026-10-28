@@ -8,7 +8,7 @@ import {
 } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import { MinHeap } from "./MinHeap"
-import { assertRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
+import { assertRegionLayerChangeAllowed, assertRouteSegmentsAllowLayerChanges } from "./regionLayerChangePermissions"
 import type { PortId, RegionId, RouteId } from "./types"
 
 type CommittedRouteSegment = {
@@ -520,6 +520,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     retainedSegmentsByRegion: Array<[RouteId, PortId, PortId][]>,
     unroutedRouteIds: RouteId[],
   ): void {
+    assertRouteSegmentsAllowLayerChanges(this.topology, this.problem, retainedSegmentsByRegion)
     this.state.portAssignment.fill(-1)
     this.state.regionSegments = Array.from(
       { length: this.topology.regionCount },
