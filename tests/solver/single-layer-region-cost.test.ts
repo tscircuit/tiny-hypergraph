@@ -139,3 +139,26 @@ test("region cost uses min via pad diameter plus trace-via margin", () => {
       area,
   )
 })
+
+test("empty regions compute candidate cost without intersection geometry", () => {
+  const topology = createTopology((1 << 0) | (1 << 1), 0)
+  topology.portZ[1] = 1
+  const solver = new TinyHyperGraphSolver(topology, createProblem())
+  solver.state.currentRouteNetId = 0
+
+  const sameLayerCost = solver.computeG(
+    { nextRegionId: 0, portId: 0, f: 0, g: 0, h: 0 },
+    2,
+  )
+  const layerChangeCost = solver.computeG(
+    { nextRegionId: 0, portId: 0, f: 0, g: 0, h: 0 },
+    1,
+  )
+
+  expect(sameLayerCost).toBe(
+    computeRegionCost(3, 3, 0, 0, 0, 1, (1 << 0) | (1 << 1)),
+  )
+  expect(layerChangeCost).toBe(
+    computeRegionCost(3, 3, 0, 0, 1, 1, (1 << 0) | (1 << 1)),
+  )
+})

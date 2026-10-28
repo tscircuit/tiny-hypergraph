@@ -53,6 +53,7 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
 
     this.setCandidateBestCost(goalHopId, g)
     this.state.candidateQueue.queue({
+      hopId: goalHopId,
       prevRegionId: finalCandidate.nextRegionId,
       nextRegionId: finalCandidate.nextRegionId,
       portId: goalPortId,

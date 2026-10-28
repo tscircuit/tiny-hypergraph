@@ -4,6 +4,7 @@ import type { GraphicsObject } from "graphics-debug"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import { computeRegionCostForArea } from "./computeRegionCost"
 import { TinyHyperGraphSolver } from "./core"
+import type { MutableIntersectionCount } from "./countNewIntersections"
 import { getAvailableZFromMask, getZLayerLabel } from "./layerLabels"
 import { TinyHyperGraphSectionSolver } from "./section-solver"
 import { TinyHyperGraphSectionPipelineSolver } from "./section-solver/TinyHyperGraphSectionPipelineSolver"
@@ -60,12 +61,7 @@ const FALLBACK_LAYER_COLOR = {
   stroke: "rgba(107, 114, 128, 0.95)",
 }
 
-interface SegmentGeometryScratch {
-  lesserAngle: number
-  greaterAngle: number
-  layerMask: number
-  entryExitLayerChanges: number
-}
+type SegmentGeometryScratch = MutableIntersectionCount
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -616,10 +612,13 @@ const getBoundaryPositionForPortRegion = (
 
 export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
   private polySegmentGeometryScratch: SegmentGeometryScratch = {
+    netId: 0,
     lesserAngle: 0,
     greaterAngle: 0,
     layerMask: 0,
     entryExitLayerChanges: 0,
+    sameLayerIntersectionCount: 0,
+    crossingLayerIntersectionCount: 0,
   }
 
   constructor(
@@ -635,7 +634,7 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     port1Id: PortId,
     port2Id: PortId,
   ): SegmentGeometryScratch {
-    const { topology } = this
+    const { state, topology } = this
     const scratch = this.polySegmentGeometryScratch
     const position1 = getBoundaryPositionForPortRegion(
       topology,
@@ -654,6 +653,7 @@ export class PolyHyperGraphSolver extends TinyHyperGraphSolver {
     scratch.greaterAngle = position1 < position2 ? position2 : position1
     scratch.layerMask = (1 << z1) | (1 << z2)
     scratch.entryExitLayerChanges = z1 !== z2 ? 1 : 0
+    scratch.netId = state.currentRouteNetId!
 
     return scratch
   }

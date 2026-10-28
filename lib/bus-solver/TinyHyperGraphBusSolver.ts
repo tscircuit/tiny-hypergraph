@@ -1,5 +1,6 @@
 import type { GraphicsObject } from "graphics-debug"
 import { MinHeap } from "../MinHeap"
+import { isPortAllowedForNet } from "../portNetPermissions"
 import { countNewIntersectionsWithValues } from "../countNewIntersections"
 import {
   TinyHyperGraphSolver,
@@ -1507,7 +1508,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   ) {
     if (
       this.topology.portZ[segment.fromPortId] !== 0 ||
-      this.topology.portZ[segment.toPortId] !== 0
+      this.topology.portZ[segment.toPortId] !== 0 ||
+      !isPortAllowedForNet(this.problem, segment.fromPortId, this.problem.routeNet[routeId]!) ||
+      !isPortAllowedForNet(this.problem, segment.toPortId, this.problem.routeNet[routeId]!)
     ) {
       return false
     }
@@ -2016,6 +2019,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
 
     for (const segment of tracePreview.segments) {
       if (
+        !isPortAllowedForNet(this.problem, segment.fromPortId, routeNetId) ||
+        !isPortAllowedForNet(this.problem, segment.toPortId, routeNetId) ||
         this.topology.portZ[segment.fromPortId] !== 0 ||
         this.topology.portZ[segment.toPortId] !== 0 ||
         !ensurePortOwnership(
@@ -2115,12 +2120,6 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     return Math.abs(projection - trace.score)
   }
 
-  private getRouteHeuristic(routeId: RouteId, portId: PortId) {
-    return this.problemSetup.portHCostToEndOfRoute[
-      portId * this.problem.routeCount + routeId
-    ]
-  }
-
   private computeCenterHeuristic(portId: PortId, nextRegionId?: RegionId) {
     const portHeuristic = this.getRouteHeuristic(this.centerRouteId, portId)
 
@@ -2148,6 +2147,7 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     currentNetId: NetId,
     portId: PortId,
   ) {
+    if (!isPortAllowedForNet(this.problem, portId, currentNetId)) return true
     const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
     if (!reservedNetIds) {
       return false

@@ -1,61 +1,73 @@
 import { expect, test } from "bun:test"
+import { TinyHyperGraphSolver, type TinyHyperGraphProblem } from "../../lib/core"
 import {
-  TinyHyperGraphSolver,
-  type TinyHyperGraphProblem,
-  type TinyHyperGraphTopology,
-} from "lib/index"
+  createNativePermissionFixture,
+  getUsedRoutePortIds,
+  permissionSolveOptions,
+} from "../fixtures/portPermissions.fixture"
 
-test("port restrictions preserve same-net access and reject foreign or blocked copper", () => {
-  for (const reservedNetId of [-1, 0, 1, -2]) {
-    const topology: TinyHyperGraphTopology = {
-      portCount: 4,
-      regionCount: 5,
-      regionIncidentPorts: [[0, 1], [1, 2], [2, 3], [0], [3]],
-      incidentPortRegion: [
-        [0, 3],
-        [0, 1],
-        [1, 2],
-        [2, 4],
-      ],
-      regionWidth: new Float64Array(5).fill(1),
-      regionHeight: new Float64Array(5).fill(1),
-      regionCenterX: new Float64Array(5).fill(0),
-      regionCenterY: new Float64Array(5).fill(0),
-      portAngleForRegion1: new Int32Array(4),
-      portAngleForRegion2: new Int32Array(4),
-      portX: new Float64Array([0, 1, 2, 3]),
-      portY: new Float64Array(4),
-      portZ: new Int32Array(4),
+test("sole port owners use distinct ports while foreign nets, blocked endpoints, and invalid native restrictions are rejected", () => {
+  for (const precheck of [false, true]) {
+    for (const frontier of [false, true]) {
+      for (const netId of [0, 1, 2]) {
+        const { topology, problem } = createNativePermissionFixture(netId)
+        problem.portNetId![2] = 1
+        const solver = new TinyHyperGraphSolver(topology, problem, {
+          ...permissionSolveOptions,
+          STATIC_REACHABILITY_PRECHECK: precheck,
+          OWNED_REGIONAL_HOP_FRONTIER: frontier,
+        })
+        solver.solve()
+        expect(solver.solved && !solver.failed).toBe(netId !== 2)
+        if (netId === 2) {
+          expect(getUsedRoutePortIds(solver)).not.toContain(1)
+          expect(getUsedRoutePortIds(solver)).not.toContain(2)
+        } else {
+          expect(getUsedRoutePortIds(solver)).toContain(netId === 0 ? 1 : 2)
+          expect(getUsedRoutePortIds(solver)).not.toContain(netId === 0 ? 2 : 1)
+        }
+      }
+      for (const blockedPort of [0, 1, 3]) {
+        const { topology, problem } = createNativePermissionFixture()
+        problem.portNetId = Int32Array.from({ length: 4 }, (_, portId) => portId === blockedPort ? -2 : -1)
+        problem.portSectionMask[2] = 0
+        const options = {
+          ...permissionSolveOptions,
+          STATIC_REACHABILITY_PRECHECK: precheck,
+          OWNED_REGIONAL_HOP_FRONTIER: frontier,
+        }
+        if (blockedPort !== 1) {
+          expect(() => new TinyHyperGraphSolver(topology, problem, options)).toThrow("does not allow")
+          continue
+        }
+        const solver = new TinyHyperGraphSolver(topology, problem, options)
+        solver.solve()
+        expect(solver.solved && !solver.failed).toBe(false)
+        expect(solver.failed).toBe(true)
+      }
     }
-
-    const problem: TinyHyperGraphProblem = {
-      routeCount: 1,
-      portSectionMask: new Int8Array(4).fill(1),
-      routeMetadata: [{ connectionId: "blocked-route" }],
-      routeStartPort: new Int32Array([0]),
-      routeEndPort: new Int32Array([3]),
-      routeNet: new Int32Array([0]),
-      regionNetId: new Int32Array(5).fill(-1),
-      portNetId: Int32Array.from([-1, reservedNetId, -1, -1]),
+  }
+  for (const requiredNetId of [-1, 0, -2, 1]) {
+    const { topology, problem } = createNativePermissionFixture()
+    problem.routeEndPort[0] = 0
+    problem.portNetId = Int32Array.of(requiredNetId, -1, -1, -1)
+    if (requiredNetId === -2 || requiredNetId === 1) {
+      expect(() => new TinyHyperGraphSolver(topology, problem, permissionSolveOptions)).toThrow("does not allow")
+      continue
     }
-
-    const solver = new TinyHyperGraphSolver(topology, problem)
-    solver.setup()
-    const blocked = reservedNetId === 1 || reservedNetId === -2
-    expect(solver.failed).toBe(blocked)
-    solver.state.currentRouteNetId = 0
-    expect(solver.isPortReservedForDifferentNet(1)).toBe(blocked)
-    if (blocked) {
-      expect(solver.stats.staticallyUnroutableRouteCount).toBe(1)
-    }
-    for (const endpoint of [0, 3]) {
-      problem.portNetId = new Int32Array(4).fill(-1)
-      problem.portNetId[endpoint] = reservedNetId
-      const endpointSolver = new TinyHyperGraphSolver(topology, problem, {
-        STATIC_REACHABILITY_PRECHECK: false,
-      })
-      endpointSolver.setup()
-      expect(endpointSolver.failed).toBe(blocked)
-    }
+    const solver = new TinyHyperGraphSolver(topology, problem, permissionSolveOptions)
+    solver.solve()
+    expect(solver.solved && !solver.failed).toBe(true)
+  }
+  const legacy = createNativePermissionFixture(2)
+  delete legacy.problem.portNetId
+  const legacySolver = new TinyHyperGraphSolver(legacy.topology, legacy.problem, permissionSolveOptions)
+  legacySolver.solve()
+  expect(legacySolver.solved).toBe(true)
+  expect(getUsedRoutePortIds(legacySolver)).toContain(1)
+  for (const invalid of [[], [-1, 0, -1, -1], new Int32Array(), Int32Array.of(-1, -3, -1, -1), Float64Array.of(-1, 0.5, -1, -1), Float64Array.of(-1, NaN, -1, -1)]) {
+    const { topology, problem } = createNativePermissionFixture()
+    problem.portNetId = invalid as unknown as TinyHyperGraphProblem["portNetId"]
+    expect(() => new TinyHyperGraphSolver(topology, problem, permissionSolveOptions)).toThrow()
   }
 })

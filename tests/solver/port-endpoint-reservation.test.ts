@@ -35,6 +35,8 @@ test("precomputes endpoint reservation behavior for zero, one, and multiple nets
   expect([...solver.problemSetup.portEndpointReservationNetId]).toEqual([
     -2, 4, 7, -1,
   ])
+  expect(solver.problemSetup.portEndpointNetIds[0]).toEqual(new Set([4, 7]))
+  expect(solver.problemSetup.portEndpointNetIds[3]).toBeUndefined()
 
   solver.state.currentRouteNetId = 4
   expect(solver.isPortReservedForDifferentNet(0)).toBe(true)

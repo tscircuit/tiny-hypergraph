@@ -29,16 +29,21 @@ test("PR benchmark commands always dispatch a paired same-machine comparison", (
     new URL("../.github/workflows/benchmark.yml", import.meta.url),
     "utf8",
   )
-  expect(workflow).toContain("Checkout current main")
+  expect(workflow).toContain("Checkout PR base")
   expect(workflow).toContain("Checkout PR head")
-  expect(workflow).toContain("path: same-machine-main")
+  expect(workflow).toContain("path: same-machine-base")
   expect(workflow).toContain("path: same-machine-pr")
   expect(workflow).toContain("Run same-machine comparison")
   expect(workflow).toContain(
     "github.event_name == 'issue_comment' && 120 || 60",
   )
-  expect(workflow).toContain("const mainStatus = runRevision('main')")
+  expect(workflow).toContain("const baseStatus = runRevision('base')")
   expect(workflow).toContain("const prStatus = runRevision('pr')")
+  expect(workflow).toContain("baseSha = pr.data.base.sha")
+  expect(workflow).toContain("report.summary?.p50RssBytes")
+  expect(workflow).toContain("report.summary?.p80RssBytes")
+  expect(workflow).toContain("report.summary?.p90RssBytes")
+  expect(workflow).toContain("renderBenchmarkComparison")
   expect(workflow).toContain("runner.name")
   expect(workflow).toContain("Same Machine Benchmark Results")
   expect(workflow).not.toContain("Download main branch benchmark result")
