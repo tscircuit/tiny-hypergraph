@@ -1713,7 +1713,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options: TinyHyperGraphSolverOptions,
     _attempt: number,
   ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
+    return new GreedyFinalRouteSolver(this.topology, this.problem, {
+      ...options,
+      // A fixed cap can expire before one traversal of a large graph.
+      MAX_ITERATIONS: Math.max(
+        options.MAX_ITERATIONS ?? GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        this.topology.regionCount + this.problem.routeCount,
+      ),
+    })
   }
 
   protected tryGreedyFinalRouteAcceptance(): boolean {
