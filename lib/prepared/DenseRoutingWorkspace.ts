@@ -186,6 +186,7 @@ export class DenseRoutingWorkspace {
       const port = neighbors[at]!
       if (p.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(t, p, region, c.portId, port, net!)) continue
       if (port === state.goalPortId) {
+        if (!solver.isSingleLayerHopAllowed(c, port)) continue
         solver.onPathFound(c)
         return
       }

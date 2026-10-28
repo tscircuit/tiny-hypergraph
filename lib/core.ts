@@ -928,6 +928,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     for (const neighborPortId of neighbors) {
       if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
+        if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) continue
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
@@ -1082,6 +1083,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
+        if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) continue
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
@@ -2056,6 +2058,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.currentRouteId = undefined
   }
 
+  /** Feasibility is independent of the final completion pass's cost policy. */
+  isSingleLayerHopAllowed(currentCandidate: Candidate, neighborPortId: PortId): boolean {
+    const regionId = currentCandidate.nextRegionId
+    if (!this.isKnownSingleLayerRegion(regionId)) return true
+    const regionCache = this.state.regionIntersectionCaches[regionId]
+    if (regionCache.existingSegmentCount === 0) return true
+    const geometry = this.populateBaseSegmentGeometryScratch(regionId, currentCandidate.portId, neighborPortId)
+    setNewIntersectionCounts(regionCache, geometry)
+    return geometry.sameLayerIntersectionCount === 0
+  }
+
   computeG(
     currentCandidate: Candidate,
     neighborPortId: PortId,
@@ -2216,8 +2229,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    if (!this.isSingleLayerHopAllowed(currentCandidate, neighborPortId)) return Infinity
     return currentCandidate.g
   }
 }
