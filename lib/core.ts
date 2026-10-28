@@ -14,6 +14,7 @@ import {
   applyInitialAssignments,
   type TinyHyperGraphInitialAssignment,
 } from "./initialAssignments"
+import { assertRegionLayerChangeAllowed, assertRouteSegmentsAllowLayerChanges, assertValidRegionLayerChangePermissions, isRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import { MinHeap } from "./MinHeap"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
 import { shuffle } from "./shuffle"
@@ -154,6 +155,9 @@ export interface TinyHyperGraphProblem {
 
   /** Optional immutable port net restrictions: -1 is free, -2 blocked, otherwise the sole allowed net. */
   portNetId?: Int32Array
+
+  /** Optional owner-conditional layer-change permissions. Missing entries are unrestricted; empty sets prohibit layer changes only. */
+  regionLayerChangeAllowedNetIds?: Array<ReadonlySet<NetId> | undefined>
 
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
@@ -618,6 +622,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   ) {
     super()
     assertValidPortNetPermissions(topology.portCount, problem)
+    assertValidRegionLayerChangePermissions(topology.regionCount, problem)
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
       assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
@@ -697,6 +702,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       )
     }
     assertValidPortNetPermissions(this.topology.portCount, problem)
+    assertValidRegionLayerChangePermissions(this.topology.regionCount, problem)
     for (let routeId = 0; routeId < problem.routeCount; routeId++) {
       assertPortAllowsNet(problem, problem.routeStartPort[routeId]!, problem.routeNet[routeId]!)
       assertPortAllowsNet(problem, problem.routeEndPort[routeId]!, problem.routeNet[routeId]!)
@@ -920,6 +926,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1073,6 +1080,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, problem, currentCandidate.nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) continue
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1683,6 +1691,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
+    assertRouteSegmentsAllowLayerChanges(this.topology, this.problem, snapshot.regionSegments)
     this.state.portAssignment = snapshot.portAssignment
     this.state.regionSegments = snapshot.regionSegments
     this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
@@ -1731,6 +1740,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     routeIds: RouteId[],
   ) {
     const clonedSnapshot = cloneSolvedStateSnapshot(snapshot)
+    assertRouteSegmentsAllowLayerChanges(solver.topology, solver.problem, clonedSnapshot.regionSegments)
 
     solver.state.portAssignment = clonedSnapshot.portAssignment
     solver.state.regionSegments = clonedSnapshot.regionSegments
@@ -2024,6 +2034,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.routeSuccessCountByRouteId[currentRouteId] += 1
 
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
+    if (this.problem.regionLayerChangeAllowedNetIds) {
+      for (const { regionId, fromPortId, toPortId } of solvedSegments) {
+        assertRegionLayerChangeAllowed(this.topology, this.problem, regionId, fromPortId, toPortId, state.currentRouteNetId!)
+      }
+    }
 
     for (const { regionId, fromPortId, toPortId } of solvedSegments) {
       state.regionSegments[regionId].push([
@@ -2050,6 +2065,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { state, topology } = this
 
     const nextRegionId = currentCandidate.nextRegionId
+    if (this.problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(topology, this.problem, nextRegionId, currentCandidate.portId, neighborPortId, state.currentRouteNetId!)) return Infinity
 
     const regionCache = state.regionIntersectionCaches[nextRegionId]
     const regionCongestionCost = state.regionCongestionCost[nextRegionId]!

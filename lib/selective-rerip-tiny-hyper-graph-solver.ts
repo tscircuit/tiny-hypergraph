@@ -1,3 +1,4 @@
+import { isRegionLayerChangeAllowed } from "./regionLayerChangePermissions"
 import {
   createEmptyRegionIntersectionCache,
   type TinyHyperGraphProblem,
@@ -590,6 +591,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       const hops: RelaxedSearchHop[] = []
       for (const template of templates) {
         if (template.state.portId === state.portId) continue
+        if (this.problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(this.topology, this.problem, state.nextRegionId, state.portId, template.state.portId, routeNetId)) continue
         hops.push({
           state: template.state,
           owners: template.owners,
@@ -612,6 +614,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (!input.buildRegionTemplates && this.problem.regionLayerChangeAllowedNetIds && !isRegionLayerChangeAllowed(this.topology, this.problem, state.nextRegionId, state.portId, neighborPortId, routeNetId)) continue
       if (
         neighborPortId !== goalPortId &&
         this.problem.portSectionMask[neighborPortId] === 0
