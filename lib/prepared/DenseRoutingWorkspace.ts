@@ -227,7 +227,8 @@ export class DenseRoutingWorkspace {
         row.costs[2 * same + cross + (uz !== vz ? 1 : 0)]! +
         congestion +
         penalty +
-        distanceCost
+        distanceCost +
+        solver.computeFixedCopperTransitionCost(region, c.portId, port, net!)
       if (!Number.isFinite(g) || g >= old) continue
       const h = solver.computeH(port)
       seen[hop] = generation

@@ -1,4 +1,5 @@
 export * from "./core"
+export type { TinyHyperGraphFixedCopperSegment } from "./fixedCopperCosts"
 export * from "./distance-aware-tiny-hypergraph-solver"
 export * from "./outside-in-partial-rip-tiny-hypergraph-solver"
 export * from "./DuplicateCongestedPortSolver"

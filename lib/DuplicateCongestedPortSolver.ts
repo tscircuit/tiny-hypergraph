@@ -288,6 +288,10 @@ const createSingleRouteProblem = (
   regionNetId: problem.regionNetId,
   portNetId: problem.portNetId,
   portPenalty: problem.portPenalty,
+  ...(problem.fixedCopperSegmentsByRegion === undefined ? {} : {
+    fixedCopperSegmentsByRegion: problem.fixedCopperSegmentsByRegion,
+    fixedCopperTraceWidthByRegion: problem.fixedCopperTraceWidthByRegion,
+  }),
 })
 
 const getUsedPortIdsForSolvedRoute = (
