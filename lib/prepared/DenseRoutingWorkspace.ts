@@ -17,6 +17,7 @@ type CostRow = {
   density: number
   single: boolean
   costs: Float64Array
+  crossingCosts: Map<number, Map<number, Float64Array>>
 }
 
 /** Specialize dense full-route expansion without changing ordering or costs. */
@@ -129,6 +130,7 @@ export class DenseRoutingWorkspace {
         density: solver.TRACE_DENSITY_COST_FACTOR,
         single: mask > 0 && (mask & (mask - 1)) === 0,
         costs: new Float64Array(2 * cache.netIds.length + 2),
+        crossingCosts: new Map(),
       }
       // Multi-layer cost depends on 2*same + crossing + entry/exit. Single-layer
       // new crossings are rejected below, so the same table is exact there too.
@@ -171,6 +173,20 @@ export class DenseRoutingWorkspace {
       greaterAngles: upper,
       layerMasks: layers,
     } = cache
+    // Other nets share the same crossing costs until this region's immutable
+    // intersection cache changes. Only nets already in the region need a
+    // distinct row to exclude their own copper.
+    const costNet = nets.includes(net!) ? net! : -1
+    let entryCosts = row.crossingCosts.get(c.portId)
+    if (!entryCosts) {
+      entryCosts = new Map()
+      row.crossingCosts.set(c.portId, entryCosts)
+    }
+    let crossingCosts = entryCosts.get(costNet)
+    if (!crossingCosts) {
+      crossingCosts = new Float64Array(neighbors.length).fill(NaN)
+      entryCosts.set(costNet, crossingCosts)
+    }
     const congestion = state.regionCongestionCost[region]!
     const base = c.g + congestion
     let index = frontier.head
@@ -198,6 +214,8 @@ export class DenseRoutingWorkspace {
       const distanceCost = distances[offset + at]! * solver.DISTANCE_TO_COST
       const penalty = p.portPenalty?.[port] ?? 0
       if (base + penalty + distanceCost >= old) continue
+      let crossingCost = crossingCosts[at]!
+      if (Number.isNaN(crossingCost)) {
       const vz = t.portZ[port]!
       const va =
         t.incidentPortRegion[port]![0] === region
@@ -218,11 +236,16 @@ export class DenseRoutingWorkspace {
         if (mask & layers[i]!) same++
         else cross++
       }
-      if (same > 0 && row.single) continue
+      crossingCost = same > 0 && row.single
+        ? Infinity
+        : row.costs[2 * same + cross + (uz !== vz ? 1 : 0)]!
+      crossingCosts[at] = crossingCost
+      }
+      if (crossingCost === Infinity) continue
       // Preserve the native addition order, including roundoff and heap ties.
       const g =
         c.g +
-        row.costs[2 * same + cross + (uz !== vz ? 1 : 0)]! +
+        crossingCost +
         congestion +
         penalty +
         distanceCost
