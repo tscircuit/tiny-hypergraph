@@ -220,6 +220,8 @@ export class DenseRoutingWorkspace {
         else cross++
       }
       if (same > 0 && row.single) continue
+      if (!solver.isThroughHoleViaMoveValid(region, same, uz !== vz ? 1 : 0))
+        continue
       // Preserve the native addition order, including roundoff and heap ties.
       const g =
         c.g +

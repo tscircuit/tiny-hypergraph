@@ -256,6 +256,10 @@ export interface TinyHyperGraphWorkingState {
 
 export interface TinyHyperGraphSolverOptions {
   minViaPadDiameter?: number
+  /** Require through-hole vias to fit the board's complete layer stack. */
+  throughHoleLayerCount?: number
+  /** Edge clearance between distinct-net vias in the physical capacity bound. */
+  throughHoleViaClearance?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -320,6 +324,8 @@ export interface TinyHyperGraphSolverOptions {
 
 export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
+  throughHoleLayerCount?: number
+  throughHoleViaClearance?: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -358,6 +364,10 @@ export const applyTinyHyperGraphSolverOptions = (
     return
   }
 
+  if (options.throughHoleLayerCount !== undefined) {
+    solver.throughHoleLayerCount = options.throughHoleLayerCount
+    solver.throughHoleViaClearance = options.throughHoleViaClearance
+  }
   if (options.minViaPadDiameter !== undefined) {
     solver.minViaPadDiameter = options.minViaPadDiameter
   }
@@ -463,6 +473,8 @@ export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
   minViaPadDiameter: solver.minViaPadDiameter,
+  throughHoleLayerCount: solver.throughHoleLayerCount,
+  throughHoleViaClearance: solver.throughHoleViaClearance,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -556,6 +568,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
+  throughHoleLayerCount?: number
+  throughHoleViaClearance?: number
 
   RIP_THRESHOLD_START = 0.05
   RIP_THRESHOLD_END = 0.8
@@ -1275,6 +1289,48 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
+  }
+
+  isThroughHoleViaMoveValid(
+    regionId: RegionId,
+    sameLayerIntersections: number,
+    entryExitLayerChanges: number,
+  ): boolean {
+    if (this.throughHoleLayerCount === undefined) return true
+    const { topology, state, problem } = this
+    const fullMask = (1 << this.throughHoleLayerCount) - 1
+    if (
+      topology.regionAvailableZMask?.[regionId] !== fullMask &&
+      (entryExitLayerChanges > 0 || sameLayerIntersections > 0)
+    )
+      return false
+    if (entryExitLayerChanges === 0 && sameLayerIntersections === 0) return true
+    const diameter = this.minViaPadDiameter + (this.throughHoleViaClearance ?? 0)
+    // Expanding the region by the radius contains every candidate disk even
+    // when the disk crosses a mesh boundary. Disjoint disks cannot exceed it.
+    const maximumViaCount = Math.floor(
+      ((topology.regionWidth[regionId] + diameter) *
+        (topology.regionHeight[regionId] + diameter)) /
+        (Math.PI * (diameter / 2) ** 2),
+    )
+    const cache = state.regionIntersectionCaches[regionId]
+    // A crossing between two paths that each enter and exit on one layer
+    // requires an excursion to another layer and back: at least two vias.
+    if (entryExitLayerChanges === 0) {
+      return maximumViaCount >= 2 || cache.existingEntryExitLayerChanges > 0
+    }
+    if (
+      cache.existingEntryExitLayerChanges + entryExitLayerChanges <=
+      maximumViaCount
+    )
+      return true
+    const viaNets = new Set([state.currentRouteNetId!])
+    for (const [routeId, from, to] of state.regionSegments[regionId]) {
+      if (topology.portZ[from] !== topology.portZ[to]) {
+        viaNets.add(problem.routeNet[routeId])
+      }
+    }
+    return viaNets.size <= maximumViaCount
   }
 
   protected computeRegionCostForRegion(
@@ -2020,6 +2076,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
         segmentGeometry.crossingLayerIntersectionCount
       newEntryExitLayerChanges = segmentGeometry.entryExitLayerChanges
     }
+
+    if (
+      !this.isThroughHoleViaMoveValid(
+        nextRegionId,
+        newSameLayerIntersections,
+        newEntryExitLayerChanges,
+      )
+    )
+      return Number.POSITIVE_INFINITY
 
     if (
       newSameLayerIntersections > 0 &&
