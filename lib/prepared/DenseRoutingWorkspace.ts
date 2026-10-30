@@ -182,6 +182,7 @@ export class DenseRoutingWorkspace {
       previous = at
       const port = neighbors[at]!
       if (port === state.goalPortId) {
+        if (!Number.isFinite(solver.computeG(c, port))) continue
         solver.onPathFound(c)
         return
       }
