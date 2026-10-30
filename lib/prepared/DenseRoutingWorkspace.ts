@@ -1,3 +1,4 @@
+import { RegionCrossingMasks } from "./RegionCrossingMasks"
 import { computeRegionCost } from "../computeRegionCost"
 import type { Candidate, TinyHyperGraphSolver } from "../core"
 import { IndexedCandidateHeap } from "../indexed-candidate-heap"
@@ -17,6 +18,7 @@ type CostRow = {
   density: number
   single: boolean
   costs: Float64Array
+  crossings?: RegionCrossingMasks
 }
 
 /** Specialize dense full-route expansion without changing ordering or costs. */
@@ -129,6 +131,7 @@ export class DenseRoutingWorkspace {
         density: solver.TRACE_DENSITY_COST_FACTOR,
         single: mask > 0 && (mask & (mask - 1)) === 0,
         costs: new Float64Array(2 * cache.netIds.length + 2),
+        crossings: cache.netIds.length >= 16 ? new RegionCrossingMasks(cache) : undefined,
       }
       // Multi-layer cost depends on 2*same + crossing + entry/exit. Single-layer
       // new crossings are rejected below, so the same table is exact there too.
@@ -206,23 +209,30 @@ export class DenseRoutingWorkspace {
       const lo = Math.min(ua, va),
         hi = Math.max(ua, va),
         mask = (1 << uz) | (1 << vz)
-      let same = 0,
-        cross = 0
-      for (let i = 0; i < nets.length; i++) {
-        if (nets[i] === net) continue
-        if (
-          (lo < lower[i]! && lower[i]! < hi) ===
-          (lo < upper[i]! && upper[i]! < hi)
-        )
-          continue
-        if (mask & layers[i]!) same++
-        else cross++
+      let crossingCostIndex: number
+      if (row.crossings) {
+        crossingCostIndex = row.crossings.count(ua, va, mask, net!)
+        if (row.single && row.crossings.hasSameLayerCrossing) continue
+      } else {
+        let same = 0,
+          cross = 0
+        for (let i = 0; i < nets.length; i++) {
+          if (nets[i] === net) continue
+          if (
+            (lo < lower[i]! && lower[i]! < hi) ===
+            (lo < upper[i]! && upper[i]! < hi)
+          )
+            continue
+          if (mask & layers[i]!) same++
+          else cross++
+        }
+        if (same > 0 && row.single) continue
+        crossingCostIndex = 2 * same + cross
       }
-      if (same > 0 && row.single) continue
       // Preserve the native addition order, including roundoff and heap ties.
       const g =
         c.g +
-        row.costs[2 * same + cross + (uz !== vz ? 1 : 0)]! +
+        row.costs[crossingCostIndex + (uz !== vz ? 1 : 0)]! +
         congestion +
         penalty +
         distanceCost
