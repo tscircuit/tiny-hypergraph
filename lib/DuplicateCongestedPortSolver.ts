@@ -19,6 +19,8 @@ export interface DuplicateCongestedPortSolverOptions {
   routeSolveOptions?: TinyHyperGraphSolverOptions
   /** Ignore serialized port penalties while estimating shared-port use. */
   useSerializedPortPenalties?: boolean
+  /** Keep cramped boundaries at their original capacity when false. */
+  duplicateCrampedPorts?: boolean
 }
 
 export interface DuplicatedPortSummary {
@@ -420,6 +422,11 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
       const sourcePort = sourcePortById.get(sourcePortId)
       if (!sourcePort) continue
+      if (
+        this.options.duplicateCrampedPorts === false &&
+        sourcePort.d?.cramped === true
+      )
+        continue
 
       const duplicateCount = useCount - 1
       const boundaryPorts = portsByBoundary.get(getBoundaryKey(sourcePort))
