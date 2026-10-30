@@ -319,7 +319,7 @@ type IndependentRouteBatchInput = {
 /** Independent routes share immutable topology and claim work dynamically. */
 export class IndependentPortUsageSolver extends BaseSolver {
   static readonly solverName: string = "IndependentPortUsageSolver"
-  private readonly counts = new Map<string, number>()
+  private readonly counts = new Map<PortId, number>()
 
   constructor(private readonly input: IndependentRouteBatchInput) {
     super()
@@ -337,14 +337,13 @@ export class IndependentPortUsageSolver extends BaseSolver {
       if (!solver.solved || solver.failed)
         throw new Error(`Route ${routeId} could not be solved independently: ${solver.error ?? "unknown error"}`)
       for (const portId of getUsedPortIdsForSolvedRoute(solver)) {
-        const id = getSerializedPortId(topology, portId)
-        this.counts.set(id, (this.counts.get(id) ?? 0) + 1)
+        this.counts.set(portId, (this.counts.get(portId) ?? 0) + 1)
       }
     }
     this.solved = true
   }
 
-  override getOutput(): Map<string, number> {
+  override getOutput(): Map<PortId, number> {
     if (!this.solved || this.failed)
       throw new Error("Independent port usage is incomplete")
     return this.counts
@@ -443,8 +442,10 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       )
       const counts = new Map<string, number>()
       for (const batch of batches) {
-        for (const [port, count] of batch)
-          counts.set(port, (counts.get(port) ?? 0) + count)
+        for (const [port, count] of batch) {
+          const id = getSerializedPortId(topology, port)
+          counts.set(id, (counts.get(id) ?? 0) + count)
+        }
       }
       this.preparedPortUseCounts = counts
       this.solve()
