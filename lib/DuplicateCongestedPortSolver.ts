@@ -200,7 +200,16 @@ const getFallbackBoundaryDirection = (
     y: region2Center.x - region1Center.x,
   })
 
-  return perpendicular ?? { x: 1, y: 0 }
+  if (!perpendicular) return { x: 1, y: 0 }
+  // A boundary has no direction: swapping its region IDs must not move copies
+  // to opposite sides of a fixed trace.
+  if (
+    perpendicular.y < -EPSILON ||
+    (Math.abs(perpendicular.y) <= EPSILON && perpendicular.x < 0)
+  ) {
+    return { x: -perpendicular.x, y: -perpendicular.y }
+  }
+  return perpendicular
 }
 
 const getDuplicateDirection = (
