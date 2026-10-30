@@ -1,5 +1,5 @@
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
-import { BaseSolver } from "@tscircuit/solver-utils"
+import { BaseSolver, SolverRuntime, type SolverRuntimeExecutor } from "@tscircuit/solver-utils"
 import { loadSerializedHyperGraph } from "./compat/loadSerializedHyperGraph"
 import {
   TinyHyperGraphSolver,
@@ -309,7 +309,54 @@ const getUsedPortIdsForSolvedRoute = (
   return usedPortIds
 }
 
+type IndependentRouteBatchInput = {
+  topology: TinyHyperGraphTopology
+  problem: TinyHyperGraphProblem
+  options: TinyHyperGraphSolverOptions
+  cursor: Int32Array
+}
+
+/** Independent routes share immutable topology and claim work dynamically. */
+export class IndependentPortUsageSolver extends BaseSolver {
+  static readonly solverName: string = "IndependentPortUsageSolver"
+  private readonly counts = new Map<string, number>()
+
+  constructor(private readonly input: IndependentRouteBatchInput) {
+    super()
+  }
+
+  override _step(): void {
+    const { topology, problem, options, cursor } = this.input
+    let solver: TinyHyperGraphSolver | undefined
+    for (let routeId = Atomics.add(cursor, 0, 1); routeId < problem.routeCount;
+      routeId = Atomics.add(cursor, 0, 1)) {
+      const routeProblem = createSingleRouteProblem(problem, routeId)
+      if (solver) solver.resetForProblem(routeProblem)
+      else solver = new TinyHyperGraphSolver(topology, routeProblem, options)
+      solver.solve()
+      if (!solver.solved || solver.failed)
+        throw new Error(`Route ${routeId} could not be solved independently: ${solver.error ?? "unknown error"}`)
+      for (const portId of getUsedPortIdsForSolvedRoute(solver)) {
+        const id = getSerializedPortId(topology, portId)
+        this.counts.set(id, (this.counts.get(id) ?? 0) + 1)
+      }
+    }
+    this.solved = true
+  }
+
+  override getOutput(): Map<string, number> {
+    if (!this.solved || this.failed)
+      throw new Error("Independent port usage is incomplete")
+    return this.counts
+  }
+}
+
+SolverRuntime.registerSolver(IndependentPortUsageSolver)
+
 export class DuplicateCongestedPortSolver extends BaseSolver {
+  private asyncRunning = false
+  private preparedPortUseCounts?: Map<string, number>
+
   revisedSerializedHyperGraph?: SerializedHyperGraph
   report: DuplicateCongestedPortSolverReport = {
     portUseCounts: {},
@@ -376,6 +423,39 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     }
 
     return portUseCounts
+  }
+
+  async solveAsync(runtime: SolverRuntimeExecutor): Promise<void> {
+    if (this.asyncRunning) throw new Error("Port usage preparation is already running")
+    if (this.solved || this.failed) return
+    this.asyncRunning = true
+    try {
+      const { topology, problem } = loadSerializedHyperGraph(this.serializedHyperGraph)
+      if (this.options.useSerializedPortPenalties === false)
+        problem.portPenalty = undefined
+      const cursor = new Int32Array(new SharedArrayBuffer(4))
+      const batches = await Promise.all(
+        Array.from({ length: Math.min(4, problem.routeCount) }, () =>
+          runtime.executeAsync(IndependentPortUsageSolver, {
+            topology, problem, cursor, options: this.getIndividualRouteSolveOptions(),
+          }),
+        ),
+      )
+      const counts = new Map<string, number>()
+      for (const batch of batches) {
+        for (const [port, count] of batch)
+          counts.set(port, (counts.get(port) ?? 0) + count)
+      }
+      this.preparedPortUseCounts = counts
+      this.solve()
+    } catch (error) {
+      this.failed = true
+      this.error = error instanceof Error ? error.message : String(error)
+      throw error
+    } finally {
+      this.preparedPortUseCounts = undefined
+      this.asyncRunning = false
+    }
   }
 
   protected duplicateCongestedPorts(
@@ -504,7 +584,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
 
   override _setup() {
     try {
-      const portUseCounts = this.getPortUseCounts()
+      const portUseCounts = this.preparedPortUseCounts ?? this.getPortUseCounts()
       this.revisedSerializedHyperGraph =
         this.duplicateCongestedPorts(portUseCounts)
       this.stats = {
