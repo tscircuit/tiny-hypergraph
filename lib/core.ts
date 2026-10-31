@@ -2197,11 +2197,8 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     currentCandidate: Candidate,
     neighborPortId: PortId,
   ): number {
-    const regionId = currentCandidate.nextRegionId
-    const layerMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
     if (
-      !isKnownSingleLayerMask(layerMask) &&
-      !this.canTransitionLayersInRegion(regionId) &&
+      this.ENFORCE_VIA_SPACE &&
       !Number.isFinite(super.computeG(currentCandidate, neighborPortId))
     ) {
       return Number.POSITIVE_INFINITY
