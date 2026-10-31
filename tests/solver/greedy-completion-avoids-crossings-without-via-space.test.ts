@@ -29,7 +29,12 @@ test("completion routes around a crossing when the region cannot fit a via", () 
         regionCenterX: new Float64Array([0, 0.6, -1, 1, 0, 0]),
         regionCenterY: new Float64Array([0, 0, 0, 0, -1, 1]),
         regionAvailableZMask: new Int32Array([
-          narrowRegionLayers, 3, 1, 1, 1, 1,
+          narrowRegionLayers,
+          3,
+          1,
+          1,
+          1,
+          1,
         ]),
         portAngleForRegion1: new Int32Array([0, 0, 0, 9000, 33343, 2656, 0]),
         portAngleForRegion2: new Int32Array([
