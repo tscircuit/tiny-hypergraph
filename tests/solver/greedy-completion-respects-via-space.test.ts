@@ -35,6 +35,7 @@ test("completion changes layers in a region with room for the via", () => {
       },
       {
         minViaPadDiameter: 0.3,
+        ENFORCE_VIA_SPACE: true,
         ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
         GREEDY_FINAL_ROUTE_ITERS: 1,
         STATIC_REACHABILITY_PRECHECK: false,

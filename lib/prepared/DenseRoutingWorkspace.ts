@@ -184,6 +184,12 @@ export class DenseRoutingWorkspace {
       previous = at
       const port = neighbors[at]!
       if (
+        solver.minPortSpacing > 0 &&
+        solver.isPortReservedForDifferentNet(port)
+      ) {
+        continue
+      }
+      if (
         t.portZ[c.portId] !== t.portZ[port] &&
         !solver.canTransitionLayersInRegion(region)
       ) {

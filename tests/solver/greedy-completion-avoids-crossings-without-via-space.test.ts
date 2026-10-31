@@ -31,6 +31,7 @@ test("completion routes around a crossing when the region cannot fit a via", () 
     },
     {
       minViaPadDiameter: 0.3,
+      ENFORCE_VIA_SPACE: true,
       ACCEPT_BEST_SOLUTION_ON_TIMEOUT: true,
       GREEDY_FINAL_ROUTE_ITERS: 1,
       STATIC_REACHABILITY_PRECHECK: false,
