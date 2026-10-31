@@ -8,13 +8,19 @@ test("completion can traverse a graph larger than the fixed 50000-step limit", (
     {
       portCount,
       regionCount,
-      regionIncidentPorts: Array.from({ length: regionCount }, (_, i) => [i, i + 1]),
+      regionIncidentPorts: Array.from({ length: regionCount }, (_, i) => [
+        i,
+        i + 1,
+      ]),
       incidentPortRegion: Array.from({ length: portCount }, (_, i) =>
         [i - 1, i].filter((region) => region >= 0 && region < regionCount),
       ),
       regionWidth: new Float64Array(regionCount).fill(1),
       regionHeight: new Float64Array(regionCount).fill(1),
-      regionCenterX: Float64Array.from({ length: regionCount }, (_, i) => i + 0.5),
+      regionCenterX: Float64Array.from(
+        { length: regionCount },
+        (_, i) => i + 0.5,
+      ),
       regionCenterY: new Float64Array(regionCount),
       regionAvailableZMask: new Int32Array(regionCount).fill(1),
       portAngleForRegion1: new Int32Array(portCount),
@@ -42,5 +48,7 @@ test("completion can traverse a graph larger than the fixed 50000-step limit", (
 
   expect(solver.solved).toBe(true)
   expect(solver.state.unroutedRoutes).toHaveLength(0)
-  expect(solver.state.regionSegments.every((segments) => segments.length === 1)).toBe(true)
+  expect(
+    solver.state.regionSegments.every((segments) => segments.length === 1),
+  ).toBe(true)
 })
