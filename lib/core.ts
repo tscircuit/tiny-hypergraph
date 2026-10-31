@@ -885,6 +885,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (
+        topology.portZ[currentCandidate.portId] !==
+          topology.portZ[neighborPortId] &&
+        !this.canTransitionLayersInRegion(currentCandidate.nextRegionId)
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1038,6 +1045,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (
+        topology.portZ[currentCandidate.portId] !==
+          topology.portZ[neighborPortId] &&
+        !this.canTransitionLayersInRegion(currentCandidate.nextRegionId)
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1264,6 +1278,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const reservedNetId = this.problem.regionNetId[regionId]
     return (
       reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
+    )
+  }
+
+  canTransitionLayersInRegion(regionId: RegionId): boolean {
+    return (
+      (this.topology.regionAvailableZMask?.[regionId] ?? 0) === 0 ||
+      this.problem.regionNetId[regionId] !== -1 ||
+      Math.min(
+        this.topology.regionWidth[regionId],
+        this.topology.regionHeight[regionId],
+      ) >= this.minViaPadDiameter - 1e-9
     )
   }
 
@@ -2018,7 +2043,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (
       newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      (this.isKnownSingleLayerRegion(nextRegionId) ||
+        !this.canTransitionLayersInRegion(nextRegionId))
     ) {
       return Number.POSITIVE_INFINITY
     }
@@ -2119,8 +2145,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    const regionId = currentCandidate.nextRegionId
+    const layerMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    if (
+      !isKnownSingleLayerMask(layerMask) &&
+      !this.canTransitionLayersInRegion(regionId) &&
+      !Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
     return currentCandidate.g
   }
 }
