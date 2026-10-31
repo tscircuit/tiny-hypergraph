@@ -1288,7 +1288,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
       Math.min(
         this.topology.regionWidth[regionId],
         this.topology.regionHeight[regionId],
-      ) >= this.minViaPadDiameter - 1e-9
+      ) >=
+        this.minViaPadDiameter - 1e-9
     )
   }
 

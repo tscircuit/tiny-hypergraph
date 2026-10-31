@@ -8,7 +8,12 @@ test("completion changes layers in a region with room for the via", () => {
         portCount: 4,
         regionCount: 4,
         regionIncidentPorts: [[0, 1, 2, 3], [2, 3], [0], [1]],
-        incidentPortRegion: [[0, 2], [0, 3], [0, 1], [0, 1]],
+        incidentPortRegion: [
+          [0, 2],
+          [0, 3],
+          [0, 1],
+          [0, 1],
+        ],
         regionWidth: new Float64Array([0.1, 2, 0.1, 0.1]),
         regionHeight: new Float64Array(4).fill(2),
         regionCenterX: new Float64Array([0, 1.05, -0.1, -0.1]),
