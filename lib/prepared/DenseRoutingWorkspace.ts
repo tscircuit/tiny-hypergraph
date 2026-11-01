@@ -127,7 +127,9 @@ export class DenseRoutingWorkspace {
         cache,
         via: solver.minViaPadDiameter,
         density: solver.TRACE_DENSITY_COST_FACTOR,
-        single: mask > 0 && (mask & (mask - 1)) === 0,
+        single:
+          (mask > 0 && (mask & (mask - 1)) === 0) ||
+          !solver.canTransitionLayersInRegion(region),
         costs: new Float64Array(2 * cache.netIds.length + 2),
       }
       // Multi-layer cost depends on 2*same + crossing + entry/exit. Single-layer
@@ -181,7 +183,25 @@ export class DenseRoutingWorkspace {
       const before = previous
       previous = at
       const port = neighbors[at]!
+      if (
+        solver.minPortSpacing > 0 &&
+        solver.isPortReservedForDifferentNet(port)
+      ) {
+        continue
+      }
+      if (
+        t.portZ[c.portId] !== t.portZ[port] &&
+        !solver.canTransitionLayersInRegion(region)
+      ) {
+        continue
+      }
       if (port === state.goalPortId) {
+        if (
+          solver.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(solver.computeG(c, port))
+        ) {
+          continue
+        }
         solver.onPathFound(c)
         return
       }
