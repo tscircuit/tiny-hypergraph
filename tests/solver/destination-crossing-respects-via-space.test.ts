@@ -22,8 +22,12 @@ test("checks the destination crossing before accepting a route without via space
               regionCenterX: new Float64Array([0, -0.6, 0.6, 0, 0]),
               regionCenterY: new Float64Array([0, 0, 0, -0.6, 0.6]),
               regionAvailableZMask: new Int32Array([3, 1, 1, 1, 1]),
-              portAngleForRegion1: new Int32Array([0, 0, 9000, 9000, 18000, 27000]),
-              portAngleForRegion2: new Int32Array([18000, 18000, 27000, 27000, 0, 0]),
+              portAngleForRegion1: new Int32Array([
+                0, 0, 9000, 9000, 18000, 27000,
+              ]),
+              portAngleForRegion2: new Int32Array([
+                18000, 18000, 27000, 27000, 0, 0,
+              ]),
               portX: new Float64Array([-0.1, 0.1, 0, 0, -0.6, 0]),
               portY: new Float64Array([0, 0, -0.1, 0.1, 0, -0.6]),
               portZ: new Int32Array(6),
@@ -49,11 +53,26 @@ test("checks the destination crossing before accepting a route without via space
           )
           if (completion) solver.tryFinalAcceptance()
           else solver.solve()
-          expect({ solver: Solver.name, frontier, completion, enforceViaSpace, regionSize, solved: solver.solved }).toEqual({
-            solver: Solver.name, frontier, completion, enforceViaSpace, regionSize, solved: expectedSolved,
+          expect({
+            solver: Solver.name,
+            frontier,
+            completion,
+            enforceViaSpace,
+            regionSize,
+            solved: solver.solved,
+          }).toEqual({
+            solver: Solver.name,
+            frontier,
+            completion,
+            enforceViaSpace,
+            regionSize,
+            solved: expectedSolved,
           })
           if (expectedSolved) {
-            expect(new Set(solver.state.regionSegments[0].map(([route]) => route)).size).toBe(2)
+            expect(
+              new Set(solver.state.regionSegments[0].map(([route]) => route))
+                .size,
+            ).toBe(2)
           }
         }
       }
