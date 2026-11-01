@@ -914,6 +914,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (
+          this.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(this.computeG(currentCandidate, neighborPortId))
+        ) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
@@ -1072,6 +1078,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (
+          this.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(this.computeG(currentCandidate, neighborPortId))
+        ) {
           continue
         }
         this.onPathFound(currentCandidate)

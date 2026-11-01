@@ -196,6 +196,12 @@ export class DenseRoutingWorkspace {
         continue
       }
       if (port === state.goalPortId) {
+        if (
+          solver.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(solver.computeG(c, port))
+        ) {
+          continue
+        }
         solver.onPathFound(c)
         return
       }
