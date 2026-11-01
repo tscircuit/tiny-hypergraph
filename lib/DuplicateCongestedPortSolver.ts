@@ -11,6 +11,8 @@ import type { PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
+type SerializedRegionId = SerializedRegion["regionId"]
+type LayerBoundaryKey = string
 
 export const DUPLICATE_PORT_PROXIMITY = 0.05
 
@@ -169,7 +171,7 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
 
 const getSharedBoundaryLength = (
   source: SerializedPort,
-  regions: Map<string, SerializedRegion>,
+  regions: Map<SerializedRegionId, SerializedRegion>,
 ): number => {
   const first = getRegionBounds(regions.get(source.region1Id))
   const second = getRegionBounds(regions.get(source.region2Id))
@@ -216,11 +218,15 @@ const findNearestPortOnSameBoundary = (
   return nearestPort
 }
 
-const getFallbackBoundaryDirection = (
-  sourcePort: SerializedPort,
-  regionById: Map<string, SerializedRegion>,
-  minPortSpacing?: number,
-): Point => {
+const getFallbackBoundaryDirection = ({
+  sourcePort,
+  regionById,
+  minPortSpacing,
+}: {
+  sourcePort: SerializedPort
+  regionById: Map<SerializedRegionId, SerializedRegion>
+  minPortSpacing?: number
+}): Point => {
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
   const perpendicular = normalize({
@@ -245,12 +251,17 @@ const getFallbackBoundaryDirection = (
   return perpendicular
 }
 
-const getDuplicateDirection = (
-  sourcePort: SerializedPort,
-  nearestBoundaryPort: SerializedPort | undefined,
-  regionById: Map<string, SerializedRegion>,
-  minPortSpacing?: number,
-): Point => {
+const getDuplicateDirection = ({
+  sourcePort,
+  nearestBoundaryPort,
+  regionById,
+  minPortSpacing,
+}: {
+  sourcePort: SerializedPort
+  nearestBoundaryPort: SerializedPort | undefined
+  regionById: Map<SerializedRegionId, SerializedRegion>
+  minPortSpacing?: number
+}): Point => {
   const sourcePoint = getPortPoint(sourcePort)
 
   if (nearestBoundaryPort) {
@@ -262,7 +273,11 @@ const getDuplicateDirection = (
     if (awayFromNearest) return awayFromNearest
   }
 
-  return getFallbackBoundaryDirection(sourcePort, regionById, minPortSpacing)
+  return getFallbackBoundaryDirection({
+    sourcePort,
+    regionById,
+    minPortSpacing,
+  })
 }
 
 const createDuplicatePortId = (
@@ -457,7 +472,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
-    const portCountByLayerBoundary = new Map<string, number>()
+    const portCountByLayerBoundary = new Map<LayerBoundaryKey, number>()
 
     for (const [sourcePortId, useCount] of [...portUseCounts.entries()].sort(
       ([leftPortId], [rightPortId]) => leftPortId.localeCompare(rightPortId),
@@ -478,9 +493,9 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           throw new Error("minPortSpacing must be finite and greater than zero")
         }
         const z = getNumber(sourcePort.d?.z)
-        const key = `${getBoundaryKey(sourcePort)}:${z}`
+        const layerBoundaryKey: LayerBoundaryKey = `${getBoundaryKey(sourcePort)}:${z}`
         const existing =
-          portCountByLayerBoundary.get(key) ??
+          portCountByLayerBoundary.get(layerBoundaryKey) ??
           boundaryPorts.filter((port) => getNumber(port.d?.z) === z).length
         const capacity = Math.max(
           1,
@@ -491,18 +506,21 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           Math.max(0, capacity - existing),
         )
         if (duplicateCount === 0) continue
-        portCountByLayerBoundary.set(key, existing + duplicateCount)
+        portCountByLayerBoundary.set(
+          layerBoundaryKey,
+          existing + duplicateCount,
+        )
       }
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
         boundaryPorts,
       )
-      const duplicateDirection = getDuplicateDirection(
+      const duplicateDirection = getDuplicateDirection({
         sourcePort,
         nearestBoundaryPort,
         regionById,
-        this.options.minPortSpacing,
-      )
+        minPortSpacing: this.options.minPortSpacing,
+      })
       const sourcePoint = getPortPoint(sourcePort)
       const duplicatePortIds: string[] = []
 

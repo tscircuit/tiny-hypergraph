@@ -2,8 +2,12 @@ import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { DuplicateCongestedPortSolver } from "lib/DuplicateCongestedPortSolver"
 
+type SerializedPortId = SerializedHyperGraph["ports"][number]["portId"]
+
 class PhysicalCapacityTestSolver extends DuplicateCongestedPortSolver {
-  duplicatePorts(portUseCounts: Map<string, number>): SerializedHyperGraph {
+  duplicatePorts(
+    portUseCounts: Map<SerializedPortId, number>,
+  ): SerializedHyperGraph {
     return this.duplicateCongestedPorts(portUseCounts)
   }
 }
