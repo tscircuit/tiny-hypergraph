@@ -122,27 +122,38 @@ const hasStaticReachabilityPath = (
     return false
   }
 
-  const queue: RegionId[] = [startRegionId]
-  const seenRegions = new Set(queue)
+  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
+    {
+      portId: startPortId,
+      nextRegionId: startRegionId,
+    },
+  ]
   const seenHops = new Set<number>([
     startPortId * topology.regionCount + startRegionId,
   ])
+  const expandedRegions = new Set<RegionId>()
 
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
-    const currentRegionId = queue[queueIndex]!
+    const currentCandidate = queue[queueIndex]!
+    if (maxPrecheckHops === Number.POSITIVE_INFINITY) {
+      if (expandedRegions.has(currentCandidate.nextRegionId)) {
+        continue
+      }
+      expandedRegions.add(currentCandidate.nextRegionId)
+    }
 
     if (
       isRegionBlockedForStaticReachability(
         problem,
         routeNetId,
-        currentRegionId,
+        currentCandidate.nextRegionId,
       )
     ) {
       continue
     }
 
     for (const neighborPortId of topology.regionIncidentPorts[
-      currentRegionId
+      currentCandidate.nextRegionId
     ] ?? []) {
       const assignedNetId = portAssignment[neighborPortId]
 
@@ -161,6 +172,9 @@ const hasStaticReachabilityPath = (
         }
         return true
       }
+      if (neighborPortId === currentCandidate.portId) {
+        continue
+      }
       if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
         continue
       }
@@ -170,7 +184,7 @@ const hasStaticReachabilityPath = (
 
       const incidentRegions = topology.incidentPortRegion[neighborPortId] ?? []
       const nextRegionId =
-        incidentRegions[0] === currentRegionId
+        incidentRegions[0] === currentCandidate.nextRegionId
           ? incidentRegions[1]
           : incidentRegions[0]
 
@@ -190,10 +204,10 @@ const hasStaticReachabilityPath = (
       }
 
       seenHops.add(hopId)
-      if (!seenRegions.has(nextRegionId)) {
-        seenRegions.add(nextRegionId)
-        queue.push(nextRegionId)
-      }
+      queue.push({
+        portId: neighborPortId,
+        nextRegionId,
+      })
     }
   }
 
