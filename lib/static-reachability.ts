@@ -122,31 +122,27 @@ const hasStaticReachabilityPath = (
     return false
   }
 
-  const queue: Array<{ portId: PortId; nextRegionId: RegionId }> = [
-    {
-      portId: startPortId,
-      nextRegionId: startRegionId,
-    },
-  ]
+  const queue: RegionId[] = [startRegionId]
+  const seenRegions = new Set(queue)
   const seenHops = new Set<number>([
     startPortId * topology.regionCount + startRegionId,
   ])
 
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
-    const currentCandidate = queue[queueIndex]!
+    const currentRegionId = queue[queueIndex]!
 
     if (
       isRegionBlockedForStaticReachability(
         problem,
         routeNetId,
-        currentCandidate.nextRegionId,
+        currentRegionId,
       )
     ) {
       continue
     }
 
     for (const neighborPortId of topology.regionIncidentPorts[
-      currentCandidate.nextRegionId
+      currentRegionId
     ] ?? []) {
       const assignedNetId = portAssignment[neighborPortId]
 
@@ -165,9 +161,6 @@ const hasStaticReachabilityPath = (
         }
         return true
       }
-      if (neighborPortId === currentCandidate.portId) {
-        continue
-      }
       if (assignedNetId !== -1 && assignedNetId !== routeNetId) {
         continue
       }
@@ -177,7 +170,7 @@ const hasStaticReachabilityPath = (
 
       const incidentRegions = topology.incidentPortRegion[neighborPortId] ?? []
       const nextRegionId =
-        incidentRegions[0] === currentCandidate.nextRegionId
+        incidentRegions[0] === currentRegionId
           ? incidentRegions[1]
           : incidentRegions[0]
 
@@ -197,10 +190,10 @@ const hasStaticReachabilityPath = (
       }
 
       seenHops.add(hopId)
-      queue.push({
-        portId: neighborPortId,
-        nextRegionId,
-      })
+      if (!seenRegions.has(nextRegionId)) {
+        seenRegions.add(nextRegionId)
+        queue.push(nextRegionId)
+      }
     }
   }
 
