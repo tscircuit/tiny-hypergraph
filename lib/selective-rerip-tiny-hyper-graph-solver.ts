@@ -380,6 +380,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
 
+    const forbiddenOwners = new Set(forbiddenOwnerRouteIds)
+    for (
+      let ownerRouteId = 0;
+      ownerRouteId < this.problem.routeCount;
+      ownerRouteId++
+    ) {
+      if (this.problem.routeIsFixed?.[ownerRouteId] === 1) {
+        forbiddenOwners.add(ownerRouteId)
+      }
+    }
     const portOwners = this.getPortOwners()
     const boundedReachabilityGeometry = this.hasBoundedReachabilityGeometry({
       startPortId,
@@ -399,7 +409,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       portOwners,
       portResources,
       hopTemplatesByRegion,
-      forbiddenOwnerRouteIds,
+      forbiddenOwnerRouteIds: forbiddenOwners,
     }
     const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
     const searchOptions: DistinctOwnerBlockerSearchOptions<
@@ -805,6 +815,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
+    for (const routeId of rippedRouteIds) {
+      if (this.problem.routeIsFixed?.[routeId] === 1) {
+        throw new Error(`Cannot rip fixed route ${routeId}`)
+      }
+    }
     const previousRegionSegments = this.state.regionSegments
     this.state.regionSegments = this.state.regionSegments.map((segments) =>
       segments.filter(([routeId]) => !rippedRouteIds.has(routeId)),

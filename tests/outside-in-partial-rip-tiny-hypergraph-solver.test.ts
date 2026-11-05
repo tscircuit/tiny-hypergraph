@@ -118,6 +118,18 @@ test("partial rip leaves preferred routes unchanged when another hot route can m
   ])
 })
 
+test("partial rip keeps fixed routes even when no movable hot route remains", () => {
+  const solver = createLinearSolver()
+  solver.problem.routeIsFixed = new Uint8Array([1])
+  const initialRegionSegments = structuredClone(solver.state.regionSegments)
+  const regionCosts = new Float64Array(6)
+  regionCosts[3] = 1
+
+  expect(solver.prepare([3], regionCosts)).toBe(false)
+  expect(solver.state.regionSegments).toEqual(initialRegionSegments)
+  expect(solver.state.unroutedRoutes).toEqual([])
+})
+
 test("partial rip locally rerips a preferred route when every hot route is preferred", () => {
   const solver = createLinearSolver()
   solver.preferredPreservedRouteIds.add(0)

@@ -62,6 +62,15 @@ test("selective search rejects exact owner cuts and keeps preservation searches 
   })
   expect(solver.searchPreferringPreservedRoutes()).toEqual(direct)
 
+  problem.routeIsFixed = new Uint8Array([0, 1])
+  expect(solver.search()).toEqual({
+    found: false,
+    reason: "no_path",
+    expandedLabelCount: 1,
+  })
+  expect(solver.searchPreferringPreservedRoutes()).toEqual(solver.search())
+  problem.routeIsFixed = undefined
+
   problem.regionNetId[1] = 2
   expect(solver.search()).toEqual({
     found: false,

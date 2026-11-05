@@ -144,6 +144,8 @@ export interface TinyHyperGraphProblem {
 
   // routeNet[routeId] = net id of the route
   routeNet: Int32Array // NetId[]
+  /** routeIsFixed[routeId] = 1 preserves the route's initial assignments during every rerip. */
+  routeIsFixed?: Uint8Array
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
   regionNetId: Int32Array
 
@@ -154,7 +156,7 @@ export interface TinyHyperGraphProblem {
    * Existing serialized region assignments, converted to numeric ids.
    *
    * These are regular route-owned assignments: they seed the initial routing
-   * state and may be ripped and rerouted by the normal solver machinery.
+   * state and may be ripped and rerouted unless routeIsFixed marks them fixed.
    */
   initialAssignments?: TinyHyperGraphInitialAssignment[]
 }
@@ -1452,6 +1454,19 @@ export class TinyHyperGraphSolver extends BaseSolver {
     state.candidateQueue.clear()
     this.resetCandidateBestCosts()
     state.goalPortId = -1
+    applyInitialAssignments({
+      topology,
+      problem: {
+        ...problem,
+        initialAssignments: problem.initialAssignments?.filter(
+          ({ routeId }) => problem.routeIsFixed?.[routeId] === 1,
+        ),
+      },
+      state,
+      routeSuccessCountByRouteId: this.routeSuccessCountByRouteId,
+      appendSegmentToRegionCache: (regionId, fromPortId, toPortId) =>
+        this.appendSegmentToRegionCache(regionId, fromPortId, toPortId),
+    })
   }
 
   protected getMaxRegionCost() {

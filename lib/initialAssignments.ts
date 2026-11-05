@@ -18,6 +18,7 @@ interface InitialAssignmentProblem {
   routeStartPort: Int32Array
   routeEndPort: Int32Array
   routeNet: Int32Array
+  routeIsFixed?: Uint8Array
   initialAssignments?: TinyHyperGraphInitialAssignment[]
 }
 
@@ -98,7 +99,12 @@ export const applyInitialAssignments = ({
     }
   | undefined => {
   const assignments = problem.initialAssignments ?? []
-  if (assignments.length === 0) return
+  if (
+    problem.routeIsFixed !== undefined &&
+    problem.routeIsFixed.length !== problem.routeCount
+  ) {
+    throw new Error("routeIsFixed must contain one entry per route")
+  }
 
   const assignmentsByRoute = new Map<
     RouteId,
@@ -146,6 +152,16 @@ export const applyInitialAssignments = ({
   for (const [routeId, routeAssignments] of assignmentsByRoute) {
     assertAssignmentsConnectRoute(problem, routeId, routeAssignments)
   }
+
+  for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+    if (
+      problem.routeIsFixed?.[routeId] === 1 &&
+      !assignmentsByRoute.has(routeId)
+    ) {
+      throw new Error(`Fixed route ${routeId} requires initial assignments`)
+    }
+  }
+  if (assignments.length === 0) return
 
   const initiallyRoutedRouteIds = new Set(assignmentsByRoute.keys())
   for (const { routeId, regionId, fromPortId, toPortId } of assignments) {
