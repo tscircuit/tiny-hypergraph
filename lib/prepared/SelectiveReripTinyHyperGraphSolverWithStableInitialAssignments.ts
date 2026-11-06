@@ -26,7 +26,13 @@ export class SelectiveReripTinyHyperGraphSolverWithStableInitialAssignments exte
 
     applyInitialAssignments({
       topology: this.topology,
-      problem: this.problem,
+      problem: {
+        ...this.problem,
+        routeIsFixed: undefined,
+        initialAssignments: this.problem.initialAssignments.filter(
+          ({ routeId }) => this.problem.routeIsFixed?.[routeId] !== 1,
+        ),
+      },
       state: this.state,
       routeSuccessCountByRouteId: this.routeSuccessCountByRouteId,
       appendSegmentToRegionCache: (regionId, fromPortId, toPortId) =>

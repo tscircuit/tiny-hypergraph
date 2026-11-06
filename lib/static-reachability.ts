@@ -131,16 +131,9 @@ const hasStaticReachabilityPath = (
   const seenHops = new Set<number>([
     startPortId * topology.regionCount + startRegionId,
   ])
-  const expandedRegions = new Set<RegionId>()
 
   for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
     const currentCandidate = queue[queueIndex]!
-    if (maxPrecheckHops === Number.POSITIVE_INFINITY) {
-      if (expandedRegions.has(currentCandidate.nextRegionId)) {
-        continue
-      }
-      expandedRegions.add(currentCandidate.nextRegionId)
-    }
 
     if (
       isRegionBlockedForStaticReachability(

@@ -180,6 +180,9 @@ export const createRegionPathProblem = (
   topology: TinyHyperGraphTopology,
   problem: TinyHyperGraphProblem,
 ): RegionPathProblem => {
+  if (problem.routeIsFixed?.some((isFixed) => isFixed === 1)) {
+    throw new Error("RegionPathSolver does not support fixed routes")
+  }
   const regionIndexBySerializedId = getRegionIndexBySerializedId(topology)
   const routeStartRegion = new Int32Array(problem.routeCount)
   const routeEndRegion = new Int32Array(problem.routeCount)

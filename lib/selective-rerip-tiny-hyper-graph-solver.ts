@@ -222,6 +222,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
+    if (
+      !directPath.found &&
+      directPath.reason === "no_path" &&
+      !this.partialRipRoutePlans.has(failedRouteId)
+    ) {
+      this.failed = true
+      this.error = `No path for ${this.describeRoute(failedRouteId)} after allowing movable routes to be rerouted`
+      return
+    }
     if (!directPath.found || directPath.owners.size === 0) {
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = !directPath.found
@@ -380,6 +389,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
 
+    const forbiddenOwners = new Set(forbiddenOwnerRouteIds)
+    for (
+      let ownerRouteId = 0;
+      ownerRouteId < this.problem.routeCount;
+      ownerRouteId++
+    ) {
+      if (this.problem.routeIsFixed?.[ownerRouteId] === 1) {
+        forbiddenOwners.add(ownerRouteId)
+      }
+    }
     const portOwners = this.getPortOwners()
     const boundedReachabilityGeometry = this.hasBoundedReachabilityGeometry({
       startPortId,
@@ -399,7 +418,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       portOwners,
       portResources,
       hopTemplatesByRegion,
-      forbiddenOwnerRouteIds,
+      forbiddenOwnerRouteIds: forbiddenOwners,
     }
     const maxExpandedLabels = this.getRelaxedSearchExpansionLimit()
     const searchOptions: DistinctOwnerBlockerSearchOptions<
@@ -805,6 +824,11 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
   }
 
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
+    for (const routeId of rippedRouteIds) {
+      if (this.problem.routeIsFixed?.[routeId] === 1) {
+        throw new Error(`Cannot rip fixed route ${routeId}`)
+      }
+    }
     const previousRegionSegments = this.state.regionSegments
     this.state.regionSegments = this.state.regionSegments.map((segments) =>
       segments.filter(([routeId]) => !rippedRouteIds.has(routeId)),

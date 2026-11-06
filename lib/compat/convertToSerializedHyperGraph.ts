@@ -314,6 +314,7 @@ const getSerializedConnection = (
     endRegionId: metadataEndRegionId ?? endRegionId,
     mutuallyConnectedNetworkId:
       metadataNetworkId ?? `net-${solver.problem.routeNet[routeId]}`,
+    ...(solver.problem.routeIsFixed?.[routeId] === 1 && { isFixed: true }),
   }
 }
 

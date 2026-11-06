@@ -501,7 +501,7 @@ const createSectionRoutePlans = (
       })
     }
 
-    if (maskedRuns.length === 0) {
+    if (problem.routeIsFixed?.[routeId] === 1 || maskedRuns.length === 0) {
       for (let portIndex = 1; portIndex < orderedPortIds.length; portIndex++) {
         routePlan.fixedSegments.push({
           regionId: orderedRegionIds[portIndex - 1]!,
@@ -565,6 +565,14 @@ const createSectionRoutePlans = (
       routeStartPort,
       routeEndPort,
       routeNet: new Int32Array(problem.routeNet),
+      routeIsFixed: problem.routeIsFixed,
+      initialAssignments: routePlans.flatMap((routePlan) => {
+        if (problem.routeIsFixed?.[routePlan.routeId] !== 1) return []
+        return routePlan.fixedSegments.map((segment) => ({
+          routeId: routePlan.routeId,
+          ...segment,
+        }))
+      }),
       regionNetId: new Int32Array(problem.regionNetId),
       portPenalty:
         problem.portPenalty === undefined
@@ -636,6 +644,7 @@ class TinyHyperGraphSectionSearchSolver extends TinyHyperGraphSolver {
 
   applyFixedSegments() {
     for (const routePlan of this.routePlans) {
+      if (this.problem.routeIsFixed?.[routePlan.routeId] === 1) continue
       for (const {
         regionId,
         fromPortId,
