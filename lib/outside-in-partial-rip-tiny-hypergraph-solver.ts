@@ -452,6 +452,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       if (!orderedSegments) return false
 
       if (
+        this.problem.routeIsFixed?.[routeId] === 1 ||
         !routeIdsTouchingHotRegions.has(routeId) ||
         (hasNonPreferredRouteTouchingHotRegions &&
           preferredPreservedRouteIds.has(routeId))

@@ -508,6 +508,7 @@ export const loadSerializedHyperGraph = (
   const routeStartPort = new Int32Array(routeCount)
   const routeEndPort = new Int32Array(routeCount)
   const routeNet = new Int32Array(routeCount)
+  const routeIsFixed = new Uint8Array(routeCount)
 
   routableConnections.forEach(({ connection, solvedRoute }, routeIndex) => {
     const fallbackStartPortId = getCentermostPortIdForRegion(
@@ -543,6 +544,9 @@ export const loadSerializedHyperGraph = (
     routeEndPort[routeIndex] = endPortIndex
 
     routeNet[routeIndex] = getNetIndex(connection)
+    if ("isFixed" in connection && connection.isFixed === true) {
+      routeIsFixed[routeIndex] = 1
+    }
   })
 
   const topology: TinyHyperGraphTopology = {
@@ -612,6 +616,7 @@ export const loadSerializedHyperGraph = (
     routeEndPort,
     routeNet,
     regionNetId,
+    ...(routeIsFixed.some((isFixed) => isFixed === 1) && { routeIsFixed }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
     ...(hasPortPenalties && { portPenalty }),
   }

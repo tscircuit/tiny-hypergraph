@@ -55,6 +55,14 @@ existing ports and contribute to region congestion immediately, but remain
 eligible for the normal rip-and-reroute process. They do not create regions or
 otherwise change the hypergraph topology.
 
+Set `isFixed: true` on a serialized connection to preserve its assignments
+through global retries, selective and partial rerips, and section optimization.
+The loader stores this policy in `problem.routeIsFixed`, and serialized output
+preserves it. A fixed route requires complete initial assignments connecting its
+endpoints. Its ports and segments remain native routing state, so other routes
+on the same net can reuse them. Omitted `isFixed` keeps the normal mutable policy.
+The independent bus and region-path solvers reject fixed routes.
+
 ### Outside-in partial reripping
 
 `SelectiveReripTinyHyperGraphSolver` preserves the unaffected prefix and
