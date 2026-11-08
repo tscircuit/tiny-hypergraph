@@ -549,7 +549,34 @@ export const loadSerializedHyperGraph = (
     }
   })
 
+  const clearanceConflicts: Set<number>[] = filteredHyperGraph.ports.map(
+    () => new Set<number>(),
+  )
+  const originalPortIds = new Set(
+    serializedHyperGraph.ports.map((port) => port.portId),
+  )
+  for (const [index, port] of filteredHyperGraph.ports.entries()) {
+    const conflicts = port.d?.clearanceConflictPortIds
+    if (conflicts === undefined) continue
+    if (
+      !Array.isArray(conflicts) ||
+      conflicts.some((id) => typeof id !== "string")
+    )
+      throw new Error(`Invalid clearance conflicts for port "${port.portId}"`)
+    for (const id of conflicts) {
+      if (!originalPortIds.has(id) || id === port.portId)
+        throw new Error(`Invalid clearance conflict "${port.portId}" / "${id}"`)
+      const other = portIdToIndex.get(id)
+      // Obstacle-region filtering removes both the port and its constraint.
+      if (other === undefined) continue
+      clearanceConflicts[index]!.add(other)
+      clearanceConflicts[other]!.add(index)
+    }
+  }
   const topology: TinyHyperGraphTopology = {
+    portClearanceConflicts: clearanceConflicts.some((ids) => ids.size > 0)
+      ? clearanceConflicts.map((ids) => [...ids].sort((a, b) => a - b))
+      : undefined,
     portCount,
     regionCount,
     regionIncidentPorts,
