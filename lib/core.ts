@@ -2126,6 +2126,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return visualizeTinyGraph(this)
   }
 
+  override preview(): GraphicsObject {
+    return visualizeTinyGraph(this, { showTopology: false })
+  }
+
   override getOutput() {
     return convertToSerializedHyperGraph(this)
   }
