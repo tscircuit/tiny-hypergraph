@@ -26,12 +26,12 @@ test("replays the STM32MP157 DDR blocker search", async (): Promise<void> => {
     ...graphics.rects!.map((rect) => rect.center.y + rect.height / 2),
   )
   const regionCount = preview.rects!.length
-  const circleCount = preview.circles!.length
+  const portCount = preview.circles!.length
   graphics.rects!.push(...pathRegions)
   graphics.texts = [{
     x: minX,
     y: maxY + 2,
-    text: `Preview regions: ${regionCount}; circles: ${circleCount}`,
+    text: `Preview mesh: ${regionCount} regions; ${portCount} ports`,
     fontSize: 0.5,
     anchorSide: "center_left",
   }]

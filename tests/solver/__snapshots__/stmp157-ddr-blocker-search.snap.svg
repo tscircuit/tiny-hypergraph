@@ -1787,7 +1787,7 @@ cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="-4.879999999999999" data-y="3.061666666666667" x="402.2983669497987" y="197.44216828393843" width="5.15423251899972" height="24.78940401995075" fill="rgba(200, 200, 255, 0.1)" stroke="rgba(128, 128, 128, 0.5)" stroke-width="0.06790535714285711"/></g><text data-type="text" data-label="Preview regions: 140283; circles: 250738" data-x="-29.656999999999986" data-y="10.04499999999999" x="40" y="106.99765955768262" fill="black" font-size="7.363189312856657" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Preview regions: 140283; circles: 250738</text><g><circle data-type="point" data-label="source_trace_0
+entry exit X: 0" data-x="-4.879999999999999" data-y="3.061666666666667" x="402.2983669497987" y="197.44216828393843" width="5.15423251899972" height="24.78940401995075" fill="rgba(200, 200, 255, 0.1)" stroke="rgba(128, 128, 128, 0.5)" stroke-width="0.06790535714285711"/></g><text data-type="text" data-label="Preview mesh: 140283 regions; 250738 ports" data-x="-29.656999999999986" data-y="10.04499999999999" x="40" y="106.99765955768262" fill="black" font-size="7.363189312856657" font-family="sans-serif" text-anchor="start" dominant-baseline="central">Preview mesh: 140283 regions; 250738 ports</text><g><circle data-type="point" data-label="source_trace_0
 source_trace_0
 bottom" data-x="-24.179999999999986" data-y="-1.3050000000000122" cx="120.65637573303184" cy="274.14205695952876" r="3" fill="hsl(0, 100%, 50%)"/></g><g><circle data-type="point" data-label="source_trace_0
 source_trace_0
