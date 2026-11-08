@@ -285,6 +285,15 @@ const createSingleRouteProblem = (
   routeStartPort: Int32Array.from([problem.routeStartPort[routeId]]),
   routeEndPort: Int32Array.from([problem.routeEndPort[routeId]]),
   routeNet: Int32Array.from([problem.routeNet[routeId]]),
+  routeIsFixed: problem.routeIsFixed?.slice(routeId, routeId + 1),
+  // Demand from immutable copper is its existing occupancy, including branches.
+  // Re-solving it as a fresh route can pick unrelated ports or fail entirely.
+  initialAssignments:
+    problem.routeIsFixed?.[routeId] === 1
+      ? problem.initialAssignments
+          ?.filter((assignment) => assignment.routeId === routeId)
+          .map((assignment) => ({ ...assignment, routeId: 0 }))
+      : undefined,
   regionNetId: problem.regionNetId,
   portPenalty: problem.portPenalty,
 })
