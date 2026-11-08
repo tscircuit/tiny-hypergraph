@@ -19,20 +19,21 @@ const arrayConstructorByName = {
   Float64Array,
 }
 
-function restoreNumericArray(_key: string, value: unknown): unknown {
+function restoreNumericArray(_key: string, encodedArray: unknown): unknown {
   if (
-    typeof value !== "object" ||
-    value === null ||
-    !("typedArray" in value) ||
-    !("values" in value)
+    typeof encodedArray !== "object" ||
+    encodedArray === null ||
+    !("typedArray" in encodedArray) ||
+    !("values" in encodedArray)
   ) {
-    return value
+    return encodedArray
   }
-  const constructor = arrayConstructorByName[value.typedArray as ArrayName]
-  if (!constructor || !Array.isArray(value.values)) {
+  const arrayName = encodedArray.typedArray as ArrayName
+  const arrayConstructor = arrayConstructorByName[arrayName]
+  if (!arrayConstructor || !Array.isArray(encodedArray.values)) {
     throw new Error("Invalid captured numeric array")
   }
-  return constructor.from(value.values)
+  return arrayConstructor.from(encodedArray.values)
 }
 
 export function getStmp157BlockerRepro(): {
