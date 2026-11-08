@@ -573,7 +573,25 @@ export const loadSerializedHyperGraph = (
       clearanceConflicts[other]!.add(index)
     }
   }
+  const allowedNets = filteredHyperGraph.ports.map((port) => {
+    const allowed = port.d?.clearanceAllowedNetIds
+    if (allowed === undefined) return undefined
+    if (!Array.isArray(allowed) || allowed.some((id) => typeof id !== "string"))
+      throw new Error(`Invalid allowed nets for port "${port.portId}"`)
+    return [
+      ...new Set(
+        allowed.flatMap((id: string) => {
+          const index = netIdToIndex.get(id)
+          // Net names without a routing request need no slot in this problem.
+          return index === undefined ? [] : [index]
+        }),
+      ),
+    ]
+  })
   const topology: TinyHyperGraphTopology = {
+    portAllowedNets: allowedNets.some((nets) => nets !== undefined)
+      ? allowedNets
+      : undefined,
     portClearanceConflicts: clearanceConflicts.some((ids) => ids.size > 0)
       ? clearanceConflicts.map((ids) => [...ids].sort((a, b) => a - b))
       : undefined,

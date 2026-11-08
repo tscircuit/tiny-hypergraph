@@ -126,6 +126,8 @@ export interface TinyHyperGraphTopology {
   portMetadata?: any[]
   /** Boundary slots whose physical clearance envelopes cannot serve different nets. */
   portClearanceConflicts?: PortId[][]
+  /** Undefined means unrestricted; an empty list excludes every net. */
+  portAllowedNets?: Array<NetId[] | undefined>
 }
 
 export interface TinyHyperGraphProblem {
@@ -1256,6 +1258,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   isPortReservedForDifferentNet(portId: PortId): boolean {
+    const allowed = this.topology.portAllowedNets?.[portId]
+    if (allowed && !allowed.includes(this.state.currentRouteNetId)) return true
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
     if (

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { loadSerializedHyperGraph } from "../../lib/compat/loadSerializedHyperGraph"
 
-test("serialized clearance conflicts are symmetric and reject invalid references", (): void => {
+test("serialized port clearance constraints preserve ownership and reject invalid references", (): void => {
   const graph: SerializedHyperGraph = {
     regions: [
       {
@@ -21,7 +21,13 @@ test("serialized clearance conflicts are symmetric and reject invalid references
         portId: "p",
         region1Id: "a",
         region2Id: "b",
-        d: { x: 0.5, y: 0, z: 0, clearanceConflictPortIds: ["q"] },
+        d: {
+          x: 0.5,
+          y: 0,
+          z: 0,
+          clearanceConflictPortIds: ["q"],
+          clearanceAllowedNetIds: ["signal", "not-routed"],
+        },
       },
       {
         portId: "q",
@@ -30,12 +36,23 @@ test("serialized clearance conflicts are symmetric and reject invalid references
         d: { x: 0.5, y: 0.05, z: 0 },
       },
     ],
-    connections: [],
+    connections: [
+      {
+        connectionId: "route",
+        mutuallyConnectedNetworkId: "signal",
+        startRegionId: "a",
+        endRegionId: "b",
+      },
+    ],
   }
   const original = JSON.stringify(graph)
   expect(
     loadSerializedHyperGraph(graph).topology.portClearanceConflicts,
   ).toEqual([[1], [0]])
+  expect(loadSerializedHyperGraph(graph).topology.portAllowedNets).toEqual([
+    [0],
+    undefined,
+  ])
   expect(JSON.stringify(graph)).toBe(original)
   graph.ports[0]!.d!.clearanceConflictPortIds = ["missing"]
   expect(() => loadSerializedHyperGraph(graph)).toThrow(
