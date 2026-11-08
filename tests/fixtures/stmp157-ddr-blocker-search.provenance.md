@@ -18,3 +18,6 @@ omitted; physical coordinates, costs and search ordering were preserved.
 
 The SVG shows the captured input and the returned relaxed blocker path in black.
 That path requires moving an existing route; it is not final PCB copper.
+
+Preview counts measure the complete generated frame. Only topology regions along
+the returned path are overlaid on the board, keeping the native pads readable.
