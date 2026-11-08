@@ -222,6 +222,15 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     }
 
     const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
+    if (
+      !directPath.found &&
+      directPath.reason === "no_path" &&
+      !this.partialRipRoutePlans.has(failedRouteId)
+    ) {
+      this.failed = true
+      this.error = `No path for ${this.describeRoute(failedRouteId)} after allowing movable routes to be rerouted`
+      return
+    }
     if (!directPath.found || directPath.owners.size === 0) {
       this.selectiveReripStats.globalReripCount += 1
       this.selectiveReripStats.globalReripReason = !directPath.found
