@@ -1257,9 +1257,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.problem.routeEndPort[routeId]!
   }
 
-  isPortReservedForDifferentNet(portId: PortId): boolean {
+  isPortReservedForDifferentNet(
+    portId: PortId,
+    ignoreAssignedClearanceConflicts = false,
+  ): boolean {
     const allowed = this.topology.portAllowedNets?.[portId]
-    if (allowed && !allowed.includes(this.state.currentRouteNetId)) return true
+    if (
+      allowed &&
+      (this.state.currentRouteNetId === undefined ||
+        !allowed.includes(this.state.currentRouteNetId))
+    )
+      return true
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
     if (
@@ -1271,7 +1279,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const assigned = this.state.portAssignment[other]!
       const reserved = this.problemSetup.portEndpointReservationNetId[other]!
       if (
-        (assigned !== -1 && assigned !== this.state.currentRouteNetId) ||
+        (!ignoreAssignedClearanceConflicts &&
+          assigned !== -1 &&
+          assigned !== this.state.currentRouteNetId) ||
         reserved === -2 ||
         (reserved !== -1 && reserved !== this.state.currentRouteNetId)
       )

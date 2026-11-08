@@ -629,7 +629,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     ] ?? []) {
       if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
-      if (this.isPortReservedForDifferentNet(neighborPortId)) continue
+      if (this.isPortReservedForDifferentNet(neighborPortId, true)) continue
       if (
         neighborPortId !== goalPortId &&
         this.problem.portSectionMask[neighborPortId] === 0
@@ -698,22 +698,28 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     portResources: Map<PortId, PortBlockerResource>
   }): SelectiveReripBlockerResource[] {
     const resources: SelectiveReripBlockerResource[] = []
-    const assignedNetId = this.state.portAssignment[params.toPortId]!
-    if (assignedNetId !== -1 && assignedNetId !== params.routeNetId) {
-      let resource = params.portResources.get(params.toPortId)
+    // Conflicting neighboring slots are movable copper resources too. The
+    // relaxed search must discover their owners so selective rerip can move them.
+    for (const portId of [
+      params.toPortId,
+      ...(this.topology.portClearanceConflicts?.[params.toPortId] ?? []),
+    ]) {
+      const assignedNetId = this.state.portAssignment[portId]!
+      if (assignedNetId === -1 || assignedNetId === params.routeNetId) continue
+      let resource = params.portResources.get(portId)
       if (!resource) {
         const owners = [
-          ...(params.portOwners.get(params.toPortId) ?? new Set<RouteId>()),
+          ...(params.portOwners.get(portId) ?? new Set<RouteId>()),
         ].filter(
           (routeId) => this.problem.routeNet[routeId] !== params.routeNetId,
         )
         if (owners.length === 0) {
           throw new Error(
-            `SelectiveReripTinyHyperGraphSolver: port ${params.toPortId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
+            `SelectiveReripTinyHyperGraphSolver: port ${portId} is assigned to foreign net ${assignedNetId} without a committed route owner`,
           )
         }
-        resource = { kind: "port", portId: params.toPortId, owners }
-        params.portResources.set(params.toPortId, resource)
+        resource = { kind: "port", portId, owners }
+        params.portResources.set(portId, resource)
       }
       resources.push(resource)
     }
