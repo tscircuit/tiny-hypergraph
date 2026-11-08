@@ -406,9 +406,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     })
     const portResources = new Map<PortId, PortBlockerResource>()
     const hopTemplatesByRegion = new Map<RegionId, RelaxedSearchHop[]>()
-    // Occupancy stays fixed during this synchronous search. Distinct owner
-    // labels revisit the same hop, but their outgoing resources are identical.
-    const hopsByState = new Map<HopId, RelaxedSearchHop[]>()
     const remainingDistanceByPort = new Map<PortId, number>()
     const goalX = this.topology.portX[goalPortId]!
     const goalY = this.topology.portY[goalPortId]!
@@ -431,14 +428,8 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       getStateKey: ({ portId, nextRegionId }): number =>
         this.getHopId(portId, nextRegionId),
       isGoal: ({ portId }): boolean => portId === goalPortId,
-      getHops: (state): RelaxedSearchHop[] => {
-        const key = this.getHopId(state.portId, state.nextRegionId)
-        const cached = hopsByState.get(key)
-        if (cached) return cached
-        const hops = this.getRelaxedSearchHops({ state }, hopContext)
-        hopsByState.set(key, hops)
-        return hops
-      },
+      getHops: (state): RelaxedSearchHop[] =>
+        this.getRelaxedSearchHops({ state }, hopContext),
       maxExpandedLabels,
       getRemainingDistance: boundedReachabilityGeometry
         ? ({ portId }): number => {
