@@ -38,13 +38,14 @@ export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
 
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
+const EMPTY_INT32_ARRAY = new Int32Array(0)
 
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
-    netIds: new Int32Array(0),
-    lesserAngles: new Int32Array(0),
-    greaterAngles: new Int32Array(0),
-    layerMasks: new Int32Array(0),
+    netIds: EMPTY_INT32_ARRAY,
+    lesserAngles: EMPTY_INT32_ARRAY,
+    greaterAngles: EMPTY_INT32_ARRAY,
+    layerMasks: EMPTY_INT32_ARRAY,
     existingCrossingLayerIntersections: 0,
     existingSameLayerIntersections: 0,
     existingEntryExitLayerChanges: 0,
@@ -64,20 +65,25 @@ const cloneRegionSegments = (
 
 const cloneRegionIntersectionCache = (
   regionIntersectionCache: RegionIntersectionCache,
-): RegionIntersectionCache => ({
-  netIds: new Int32Array(regionIntersectionCache.netIds),
-  lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
-  greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
-  layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
-  existingCrossingLayerIntersections:
-    regionIntersectionCache.existingCrossingLayerIntersections,
-  existingSameLayerIntersections:
-    regionIntersectionCache.existingSameLayerIntersections,
-  existingEntryExitLayerChanges:
-    regionIntersectionCache.existingEntryExitLayerChanges,
-  existingRegionCost: regionIntersectionCache.existingRegionCost,
-  existingSegmentCount: regionIntersectionCache.existingSegmentCount,
-})
+): RegionIntersectionCache => {
+  if (regionIntersectionCache.netIds.length === 0) {
+    return { ...regionIntersectionCache }
+  }
+  return {
+    netIds: new Int32Array(regionIntersectionCache.netIds),
+    lesserAngles: new Int32Array(regionIntersectionCache.lesserAngles),
+    greaterAngles: new Int32Array(regionIntersectionCache.greaterAngles),
+    layerMasks: new Int32Array(regionIntersectionCache.layerMasks),
+    existingCrossingLayerIntersections:
+      regionIntersectionCache.existingCrossingLayerIntersections,
+    existingSameLayerIntersections:
+      regionIntersectionCache.existingSameLayerIntersections,
+    existingEntryExitLayerChanges:
+      regionIntersectionCache.existingEntryExitLayerChanges,
+    existingRegionCost: regionIntersectionCache.existingRegionCost,
+    existingSegmentCount: regionIntersectionCache.existingSegmentCount,
+  }
+}
 
 const cloneSolvedStateSnapshot = (
   snapshot: SolvedStateSnapshot,
@@ -2146,6 +2152,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   override visualize(): GraphicsObject {
     return visualizeTinyGraph(this)
+  }
+
+  override preview(): GraphicsObject {
+    return visualizeTinyGraph(this, { showTopology: false })
   }
 
   override getOutput() {

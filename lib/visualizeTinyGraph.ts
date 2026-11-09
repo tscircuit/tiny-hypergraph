@@ -28,6 +28,7 @@ type RgbaColor = {
 }
 
 export interface TinyHyperGraphVisualizationOptions {
+  showTopology?: boolean
   highlightSectionMask?: boolean
   sectionPortMask?: Int8Array
   showInitialRouteHints?: boolean
@@ -901,10 +902,15 @@ export const visualizeTinyHyperGraph = (
     title: "Tiny HyperGraph",
     coordinateSystem: "cartesian",
   }
+  const showTopology = options.showTopology !== false
   const sectionPortMask = getHighlightedSectionPortMask(solver, options)
   const staticallyUnroutableRouteIds = getStaticallyUnroutableRouteIds(solver)
 
-  for (let regionId = 0; regionId < solver.topology.regionCount; regionId++) {
+  for (
+    let regionId = 0;
+    showTopology && regionId < solver.topology.regionCount;
+    regionId++
+  ) {
     const regionMetadata = solver.topology.regionMetadata?.[regionId]
     const polygon = regionMetadata?.polygon
     const bounds = getRegionBounds(solver, regionId)
@@ -946,7 +952,11 @@ export const visualizeTinyHyperGraph = (
   }
 
   if (solver.iterations === 0) {
-    for (let portId = 0; portId < solver.topology.portCount; portId++) {
+    for (
+      let portId = 0;
+      showTopology && portId < solver.topology.portCount;
+      portId++
+    ) {
       const isSectionPort = sectionPortMask?.[portId] === 1
       if (options.showOnlySectionPortsOnIdle && !isSectionPort) {
         continue
