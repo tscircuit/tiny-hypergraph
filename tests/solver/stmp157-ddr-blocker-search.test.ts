@@ -28,13 +28,15 @@ test("replays the STM32MP157 DDR blocker search", async (): Promise<void> => {
   const regionCount = preview.rects!.length
   const portCount = preview.circles!.length
   graphics.rects!.push(...pathRegions)
-  graphics.texts = [{
-    x: minX,
-    y: maxY + 2,
-    text: `Preview mesh: ${regionCount} regions; ${portCount} ports`,
-    fontSize: 0.5,
-    anchorSide: "center_left",
-  }]
+  graphics.texts = [
+    {
+      x: minX,
+      y: maxY + 2,
+      text: `Preview mesh: ${regionCount} regions; ${portCount} ports`,
+      fontSize: 0.5,
+      anchorSide: "center_left",
+    },
+  ]
   for (let index = 1; index < result.states.length; index++) {
     const from = result.states[index - 1]!.portId
     const to = result.states[index]!.portId
@@ -48,6 +50,7 @@ test("replays the STM32MP157 DDR blocker search", async (): Promise<void> => {
       layer: `z${solver.topology.portZ[to]}`,
     })
   }
-  await expect(getSvgFromGraphicsObject(graphics, { backgroundColor: "white" }))
-    .toMatchSvgSnapshot(import.meta.path)
+  await expect(
+    getSvgFromGraphicsObject(graphics, { backgroundColor: "white" }),
+  ).toMatchSvgSnapshot(import.meta.path)
 })
