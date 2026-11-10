@@ -77,6 +77,7 @@ export class DenseRoutingWorkspace {
         const port = neighbors[index]!
         const reservation = reserved[port]!
         if (
+          solver.isPortReservedForDifferentNet(port) ||
           reservation === -2 ||
           (reservation !== -1 && reservation !== net) ||
           (assign[port] !== -1 && assign[port] !== net)

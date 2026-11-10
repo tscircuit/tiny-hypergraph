@@ -549,7 +549,52 @@ export const loadSerializedHyperGraph = (
     }
   })
 
+  const clearanceConflicts: Set<number>[] = filteredHyperGraph.ports.map(
+    () => new Set<number>(),
+  )
+  const originalPortIds = new Set(
+    serializedHyperGraph.ports.map((port) => port.portId),
+  )
+  for (const [index, port] of filteredHyperGraph.ports.entries()) {
+    const conflicts = port.d?.clearanceConflictPortIds
+    if (conflicts === undefined) continue
+    if (
+      !Array.isArray(conflicts) ||
+      conflicts.some((id) => typeof id !== "string")
+    )
+      throw new Error(`Invalid clearance conflicts for port "${port.portId}"`)
+    for (const id of conflicts) {
+      if (!originalPortIds.has(id) || id === port.portId)
+        throw new Error(`Invalid clearance conflict "${port.portId}" / "${id}"`)
+      const other = portIdToIndex.get(id)
+      // Obstacle-region filtering removes both the port and its constraint.
+      if (other === undefined) continue
+      clearanceConflicts[index]!.add(other)
+      clearanceConflicts[other]!.add(index)
+    }
+  }
+  const allowedNets = filteredHyperGraph.ports.map((port) => {
+    const allowed = port.d?.clearanceAllowedNetIds
+    if (allowed === undefined) return undefined
+    if (!Array.isArray(allowed) || allowed.some((id) => typeof id !== "string"))
+      throw new Error(`Invalid allowed nets for port "${port.portId}"`)
+    return [
+      ...new Set(
+        allowed.flatMap((id: string) => {
+          const index = netIdToIndex.get(id)
+          // Net names without a routing request need no slot in this problem.
+          return index === undefined ? [] : [index]
+        }),
+      ),
+    ]
+  })
   const topology: TinyHyperGraphTopology = {
+    portAllowedNets: allowedNets.some((nets) => nets !== undefined)
+      ? allowedNets
+      : undefined,
+    portClearanceConflicts: clearanceConflicts.some((ids) => ids.size > 0)
+      ? clearanceConflicts.map((ids) => [...ids].sort((a, b) => a - b))
+      : undefined,
     portCount,
     regionCount,
     regionIncidentPorts,
