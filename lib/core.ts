@@ -264,6 +264,10 @@ export interface TinyHyperGraphWorkingState {
 
 export interface TinyHyperGraphSolverOptions {
   minViaPadDiameter?: number
+  /** Constrain layer changes to physical regions that can fit the via pad. */
+  ENFORCE_VIA_SPACE?: boolean
+  /** Minimum distance between crossings assigned to different nets on one layer. */
+  minPortSpacing?: number
   DISTANCE_TO_COST?: number
   RIP_THRESHOLD_START?: number
   RIP_THRESHOLD_END?: number
@@ -328,6 +332,8 @@ export interface TinyHyperGraphSolverOptions {
 
 export interface TinyHyperGraphSolverOptionTarget {
   minViaPadDiameter: number
+  ENFORCE_VIA_SPACE?: boolean
+  minPortSpacing?: number
   DISTANCE_TO_COST: number
   RIP_THRESHOLD_START: number
   RIP_THRESHOLD_END: number
@@ -366,6 +372,12 @@ export const applyTinyHyperGraphSolverOptions = (
     return
   }
 
+  if (options.ENFORCE_VIA_SPACE !== undefined) {
+    solver.ENFORCE_VIA_SPACE = options.ENFORCE_VIA_SPACE
+  }
+  if (options.minPortSpacing !== undefined) {
+    solver.minPortSpacing = options.minPortSpacing
+  }
   if (options.minViaPadDiameter !== undefined) {
     solver.minViaPadDiameter = options.minViaPadDiameter
   }
@@ -471,6 +483,8 @@ export const getTinyHyperGraphSolverOptions = (
   solver: TinyHyperGraphSolverOptionTarget,
 ): TinyHyperGraphSolverOptions => ({
   minViaPadDiameter: solver.minViaPadDiameter,
+  ENFORCE_VIA_SPACE: solver.ENFORCE_VIA_SPACE,
+  minPortSpacing: solver.minPortSpacing,
   DISTANCE_TO_COST: solver.DISTANCE_TO_COST,
   RIP_THRESHOLD_START: solver.RIP_THRESHOLD_START,
   RIP_THRESHOLD_END: solver.RIP_THRESHOLD_END,
@@ -563,6 +577,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
   protected costAwareFinalReripBudget = 0
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
+  ENFORCE_VIA_SPACE = false
+  minPortSpacing = 0
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER
 
   RIP_THRESHOLD_START = 0.05
@@ -893,10 +909,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (
+        topology.portZ[currentCandidate.portId] !==
+          topology.portZ[neighborPortId] &&
+        !this.canTransitionLayersInRegion(currentCandidate.nextRegionId)
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (
+          this.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(this.computeG(currentCandidate, neighborPortId))
+        ) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -1046,10 +1075,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (
+        topology.portZ[currentCandidate.portId] !==
+          topology.portZ[neighborPortId] &&
+        !this.canTransitionLayersInRegion(currentCandidate.nextRegionId)
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (
+          this.ENFORCE_VIA_SPACE &&
+          !Number.isFinite(this.computeG(currentCandidate, neighborPortId))
+        ) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -1262,16 +1304,61 @@ export class TinyHyperGraphSolver extends BaseSolver {
   isPortReservedForDifferentNet(portId: PortId): boolean {
     const reservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
-    return (
+    if (
       reservedNetId === -2 ||
       (reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId)
-    )
+    ) {
+      return true
+    }
+    if (this.minPortSpacing <= 0) return false
+    const { topology, state, problemSetup, problem } = this
+    const netId = state.currentRouteNetId
+    const minDistanceSquared = this.minPortSpacing ** 2 - 1e-9
+    for (const regionId of topology.incidentPortRegion[portId]) {
+      if (problem.regionNetId[regionId] !== -1) continue
+      for (const otherPortId of topology.regionIncidentPorts[regionId]) {
+        if (
+          otherPortId === portId ||
+          topology.portZ[portId] !== topology.portZ[otherPortId]
+        ) {
+          continue
+        }
+        const assignedNetId = state.portAssignment[otherPortId]
+        const otherReservedNetId =
+          problemSetup.portEndpointReservationNetId[otherPortId]
+        // CAD terminal positions are fixed rather than selectable crossings.
+        if (reservedNetId >= 0 && otherReservedNetId >= 0) continue
+        if (
+          (assignedNetId === -1 || assignedNetId === netId) &&
+          (otherReservedNetId === -1 || otherReservedNetId === netId)
+        ) {
+          continue
+        }
+        const dx = topology.portX[otherPortId] - topology.portX[portId]
+        const dy = topology.portY[otherPortId] - topology.portY[portId]
+        if (dx * dx + dy * dy < minDistanceSquared) return true
+      }
+    }
+    return false
   }
 
   isRegionReservedForDifferentNet(regionId: RegionId): boolean {
     const reservedNetId = this.problem.regionNetId[regionId]
     return (
       reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
+    )
+  }
+
+  canTransitionLayersInRegion(regionId: RegionId): boolean {
+    return (
+      !this.ENFORCE_VIA_SPACE ||
+      (this.topology.regionAvailableZMask?.[regionId] ?? 0) === 0 ||
+      this.problem.regionNetId[regionId] !== -1 ||
+      Math.min(
+        this.topology.regionWidth[regionId],
+        this.topology.regionHeight[regionId],
+      ) >=
+        this.minViaPadDiameter - 1e-9
     )
   }
 
@@ -1734,7 +1821,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options: TinyHyperGraphSolverOptions,
     _attempt: number,
   ): TinyHyperGraphSolver {
-    return new GreedyFinalRouteSolver(this.topology, this.problem, options)
+    return new GreedyFinalRouteSolver(this.topology, this.problem, {
+      ...options,
+      MAX_ITERATIONS: Math.max(
+        options.MAX_ITERATIONS ?? GREEDY_FINAL_ROUTE_MAX_ITERATIONS,
+        this.topology.portCount + this.problem.routeCount,
+      ),
+    })
   }
 
   protected tryGreedyFinalRouteAcceptance(): boolean {
@@ -2033,7 +2126,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (
       newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      (this.isKnownSingleLayerRegion(nextRegionId) ||
+        !this.canTransitionLayersInRegion(nextRegionId))
     ) {
       return Number.POSITIVE_INFINITY
     }
@@ -2138,8 +2232,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
+    if (
+      this.ENFORCE_VIA_SPACE &&
+      !Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+    ) {
+      return Number.POSITIVE_INFINITY
+    }
     return currentCandidate.g
   }
 }
