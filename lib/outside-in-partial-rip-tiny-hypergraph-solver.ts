@@ -995,6 +995,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     const search = this.outsideInRouteSearch
     if (!search) return
 
+    this.routeIterationCountByRouteId[this.state.currentRouteId!] += 1
     let expanded = this.expandOutsideInFrontier(search.expandForwardNext)
     if (this.state.currentRouteId === undefined) return
     if (!expanded) {

@@ -200,6 +200,18 @@ interface SolvedStateSnapshot {
   ripCount: number
 }
 
+/** Search effort spent on one route, for locating placements that are hard to route. */
+export interface RouteEffortSummary {
+  routeId: RouteId
+  connectionId: string
+  /** Solver iterations spent searching for this route, including final-route sub-solvers. */
+  iterations: number
+  /** `iterations` divided by all route iterations, from 0 to 1. */
+  iterationShare: number
+  /** Times this route was started; more than one means it was ripped and rerouted. */
+  attempts: number
+}
+
 export interface NeverSuccessfullyRoutedRouteSummary {
   routeId: RouteId
   connectionId: string
@@ -546,6 +558,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hCostEndY = 0
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
+  protected routeIterationCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
   protected bestSolvedStateSummary?: RegionCostSummary
   private hasLoggedNeverSuccessfullyRoutedRoutes = false
@@ -648,6 +661,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
     this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeIterationCountByRouteId = new Uint32Array(problem.routeCount)
     const initialAssignmentStats = applyInitialAssignments({
       topology,
       problem,
@@ -702,6 +716,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.state.regionCongestionCost.fill(0)
     this.routeAttemptCountByRouteId = new Uint32Array(problem.routeCount)
     this.routeSuccessCountByRouteId = new Uint32Array(problem.routeCount)
+    this.routeIterationCountByRouteId = new Uint32Array(problem.routeCount)
     this.bestSolvedStateSnapshot = undefined
     this.bestSolvedStateSummary = undefined
     this.hasLoggedNeverSuccessfullyRoutedRoutes = false
@@ -860,6 +875,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
+    this.routeIterationCountByRouteId[state.currentRouteId!] += 1
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
@@ -1536,6 +1552,25 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return undefined
   }
 
+  /** Routes ordered by search iterations spent on them, most expensive first. */
+  getRouteEffortSummary(): RouteEffortSummary[] {
+    let totalIterations = 0
+    for (const iterations of this.routeIterationCountByRouteId) {
+      totalIterations += iterations
+    }
+    return Array.from(
+      this.routeIterationCountByRouteId,
+      (iterations, routeId) => ({
+        routeId,
+        connectionId: this.getRouteConnectionId(routeId),
+        iterations,
+        iterationShare:
+          totalIterations === 0 ? 0 : iterations / totalIterations,
+        attempts: this.routeAttemptCountByRouteId[routeId]!,
+      }),
+    ).sort((a, b) => b.iterations - a.iterations)
+  }
+
   getNeverSuccessfullyRoutedRoutes(): NeverSuccessfullyRoutedRouteSummary[] {
     const neverSuccessfullyRoutedRoutes: NeverSuccessfullyRoutedRouteSummary[] =
       []
@@ -1797,6 +1832,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         routeIds,
       )
       greedySolver.solve()
+      for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+        this.routeIterationCountByRouteId[routeId] +=
+          greedySolver.routeIterationCountByRouteId[routeId]!
+      }
 
       if (!greedySolver.solved || greedySolver.failed) {
         continue
