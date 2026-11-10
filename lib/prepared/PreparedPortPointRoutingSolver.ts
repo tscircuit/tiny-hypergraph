@@ -20,9 +20,7 @@ class PreparedFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver {
   }
 
   override _step(): void {
-    const routeId = this.state.currentRouteId
     if (!this.workspace.step(this)) super._step()
-    else this.routeIterationCountByRouteId[routeId!] += 1
   }
 
   override onOutOfCandidates(): void {
@@ -46,7 +44,6 @@ export class PreparedPortPointRoutingSolver extends SelectiveReripTinyHyperGraph
       !this.workspace.step(this)
     )
       super._step()
-    else this.routeIterationCountByRouteId[routeId!] += 1
   }
 
   protected override createGreedyFinalRouteSolver(
