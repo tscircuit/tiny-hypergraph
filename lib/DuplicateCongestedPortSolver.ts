@@ -30,6 +30,11 @@ export interface DuplicatedPortSummary {
 export interface DuplicateCongestedPortSolverReport {
   portUseCounts: Record<string, number>
   duplicatedPorts: DuplicatedPortSummary[]
+  /**
+   * Search iterations needed to route each connection alone, by connection
+   * id. Badly placed parts make their connections search much longer.
+   */
+  routeSearchIterations: Record<string, number>
 }
 
 interface Point {
@@ -314,6 +319,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
   report: DuplicateCongestedPortSolverReport = {
     portUseCounts: {},
     duplicatedPorts: [],
+    routeSearchIterations: {},
   }
 
   constructor(
@@ -365,6 +371,10 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           }`,
         )
       }
+      const connectionId = problem.routeMetadata?.[routeId]?.connectionId
+      this.report.routeSearchIterations[
+        typeof connectionId === "string" ? connectionId : `route-${routeId}`
+      ] = routeSolver.iterations
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
         const serializedPortId = getSerializedPortId(topology, portId)
@@ -489,6 +499,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     this.report = {
       portUseCounts: Object.fromEntries([...portUseCounts.entries()].sort()),
       duplicatedPorts,
+      routeSearchIterations: this.report.routeSearchIterations,
     }
 
     return {
