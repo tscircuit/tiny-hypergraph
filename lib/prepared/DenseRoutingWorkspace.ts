@@ -17,6 +17,7 @@ type CostRow = {
   density: number
   single: boolean
   costs: Float64Array
+  minimumCosts: [number, number]
 }
 
 /** Specialize dense full-route expansion without changing ordering or costs. */
@@ -129,6 +130,7 @@ export class DenseRoutingWorkspace {
         density: solver.TRACE_DENSITY_COST_FACTOR,
         single: mask > 0 && (mask & (mask - 1)) === 0,
         costs: new Float64Array(2 * cache.netIds.length + 2),
+        minimumCosts: [Infinity, Infinity],
       }
       // Multi-layer cost depends on 2*same + crossing + entry/exit. Single-layer
       // new crossings are rejected below, so the same table is exact there too.
@@ -145,6 +147,10 @@ export class DenseRoutingWorkspace {
             row.via,
             row.density,
           ) - cache.existingRegionCost
+        if (count < row.costs.length - 1)
+          row.minimumCosts[0] = Math.min(row.minimumCosts[0], row.costs[count]!)
+        if (count > 0)
+          row.minimumCosts[1] = Math.min(row.minimumCosts[1], row.costs[count]!)
       }
       this.rows[region] = row
     }
@@ -199,6 +205,16 @@ export class DenseRoutingWorkspace {
       const penalty = p.portPenalty?.[port] ?? 0
       if (base + penalty + distanceCost >= old) continue
       const vz = t.portZ[port]!
+      // Every crossing can only choose another value from this cached row.
+      // Preserve the final addition order when ruling out an improvement.
+      if (nets.length > 0 && old < Infinity) {
+        const minimumCost = row.minimumCosts[uz !== vz ? 1 : 0]
+        if (minimumCost > 0) {
+          const minimumG =
+            c.g + minimumCost + congestion + penalty + distanceCost
+          if (minimumG >= old) continue
+        }
+      }
       const va =
         t.incidentPortRegion[port]![0] === region
           ? t.portAngleForRegion1[port]!
