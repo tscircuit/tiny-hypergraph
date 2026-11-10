@@ -9,6 +9,8 @@ test("replays the H3 SDQS1_N independent route search", async (): Promise<void> 
 
   expect(solver.solved).toBe(false)
   expect(solver.failed).toBe(true)
+  expect(solver.iterations).toBeLessThan(solver.MAX_ITERATIONS)
+  expect(solver.state.ripCount).toBe(0)
   const left = Math.min(
     ...graphics.rects!.map((rect) => rect.center.x - rect.width / 2),
   )

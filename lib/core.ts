@@ -1919,10 +1919,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
     })
   }
 
-  onOutOfCandidates() {
+  onOutOfCandidates(): void {
     const { topology, state } = this
     const currentRouteId = state.currentRouteId
     const maxRegionCostBeforeRip = this.getMaxRegionCost()
+
+    // An empty single-route search has nothing to move out of its way.
+    if (
+      this.problem.routeCount === 1 &&
+      !this.problem.initialAssignments?.length &&
+      maxRegionCostBeforeRip === 0 &&
+      state.portAssignment.every((netId) => netId === -1) &&
+      state.regionSegments.every((segments) => segments.length === 0)
+    ) {
+      this.failed = true
+      this.error = `No path for ${this.getRouteConnectionId(0)}`
+      return
+    }
 
     for (let regionId = 0; regionId < topology.regionCount; regionId++) {
       const regionCost =
