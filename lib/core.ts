@@ -1,5 +1,9 @@
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
+import {
+  CommittedNetTreeIndex,
+  type CommittedTreeStep,
+} from "./CommittedNetTreeIndex"
 import { convertToSerializedHyperGraph } from "./compat/convertToSerializedHyperGraph"
 import {
   computeRegionCost,
@@ -289,6 +293,8 @@ export interface TinyHyperGraphSolverOptions {
    * metadata. Other queue implementations use the original search.
    */
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
+  /** Attach whole routes to proven committed same-net copper, retaining original endpoints. */
+  DYNAMIC_CONNECTED_NET_TREES?: boolean
   MAX_ITERATIONS?: number
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
@@ -337,6 +343,8 @@ export interface TinyHyperGraphSolverOptionTarget {
   USE_LAZY_ROUTE_HEURISTIC?: boolean
   USE_SPARSE_CANDIDATE_STORAGE?: boolean
   OWNED_REGIONAL_HOP_FRONTIER?: boolean
+  /** Attach whole routes to proven committed same-net copper, retaining original endpoints. */
+  DYNAMIC_CONNECTED_NET_TREES?: boolean
   MAX_ITERATIONS: number
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
@@ -399,6 +407,9 @@ export const applyTinyHyperGraphSolverOptions = (
   }
   if (options.OWNED_REGIONAL_HOP_FRONTIER !== undefined) {
     solver.OWNED_REGIONAL_HOP_FRONTIER = options.OWNED_REGIONAL_HOP_FRONTIER
+  }
+  if (options.DYNAMIC_CONNECTED_NET_TREES !== undefined) {
+    solver.DYNAMIC_CONNECTED_NET_TREES = options.DYNAMIC_CONNECTED_NET_TREES
   }
   if (options.MAX_ITERATIONS !== undefined) {
     solver.MAX_ITERATIONS = options.MAX_ITERATIONS
@@ -480,6 +491,7 @@ export const getTinyHyperGraphSolverOptions = (
   USE_LAZY_ROUTE_HEURISTIC: solver.USE_LAZY_ROUTE_HEURISTIC,
   USE_SPARSE_CANDIDATE_STORAGE: solver.USE_SPARSE_CANDIDATE_STORAGE,
   OWNED_REGIONAL_HOP_FRONTIER: solver.OWNED_REGIONAL_HOP_FRONTIER,
+  DYNAMIC_CONNECTED_NET_TREES: solver.DYNAMIC_CONNECTED_NET_TREES,
   MAX_ITERATIONS: solver.MAX_ITERATIONS,
   VERBOSE: solver.VERBOSE,
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
@@ -538,6 +550,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierNetId?: NetId
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
+  private readonly committedNetTreeIndex = new CommittedNetTreeIndex()
+  private treeSuccessors?: Map<PortId, CommittedTreeStep | undefined>
+  private treeHeuristics = new Map<PortId, number>()
+  private treeRouteId?: RouteId
+  private treeSearchReversed = false
   private _problemSetup?: TinyHyperGraphProblemSetup
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
@@ -574,6 +591,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   USE_LAZY_ROUTE_HEURISTIC = true
   USE_SPARSE_CANDIDATE_STORAGE = false
   OWNED_REGIONAL_HOP_FRONTIER = false
+  DYNAMIC_CONNECTED_NET_TREES = false
 
   override MAX_ITERATIONS = 1e6
   VERBOSE = false
@@ -675,6 +693,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         "TinyHyperGraphSolver.resetForProblem cannot reset subclass routing state",
       )
     }
+    this.clearConnectedTreeGoals()
+    this.committedNetTreeIndex.invalidate()
     this.problem = problem
     this._problemSetup = undefined
     this.hCostEndRouteId = undefined
@@ -834,7 +854,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.routeAttemptCountByRouteId[state.currentRouteId!] += 1
 
       this.resetCandidateBestCosts()
-      const startingPortId = this.getRouteStartPortId(state.currentRouteId!)
+      state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
+      this.prepareConnectedTreeGoals(state.currentRouteId!)
+      const startingPortId = this.treeSearchReversed
+        ? this.getRouteEndPortId(state.currentRouteId!)
+        : this.getRouteStartPortId(state.currentRouteId!)
       state.candidateQueue.clear()
       const startingNextRegionId = this.getStartingNextRegionId(
         state.currentRouteId!,
@@ -857,7 +881,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         g: 0,
         h: 0,
       })
-      state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
     const currentCandidate = state.candidateQueue.dequeue()
@@ -871,6 +894,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
       currentCandidate.hopId ??
       this.getHopId(currentCandidate.portId, currentCandidate.nextRegionId)
     if (currentCandidate.g > this.getCandidateBestCost(currentCandidateHopId)) {
+      return
+    }
+
+    if (this.isDynamicTreeGoal(currentCandidate.portId)) {
+      this.onPathFound(currentCandidate)
       return
     }
 
@@ -893,6 +921,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (this.isDynamicTreeGoal(neighborPortId)) {
+        this.queueConnectedTreeGoal(currentCandidate, neighborPortId)
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1046,6 +1078,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (this.isDynamicTreeGoal(neighborPortId)) {
+        this.queueConnectedTreeGoal(currentCandidate, neighborPortId)
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1402,6 +1438,100 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected canAttachToCommittedTree(routeId: RouteId): boolean {
+    return (
+      this.getRouteStartPortId(routeId) ===
+        this.problem.routeStartPort[routeId] &&
+      this.getRouteEndPortId(routeId) === this.problem.routeEndPort[routeId]
+    )
+  }
+
+  protected clearConnectedTreeGoals(): void {
+    this.treeSuccessors = undefined
+    this.treeRouteId = undefined
+    this.treeHeuristics.clear()
+    this.treeSearchReversed = false
+  }
+
+  private prepareConnectedTreeGoals(routeId: RouteId): void {
+    this.clearConnectedTreeGoals()
+    if (
+      !this.DYNAMIC_CONNECTED_NET_TREES ||
+      !this.canAttachToCommittedTree(routeId)
+    )
+      return
+    this.committedNetTreeIndex.synchronize({
+      regionSegments: this.state.regionSegments,
+      routeNet: this.problem.routeNet,
+    })
+    this.treeSuccessors = this.committedNetTreeIndex.getComponent({
+      netId: this.problem.routeNet[routeId]!,
+      rootPortId: this.state.goalPortId,
+    })
+    const startComponent = this.committedNetTreeIndex.getComponent({
+      netId: this.problem.routeNet[routeId]!,
+      rootPortId: this.getRouteStartPortId(routeId),
+    })
+    if (startComponent.size > this.treeSuccessors.size) {
+      this.treeSuccessors = startComponent
+      this.treeSearchReversed = true
+      this.state.goalPortId = this.getRouteStartPortId(routeId)
+    }
+    this.treeRouteId = routeId
+    this.stats = {
+      ...this.stats,
+      connectedTreeRouteAttempts:
+        Number(this.stats.connectedTreeRouteAttempts ?? 0) + 1,
+      connectedTreeExpandedGoalAttempts:
+        Number(this.stats.connectedTreeExpandedGoalAttempts ?? 0) +
+        Number(this.treeSuccessors.size > 1),
+      connectedTreeGoalPortCount: this.treeSuccessors.size,
+      connectedTreeReversedAttempts:
+        Number(this.stats.connectedTreeReversedAttempts ?? 0) +
+        Number(this.treeSearchReversed),
+    }
+    // A singleton offers no committed tail; retain the original goal search.
+    if (this.treeSuccessors.size === 1) this.clearConnectedTreeGoals()
+  }
+
+  protected isDynamicTreeGoal(portId: PortId): boolean {
+    return (
+      this.treeRouteId === this.state.currentRouteId &&
+      this.treeSuccessors?.has(portId) === true
+    )
+  }
+
+  private queueConnectedTreeGoal(
+    currentCandidate: Candidate,
+    goalPortId: PortId,
+  ): void {
+    if (goalPortId === currentCandidate.portId) return
+    if (
+      goalPortId !== this.state.goalPortId &&
+      this.problem.portSectionMask[goalPortId] === 0
+    )
+      return
+    const assignedNetId = this.state.portAssignment[goalPortId]
+    if (this.isPortReservedForDifferentNet(goalPortId)) return
+    if (assignedNetId !== -1 && assignedNetId !== this.state.currentRouteNetId)
+      return
+    const hopId = this.getHopId(goalPortId, currentCandidate.nextRegionId)
+    const previousBestCost = this.getCandidateBestCost(hopId)
+    const g = this.computeG(currentCandidate, goalPortId, previousBestCost)
+    if (!Number.isFinite(g) || g >= previousBestCost) return
+    this.setCandidateBestCost(hopId, g)
+    this.state.candidateQueue.queue({
+      hopId,
+      prevRegionId: currentCandidate.nextRegionId,
+      nextRegionId: currentCandidate.nextRegionId,
+      portId: goalPortId,
+      g,
+      h: 0,
+      f: g,
+      prevCandidate: currentCandidate,
+    })
+  }
+
   getSolvedPathSegments(finalCandidate: Candidate): Array<{
     regionId: RegionId
     fromPortId: PortId
@@ -1431,7 +1561,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     const lastCandidate = candidatePath[candidatePath.length - 1]
-    if (lastCandidate && lastCandidate.portId !== state.goalPortId) {
+    if (lastCandidate && this.isDynamicTreeGoal(lastCandidate.portId)) {
+      let step = this.treeSuccessors!.get(lastCandidate.portId)
+      while (step) {
+        solvedSegments.push(step)
+        step = this.treeSuccessors!.get(step.toPortId)
+      }
+    } else if (lastCandidate && lastCandidate.portId !== state.goalPortId) {
       solvedSegments.push({
         regionId: lastCandidate.nextRegionId,
         fromPortId: lastCandidate.portId,
@@ -1439,12 +1575,24 @@ export class TinyHyperGraphSolver extends BaseSolver {
       })
     }
 
+    if (
+      this.isDynamicTreeGoal(finalCandidate.portId) &&
+      this.treeSearchReversed
+    ) {
+      solvedSegments.reverse()
+      return solvedSegments.map(({ regionId, fromPortId, toPortId }) => ({
+        regionId,
+        fromPortId: toPortId,
+        toPortId: fromPortId,
+      }))
+    }
     return solvedSegments
   }
 
   resetRoutingStateForRerip() {
     const { topology, problem, state } = this
 
+    this.clearConnectedTreeGoals()
     state.portAssignment.fill(-1)
     state.regionSegments = Array.from(
       { length: topology.regionCount },
@@ -1668,6 +1816,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     const snapshot = cloneSolvedStateSnapshot(this.bestSolvedStateSnapshot)
     this.state.portAssignment = snapshot.portAssignment
+    this.clearConnectedTreeGoals()
     this.state.regionSegments = snapshot.regionSegments
     this.state.regionIntersectionCaches = snapshot.regionIntersectionCaches
     this.state.regionCongestionCost = snapshot.regionCongestionCost
@@ -1957,9 +2106,57 @@ export class TinyHyperGraphSolver extends BaseSolver {
     if (currentRouteId === undefined) return
     this.routeSuccessCountByRouteId[currentRouteId] += 1
 
+    if (this.isDynamicTreeGoal(finalCandidate.portId)) {
+      let copiedSegmentCount = 0
+      let copiedDistance = 0
+      let copiedLayerChangeCount = 0
+      let tail = this.treeSuccessors!.get(finalCandidate.portId)
+      while (tail) {
+        copiedSegmentCount += 1
+        copiedDistance += Math.hypot(
+          this.topology.portX[tail.fromPortId]! -
+            this.topology.portX[tail.toPortId]!,
+          this.topology.portY[tail.fromPortId]! -
+            this.topology.portY[tail.toPortId]!,
+        )
+        copiedLayerChangeCount += Number(
+          this.topology.portZ[tail.fromPortId] !==
+            this.topology.portZ[tail.toPortId],
+        )
+        tail = this.treeSuccessors!.get(tail.toPortId)
+      }
+      this.stats = {
+        ...this.stats,
+        connectedTreeCopiedSegmentCount:
+          Number(this.stats.connectedTreeCopiedSegmentCount ?? 0) +
+          copiedSegmentCount,
+        connectedTreeCopiedDistance:
+          Number(this.stats.connectedTreeCopiedDistance ?? 0) + copiedDistance,
+        connectedTreeCopiedLayerChangeCount:
+          Number(this.stats.connectedTreeCopiedLayerChangeCount ?? 0) +
+          copiedLayerChangeCount,
+        connectedTreeInteriorAttachments:
+          Number(this.stats.connectedTreeInteriorAttachments ?? 0) +
+          Number(finalCandidate.portId !== state.goalPortId),
+      }
+    }
     const solvedSegments = this.getSolvedPathSegments(finalCandidate)
+    if (this.DYNAMIC_CONNECTED_NET_TREES) {
+      this.committedNetTreeIndex.synchronize({
+        regionSegments: state.regionSegments,
+        routeNet: this.problem.routeNet,
+      })
+    }
 
     for (const { regionId, fromPortId, toPortId } of solvedSegments) {
+      if (this.DYNAMIC_CONNECTED_NET_TREES) {
+        this.committedNetTreeIndex.add({
+          netId: state.currentRouteNetId!,
+          regionId,
+          fromPortId,
+          toPortId,
+        })
+      }
       state.regionSegments[regionId].push([
         currentRouteId,
         fromPortId,
@@ -1970,6 +2167,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.appendSegmentToRegionCache(regionId, fromPortId, toPortId)
     }
 
+    this.clearConnectedTreeGoals()
     state.candidateQueue.clear()
     state.currentRouteNetId = undefined
     state.currentRouteId = undefined
@@ -2119,6 +2317,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
   }
 
   computeH(neighborPortId: PortId): number {
+    if (this.treeSuccessors && this.treeRouteId === this.state.currentRouteId) {
+      const cached = this.treeHeuristics.get(neighborPortId)
+      if (cached !== undefined) return cached
+      let distance = Number.POSITIVE_INFINITY
+      for (const goalPortId of this.treeSuccessors.keys()) {
+        const dx =
+          this.topology.portX[neighborPortId]! -
+          this.topology.portX[goalPortId]!
+        const dy =
+          this.topology.portY[neighborPortId]! -
+          this.topology.portY[goalPortId]!
+        distance = Math.min(distance, Math.sqrt(dx * dx + dy * dy))
+      }
+      const cost = distance * this.DISTANCE_TO_COST
+      this.treeHeuristics.set(neighborPortId, cost)
+      return cost
+    }
     return this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId)
   }
 
