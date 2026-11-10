@@ -1,0 +1,10 @@
+name = "TinyHypergraphVerification"
+version = "0.1.0"
+defaultTargets = ["TinyHypergraph"]
+
+[[lean_lib]]
+name = "TinyHypergraph"
+
+[[lean_exe]]
+name = "transition-fixtures"
+root = "Main"
