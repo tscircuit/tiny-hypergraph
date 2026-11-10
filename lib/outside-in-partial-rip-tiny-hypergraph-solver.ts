@@ -129,6 +129,10 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       Math.max(0, this.PARTIAL_RIP_COMPLEXITY_SELECTION_MIN_ROUTE_COUNT)
   }
 
+  canSearchRouteInParallel(routeId: RouteId): boolean {
+    return !this.partialRipRoutePlans.has(routeId)
+  }
+
   protected override getRouteStartPortId(routeId: RouteId): PortId {
     if (!this.PARTIAL_RIP_ENABLED) {
       return super.getRouteStartPortId(routeId)
