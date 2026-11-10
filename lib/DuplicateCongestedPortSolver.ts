@@ -371,9 +371,8 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
           }`,
         )
       }
-      const connectionId = problem.routeMetadata?.[routeId]?.connectionId
       this.report.routeSearchIterations[
-        typeof connectionId === "string" ? connectionId : `route-${routeId}`
+        problem.routeMetadata?.[routeId]?.connectionId ?? `route-${routeId}`
       ] = routeSolver.iterations
 
       for (const portId of getUsedPortIdsForSolvedRoute(routeSolver)) {
