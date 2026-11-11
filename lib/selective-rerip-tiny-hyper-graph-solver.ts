@@ -594,7 +594,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // each directed edge still gets its original distance and ordering.
     if (
       !input.buildRegionTemplates &&
-      !this.isKnownSingleLayerRegion(state.nextRegionId)
+      !this.isSingleLayerRouteInRegion(state.nextRegionId)
     ) {
       const templates = this.getRelaxedSearchHopTemplates(state, context)
       const hops: RelaxedSearchHop[] = []
@@ -758,7 +758,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     fromPortId: PortId,
     toPortId: PortId,
   ): RouteId[] {
-    if (!this.isKnownSingleLayerRegion(regionId)) return []
+    if (!this.isSingleLayerRouteInRegion(regionId)) return []
 
     const routeNetId = this.state.currentRouteNetId
     if (routeNetId === undefined) {
@@ -770,6 +770,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     for (const [ownerRouteId, ownerFromPortId, ownerToPortId] of this.state
       .regionSegments[regionId] ?? []) {
       if (this.problem.routeNet[ownerRouteId] === routeNetId) continue
+      if (!this.areRoutesForcedToSameLayer(regionId, ownerRouteId)) continue
       if (
         this.segmentsCrossOnSameLayer(
           regionId,

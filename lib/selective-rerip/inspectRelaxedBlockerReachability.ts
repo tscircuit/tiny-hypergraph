@@ -69,7 +69,7 @@ function expandReachabilityState(
   traversal: ReachabilityTraversal,
 ): boolean {
   const { solver } = traversal.search
-  const singleLayer = solver.isKnownSingleLayerRegion(state.nextRegionId)
+  const singleLayer = solver.isSingleLayerRouteInRegion(state.nextRegionId)
   if (!singleLayer) {
     // Two distinct incoming ports cover all multilayer exits. Owner-free
     // states are exhausted first, so omitted exits already have an equal or

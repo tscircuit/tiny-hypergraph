@@ -914,6 +914,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (
+          this.hasBlockedRouteLayerCrossing(
+            currentCandidate.nextRegionId,
+            currentCandidate.portId,
+            neighborPortId,
+          )
+        )
+          continue
         this.onPathFound(currentCandidate)
         return
       }
@@ -1077,6 +1085,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (
+          this.hasBlockedRouteLayerCrossing(
+            currentCandidate.nextRegionId,
+            currentCandidate.portId,
+            neighborPortId,
+          )
+        )
+          continue
         this.onPathFound(currentCandidate)
         return
       }
@@ -1304,6 +1320,71 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
     return isKnownSingleLayerMask(regionAvailableZMask)
+  }
+
+  private getRouteAvailableZMask(regionId: RegionId, routeId: RouteId): number {
+    const regionMask = this.topology.regionAvailableZMask?.[regionId] ?? 0
+    const allowedZ = this.problem.routeAllowedZ?.[routeId]
+    if (allowedZ === undefined) return regionMask
+    let routeMask = 0
+    for (const z of allowedZ) routeMask |= 1 << z
+    return regionMask === 0 ? routeMask : regionMask & routeMask
+  }
+
+  isSingleLayerRouteInRegion(regionId: RegionId): boolean {
+    const routeId = this.state.currentRouteId
+    return !this.problem.routeAllowedZ || routeId === undefined
+      ? this.isKnownSingleLayerRegion(regionId)
+      : isKnownSingleLayerMask(this.getRouteAvailableZMask(regionId, routeId))
+  }
+
+  areRoutesForcedToSameLayer(
+    regionId: RegionId,
+    ownerRouteId: RouteId,
+  ): boolean {
+    if (this.isKnownSingleLayerRegion(regionId)) return true
+    const routeId = this.state.currentRouteId
+    if (routeId === undefined) return false
+    const mask = this.getRouteAvailableZMask(regionId, routeId)
+    return (
+      isKnownSingleLayerMask(mask) &&
+      mask === this.getRouteAvailableZMask(regionId, ownerRouteId)
+    )
+  }
+
+  hasBlockedRouteLayerCrossing(
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ): boolean {
+    if (
+      !this.problem.routeAllowedZ ||
+      !this.isSingleLayerRouteInRegion(regionId)
+    ) {
+      return false
+    }
+    const geometry = this.populateBaseSegmentGeometryScratch(
+      regionId,
+      fromPortId,
+      toPortId,
+    )
+    const cache = this.state.regionIntersectionCaches[regionId]!
+    for (let i = 0; i < cache.netIds.length; i++) {
+      if (cache.netIds[i] === this.state.currentRouteNetId) continue
+      if ((geometry.layerMask & cache.layerMasks[i]!) === 0) continue
+      const lesserInside =
+        geometry.lesserAngle < cache.lesserAngles[i]! &&
+        cache.lesserAngles[i]! < geometry.greaterAngle
+      const greaterInside =
+        geometry.lesserAngle < cache.greaterAngles[i]! &&
+        cache.greaterAngles[i]! < geometry.greaterAngle
+      if (lesserInside === greaterInside) continue
+      // Region segments and cached geometry are appended together, retaining
+      // the exact route owner even when one net has different branch policies.
+      const [ownerRouteId] = this.state.regionSegments[regionId]![i]!
+      if (this.areRoutesForcedToSameLayer(regionId, ownerRouteId)) return true
+    }
+    return false
   }
 
   protected computeRegionCostForRegion(
@@ -2058,7 +2139,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     if (
       newSameLayerIntersections > 0 &&
-      this.isKnownSingleLayerRegion(nextRegionId)
+      (this.isKnownSingleLayerRegion(nextRegionId) ||
+        this.hasBlockedRouteLayerCrossing(
+          nextRegionId,
+          currentCandidate.portId,
+          neighborPortId,
+        ))
     ) {
       return Number.POSITIVE_INFINITY
     }
@@ -2163,8 +2249,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return this.hasBlockedRouteLayerCrossing(
+      currentCandidate.nextRegionId,
+      currentCandidate.portId,
+      neighborPortId,
+    )
+      ? Number.POSITIVE_INFINITY
+      : currentCandidate.g
   }
 }

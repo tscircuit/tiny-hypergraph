@@ -188,6 +188,8 @@ export class DenseRoutingWorkspace {
       previous = at
       const port = neighbors[at]!
       if (port === state.goalPortId) {
+        if (solver.hasBlockedRouteLayerCrossing(region, c.portId, port))
+          continue
         solver.onPathFound(c)
         return
       }
@@ -224,7 +226,12 @@ export class DenseRoutingWorkspace {
         if (mask & layers[i]!) same++
         else cross++
       }
-      if (same > 0 && row.single) continue
+      if (
+        same > 0 &&
+        (row.single ||
+          solver.hasBlockedRouteLayerCrossing(region, c.portId, port))
+      )
+        continue
       // Preserve the native addition order, including roundoff and heap ties.
       const g =
         c.g +
