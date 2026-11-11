@@ -3,6 +3,7 @@ import type { Candidate, TinyHyperGraphSolver } from "../core"
 import { IndexedCandidateHeap } from "../indexed-candidate-heap"
 import type { RegionIntersectionCache } from "../types"
 import { PreparedRoutingGeometry } from "./PreparedRoutingGeometry"
+import { isPortAllowedForRoute } from "../routeAllowedZ"
 
 type Frontier = {
   neighbors: number[]
@@ -75,6 +76,11 @@ export class DenseRoutingWorkspace {
       let previous = -1
       for (let index = 0; index < neighbors.length; index++) {
         const port = neighbors[index]!
+        if (
+          p.routeAllowedZ &&
+          !isPortAllowedForRoute(t, p, state.currentRouteId!, port)
+        )
+          continue
         const reservation = reserved[port]!
         if (
           reservation === -2 ||

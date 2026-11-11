@@ -2,9 +2,10 @@ import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import type { TinyHyperGraphSolver } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
 import type { PortId, RegionId } from "../types"
+import type { TinySerializedHyperGraph } from "../routeAllowedZ"
 
 type SerializedConnection = NonNullable<
-  SerializedHyperGraph["connections"]
+  TinySerializedHyperGraph["connections"]
 >[number]
 type SerializedSolvedRoute = NonNullable<
   SerializedHyperGraph["solvedRoutes"]
@@ -315,6 +316,9 @@ const getSerializedConnection = (
     mutuallyConnectedNetworkId:
       metadataNetworkId ?? `net-${solver.problem.routeNet[routeId]}`,
     ...(solver.problem.routeIsFixed?.[routeId] === 1 && { isFixed: true }),
+    ...(solver.problem.routeAllowedZ?.[routeId] !== undefined && {
+      allowedZ: [...solver.problem.routeAllowedZ[routeId]!],
+    }),
   }
 }
 
@@ -398,7 +402,7 @@ const getSerializedSolvedRoute = (
 
 export const convertToSerializedHyperGraph = (
   solver: TinyHyperGraphSolver,
-): SerializedHyperGraph => {
+): TinySerializedHyperGraph => {
   if (!solver.solved || solver.failed) {
     throw new Error(
       "convertToSerializedHyperGraph requires a solved, non-failed solver",

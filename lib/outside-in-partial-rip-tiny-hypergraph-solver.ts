@@ -8,6 +8,7 @@ import {
 } from "./core"
 import { DistanceAwareTinyHyperGraphSolver } from "./distance-aware-tiny-hypergraph-solver"
 import { MinHeap } from "./MinHeap"
+import { isPortAllowedForRoute } from "./routeAllowedZ"
 import type { PortId, RegionId, RouteId } from "./types"
 
 type CommittedRouteSegment = {
@@ -860,6 +861,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       candidate.nextRegionId
     ] ?? []) {
       if (neighborPortId === candidate.portId) continue
+      if (
+        this.problem.routeAllowedZ &&
+        !isPortAllowedForRoute(
+          this.topology,
+          this.problem,
+          this.state.currentRouteId!,
+          neighborPortId,
+        )
+      )
+        continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       const assignedNetId = this.state.portAssignment[neighborPortId]!
       if (

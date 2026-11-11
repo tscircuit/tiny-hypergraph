@@ -5,6 +5,10 @@ import type {
   TinyHyperGraphTopology,
 } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
+import {
+  type TinySerializedHyperGraph,
+  validateRouteAllowedZ,
+} from "../routeAllowedZ"
 
 const getSerializedRegionNetId = (
   region: SerializedHyperGraph["regions"][number],
@@ -30,7 +34,9 @@ const isFullObstacleRegion = (
   return netId === undefined || netId === -1
 }
 
-const filterObstacleRegions = (serializedHyperGraph: SerializedHyperGraph) => {
+const filterObstacleRegions = (
+  serializedHyperGraph: TinySerializedHyperGraph,
+) => {
   const connectedRegionIds = new Set<string>()
   for (const connection of serializedHyperGraph.connections ?? []) {
     connectedRegionIds.add(connection.startRegionId)
@@ -323,7 +329,7 @@ const getSharedPortIdsForConnection = (
     .map((port) => port.portId)
 
 export const loadSerializedHyperGraph = (
-  serializedHyperGraph: SerializedHyperGraph,
+  serializedHyperGraph: TinySerializedHyperGraph,
 ): {
   topology: TinyHyperGraphTopology
   problem: TinyHyperGraphProblem
@@ -493,8 +499,10 @@ export const loadSerializedHyperGraph = (
       }
     })
     .filter(
-      ({ solvedRoute, sharedPortIds }) =>
-        sharedPortIds.length === 0 || (solvedRoute?.path.length ?? 0) > 1,
+      ({ connection, solvedRoute, sharedPortIds }) =>
+        connection.allowedZ !== undefined ||
+        sharedPortIds.length === 0 ||
+        (solvedRoute?.path.length ?? 0) > 1,
     )
 
   const routeCount = routableConnections.length
@@ -615,6 +623,13 @@ export const loadSerializedHyperGraph = (
     routeStartPort,
     routeEndPort,
     routeNet,
+    ...(routableConnections.some(
+      ({ connection }) => connection.allowedZ !== undefined,
+    ) && {
+      routeAllowedZ: routableConnections.map(
+        ({ connection }) => connection.allowedZ,
+      ),
+    }),
     regionNetId,
     ...(routeIsFixed.some((isFixed) => isFixed === 1) && { routeIsFixed }),
     ...(initialAssignments.length > 0 && { initialAssignments }),
@@ -675,5 +690,6 @@ export const loadSerializedHyperGraph = (
     solvedRoutePathRegionIds,
   }
 
+  validateRouteAllowedZ(topology, problem, solution)
   return { topology, problem, solution }
 }

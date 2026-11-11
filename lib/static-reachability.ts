@@ -4,6 +4,7 @@ import type {
   TinyHyperGraphTopology,
 } from "./core"
 import type { NetId, PortId, RegionId, RouteId } from "./types"
+import { isPortAllowedForRoute } from "./routeAllowedZ"
 
 type StaticReachabilityRouteMetadata = {
   connectionId?: unknown
@@ -148,6 +149,11 @@ const hasStaticReachabilityPath = (
     for (const neighborPortId of topology.regionIncidentPorts[
       currentCandidate.nextRegionId
     ] ?? []) {
+      if (
+        problem.routeAllowedZ &&
+        !isPortAllowedForRoute(topology, problem, routeId, neighborPortId)
+      )
+        continue
       const assignedNetId = portAssignment[neighborPortId]
 
       if (

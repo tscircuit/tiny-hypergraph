@@ -33,6 +33,7 @@ import type {
 } from "./types"
 import { range } from "./utils"
 import { visualizeTinyGraph } from "./visualizeTinyGraph"
+import { isPortAllowedForRoute, validateRouteAllowedZ } from "./routeAllowedZ"
 
 export type { StaticallyUnroutableRouteSummary } from "./static-reachability"
 export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
@@ -150,6 +151,8 @@ export interface TinyHyperGraphProblem {
 
   // routeNet[routeId] = net id of the route
   routeNet: Int32Array // NetId[]
+  /** Permitted signal-routing layers per route; absent entries are unrestricted. */
+  routeAllowedZ?: readonly (readonly number[] | undefined)[]
   /** routeIsFixed[routeId] = 1 preserves the route's initial assignments during every rerip. */
   routeIsFixed?: Uint8Array
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
@@ -601,6 +604,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     options?: TinyHyperGraphSolverOptions,
   ) {
     super()
+    validateRouteAllowedZ(topology, problem)
     applyTinyHyperGraphSolverOptions(this, options)
     let candidateHopSlotStride = 1
     const candidateFirstRegionByPortId = new Int32Array(
@@ -675,6 +679,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         "TinyHyperGraphSolver.resetForProblem cannot reset subclass routing state",
       )
     }
+    validateRouteAllowedZ(this.topology, problem)
     this.problem = problem
     this._problemSetup = undefined
     this.hCostEndRouteId = undefined
@@ -893,6 +898,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (
+        problem.routeAllowedZ &&
+        !isPortAllowedForRoute(
+          topology,
+          problem,
+          state.currentRouteId!,
+          neighborPortId,
+        )
+      )
+        continue
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1046,6 +1061,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (
+        problem.routeAllowedZ &&
+        !isPortAllowedForRoute(
+          topology,
+          problem,
+          state.currentRouteId!,
+          neighborPortId,
+        )
+      )
+        continue
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue

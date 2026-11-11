@@ -11,6 +11,7 @@ import {
   type DistinctOwnerBlockerSearchResult,
 } from "./find-distinct-owner-blocker-path"
 import { OutsideInPartialRipTinyHyperGraphSolver } from "./outside-in-partial-rip-tiny-hypergraph-solver"
+import { isPortAllowedForRoute } from "./routeAllowedZ"
 import { inspectRelaxedBlockerReachability } from "./selective-rerip/inspectRelaxedBlockerReachability"
 import type {
   PortBlockerResource,
@@ -618,6 +619,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     for (const neighborPortId of this.topology.regionIncidentPorts[
       state.nextRegionId
     ] ?? []) {
+      if (
+        this.problem.routeAllowedZ &&
+        !isPortAllowedForRoute(
+          this.topology,
+          this.problem,
+          this.state.currentRouteId!,
+          neighborPortId,
+        )
+      )
+        continue
       if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue

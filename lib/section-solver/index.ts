@@ -13,6 +13,7 @@ import {
   type TinyHyperGraphTopology,
 } from "../core"
 import { shuffle } from "../shuffle"
+import { validateRouteAllowedZ } from "../routeAllowedZ"
 import type {
   PortId,
   RegionId,
@@ -420,6 +421,7 @@ const createSolvedSolverFromSolution = (
   solution: TinyHyperGraphSolution,
   options?: TinyHyperGraphSolverOptions,
 ) => {
+  validateRouteAllowedZ(topology, problem, solution)
   const routeSegmentsByRegion = Array.from(
     { length: topology.regionCount },
     () => [] as [RouteId, PortId, PortId][],
@@ -565,6 +567,7 @@ const createSectionRoutePlans = (
       routeStartPort,
       routeEndPort,
       routeNet: new Int32Array(problem.routeNet),
+      ...(problem.routeAllowedZ && { routeAllowedZ: problem.routeAllowedZ }),
       routeIsFixed: problem.routeIsFixed,
       initialAssignments: routePlans.flatMap((routePlan) => {
         if (problem.routeIsFixed?.[routePlan.routeId] !== 1) return []
