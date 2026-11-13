@@ -230,8 +230,9 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     this.updateBusStats()
   }
 
-  override _setup() {
+  override _setup(): void {
     void this.problemSetup
+    if (!this.validateImmutablePortEndpoints([this.centerRouteId])) return
     this.state.currentRouteId = this.centerRouteId
     this.state.currentRouteNetId = this.centerRouteNetId
     this.state.goalPortId = this.problem.routeEndPort[this.centerRouteId]!
@@ -1507,7 +1508,20 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     routeId: RouteId,
     segment: TraceSegment,
     usedPortOwners: ReadonlyMap<PortId, RouteId>,
-  ) {
+  ): boolean {
+    if (
+      this.topology.portReservedNetId &&
+      (this.isPortReservedForImmutableCopper(
+        segment.fromPortId,
+        this.problem.routeNet[routeId]!,
+      ) ||
+        this.isPortReservedForImmutableCopper(
+          segment.toPortId,
+          this.problem.routeNet[routeId]!,
+        ))
+    ) {
+      return false
+    }
     if (
       this.topology.portZ[segment.fromPortId] !== 0 ||
       this.topology.portZ[segment.toPortId] !== 0
@@ -2144,7 +2158,8 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
   private isPortReservedForDifferentBusNet(
     currentNetId: NetId,
     portId: PortId,
-  ) {
+  ): boolean {
+    if (this.isPortReservedForImmutableCopper(portId, currentNetId)) return true
     const reservedNetIds = this.problemSetup.portEndpointNetIds[portId]
     if (!reservedNetIds) {
       return false

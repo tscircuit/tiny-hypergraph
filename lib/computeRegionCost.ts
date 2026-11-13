@@ -17,6 +17,8 @@ export const computeRegionCost = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
+  crossLayerIntersectionCostFactor = 1,
+  viaCost = 0,
 ) => {
   const area = regionWidth * regionHeight
 
@@ -29,6 +31,8 @@ export const computeRegionCost = (
     regionAvailableZMask,
     minViaPadDiameter,
     traceDensityCostFactor,
+    crossLayerIntersectionCostFactor,
+    viaCost,
   )
 }
 
@@ -41,10 +45,12 @@ export const computeRegionCostForArea = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
+  crossLayerIntersectionCostFactor = 1,
+  viaCost = 0,
 ) => {
   const estViasRequired =
     numSameLayerIntersections * 2 +
-    numCrossLayerIntersections * 1 +
+    numCrossLayerIntersections * crossLayerIntersectionCostFactor +
     numEntryExitChanges * 1
   const viaSizeWithMargin = minViaPadDiameter + TRACE_VIA_MARGIN
   const viaSizeWithMarginSq = viaSizeWithMargin ** 2
@@ -62,8 +68,11 @@ export const computeRegionCostForArea = (
       traceWidth ** 2) /
     area
 
+  // Traces on disjoint layers cross without a physical via. Only same-layer
+  // intersections and entry/exit changes contribute to the fixed via cost.
   return (
     (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
+    viaCost * (numSameLayerIntersections * 2 + numEntryExitChanges) +
     impossibleSingleLayerIntersectionCost +
     traceDensityCost
   )

@@ -79,7 +79,15 @@ const isPortEndpointReservedForStaticReachability = (
   problemSetup: TinyHyperGraphProblemSetup,
   routeNetId: NetId,
   portId: PortId,
-) => {
+  immutableReservedNetId?: NetId,
+): boolean => {
+  if (
+    immutableReservedNetId !== undefined &&
+    (immutableReservedNetId === -2 ||
+      (immutableReservedNetId !== -1 && immutableReservedNetId !== routeNetId))
+  ) {
+    return true
+  }
   const reservedNetIds = problemSetup.portEndpointNetIds[portId]
   if (!reservedNetIds) {
     return false
@@ -155,6 +163,7 @@ const hasStaticReachabilityPath = (
           problemSetup,
           routeNetId,
           neighborPortId,
+          topology.portReservedNetId?.[neighborPortId],
         )
       ) {
         continue

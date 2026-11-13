@@ -20,6 +20,7 @@ export const countIntersectionsFromAnglePairsDynamic = (
     for (let u = i + 1; u < anglePairs.length; u++) {
       const [n2, c, cz, d, dz] = anglePairs[u]
       if (n1 === n2) continue
+      if (a === c || a === d || b === c || b === d) continue
       const intersects = (a < c && c < b) !== (a < d && d < b) ? 1 : 0
       if (az === cz || bz === cz || az === dz || bz === dz) {
         sameLayerIntersectionCount += intersects
