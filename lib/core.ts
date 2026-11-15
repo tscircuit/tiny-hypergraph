@@ -40,6 +40,12 @@ export type { TinyHyperGraphInitialAssignment } from "./initialAssignments"
 const GREEDY_FINAL_ROUTE_MAX_ITERATIONS = 50e3
 const EMPTY_INT32_ARRAY = new Int32Array(0)
 
+type RegionPenaltyCandidate = {
+  regionId: RegionId
+  cost: number
+  distanceSquared: number
+}
+
 export const createEmptyRegionIntersectionCache =
   (): RegionIntersectionCache => ({
     netIds: EMPTY_INT32_ARRAY,
@@ -225,6 +231,7 @@ export interface Candidate {
 }
 
 export interface TinyHyperGraphCandidateQueue {
+  reheapify(): void
   readonly length: number
   toArray(): Candidate[]
   clear(): void
@@ -544,6 +551,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hCostEndRouteId: RouteId | undefined
   private hCostEndX = 0
   private hCostEndY = 0
+  private regionPenaltyDistances?: Float64Array
+  private portPenaltyLowerBoundCap = 0
+  private hasPortPenaltyCost?: boolean
+  private routeSearchStepCount = 0
+  private hasRefinedRouteHeuristic = false
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
   protected bestSolvedStateSnapshot?: SolvedStateSnapshot
@@ -679,6 +691,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this._problemSetup = undefined
     this.hCostEndRouteId = undefined
     this.hCostRouteIdByPortId.fill(-1)
+    this.regionPenaltyDistances = undefined
+    this.portPenaltyLowerBoundCap = 0
+    this.hasPortPenaltyCost = undefined
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
       regionSegments.length = 0
@@ -860,6 +875,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
+    this.refineExpensiveRouteHeuristic()
     const currentCandidate = state.candidateQueue.dequeue()
 
     if (!currentCandidate) {
@@ -952,7 +968,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         knownSegmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
+      if (!Number.isFinite(h)) continue
 
       const newCandidate = {
         hopId: candidateHopId,
@@ -1121,7 +1138,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
         knownSegmentDistance,
       )
       if (!Number.isFinite(g) || g >= previousBestCost) continue
-      const h = this.computeH(neighborPortId)
+      const h = this.computeH(neighborPortId, nextRegionId)
+      if (!Number.isFinite(h)) continue
 
       const newCandidate = {
         hopId: candidateHopId,
@@ -1144,7 +1162,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
-  resetCandidateBestCosts() {
+  resetCandidateBestCosts(): void {
+    this.regionPenaltyDistances = undefined
+    this.portPenaltyLowerBoundCap = 0
+    this.routeSearchStepCount = 0
+    this.hasRefinedRouteHeuristic = false
     const { state } = this
 
     this.candidateOverflowBestCost?.clear()
@@ -2118,8 +2140,123 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.hCostByPortId[portId]!
   }
 
-  computeH(neighborPortId: PortId): number {
-    return this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId)
+  /** Refine costly searches after they consume an equal share of the graph budget. */
+  refineExpensiveRouteHeuristic(): void {
+    this.routeSearchStepCount += 1
+    if (
+      this.hasRefinedRouteHeuristic ||
+      this.routeSearchStepCount <
+        this.MAX_ITERATIONS / this.problem.routeCount ||
+      !this.problem.portPenalty
+    ) {
+      return
+    }
+    this.hasPortPenaltyCost ??= this.problem.portPenalty.some(
+      (cost) => cost > 0,
+    )
+    if (!this.hasPortPenaltyCost) return
+    this.hasRefinedRouteHeuristic = true
+    const queue = this.state.candidateQueue
+    for (const candidate of queue.toArray()) {
+      candidate.h = this.computeH(candidate.portId, candidate.nextRegionId)
+      candidate.f = candidate.g + candidate.h
+    }
+    queue.reheapify()
+    this.stats = {
+      ...this.stats,
+      portPenaltyHeuristicRefinementCount:
+        Number(this.stats.portPenaltyHeuristicRefinementCount ?? 0) + 1,
+    }
+  }
+
+  /** Remaining port costs with geometric crossing and via costs relaxed. */
+  protected getPortPenaltyLowerBound(nextRegionId?: RegionId): number {
+    const { problem, state, topology } = this
+    if (
+      !this.hasRefinedRouteHeuristic ||
+      nextRegionId === undefined ||
+      !problem.portPenalty ||
+      state.goalPortId < 0
+    )
+      return 0
+    this.hasPortPenaltyCost ??= problem.portPenalty.some((cost) => cost > 0)
+    if (!this.hasPortPenaltyCost) return 0
+    if (!this.regionPenaltyDistances) {
+      // Relax current port ownership: another route can be ripped up.
+      // Only fixed reservations constrain the remaining-cost estimate.
+      const startPort = this.getRouteStartPortId(state.currentRouteId!)
+      const startRegion = this.getStartingNextRegionId(
+        state.currentRouteId!,
+        startPort,
+      )
+      if (startRegion === undefined)
+        throw new Error("Penalty search requires a start region")
+      const startX = topology.portX[startPort]!
+      const startY = topology.portY[startPort]!
+      const distances = new Float64Array(topology.regionCount).fill(Infinity)
+      const pending = new MinHeap<RegionPenaltyCandidate>(
+        [],
+        (left, right): number =>
+          left.cost - right.cost ||
+          left.distanceSquared - right.distanceSquared ||
+          left.regionId - right.regionId,
+      )
+      for (const regionId of topology.incidentPortRegion[state.goalPortId]!) {
+        if (this.isRegionReservedForDifferentNet(regionId)) continue
+        distances[regionId] = 0
+        const dx = topology.regionCenterX[regionId]! - startX
+        const dy = topology.regionCenterY[regionId]! - startY
+        pending.queue({ regionId, cost: 0, distanceSquared: dx * dx + dy * dy })
+      }
+      while (pending.length > 0) {
+        const candidate = pending.dequeue()!
+        if (candidate.cost !== distances[candidate.regionId]) continue
+        if (candidate.regionId === startRegion) break
+        const incidentPorts = topology.regionIncidentPorts[candidate.regionId]!
+        for (const portId of incidentPorts) {
+          if (
+            problem.portSectionMask[portId] === 0 ||
+            this.isPortReservedForDifferentNet(portId)
+          )
+            continue
+          const penalty = problem.portPenalty[portId]!
+          if (penalty === Number.POSITIVE_INFINITY) continue
+          if (!Number.isFinite(penalty) || penalty < 0)
+            throw new Error("Port penalties must be finite and nonnegative")
+          const cost = candidate.cost + penalty
+          for (const regionId of topology.incidentPortRegion[portId]!) {
+            if (
+              this.isRegionReservedForDifferentNet(regionId) ||
+              cost >= distances[regionId]!
+            )
+              continue
+            distances[regionId] = cost
+            const dx = topology.regionCenterX[regionId]! - startX
+            const dy = topology.regionCenterY[regionId]! - startY
+            pending.queue({
+              regionId,
+              cost,
+              distanceSquared: dx * dx + dy * dy,
+            })
+          }
+        }
+      }
+      this.regionPenaltyDistances = distances
+      // Unsettled regions cannot cost less than the settled start. Capping
+      // their potential avoids exploring the rest of the board eagerly.
+      this.portPenaltyLowerBoundCap = distances[startRegion]!
+    }
+    return Math.min(
+      this.regionPenaltyDistances[nextRegionId]!,
+      this.portPenaltyLowerBoundCap,
+    )
+  }
+
+  computeH(neighborPortId: PortId, nextRegionId?: RegionId): number {
+    return (
+      this.getRouteHeuristic(this.state.currentRouteId!, neighborPortId) +
+      this.getPortPenaltyLowerBound(nextRegionId)
+    )
   }
 
   override visualize(): GraphicsObject {

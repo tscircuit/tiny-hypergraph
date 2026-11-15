@@ -48,6 +48,7 @@ export class DenseRoutingWorkspace {
       this.generation = state.candidateBestCostGeneration
       this.frontiers.clear()
     }
+    solver.refineExpensiveRouteHeuristic()
     const c = queue.dequeue()
     if (!c) {
       solver.onOutOfCandidates()
@@ -227,7 +228,8 @@ export class DenseRoutingWorkspace {
         penalty +
         distanceCost
       if (!Number.isFinite(g) || g >= old) continue
-      const h = solver.computeH(port)
+      const h = solver.computeH(port, nextRegions[at]!)
+      if (!Number.isFinite(h)) continue
       seen[hop] = generation
       best[hop] = g
       queue.queue({

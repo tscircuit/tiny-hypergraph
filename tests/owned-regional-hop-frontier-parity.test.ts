@@ -472,6 +472,7 @@ test("owned regional frontier preserves routing and search invalidation", () => 
           return heap.length
         },
         toArray: () => heap.toArray(),
+        reheapify: () => heap.reheapify(),
         clear: () => heap.clear(),
         queue: (candidate) => heap.queue(candidate),
         dequeue: () => heap.dequeue(),

@@ -109,6 +109,12 @@ export class IndexedCandidateHeap {
     return bestCandidate
   }
 
+  reheapify(): void {
+    for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
+      this.siftDown(index)
+    }
+  }
+
   private getHopId(candidate: Candidate): number {
     if (candidate.hopId !== undefined) return candidate.hopId
 
