@@ -54,8 +54,11 @@ type JoinedOutsideInCandidate = {
   cost: number
 }
 
-type IndexedCommittedRouteSegment = CommittedRouteSegment & {
-  segmentIndex: number
+type CommittedRouteSegmentIndex = {
+  routeOffsets: Uint32Array
+  regionIds: Uint32Array
+  fromPortIds: Uint32Array
+  toPortIds: Uint32Array
 }
 
 type CompletedRoundSummary = RegionCostSummary & {
@@ -244,34 +247,65 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
     return NO_PREFERRED_PRESERVED_ROUTE_IDS
   }
 
-  private getCommittedRouteSegments(
-    routeId: RouteId,
-  ): CommittedRouteSegment[] | undefined {
-    const indexedSegments: IndexedCommittedRouteSegment[] = []
+  private indexCommittedRouteSegments(): CommittedRouteSegmentIndex {
+    const segmentCountsByRouteId = new Uint32Array(this.problem.routeCount)
+    let segmentCount = 0
+    for (const segments of this.state.regionSegments) {
+      segmentCount += segments.length
+      for (const [routeId] of segments) {
+        segmentCountsByRouteId[routeId]++
+      }
+    }
+
+    const routeOffsets = new Uint32Array(this.problem.routeCount + 1)
+    for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
+      routeOffsets[routeId + 1] =
+        routeOffsets[routeId]! + segmentCountsByRouteId[routeId]!
+    }
+
+    const nextSegmentIndexByRouteId = routeOffsets.slice(0, -1)
+    const regionIds = new Uint32Array(segmentCount)
+    const fromPortIds = new Uint32Array(segmentCount)
+    const toPortIds = new Uint32Array(segmentCount)
     for (
       let regionId = 0;
       regionId < this.state.regionSegments.length;
       regionId++
     ) {
-      for (const [segmentRouteId, fromPortId, toPortId] of this.state
-        .regionSegments[regionId] ?? []) {
-        if (segmentRouteId !== routeId) continue
-        indexedSegments.push({
-          segmentIndex: indexedSegments.length,
-          regionId,
-          fromPortId,
-          toPortId,
-        })
+      for (const [routeId, fromPortId, toPortId] of this.state.regionSegments[
+        regionId
+      ] ?? []) {
+        const segmentIndex = nextSegmentIndexByRouteId[routeId]!
+        regionIds[segmentIndex] = regionId
+        fromPortIds[segmentIndex] = fromPortId
+        toPortIds[segmentIndex] = toPortId
+        nextSegmentIndexByRouteId[routeId] = segmentIndex + 1
       }
     }
 
-    if (indexedSegments.length === 0) return undefined
+    return { routeOffsets, regionIds, fromPortIds, toPortIds }
+  }
+
+  private getCommittedRouteSegments(
+    routeId: RouteId,
+    committedSegments: CommittedRouteSegmentIndex,
+  ): CommittedRouteSegment[] | undefined {
+    const startSegmentIndex = committedSegments.routeOffsets[routeId]!
+    const endSegmentIndex = committedSegments.routeOffsets[routeId + 1]!
+    if (startSegmentIndex === endSegmentIndex) return undefined
 
     const segmentIndicesByPortId = new Map<PortId, number[]>()
-    for (const segment of indexedSegments) {
-      for (const portId of [segment.fromPortId, segment.toPortId]) {
+    for (
+      let committedSegmentIndex = startSegmentIndex;
+      committedSegmentIndex < endSegmentIndex;
+      committedSegmentIndex++
+    ) {
+      for (const portId of [
+        committedSegments.fromPortIds[committedSegmentIndex]!,
+        committedSegments.toPortIds[committedSegmentIndex]!,
+      ]) {
         const segmentIndices = segmentIndicesByPortId.get(portId) ?? []
-        segmentIndices.push(segment.segmentIndex)
+        segmentIndices.push(committedSegmentIndex)
         segmentIndicesByPortId.set(portId, segmentIndices)
       }
     }
@@ -288,15 +322,15 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
       for (const segmentIndex of segmentIndicesByPortId.get(portId) ?? []) {
         if (usedSegmentIndices.has(segmentIndex)) continue
-        const segment = indexedSegments[segmentIndex]!
-        const nextPortId =
-          segment.fromPortId === portId ? segment.toPortId : segment.fromPortId
+        const fromPortId = committedSegments.fromPortIds[segmentIndex]!
+        const toPortId = committedSegments.toPortIds[segmentIndex]!
+        const nextPortId = fromPortId === portId ? toPortId : fromPortId
         if (visitedPortIds.has(nextPortId)) continue
 
         usedSegmentIndices.add(segmentIndex)
         visitedPortIds.add(nextPortId)
         orderedSegments.push({
-          regionId: segment.regionId,
+          regionId: committedSegments.regionIds[segmentIndex]!,
           fromPortId: portId,
           toPortId: nextPortId,
         })
@@ -313,7 +347,7 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
 
     if (
       !appendPathToEnd(this.problem.routeStartPort[routeId]!) ||
-      usedSegmentIndices.size !== indexedSegments.length
+      usedSegmentIndices.size !== endSegmentIndex - startSegmentIndex
     ) {
       return undefined
     }
@@ -443,12 +477,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       { length: this.topology.regionCount },
       () => [] as [RouteId, PortId, PortId][],
     )
+    const committedRouteSegmentIndex = this.indexCommittedRouteSegments()
     const nextPlans = new Map<RouteId, PartialRipRoutePlan>()
     let rippedSegmentCount = 0
     let retainedSegmentCount = 0
 
     for (let routeId = 0; routeId < this.problem.routeCount; routeId++) {
-      const orderedSegments = this.getCommittedRouteSegments(routeId)
+      const orderedSegments = this.getCommittedRouteSegments(
+        routeId,
+        committedRouteSegmentIndex,
+      )
       if (!orderedSegments) return false
 
       if (
