@@ -554,7 +554,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionPenaltyDistances?: Float64Array
   private portPenaltyLowerBoundCap = 0
   private hasPortPenaltyCost?: boolean
-  private routeSearchStepCount = 0
   private hasRefinedRouteHeuristic = false
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
@@ -1165,7 +1164,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
   resetCandidateBestCosts(): void {
     this.regionPenaltyDistances = undefined
     this.portPenaltyLowerBoundCap = 0
-    this.routeSearchStepCount = 0
     this.hasRefinedRouteHeuristic = false
     const { state } = this
 
@@ -2140,13 +2138,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.hCostByPortId[portId]!
   }
 
-  /** Refine costly searches after they consume an equal share of the graph budget. */
+  /** Refine a late search without changing its accumulated costs or closed hops. */
   refineExpensiveRouteHeuristic(): void {
-    this.routeSearchStepCount += 1
     if (
       this.hasRefinedRouteHeuristic ||
-      this.routeSearchStepCount <
-        this.MAX_ITERATIONS / this.problem.routeCount ||
+      this.iterations < this.MAX_ITERATIONS / 2 ||
       !this.problem.portPenalty
     ) {
       return
