@@ -2138,11 +2138,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.hCostByPortId[portId]!
   }
 
-  /** Refine a late search without changing its accumulated costs or closed hops. */
+  /** Refine a late search only for routes that have never found a path. */
   refineExpensiveRouteHeuristic(): void {
     if (
       this.hasRefinedRouteHeuristic ||
       this.iterations < this.MAX_ITERATIONS / 2 ||
+      this.routeSuccessCountByRouteId[this.state.currentRouteId!] > 0 ||
       !this.problem.portPenalty
     ) {
       return
@@ -2269,6 +2270,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
 }
 
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
+  // This search does not pay port penalties, so its estimate must omit them.
+  override refineExpensiveRouteHeuristic(): void {}
+
   override computeG(
     currentCandidate: Candidate,
     _neighborPortId: PortId,
