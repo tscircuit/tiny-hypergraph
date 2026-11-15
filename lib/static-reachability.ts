@@ -103,6 +103,28 @@ const isRegionBlockedForStaticReachability = (
   return reservedNetId !== -1 && reservedNetId !== routeNetId
 }
 
+const getStaticReachabilityPortAssignments = (
+  context: StaticReachabilityContext,
+): Int32Array => {
+  const { problem } = context
+  if (!problem.initialAssignments?.length) return context.portAssignment
+  const portAssignment = new Int32Array(context.portAssignment)
+  // Movable preloads can be rerouted. Their internal ports cannot prove that
+  // a route is impossible; endpoint and region reservations still apply.
+  for (const { routeId, fromPortId, toPortId } of problem.initialAssignments) {
+    if (problem.routeIsFixed?.[routeId] === 1) continue
+    portAssignment[fromPortId] = -1
+    portAssignment[toPortId] = -1
+  }
+  // A fixed route may share same-net copper with a movable route.
+  for (const { routeId, fromPortId, toPortId } of problem.initialAssignments) {
+    if (problem.routeIsFixed?.[routeId] !== 1) continue
+    portAssignment[fromPortId] = problem.routeNet[routeId]!
+    portAssignment[toPortId] = problem.routeNet[routeId]!
+  }
+  return portAssignment
+}
+
 const hasStaticReachabilityPath = (
   context: StaticReachabilityContext,
   routeId: RouteId,
@@ -239,9 +261,13 @@ export const getStaticallyUnroutableRoutes = (
   context: StaticReachabilityContext,
 ): StaticallyUnroutableRouteSummary[] => {
   const routeIds = [...new Set(context.routeIds)]
+  const searchContext = {
+    ...context,
+    portAssignment: getStaticReachabilityPortAssignments(context),
+  }
 
   return routeIds
-    .filter((routeId) => !hasStaticReachabilityPath(context, routeId))
+    .filter((routeId) => !hasStaticReachabilityPath(searchContext, routeId))
     .map((routeId) => context.getRouteSummary(routeId))
 }
 
