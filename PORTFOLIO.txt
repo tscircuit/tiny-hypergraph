@@ -1,0 +1,121 @@
+DETERMINISTIC EIGHT-CANDIDATE PROTOTYPE
+
+  import { solveTinyHyperGraphPortfolio } from "tiny-hypergraph/lib/parallel"
+
+  const result = await solveTinyHyperGraphPortfolio(input, { workers: 8 })
+  if (result.failed) throw new Error(result.error ?? "Routing failed")
+  const output = result.output
+
+For repeated graphs, keep the workers alive. Graphs are processed sequentially;
+the parallelism remains eight candidates for each individual graph:
+
+  import { TinyHyperGraphPortfolioPool } from "tiny-hypergraph/lib/parallel"
+  const pool = new TinyHyperGraphPortfolioPool({ workers: 8 })
+  try {
+    for (const input of inputs) {
+      const result = await pool.solve(input)
+    }
+  } finally {
+    await pool.close()
+  }
+
+A pool accepts one active solve at a time. Overlapping solves and closing during
+a solve reject. A solve error closes the pool; create a new one to retry.
+
+This runs eight fixed candidates for ONE graph. Changing workers changes only
+scheduling: all eight candidates run, and the same output, selected candidate,
+candidate statistics and quality metrics must result with 1/2/4/8 workers.
+It may return a different route from the original serial algorithm. Existing
+ParallelTinyHyperGraphSolver retains the original algorithm's exact outcome.
+
+Candidate zero uses the original search and route order. Seven candidates use
+distance-aware search with fixed route shuffles and fixed heuristic/congestion
+settings (see PORTFOLIO_PLANS). Each candidate defaults to 250,000 core iterations.
+Candidate zero retains the legacy greedy completion tail (up to four additional
+50,000-step searches). Distance candidates disable that tail. The budget and
+candidate list are independent of worker count. Explicit solverOptions override
+candidate defaults; MAX_ITERATIONS applies to EACH candidate, not the portfolio.
+
+Selection waits for all candidates. Completed candidates rank before failures;
+among completions, fewer known-single-layer intersections rank first, followed
+by maximum regional congestion cost, total cost, then candidate index. This is
+a routing-model audit, not a final PCB DRC. If all completions violate the model,
+the result still exposes those violations: inspect quality.singleLayerIntersections.
+The legacy fallback can preserve completion while producing such violations.
+If every candidate fails, candidate zero is returned as the deterministic failure.
+
+The default backend batches immutable A* searches into WebAssembly. The original
+solver still owns route order, commits, congestion feedback, rerips and timeout
+acceptance. The kernel implements both the legacy heap (including stale entries
+and immutable predecessor history) and the distance-aware indexed heap. It uses
+IEEE f64 arithmetic and preserves logical iteration counts. Regional score
+caches invalidate on routing mutations; net-specific scores are never confused
+with generic scores. Reused region buffers reduce allocation without changing
+geometry or cost arithmetic.
+
+The kernel supports up to 65,536 ports, 16,384 regions, two incidences per port,
+and 262,144 adjacency entries. It reserves 64 MB initially, with a 256 MB maximum
+per candidate; the larger legacy history is allocated only for candidate zero.
+Unsupported topology/geometry uses the JS implementation. A bounded history or
+intersection-arena overflow also falls back to JS; abandoned immutable work is
+not charged to the logical budget. Its physical CPU time remains measured.
+Use backend: "javascript" for the reference implementation. Compiler source is
+native/route-search.ts; rebuild with bun run build:native-search.
+
+Immutable numeric inputs are shared once, and adjacency is reconstructed in each
+worker. Display metadata stays on the coordinator. Only the selected state
+crosses back; output conversion uses the original IDs and metadata.
+
+The fast default can worsen routing cost compared with the original 1M-step
+solver. To include its full-budget search as a reference, construct the pool with
+baselineIterations: 1_000_000 (or pass that option to the convenience function).
+Other candidates retain their 250k budget. Under default solver settings this
+ensures selection cannot rank worse than that reference on model violations,
+maximum congestion and total congestion, in that priority order. It costs more
+single-core work and increases the longest candidate's latency. Explicit
+solverOptions.MAX_ITERATIONS applies to all candidates unless baselineIterations
+is supplied separately.
+
+Single-worker execution runs in process and blocks that thread. It pays for all
+eight candidates sequentially. Eight workers can run the candidates concurrently,
+but require additional workspaces, memory, startup and data copies. Time and CPU
+cost must be measured against BOTH the original solver and the one-worker
+portfolio; parallel scaling does not establish a speedup over the original.
+
+Benchmark all 16 current srj18 inputs, including failures:
+
+  mkdir -p work
+  tar -xzf experiments/srj18-inputs.tar.gz -C work
+  bun scripts/benchmarking/fixed-round-srj18.ts --portfolio --workers 1,2,4,8
+
+Measure persistent workers separately, with startup/termination included once
+per suite and no parallelism between graphs:
+
+  bun scripts/benchmarking/pooled-portfolio-srj18.ts --workers 1,2,4,8 --repeat 3
+
+Measure the full-budget reference mode explicitly:
+
+  bun scripts/benchmarking/pooled-portfolio-srj18.ts --baseline-budget 1000000 --workers 1,8 --repeat 3
+
+The compressed snapshot contains exactly the inputs extracted by
+generate-srj18-hypergraphs.ts from dataset commit
+100e8957ce789b5b288e14c476dc83f4efc5214b and published autorouter 0.0.979, effort 0.1.
+Every graph has source provenance and a checked SHA-256. Keeping this snapshot
+avoids transitive dependency changes during extraction and repeated expensive
+preprocessing on CI. The generator remains available to independently reproduce
+it. CI constrains a Blacksmith runner to eight CPUs, checks its quota, benchmarks
+both one/eight workers and the original solver, and verifies deterministic hashes.
+
+Measured eight-core results: experiments/native-portfolio-srj18.md. The three-trial
+median is 18.465s versus 65.823s for the original solver (3.56x), and 82.971s for
+the same portfolio on one worker (4.49x scaling). These use one persistent pool
+for 16 sequential graphs, including startup/termination. One-worker wall time
+rises 26%; total eight-worker CPU time rises 49%. Outputs match across workers
+and repeats. Completion remains 15/16 and model-valid completion 11/16, with
+congestion regressions on samples002/007/016. See the report for per-case quality,
+memory cost and input provenance. The aggregate speedup is not a per-case promise.
+
+Cold workers per graph achieve 2.94x (23.222s vs 68.194s; one trial). Keep a pool
+alive to exceed 3x on this suite. Full-budget reference mode achieves 2.02x
+(32.351s vs 65.305s; one trial) while removing the observed selection-rank
+regressions. These controls and their raw reports are included in the experiment.

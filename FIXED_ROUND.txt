@@ -1,0 +1,162 @@
+FIXED-ROUND MULTICORE PROTOTYPE
+
+This is a separate routing algorithm, not a faster implementation of the legacy
+algorithm. With identical input and options, it makes the same decisions and
+produces the same complete output and deterministic statistics with 1, 2, 4 or
+8 workers. It can produce a different solution, or fail on an input that the
+legacy solver completes. This prototype is not the default solver.
+
+  import { loadSerializedHyperGraph } from "tiny-hypergraph/lib/index"
+  import { FixedRoundTinyHyperGraphSolver } from "tiny-hypergraph/lib/parallel"
+
+  const { topology, problem } = loadSerializedHyperGraph(input)
+  const solver = new FixedRoundTinyHyperGraphSolver(topology, problem, {
+    workers: 8,
+    ROUND_SIZE: 32,
+    MAX_ITERATIONS: 2_000_000,
+  })
+  await solver.solveAsync()
+  if (solver.failed) throw new Error(solver.error ?? "Routing failed")
+  const output = solver.getOutput()
+
+Algorithm
+
+A logical round selects up to ROUND_SIZE routes in the fixed queue order. Every
+search sees the same frozen assignments, regional intersection caches, congestion
+costs and port prices. Results are committed in queue order, regardless of worker
+completion order. A proposal loses if it uses a port assigned to a different net
+or creates a hard crossing in a known single-layer region. Changed soft costs do
+not invalidate a geometrically feasible proposal. Rejected routes move to the
+end of the queue. Repeated failures trigger the existing deterministic whole-graph
+rerip and seeded shuffle; a fully routed graph uses the existing congestion ramp
+and best-solution snapshot policy.
+
+Each rejected port-capacity conflict adds a persistent port price. This includes
+losing proposals in congestion feedback; prices survive rerips so earlier winners
+can avoid the same contested resource too. Caller-owned problem arrays are not
+mutated. Setting PORT_CONFLICT_PENALTY=0 disables price negotiation for ablation.
+
+A shared atomic task counter distributes searches dynamically among workers.
+This balances work without deciding route priority. Immutable port assignments,
+port prices and congestion arrays use SharedArrayBuffer; region-cache updates
+are copied. All searches finish before any commit. A single worker runs the
+identical algorithm in-process, avoiding worker startup and messaging, but it
+blocks the calling thread while computing.
+
+Determinism requires keeping ROUND_SIZE, all search limits, prices and other
+solver options fixed when changing workers. Search work is bounded using candidate
+expansion counts, not elapsed time. Each route receives the same deterministic
+share of the remaining budget, capped by ROUTE_STEP_LIMIT. The final short round
+also uses a fixed budget. Timing, CPU use and memory measurements are excluded
+from output fingerprints. Same runtime and architecture are assumed.
+
+Defaults and limits
+
+ROUND_SIZE: 32
+ROUTE_STEP_LIMIT: 50,000 candidate steps per search
+RETRIES_BEFORE_RIP: 8
+PORT_CONFLICT_PENALTY: 1
+MAX_ITERATIONS: 2,000,000 candidate steps overall
+GREEDY_FINAL_ROUTE_ITERS: 0 (no implicit serial completion tail)
+
+The doubled default work budget intentionally trades single-core time for more
+parallel work and recovery attempts. It does not guarantee improved solution
+quality. Batch size, route limit and port price are algorithmic parameters, not
+hardware tuning knobs. Changing them can change the result.
+
+Use solveAsync(), including with one worker. Synchronous solve()/step(), custom
+subclasses, GREEDY_FINAL_ROUTE_ITERS other than zero and
+OWNED_REGIONAL_HOP_FRONTIER=true are rejected. Do not mutate or
+step the solver while solveAsync() is pending. Worker failures reject the call
+and workers are terminated on all completion/error paths. As with the existing
+base solver, ordinary timeout acceptance may restore a previously complete best
+solution. A partial graph is never reported as solved.
+
+Reproduction
+
+  bun install --ignore-scripts
+  bun run benchmark:parallel:srj18:generate
+  bun run benchmark:fixed-round:srj18 --repeat 3
+
+The diagnostic benchmark uses all 16 regenerated srj18 hypergraphs at dataset
+commit 100e8957ce789b5b288e14c476dc83f4efc5214b, the autorouter dependency pin used
+for the previous benchmark. Inputs come from published autorouter 0.0.979,
+Pipeline 7, effort 0.1. Input hashes are checked.
+
+Each timed solve uses a separate process. Core warmup and file parsing are
+excluded; conversion, solve, output conversion, worker startup and cleanup are
+included. CPU time covers all threads. Peak RSS includes input parsing and warmup.
+The benchmark checks status, errors, iterations, core and round statistics,
+complete serialized output fingerprints, final assignment/segment fingerprints,
+and quality metrics across worker counts. It also audits port ownership and hard
+single-layer crossing invariants. Quality comparisons use fully solved graphs;
+partial-state scores from failures are not improvements. Region cost, path length
+and layer changes are hypergraph proxies, not final PCB DRC or routing metrics.
+
+The current environment has a four-core cgroup quota and five visible logical
+CPUs. Eight-worker timing is oversubscribed and is not an eight-core hardware
+measurement. Run this benchmark on actual eight-core capacity before claiming
+an eight-core speedup. --prototype-only, --workers, --round-size,
+--route-step-limit and --port-conflict-penalty support focused experiments.
+
+Diagnostic findings (one full-suite trial per mode)
+
+Original serial, 1M search budget: 45.42 seconds, 49.48 CPU seconds.
+Priced prototype, 2M search budget:
+
+Workers    Wall seconds    CPU seconds    Largest observed process RSS
+1          92.08           96.57          305 MiB
+2          62.78          110.05          336 MiB
+4          53.00          128.55          494 MiB
+8          61.85          165.09          701 MiB
+
+Four workers are 1.74x faster than the same algorithm on one worker, but 17%
+slower than the original serial solver. One-worker latency is 2.03x the original;
+the doubled budget is explicit, not hidden in a speedup comparison. CPU use at
+four workers is 2.60x the original; maximum process RSS rises from 305 to 701 MiB
+between one and eight workers. Eight workers oversubscribe four available cores.
+These are exploratory measurements, not statistical performance guarantees.
+
+The original solver reports 15 completed cases. The full audit finds same-layer
+intersections in regions marked single-layer in four of those outputs:
+sample006, sample012, sample013 and sample015. Each audited output hash matches
+the exact measured baseline. Thus 11 legacy completions pass this particular
+model constraint. This finding is not a final PCB DRC result or a change to the
+legacy solver's completion semantics.
+
+The priced prototype completes 8 cases, and its completed states pass the audited
+hard ownership and single-layer constraints. It additionally fails sample002,
+sample008 and sample009, which the original completes without this model issue.
+Completion differences therefore include both stricter constraint enforcement
+and genuine algorithm regressions. It is not ready to replace the original.
+
+Among the eight common completions, maximum region cost improves on some cases
+and worsens on others. For example sample001 falls from 1.281 to 0.865, while
+sample004 rises from 2.358 to 2.839. There is no general quality improvement.
+
+Ablations: unpriced 32-route rounds also complete 8 cases (95.50 seconds on one
+worker). An unpriced 8-route/250k-per-route preset completes 9 (96.14 seconds).
+At the original 1M budget, unpriced 32-route rounds complete 8 (51.76 seconds).
+More work, smaller rounds and port prices alone did not recover legacy coverage.
+
+All 16 cases match across 1/2/4/8 workers for both the unpriced and priced
+32-route presets, including failures, exact outputs, iteration counts, final
+assignments, round statistics and quality metrics. Raw evidence:
+
+  experiments/fixed-round-srj18-results.json
+  experiments/fixed-round-unpriced-srj18-results.json
+  experiments/fixed-round-small-srj18-results.json
+  experiments/srj18-single-layer-audit.json
+
+The next experiment should address route conflict selection and long-route
+search limits before treating this as an eight-core performance candidate.
+An actual eight-core machine is still needed to evaluate eight-core scaling.
+
+Validation
+
+The full suite passed 162 tests; final focused checks passed all 13 parallel
+tests, including the final legacy-tail guard. TypeScript typecheck passes.
+Tests cover fixed-round cross-worker equality, port ownership, single-layer
+crossings, bounded budgets, empty/preloaded graphs, infinite goal penalties,
+negotiated-price persistence, caller-array isolation and unsupported invocation.
+Existing legacy-equivalent and batch solver tests remain green.

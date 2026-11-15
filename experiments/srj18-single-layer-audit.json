@@ -1,0 +1,152 @@
+{
+  "datasetCommit": "100e8957ce789b5b288e14c476dc83f4efc5214b",
+  "solver": "TinyHyperGraphSolver",
+  "budget": 1000000,
+  "methodology": "Audit the exact measured serial outputs against the model single-layer intersection constraint. This is not a final PCB DRC check.",
+  "samples": [
+    {
+      "sample": "sample001",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "1a487c5aea3a0192d3d3e2336535a7c8bdbf1848cea087f489431cab4c792247",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample002",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "15f148b4b63e01a403bce09fdfb01a6f4ce79e34317b6dbae2de7d41b57550d6",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample003",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "a223598269a80a302ebae82d3daed181740e82dfdb4a4fada7b6e6e5432fe840",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample004",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "2a05ba28189ba7081adee421f07ea95b242c7bb1db6ef4ad97a10730b518ae4b",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample005",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "4c26e424682e999543f4a355f45af71f1c5ff4cfe429a901e73e85db8e8009bb",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample006",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 117,
+      "totalCrossings": 268,
+      "outputHash": "7ef0c249d1ca0eb61f2ec130613dd35e8f310f6e8b8bab71e55a1df2d1f43b26",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample007",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "cad35b8c58e97df4e736f335d66abdf0fc76fe58c34c418f9d919f73da7363fc",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample008",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "d388aca63cf33e9f54d02201b2ee4fcb8f585dc329cb7bff65d7b4a0e33cdfc7",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample009",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "97f4bc6d18e2bbb12c0598e19314679638194147a306c27e918764838de60576",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample010",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "dc17e5076469c37c803db9a461e4409b52a53346c68c661efde0de7efdac73aa",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample011",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "1b672bb4141b3dcceb3c413c8941f110a968bfb94e0d76bfccf6454d10be91c1",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample012",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 26,
+      "totalCrossings": 42,
+      "outputHash": "ad7b5d76e325545aabb917e6eba63016670a9b8f8557bc9d04ca6d4b23e0f032",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample013",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 68,
+      "totalCrossings": 102,
+      "outputHash": "297187248a94f2dc8c933d249fa52ae9f5c332617a336fa59cbf697060d52833",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample014",
+      "solved": false,
+      "failed": true,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample015",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 80,
+      "totalCrossings": 143,
+      "outputHash": "1e1366589afcde494b2b88065c9c7bdf94a29ebf21187add4de4415acfb279c2",
+      "measuredOutputMatches": true
+    },
+    {
+      "sample": "sample016",
+      "solved": true,
+      "failed": false,
+      "crossingRegions": 0,
+      "totalCrossings": 0,
+      "outputHash": "d5dac96342d2acd60cda0f885161a77a48ccb3083f81cefe3e57b6e101854583",
+      "measuredOutputMatches": true
+    }
+  ]
+}
