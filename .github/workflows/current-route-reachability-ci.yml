@@ -1,0 +1,55 @@
+name: Private current-route reachability checks
+
+on:
+  push:
+    branches: [test/current-route-reachability-3200]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Format check
+            command: bun run format:check
+          - name: Type check
+            command: bunx tsc --noEmit
+          - name: Full test suite
+            command: bun test --timeout 30000
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Record tools and require pinned formatter
+        run: |
+          bun --version
+          ./node_modules/.bin/biome --version
+          ./node_modules/.bin/tsc --version
+          bun -e 'const version = (await Bun.file("node_modules/@biomejs/biome/package.json").json()).version; if (version !== "2.5.15") throw new Error(`Expected Biome2.5.15, received ${version}`)'
+
+      - name: Run existing check command
+        run: ${{ matrix.command }}
+
+      - name: Upload test snapshot differences
+        if: ${{ always() && matrix.name == 'Full test suite' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-route-reachability-snapshot-differences
+          path: tests/**/__snapshots__/*.diff.png
+          if-no-files-found: ignore

@@ -22,6 +22,7 @@ import {
   createStaticallyUnroutableRouteSummary,
   getStaticallyUnroutableRoutes,
   getStaticReachabilityError,
+  hasCurrentRouteReachabilityPath,
 } from "./static-reachability"
 import type {
   HopId,
@@ -847,6 +848,23 @@ export class TinyHyperGraphSolver extends BaseSolver {
         return
       }
 
+      state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
+      if (
+        !hasCurrentRouteReachabilityPath({
+          topology,
+          problem,
+          problemSetup: this.problemSetup,
+          portAssignment: state.portAssignment,
+          routeNetId: state.currentRouteNetId!,
+          startPortId: startingPortId,
+          goalPortId: state.goalPortId,
+          startRegionId: startingNextRegionId,
+        })
+      ) {
+        this.onOutOfCandidates()
+        return
+      }
+
       const startingHopId = this.getHopId(startingPortId, startingNextRegionId)
       this.setCandidateBestCost(startingHopId, 0)
       state.candidateQueue.queue({
@@ -857,7 +875,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
         g: 0,
         h: 0,
       })
-      state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
     }
 
     const currentCandidate = state.candidateQueue.dequeue()
