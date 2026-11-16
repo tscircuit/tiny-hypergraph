@@ -59,7 +59,7 @@ export class PreparedPortPointRoutingSolver extends SelectiveReripTinyHyperGraph
         ...options,
         MAX_ITERATIONS: Math.max(
           options.MAX_ITERATIONS ?? 50_000,
-          this.MAX_ITERATIONS * 2,
+          this.MAX_ITERATIONS * 4,
         ),
       },
       this.geometry,
