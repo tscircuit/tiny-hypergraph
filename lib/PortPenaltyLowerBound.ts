@@ -138,6 +138,9 @@ export class PortPenaltyLowerBound {
     let known = Infinity
     for (const region of incidentRegions) {
       const target = this.componentByRegion[region]
+      // With nonnegative penalties, a known zero-cost path is already exact,
+      // even before this component is settled by the reverse search.
+      if (this.distances[target] === 0) return 0
       if (this.settled[target]) known = Math.min(known, this.distances[target])
     }
     if (known !== Infinity) return known
