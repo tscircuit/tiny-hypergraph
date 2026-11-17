@@ -114,7 +114,7 @@ class ObservedFinalRoutingSolver extends SelectiveReripTinyHyperGraphSolver {
   }
 }
 
-test.failing("final routing tries recovered progress only after the original attempts fail", () => {
+test("final routing tries recovered progress only after the original attempts fail", () => {
   const solver = new ObservedFinalRoutingSolver(
     { costAware: 8, greedy: 32 },
     { GREEDY_FINAL_ROUTE_ITERS: 4 },
