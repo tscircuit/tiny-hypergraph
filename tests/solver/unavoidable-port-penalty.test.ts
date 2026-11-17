@@ -88,7 +88,7 @@ test("searching a nearby destination behind an unavoidable penalized port", asyn
       height: 0.94,
       fill: visited.has(region)
         ? "rgba(251, 146, 60, 0.25)"
-        : "rgba(241, 245, 249, 0.25)",
+        : "rgba(226, 232, 240, 0.6)",
       stroke: "#94a3b8",
     })),
     lines: [

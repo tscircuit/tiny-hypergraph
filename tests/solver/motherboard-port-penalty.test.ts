@@ -130,15 +130,22 @@ test("full motherboard graph searches across the board for a short STM32 power c
     fill: "#2563eb",
     stroke: "#2563eb",
   }))
-  graphics.arrows = [
-    {
-      start: { x: 27, y: 24 },
-      end: { x: 9, y: 16.4 },
-      color: "#2563eb",
-      label: "Short STM32 connection",
-    },
-  ]
+  graphics.lines.push({
+    points: [
+      { x: 27, y: 24 },
+      { x: 9, y: 16.4 },
+    ],
+    strokeColor: "#2563eb",
+    strokeWidth: 0.12,
+  })
   graphics.texts = [
+    {
+      x: 28,
+      y: 25,
+      text: "Short STM32 connection",
+      fontSize: 1.4,
+      anchorSide: "center_left",
+    },
     {
       x: -77,
       y: 58,
