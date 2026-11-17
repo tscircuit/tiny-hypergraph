@@ -77,7 +77,7 @@ test("searching a nearby destination behind an unavoidable penalized port", asyn
   expect(solver.solved).toBe(true)
   expect(solver.state.regionSegments[0]).toEqual([[0, start, gate]])
   expect(solver.state.regionSegments[pocket]).toEqual([[0, gate, goal]])
-  expect(solver.iterations).toBeGreaterThan(topology.portCount)
+  expect(solver.iterations).toBe(4)
   const graphics: GraphicsObject = {
     rects: regions.map((_, region) => ({
       center: {
