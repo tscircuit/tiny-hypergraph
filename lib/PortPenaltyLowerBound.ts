@@ -4,73 +4,60 @@ import type { NetId, PortId, RegionId } from "./types"
 
 type ComponentId = number
 type PendingComponent = { component: ComponentId; cost: number }
+type ComponentEdge = { component: ComponentId; penalty: number; netId: NetId }
 
 /**
  * Remaining port cost with geometry and current route ownership relaxed.
- * Collapse zero-cost regions once per net, then search the small weighted
- * component graph lazily from the goal. Only the current net/goal is retained.
- * Static reservations stay in the graph; ignoring direction and occupied
- * routes can only reduce the estimate, so it remains a lower bound.
+ * Free regions joined by unreserved zero-cost ports are compressed once.
+ * Reserved regions/ports stay separate so all nets can share this graph.
+ * Ignoring direction and occupied routes can only reduce the estimate.
  */
 export class PortPenaltyLowerBound {
   private netId?: NetId
   private goalPortId?: PortId
+  private readonly topology: TinyHyperGraphTopology
   private readonly componentByRegion: Int32Array
-  private edges: Map<ComponentId, number>[] = []
-  private distances = new Float64Array(0)
-  private settled = new Uint8Array(0)
+  private readonly componentNetIds: NetId[] = []
+  private readonly edges: ComponentEdge[][]
+  private readonly distances: Float64Array
+  private readonly settled: Uint8Array
   private readonly pending = new MinHeap<PendingComponent>(
     [],
     (a, b) => a.cost - b.cost,
   )
 
-  constructor(
-    private readonly input: {
-      topology: TinyHyperGraphTopology
-      problem: TinyHyperGraphProblem
-      endpointReservations: Int32Array
-    },
-  ) {
-    this.componentByRegion = new Int32Array(input.topology.regionCount).fill(-1)
-  }
-
-  private canCross(port: PortId, netId: NetId): boolean {
-    const { problem, endpointReservations } = this.input
-    const reservation = endpointReservations[port]
-    return (
-      problem.portSectionMask[port] !== 0 &&
-      (reservation === -1 || reservation === netId)
-    )
-  }
-
-  private buildComponents(netId: NetId): void {
-    const { topology, problem } = this.input
-    const components = this.componentByRegion
-    components.fill(-1)
-    this.edges = []
+  constructor({
+    topology,
+    problem,
+    endpointReservations,
+  }: {
+    topology: TinyHyperGraphTopology
+    problem: TinyHyperGraphProblem
+    endpointReservations: Int32Array
+  }) {
+    this.topology = topology
+    const components = new Int32Array(topology.regionCount).fill(-1)
+    this.componentByRegion = components
     const stack: RegionId[] = []
     for (let seed = 0; seed < topology.regionCount; seed++) {
-      if (
-        components[seed] !== -1 ||
-        (problem.regionNetId[seed] !== -1 &&
-          problem.regionNetId[seed] !== netId)
-      )
-        continue
-      const component = this.edges.length
-      this.edges.push(new Map())
+      if (components[seed] !== -1) continue
+      const component = this.componentNetIds.length
+      this.componentNetIds.push(problem.regionNetId[seed])
       components[seed] = component
+      // Keep each reserved region separate; only its owning net may use it.
+      if (problem.regionNetId[seed] !== -1) continue
       stack.push(seed)
       while (stack.length) {
         const region = stack.pop()!
         for (const port of topology.regionIncidentPorts[region]) {
-          if (!this.canCross(port, netId) || problem.portPenalty![port] !== 0)
+          if (
+            problem.portSectionMask[port] === 0 ||
+            endpointReservations[port] !== -1 ||
+            (problem.portPenalty?.[port] ?? 0) !== 0
+          )
             continue
           for (const next of topology.incidentPortRegion[port]) {
-            if (
-              components[next] !== -1 ||
-              (problem.regionNetId[next] !== -1 &&
-                problem.regionNetId[next] !== netId)
-            )
+            if (components[next] !== -1 || problem.regionNetId[next] !== -1)
               continue
             components[next] = component
             stack.push(next)
@@ -78,28 +65,44 @@ export class PortPenaltyLowerBound {
         }
       }
     }
+    const edgeMaps = this.componentNetIds.map(
+      () => new Map<ComponentId, Map<NetId, number>>(),
+    )
     for (let port = 0; port < topology.portCount; port++) {
-      if (!this.canCross(port, netId)) continue
-      const penalty = problem.portPenalty![port]
-      if (penalty === 0 || penalty === Infinity) continue
+      const netId = endpointReservations[port]
+      if (problem.portSectionMask[port] === 0 || netId === -2) continue
+      const penalty = problem.portPenalty?.[port] ?? 0
+      if (penalty === Infinity) continue
       if (!Number.isFinite(penalty) || penalty < 0)
         throw new Error("Port penalties must be nonnegative numbers")
       for (const region of topology.incidentPortRegion[port]) {
         const from = components[region]
-        if (from < 0) continue
         for (const other of topology.incidentPortRegion[port]) {
           const to = components[other]
-          if (to < 0 || from === to) continue
-          const previous = this.edges[from].get(to)
-          if (previous === undefined || penalty < previous)
-            this.edges[from].set(to, penalty)
+          if (from === to) continue
+          let costsByNet = edgeMaps[from].get(to)
+          if (!costsByNet) {
+            costsByNet = new Map()
+            edgeMaps[from].set(to, costsByNet)
+          }
+          costsByNet.set(
+            netId,
+            Math.min(costsByNet.get(netId) ?? Infinity, penalty),
+          )
         }
       }
     }
+    this.edges = edgeMaps.map((edges) =>
+      Array.from(edges).flatMap(([component, costs]) =>
+        Array.from(costs, ([netId, penalty]) => ({
+          component,
+          netId,
+          penalty,
+        })),
+      ),
+    )
     this.distances = new Float64Array(this.edges.length)
     this.settled = new Uint8Array(this.edges.length)
-    this.netId = netId
-    this.goalPortId = undefined
   }
 
   getLowerBound({
@@ -111,29 +114,31 @@ export class PortPenaltyLowerBound {
     endPortId: PortId
     portId: PortId
   }): number {
-    if (netId !== this.netId) this.buildComponents(netId)
-    const { topology } = this.input
-    if (endPortId !== this.goalPortId) {
+    if (netId !== this.netId || endPortId !== this.goalPortId) {
       this.distances.fill(Infinity)
       this.settled.fill(0)
       this.pending.clear()
-      for (const region of topology.incidentPortRegion[endPortId]) {
+      for (const region of this.topology.incidentPortRegion[endPortId]) {
         const component = this.componentByRegion[region]
-        if (component < 0 || this.distances[component] === 0) continue
+        const reservedNet = this.componentNetIds[component]
+        if (
+          (reservedNet !== -1 && reservedNet !== netId) ||
+          this.distances[component] === 0
+        )
+          continue
         this.distances[component] = 0
         this.pending.queue({ component, cost: 0 })
       }
+      this.netId = netId
       this.goalPortId = endPortId
     }
-    const targets = topology.incidentPortRegion[portId].map(
-      (region) => this.componentByRegion[region],
-    )
     // Either incident region is allowed in this relaxation. The queried
     // port's cost has already been paid by the forward search.
+    const incidentRegions = this.topology.incidentPortRegion[portId]
     let known = Infinity
-    for (const target of targets) {
-      if (target >= 0 && this.settled[target])
-        known = Math.min(known, this.distances[target])
+    for (const region of incidentRegions) {
+      const target = this.componentByRegion[region]
+      if (this.settled[target]) known = Math.min(known, this.distances[target])
     }
     if (known !== Infinity) return known
     while (this.pending.length) {
@@ -141,13 +146,24 @@ export class PortPenaltyLowerBound {
       if (this.settled[component] || cost !== this.distances[component])
         continue
       this.settled[component] = 1
-      for (const [next, penalty] of this.edges[component]) {
-        const nextCost = cost + penalty
-        if (nextCost >= this.distances[next]) continue
-        this.distances[next] = nextCost
-        this.pending.queue({ component: next, cost: nextCost })
+      for (const edge of this.edges[component]) {
+        const reservedNet = this.componentNetIds[edge.component]
+        if (
+          (reservedNet !== -1 && reservedNet !== netId) ||
+          (edge.netId !== -1 && edge.netId !== netId)
+        )
+          continue
+        const nextCost = cost + edge.penalty
+        if (nextCost >= this.distances[edge.component]) continue
+        this.distances[edge.component] = nextCost
+        this.pending.queue({ component: edge.component, cost: nextCost })
       }
-      if (targets.includes(component)) return cost
+      if (
+        incidentRegions.some(
+          (region) => this.componentByRegion[region] === component,
+        )
+      )
+        return cost
     }
     return Infinity
   }
