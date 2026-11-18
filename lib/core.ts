@@ -2185,10 +2185,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const { currentRouteId, candidateQueue, unroutedRoutes, ripCount } =
       this.state
     if (currentRouteId === undefined || !candidateQueue.updatePriorities) return
-    // The active route has already been removed from unroutedRoutes.
+    // At half-budget, fewer than a quarter assigned projects to over twice
+    // the whole budget. Keep the ordinary search on passes closer to pace.
+    const assignedRouteCount =
+      this.problem.routeCount - unroutedRoutes.length - 1
     this.refineRemainingInitialRoutes ??=
       ripCount === 0 &&
-      (unroutedRoutes.length + 1) * 2 > this.problem.routeCount &&
+      assignedRouteCount * 4 < this.problem.routeCount &&
       (this.problem.portPenalty?.some((cost) => cost > 0) ?? false)
     if (
       !this.refineRemainingInitialRoutes ||
