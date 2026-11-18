@@ -145,6 +145,7 @@ export class DenseRoutingWorkspace {
             mask,
             row.via,
             row.density,
+            t.regionViaAreaFraction?.[region] ?? 1,
           ) - cache.existingRegionCost
       }
       this.rows[region] = row

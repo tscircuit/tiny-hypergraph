@@ -123,6 +123,12 @@ export interface TinyHyperGraphTopology {
    * behavior for manually-constructed topologies that do not provide this data.
    */
   regionAvailableZMask?: Int32Array
+  /**
+   * regionViaAreaFraction[regionId] is the share (0 to 1] of the region's area
+   * where a via can actually go. Only the via term of the region cost uses it;
+   * trace density and geometry keep the full region. Missing means 1.
+   */
+  regionViaAreaFraction?: Float64Array
 
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
@@ -1318,6 +1324,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
       this.TRACE_DENSITY_COST_FACTOR,
+      this.topology.regionViaAreaFraction?.[regionId] ?? 1,
     )
   }
 
@@ -1771,13 +1778,18 @@ export class TinyHyperGraphSolver extends BaseSolver {
       return false
     }
 
-    const startingSnapshot = cloneSolvedStateSnapshot({
-      portAssignment: this.state.portAssignment,
-      regionSegments: this.state.regionSegments,
-      regionIntersectionCaches: this.state.regionIntersectionCaches,
-      regionCongestionCost: this.state.regionCongestionCost,
-      ripCount: this.state.ripCount,
-    })
+    const originalSeed = {
+      routeIds: remainingRouteIds,
+      snapshot: cloneSolvedStateSnapshot({
+        portAssignment: this.state.portAssignment,
+        regionSegments: this.state.regionSegments,
+        regionIntersectionCaches: this.state.regionIntersectionCaches,
+        regionCongestionCost: this.state.regionCongestionCost,
+        ripCount: this.state.ripCount,
+      }),
+    }
+    let recoverySeed = originalSeed
+    let greedyFinalRouteAttemptCount = greedyFinalRouteIters
 
     let greedyFinalRouteMaxIterations = GREEDY_FINAL_ROUTE_MAX_ITERATIONS
     // Do not reset the rerip budget by opening a new cost-aware search after
@@ -1786,16 +1798,15 @@ export class TinyHyperGraphSolver extends BaseSolver {
     for (
       let greedyFinalRouteIter =
         this.state.ripCount < this.costAwareFinalReripBudget ? -1 : 0;
-      greedyFinalRouteIter < greedyFinalRouteIters;
+      greedyFinalRouteIter < greedyFinalRouteAttemptCount;
       greedyFinalRouteIter++
     ) {
+      const isRecoveryAttempt = greedyFinalRouteIter === greedyFinalRouteIters
+      const seed = isRecoveryAttempt ? recoverySeed : originalSeed
       const routeIds =
-        greedyFinalRouteIter <= 0
-          ? remainingRouteIds
-          : shuffle(
-              remainingRouteIds,
-              this.state.ripCount + greedyFinalRouteIter,
-            )
+        greedyFinalRouteIter <= 0 || isRecoveryAttempt
+          ? seed.routeIds
+          : shuffle(seed.routeIds, this.state.ripCount + greedyFinalRouteIter)
       const greedySolver = this.createGreedyFinalRouteSolver(
         {
           ...getTinyHyperGraphSolverOptions(this),
@@ -1813,12 +1824,36 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
       this.applySnapshotToGreedyFinalRouteSolver(
         greedySolver,
-        startingSnapshot,
+        seed.snapshot,
         routeIds,
       )
       greedySolver.solve()
 
       if (!greedySolver.solved || greedySolver.failed) {
+        if (
+          greedyFinalRouteIter === -1 &&
+          !this.PARTIAL_RIP_ENABLED &&
+          !this.OUTSIDE_IN_ROUTING
+        ) {
+          const pendingRouteIds =
+            greedySolver.getRemainingRouteIdsForGreedyFinalRoute()
+          if (pendingRouteIds.length < remainingRouteIds.length) {
+            // Retry useful progress only after the original attempts fail,
+            // preserving any routing result they would already complete.
+            recoverySeed = {
+              routeIds: pendingRouteIds,
+              snapshot: cloneSolvedStateSnapshot({
+                portAssignment: greedySolver.state.portAssignment,
+                regionSegments: greedySolver.state.regionSegments,
+                regionIntersectionCaches:
+                  greedySolver.state.regionIntersectionCaches,
+                regionCongestionCost: greedySolver.state.regionCongestionCost,
+                ripCount: greedySolver.state.ripCount,
+              }),
+            }
+            greedyFinalRouteAttemptCount += 1
+          }
+        }
         continue
       }
 
@@ -1837,7 +1872,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
         greedyFinalRouteIter: Math.max(0, greedyFinalRouteIter),
         finalRoutingStrategy:
           greedyFinalRouteIter < 0 ? "congestion-aware" : "greedy",
-        greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
+        greedyFinalRouteRemainingRouteCount: routeIds.length,
         greedyFinalRouteMaxIterations,
         neverSuccessfullyRoutedRouteCount: 0,
         maxRegionCost: this.bestSolvedStateSummary.maxRegionCost,
@@ -1853,7 +1888,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     this.stats = {
       ...this.stats,
-      greedyFinalRouteAttemptCount: greedyFinalRouteIters,
+      greedyFinalRouteAttemptCount,
       greedyFinalRouteRemainingRouteCount: remainingRouteIds.length,
       greedyFinalRouteMaxIterations,
     }
