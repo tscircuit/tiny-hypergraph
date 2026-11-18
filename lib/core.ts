@@ -559,7 +559,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private hCostEndY = 0
   private regionPenaltyDistances?: Float64Array
   private portPenaltyLowerBoundCap = 0
-  private hasPortPenaltyCost?: boolean
+  private refineRemainingInitialRoutes?: boolean
   private hasRefinedRouteHeuristic = false
   protected routeAttemptCountByRouteId: Uint32Array
   protected routeSuccessCountByRouteId: Uint32Array
@@ -698,7 +698,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.hCostRouteIdByPortId.fill(-1)
     this.regionPenaltyDistances = undefined
     this.portPenaltyLowerBoundCap = 0
-    this.hasPortPenaltyCost = undefined
+    this.refineRemainingInitialRoutes = undefined
     this.hasRefinedRouteHeuristic = false
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
@@ -2174,24 +2174,29 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.hCostByPortId[portId]!
   }
 
-  /** Refine a late search only for routes that have never found a path. */
+  /** Reprice unseen routes only when the first pass is behind at mid-budget. */
   refineExpensiveRouteHeuristic(): void {
-    const queue = this.state.candidateQueue
     if (
+      this.refineRemainingInitialRoutes === false ||
       this.hasRefinedRouteHeuristic ||
-      this.iterations < this.MAX_ITERATIONS / 2 ||
-      this.routeSuccessCountByRouteId[this.state.currentRouteId!] > 0 ||
-      !this.problem.portPenalty ||
-      !queue.updatePriorities
-    ) {
-      return
-    }
-    this.hasPortPenaltyCost ??= this.problem.portPenalty.some(
-      (cost) => cost > 0,
+      this.iterations < this.MAX_ITERATIONS / 2
     )
-    if (!this.hasPortPenaltyCost) return
+      return
+    const { currentRouteId, candidateQueue, unroutedRoutes, ripCount } =
+      this.state
+    if (currentRouteId === undefined || !candidateQueue.updatePriorities) return
+    // The active route has already been removed from unroutedRoutes.
+    this.refineRemainingInitialRoutes ??=
+      ripCount === 0 &&
+      (unroutedRoutes.length + 1) * 2 > this.problem.routeCount &&
+      (this.problem.portPenalty?.some((cost) => cost > 0) ?? false)
+    if (
+      !this.refineRemainingInitialRoutes ||
+      this.routeSuccessCountByRouteId[currentRouteId]! > 0
+    )
+      return
     this.hasRefinedRouteHeuristic = true
-    queue.updatePriorities((candidate): void => {
+    candidateQueue.updatePriorities((candidate): void => {
       candidate.h = this.computeH(candidate.portId, candidate.nextRegionId)
       candidate.f = candidate.g + candidate.h
     })
