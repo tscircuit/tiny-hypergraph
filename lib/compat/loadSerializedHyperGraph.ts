@@ -179,6 +179,23 @@ const getRegionGeometry = (
   }
 }
 
+/** A region's via area fraction from `d.viaAreaFraction`; 1 when absent. */
+const getRegionViaAreaFraction = (
+  region: SerializedHyperGraph["regions"][number],
+): number => {
+  const viaAreaFraction = region.d?.viaAreaFraction
+  if (viaAreaFraction === undefined) return 1
+  if (
+    typeof viaAreaFraction !== "number" ||
+    !(viaAreaFraction > 0 && viaAreaFraction <= 1)
+  ) {
+    throw new Error(
+      `Region "${region.regionId}" has viaAreaFraction ${String(viaAreaFraction)}; expected a number in (0, 1]`,
+    )
+  }
+  return viaAreaFraction
+}
+
 const getRegionAvailableZMask = (
   region: SerializedHyperGraph["regions"][number],
 ): number => {
@@ -367,6 +384,7 @@ export const loadSerializedHyperGraph = (
   const regionCenterX = new Float64Array(regionCount)
   const regionCenterY = new Float64Array(regionCount)
   const regionAvailableZMask = new Int32Array(regionCount)
+  const regionViaAreaFraction = new Float64Array(regionCount)
   const regionNetId = new Int32Array(regionCount).fill(-1)
   const hasSerializedRegionNetId = new Int8Array(regionCount)
 
@@ -377,6 +395,7 @@ export const loadSerializedHyperGraph = (
     regionCenterX[regionIndex] = geometry.centerX
     regionCenterY[regionIndex] = geometry.centerY
     regionAvailableZMask[regionIndex] = getRegionAvailableZMask(region)
+    regionViaAreaFraction[regionIndex] = getRegionViaAreaFraction(region)
 
     const serializedRegionNetId = getSerializedRegionNetId(region)
     if (serializedRegionNetId !== undefined) {
@@ -559,6 +578,7 @@ export const loadSerializedHyperGraph = (
     regionCenterX,
     regionCenterY,
     regionAvailableZMask,
+    regionViaAreaFraction,
     regionMetadata,
     portAngleForRegion1,
     portAngleForRegion2,

@@ -17,6 +17,7 @@ export const computeRegionCost = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
+  viaAreaFraction = 1,
 ) => {
   const area = regionWidth * regionHeight
 
@@ -29,6 +30,7 @@ export const computeRegionCost = (
     regionAvailableZMask,
     minViaPadDiameter,
     traceDensityCostFactor,
+    viaAreaFraction,
   )
 }
 
@@ -41,6 +43,7 @@ export const computeRegionCostForArea = (
   regionAvailableZMask = 0,
   minViaPadDiameter = DEFAULT_MIN_VIA_PAD_DIAMETER,
   traceDensityCostFactor = 0,
+  viaAreaFraction = 1,
 ) => {
   const estViasRequired =
     numSameLayerIntersections * 2 +
@@ -63,7 +66,8 @@ export const computeRegionCostForArea = (
     area
 
   return (
-    (estViasRequired * viaSizeWithMarginSq * traceCountMult) / area +
+    (estViasRequired * viaSizeWithMarginSq * traceCountMult) /
+      (area * viaAreaFraction) +
     impossibleSingleLayerIntersectionCost +
     traceDensityCost
   )

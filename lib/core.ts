@@ -117,6 +117,12 @@ export interface TinyHyperGraphTopology {
    * behavior for manually-constructed topologies that do not provide this data.
    */
   regionAvailableZMask?: Int32Array
+  /**
+   * regionViaAreaFraction[regionId] is the share (0 to 1] of the region's area
+   * where a via can actually go. Only the via term of the region cost uses it;
+   * trace density and geometry keep the full region. Missing means 1.
+   */
+  regionViaAreaFraction?: Float64Array
 
   /** regionMetadata[regionId] = metadata for the region */
   regionMetadata?: any[]
@@ -1298,6 +1304,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
       this.topology.regionAvailableZMask?.[regionId] ?? 0,
       this.minViaPadDiameter,
       this.TRACE_DENSITY_COST_FACTOR,
+      this.topology.regionViaAreaFraction?.[regionId] ?? 1,
     )
   }
 
