@@ -109,7 +109,8 @@ export class IndexedCandidateHeap {
     return bestCandidate
   }
 
-  reheapify(): void {
+  updatePriorities(update: (item: Candidate) => void): void {
+    for (const item of this.items) update(item)
     for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
       this.siftDown(index)
     }

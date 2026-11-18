@@ -36,7 +36,8 @@ export class MinHeap<T> {
     return bestItem
   }
 
-  reheapify(): void {
+  updatePriorities(update: (item: T) => void): void {
+    for (const item of this.items) update(item)
     for (let index = (this.items.length >> 1) - 1; index >= 0; index--) {
       this.siftDown(index)
     }

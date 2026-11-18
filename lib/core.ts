@@ -237,7 +237,7 @@ export interface Candidate {
 }
 
 export interface TinyHyperGraphCandidateQueue {
-  reheapify(): void
+  updatePriorities?(update: (candidate: Candidate) => void): void
   readonly length: number
   toArray(): Candidate[]
   clear(): void
@@ -699,6 +699,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     this.regionPenaltyDistances = undefined
     this.portPenaltyLowerBoundCap = 0
     this.hasPortPenaltyCost = undefined
+    this.hasRefinedRouteHeuristic = false
     this.state.portAssignment.fill(-1)
     for (const regionSegments of this.state.regionSegments) {
       regionSegments.length = 0
@@ -2175,11 +2176,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
   /** Refine a late search only for routes that have never found a path. */
   refineExpensiveRouteHeuristic(): void {
+    const queue = this.state.candidateQueue
     if (
       this.hasRefinedRouteHeuristic ||
       this.iterations < this.MAX_ITERATIONS / 2 ||
       this.routeSuccessCountByRouteId[this.state.currentRouteId!] > 0 ||
-      !this.problem.portPenalty
+      !this.problem.portPenalty ||
+      !queue.updatePriorities
     ) {
       return
     }
@@ -2188,12 +2191,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
     if (!this.hasPortPenaltyCost) return
     this.hasRefinedRouteHeuristic = true
-    const queue = this.state.candidateQueue
-    for (const candidate of queue.toArray()) {
+    queue.updatePriorities((candidate): void => {
       candidate.h = this.computeH(candidate.portId, candidate.nextRegionId)
       candidate.f = candidate.g + candidate.h
-    }
-    queue.reheapify()
+    })
     this.stats = {
       ...this.stats,
       portPenaltyHeuristicRefinementCount:
@@ -2211,8 +2212,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
       state.goalPortId < 0
     )
       return 0
-    this.hasPortPenaltyCost ??= problem.portPenalty.some((cost) => cost > 0)
-    if (!this.hasPortPenaltyCost) return 0
     if (!this.regionPenaltyDistances) {
       // Relax current port ownership: another route can be ripped up.
       // Only fixed reservations constrain the remaining-cost estimate.
