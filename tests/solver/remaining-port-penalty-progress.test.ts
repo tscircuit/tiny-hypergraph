@@ -9,7 +9,7 @@ test("a search on its last initial route at mid-budget retains its ordinary plan
     ...options,
     MAX_ITERATIONS: 80,
   })
-  while (solver.iterations < solver.MAX_ITERATIONS / 2) solver.step()
+  for (let step = 0; step < solver.MAX_ITERATIONS / 2; step++) solver.step()
   expect(solver.state.currentRouteId).toBeDefined()
   expect(solver.state.unroutedRoutes).toHaveLength(0)
   solver.solve()
