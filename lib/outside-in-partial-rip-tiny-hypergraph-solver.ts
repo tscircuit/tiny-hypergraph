@@ -860,6 +860,16 @@ export class OutsideInPartialRipTinyHyperGraphSolver extends DistanceAwareTinyHy
       candidate.nextRegionId
     ] ?? []) {
       if (neighborPortId === candidate.portId) continue
+      if (
+        this.problem.routeSegmentFilter?.(
+          this.state.currentRouteId!,
+          candidate.nextRegionId,
+          candidate.portId,
+          neighborPortId,
+        ) === false
+      ) {
+        continue
+      }
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       const assignedNetId = this.state.portAssignment[neighborPortId]!
       if (

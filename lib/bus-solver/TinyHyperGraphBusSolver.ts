@@ -117,6 +117,11 @@ export class TinyHyperGraphBusSolver extends TinyHyperGraphSolver {
     if (problem.routeIsFixed?.some((isFixed) => isFixed === 1)) {
       throw new Error("TinyHyperGraphBusSolver does not support fixed routes")
     }
+    if (problem.routeSegmentFilter) {
+      throw new Error(
+        "TinyHyperGraphBusSolver does not support route segment filters",
+      )
+    }
     super(topology, problem, options)
 
     this.busTraceOrder = deriveBusTraceOrder(topology, problem)
