@@ -1,54 +1,91 @@
-<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><rect data-type="rect" data-label="region: region-0
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="-1,-2 5,-2" data-type="line" data-label="route-3
+z: 0" points="227.71052631578945,343.0263157894737 448.7631578947368,343.0263157894737" fill="none" stroke="hsla(152, 70%, 50%, 0.8)" stroke-linejoin="round" stroke-width="1px" stroke-dasharray="10 5"/></g><g><polyline data-points="-1,-2 0,-3" data-type="line" data-label="" points="227.71052631578945,343.0263157894737 264.55263157894734,379.8684210526316" fill="none" stroke="hsla(152, 70%, 50%, 0.8)" stroke-linejoin="round" stroke-width="1px"/></g><g><rect data-type="rect" data-label="region: region-0
 net: free
 cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="0" data-y="0" x="153.15226337448559" y="408.7242798353909" width="182.0576131687243" height="182.05761316872434" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.02169642857142857"/></g><g><rect data-type="rect" data-label="region: region-1
+entry exit X: 0" data-x="0" data-y="0" x="191.78947368421052" y="196.57894736842104" width="145.52631578947367" height="145.52631578947373" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.027142857142857142"/></g><g><rect data-type="rect" data-label="region: region-1
 net: free
 cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="4" data-y="0" x="337.51440329218104" y="408.7242798353909" width="182.0576131687243" height="182.05761316872434" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.02169642857142857"/></g><g><rect data-type="rect" data-label="region: region-2
+entry exit X: 0" data-x="4" data-y="0" x="339.15789473684214" y="196.57894736842104" width="145.52631578947364" height="145.52631578947373" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.027142857142857142"/></g><g><rect data-type="rect" data-label="region: region-2
 net: free
 cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="2" data-y="4" x="245.3333333333333" y="224.36213991769554" width="182.05761316872434" height="182.05761316872423" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.02169642857142857"/></g><g><rect data-type="rect" data-label="region: region-3
-net: 2
+entry exit X: 0" data-x="2" data-y="3" x="265.47368421052624" y="86.05263157894738" width="145.5263157894737" height="145.52631578947367" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.027142857142857142"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
 cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="2" data-y="8" x="245.3333333333333" y="40" width="182.05761316872434" height="182.0576131687243" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.02169642857142857"/></g><text data-type="text" data-label="A" data-x="-2.5" data-y="0" x="128.95473251028807" y="499.7530864197531" fill="black" font-size="16.131687242798353" font-family="sans-serif" text-anchor="end" dominant-baseline="central">A</text><text data-type="text" data-label="B" data-x="-1.5" data-y="-2" x="175.04526748971193" y="591.9341563786008" fill="black" font-size="16.131687242798353" font-family="sans-serif" text-anchor="end" dominant-baseline="central">B</text><text data-type="text" data-label="C" data-x="-1.5" data-y="1" x="175.04526748971193" y="453.66255144032925" fill="black" font-size="16.131687242798353" font-family="sans-serif" text-anchor="end" dominant-baseline="central">C</text><text data-type="text" data-label="Outer corridor
-reserved for C" data-x="2" data-y="8" x="336.36213991769546" y="131.02880658436214" fill="black" font-size="10.600823045267491" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Outer corridor
-reserved for C</text><text data-type="text" data-label="Shared upper corridor" data-x="2" data-y="4" x="336.36213991769546" y="315.39094650205766" fill="black" font-size="10.600823045267491" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Shared upper corridor</text><text data-type="text" data-label="Short corridor" data-x="2" data-y="-0.6" x="336.36213991769546" y="527.4074074074074" fill="black" font-size="9.218106995884774" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Short corridor</text><g><circle data-type="point" data-label="route: route-0
+entry exit X: 0" data-x="2" data-y="-3" x="265.47368421052624" y="307.1052631578948" width="145.5263157894737" height="145.5263157894737" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.027142857142857142"/></g><g><rect data-type="rect" data-label="region: region-4
+net: 3
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="2" data-y="-7" x="265.47368421052624" y="454.4736842105263" width="145.5263157894737" height="145.52631578947364" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.027142857142857142"/></g><text data-type="text" data-label="Before: discards B, C and D" data-x="2" data-y="6" x="338.2368421052631" y="48.28947368421052" fill="#111827" font-size="16.578947368421055" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Before: discards B, C and D</text><text data-type="text" data-label="A (blocked)" data-x="-2" data-y="1.5" x="190.86842105263156" y="214.07894736842107" fill="#7c3aed" font-size="11.052631578947368" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">A (blocked)</text><text data-type="text" data-label="B" data-x="-1" data-y="-0.5" x="227.71052631578945" y="287.7631578947369" fill="#b45309" font-size="11.052631578947368" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">B</text><text data-type="text" data-label="C" data-x="-1" data-y="2.5" x="227.71052631578945" y="177.23684210526318" fill="#4d7c0f" font-size="11.052631578947368" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">C</text><text data-type="text" data-label="D" data-x="-1" data-y="-2.5" x="227.71052631578945" y="361.44736842105266" fill="#047857" font-size="11.052631578947368" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">D</text><text data-type="text" data-label="D reserved corridor" data-x="2" data-y="-7.5" x="338.2368421052631" y="545.6578947368421" fill="#374151" font-size="11.052631578947368" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">D reserved corridor</text><g><circle data-type="point" data-label="route: route-0
 net: 0
 endpoint: start
 port: port-0
-z: 0" data-x="-2" data-y="0" cx="152" cy="499.7530864197531" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+z: 0" data-x="-2" data-y="1" cx="190.86842105263156" cy="232.50000000000003" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
 net: 0
 endpoint: end
 port: port-1
-z: 0" data-x="6" data-y="0" cx="520.7242798353909" cy="499.7530864197531" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+z: 0" data-x="6" data-y="1" cx="485.60526315789474" cy="232.50000000000003" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
 net: 1
 endpoint: start
 port: port-2
-z: 0" data-x="-1" data-y="-2" cx="198.09053497942386" cy="591.9341563786008" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+z: 0" data-x="-1" data-y="0" cx="227.71052631578945" cy="269.3421052631579" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
 net: 1
 endpoint: end
 port: port-3
-z: 0" data-x="5" data-y="-2" cx="474.63374485596705" cy="591.9341563786008" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+z: 0" data-x="5" data-y="0" cx="448.7631578947368" cy="269.3421052631579" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
 net: 2
 endpoint: start
-port: port-7
-z: 0" data-x="-1" data-y="1" cx="198.09053497942386" cy="453.66255144032925" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-4
+z: 0" data-x="-1" data-y="2" cx="227.71052631578945" cy="195.65789473684214" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
 net: 2
 endpoint: end
-port: port-8
-z: 0" data-x="5" data-y="1" cx="474.63374485596705" cy="453.66255144032925" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="" data-x="2" data-y="0" cx="336.36213991769546" cy="499.7530864197531" r="3" fill="gray"/></g><g><circle data-type="point" data-label="" data-x="0" data-y="2" cx="244.18106995884773" cy="407.5720164609054" r="3" fill="gray"/></g><g><circle data-type="point" data-label="" data-x="4" data-y="2" cx="428.5432098765432" cy="407.5720164609054" r="3" fill="gray"/></g><g><circle data-type="point" data-label="" data-x="0" data-y="6" cx="244.18106995884773" cy="223.20987654320987" r="3" fill="gray"/></g><g><circle data-type="point" data-label="" data-x="4" data-y="6" cx="428.5432098765432" cy="223.20987654320987" r="3" fill="gray"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+port: port-5
+z: 0" data-x="5" data-y="2" cx="448.7631578947368" cy="195.65789473684214" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: start
+port: port-6
+z: 0" data-x="-1" data-y="-2" cx="227.71052631578945" cy="343.0263157894737" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: end
+port: port-7
+z: 0" data-x="5" data-y="-2" cx="448.7631578947368" cy="343.0263157894737" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="port: port-11
+connects: region-0 &lt;-&gt; region-3
+net: 3
+z: 0
+g: 0.07
+h: 0.25
+f: 0.33" data-x="0" data-y="-3" cx="264.55263157894734" cy="379.8684210526316" r="3" fill="green"/></g><g><circle data-type="point" data-label="port: port-8
+connects: region-0 &lt;-&gt; region-1
+net: 3
+z: 0
+g: 0.18
+h: 0.18
+f: 0.36" data-x="2" data-y="0" cx="338.2368421052631" cy="269.3421052631579" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: port-9
+connects: region-0 &lt;-&gt; region-2
+net: 3
+z: 0
+g: 0.25
+h: 0.35
+f: 0.61" data-x="0" data-y="3" cx="264.55263157894734" cy="158.81578947368422" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g><circle data-type="point" data-label="port: port-13
+connects: region-0 &lt;-&gt; region-4
+net: 3
+z: 0
+g: 0.25
+h: 0.35
+f: 0.61" data-x="0" data-y="-7" cx="264.55263157894734" cy="527.2368421052631" r="3" fill="rgba(128, 128, 128, 0.25)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
               document.currentScript.parentElement.addEventListener('mousemove', (e) => {
                 const svg = e.currentTarget;
                 const rect = svg.getBoundingClientRect();
@@ -70,7 +107,7 @@ z: 0" data-x="5" data-y="1" cx="474.63374485596705" cy="453.66255144032925" r="3
                 v.setAttribute('y2', '640');
 
                 // Calculate real coordinates using inverse transformation
-                const matrix = {"a":46.09053497942387,"c":0,"e":244.18106995884773,"b":0,"d":-46.09053497942387,"f":499.7530864197531};
+                const matrix = {"a":36.8421052631579,"c":0,"e":264.55263157894734,"b":0,"d":-36.8421052631579,"f":269.3421052631579};
                 // Manually invert and apply the affine transform
                 // Since we only use translate and scale, we can directly compute:
                 // x' = (x - tx) / sx
