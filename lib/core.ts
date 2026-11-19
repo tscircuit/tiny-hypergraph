@@ -299,6 +299,8 @@ export interface TinyHyperGraphSolverOptions {
   VERBOSE?: boolean
   STATIC_REACHABILITY_PRECHECK?: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS?: number
+  /** Check occupancy and avoid cyclic blockers during full-route attempts. */
+  EARLY_BLOCKER_RECOVERY?: boolean
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT?: boolean
   GREEDY_FINAL_ROUTE_ITERS?: number
   /** Preserve route prefixes/suffixes and reopen only a bounded hot span. */
@@ -347,6 +349,7 @@ export interface TinyHyperGraphSolverOptionTarget {
   VERBOSE: boolean
   STATIC_REACHABILITY_PRECHECK: boolean
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS: number
+  EARLY_BLOCKER_RECOVERY?: boolean
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: boolean
   GREEDY_FINAL_ROUTE_ITERS: number
   PARTIAL_RIP_ENABLED?: boolean
@@ -418,6 +421,9 @@ export const applyTinyHyperGraphSolverOptions = (
   if (options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS !== undefined) {
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS =
       options.STATIC_REACHABILITY_PRECHECK_MAX_HOPS
+  }
+  if (options.EARLY_BLOCKER_RECOVERY !== undefined) {
+    solver.EARLY_BLOCKER_RECOVERY = options.EARLY_BLOCKER_RECOVERY
   }
   if (options.ACCEPT_BEST_SOLUTION_ON_TIMEOUT !== undefined) {
     solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT =
@@ -491,6 +497,7 @@ export const getTinyHyperGraphSolverOptions = (
   STATIC_REACHABILITY_PRECHECK: solver.STATIC_REACHABILITY_PRECHECK,
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS:
     solver.STATIC_REACHABILITY_PRECHECK_MAX_HOPS,
+  EARLY_BLOCKER_RECOVERY: solver.EARLY_BLOCKER_RECOVERY,
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT: solver.ACCEPT_BEST_SOLUTION_ON_TIMEOUT,
   GREEDY_FINAL_ROUTE_ITERS: solver.GREEDY_FINAL_ROUTE_ITERS,
   PARTIAL_RIP_ENABLED: solver.PARTIAL_RIP_ENABLED,
@@ -585,6 +592,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
   VERBOSE = false
   STATIC_REACHABILITY_PRECHECK = true
   STATIC_REACHABILITY_PRECHECK_MAX_HOPS = 16
+  EARLY_BLOCKER_RECOVERY = false
   ACCEPT_BEST_SOLUTION_ON_TIMEOUT = true
   GREEDY_FINAL_ROUTE_ITERS = 4
   PARTIAL_RIP_ENABLED = false
@@ -826,6 +834,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
   }
 
+  protected isCurrentRouteReachable(): boolean {
+    return true
+  }
+
   override _step() {
     const { problem, topology, state } = this
 
@@ -864,6 +876,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
         h: 0,
       })
       state.goalPortId = this.getRouteEndPortId(state.currentRouteId!)
+      if (!this.isCurrentRouteReachable()) {
+        this.onOutOfCandidates()
+        return
+      }
     }
 
     const currentCandidate = state.candidateQueue.dequeue()

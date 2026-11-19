@@ -213,6 +213,86 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return solver
   }
 
+  protected override isCurrentRouteReachable(): boolean {
+    if (!this.EARLY_BLOCKER_RECOVERY) return true
+    const { topology, problem, state } = this
+    const routeId = state.currentRouteId!
+    if (this.partialRipRoutePlans.has(routeId)) return true
+
+    const startPortId = this.getRouteStartPortId(routeId)
+    const goalPortId = state.goalPortId
+    if (startPortId === goalPortId) return true
+    const startRegionId = this.getStartingNextRegionId(routeId, startPortId)
+    if (
+      this.isPortReservedForDifferentNet(goalPortId) ||
+      (state.portAssignment[goalPortId] !== -1 &&
+        state.portAssignment[goalPortId] !== state.currentRouteNetId)
+    ) {
+      return false
+    }
+
+    // Search backward: blocked destinations usually have a much smaller frontier.
+    const pending: Array<{ portId: PortId; regionId: RegionId }> = []
+    const seen = new Set<HopId>()
+    const multilayerExpansions = new Map<RegionId, number>()
+    for (const regionId of topology.incidentPortRegion[goalPortId]) {
+      if (this.isRegionReservedForDifferentNet(regionId)) continue
+      pending.push({ portId: goalPortId, regionId })
+      seen.add(this.getHopId(goalPortId, regionId))
+    }
+
+    for (let head = 0; head < pending.length; head++) {
+      const { portId, regionId } = pending[head]
+      const singleLayer = this.isKnownSingleLayerRegion(regionId)
+      if (!singleLayer) {
+        // Two distinct entry ports cover every exit in a multilayer region.
+        const expansions = multilayerExpansions.get(regionId) ?? 0
+        if (expansions === 2) continue
+        multilayerExpansions.set(regionId, expansions + 1)
+      }
+      for (const previousPortId of topology.regionIncidentPorts[regionId]) {
+        if (previousPortId === portId) continue
+        if (
+          singleLayer &&
+          this.getHardBlockedCrossingOwners(regionId, previousPortId, portId)
+            .length > 0
+        ) {
+          continue
+        }
+        if (previousPortId === startPortId && regionId === startRegionId) {
+          return true
+        }
+        if (
+          problem.portSectionMask[previousPortId] === 0 ||
+          this.isPortReservedForDifferentNet(previousPortId) ||
+          (state.portAssignment[previousPortId] !== -1 &&
+            state.portAssignment[previousPortId] !== state.currentRouteNetId)
+        ) {
+          continue
+        }
+        const incidentRegions = topology.incidentPortRegion[previousPortId]
+        for (const previousRegionId of incidentRegions) {
+          if (previousRegionId === regionId) continue
+          const nextRegionId =
+            incidentRegions[0] === previousRegionId
+              ? incidentRegions[1]
+              : incidentRegions[0]
+          if (
+            nextRegionId !== regionId ||
+            this.isRegionReservedForDifferentNet(previousRegionId)
+          ) {
+            continue
+          }
+          const hopId = this.getHopId(previousPortId, previousRegionId)
+          if (seen.has(hopId)) continue
+          seen.add(hopId)
+          pending.push({ portId: previousPortId, regionId: previousRegionId })
+        }
+      }
+    }
+    return false
+  }
+
   override onOutOfCandidates(): void {
     const failedRouteId = this.state.currentRouteId
     if (failedRouteId === undefined) {
@@ -221,7 +301,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       )
     }
 
-    const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes()
+    const directPath = this.findRelaxedBlockerPathAvoidingCycles()
     if (
       !directPath.found &&
       directPath.reason === "no_path" &&
@@ -285,7 +365,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       | undefined
     if (repeatedOwnerRouteIds.length > 0) {
       this.selectiveReripStats.alternateBlockerSearchCount += 1
-      alternatePath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
+      alternatePath = this.findRelaxedBlockerPathAvoidingCycles(
         new Set(repeatedOwnerRouteIds),
       )
       if (!alternatePath.found) {
@@ -485,6 +565,46 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       ...searchOptions,
       minimumOwnerCount: reachability.minimumOwnerCount,
     })
+  }
+
+  protected findRelaxedBlockerPathAvoidingCycles(
+    forbiddenOwnerRouteIds: ReadonlySet<RouteId> = new Set<RouteId>(),
+  ): DistinctOwnerBlockerSearchResult<
+    RelaxedSearchState,
+    RouteId,
+    RelaxedSearchHopData
+  > {
+    const directPath = this.findRelaxedBlockerPathPreferringPreservedRoutes(
+      forbiddenOwnerRouteIds,
+    )
+    const failedRouteId = this.state.currentRouteId!
+    if (
+      !this.EARLY_BLOCKER_RECOVERY ||
+      !directPath.found ||
+      this.partialRipRoutePlans.has(failedRouteId) ||
+      ![...directPath.owners].some((ownerRouteId) =>
+        this.hasFailedOwnerPath(ownerRouteId, failedRouteId),
+      )
+    ) {
+      return directPath
+    }
+
+    // Exclude every owner that leads back to this route. Excluding only the
+    // first path's owners can hide an independent path behind another cycle.
+    const forbiddenCycleOwners = new Set(forbiddenOwnerRouteIds)
+    for (const ownerRouteId of this.failedOwnerPairCounts.keys()) {
+      if (this.hasFailedOwnerPath(ownerRouteId, failedRouteId)) {
+        forbiddenCycleOwners.add(ownerRouteId)
+      }
+    }
+    this.selectiveReripStats.alternateBlockerSearchCount += 1
+    const alternatePath =
+      this.findRelaxedBlockerPathPreferringPreservedRoutes(forbiddenCycleOwners)
+    if (!alternatePath.found || alternatePath.owners.size === 0) {
+      return directPath
+    }
+
+    return alternatePath
   }
 
   protected findRelaxedBlockerPathPreferringPreservedRoutes(
