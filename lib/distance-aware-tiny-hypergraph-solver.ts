@@ -6,6 +6,8 @@ import {
   type TinyHyperGraphTopology,
 } from "./core"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
+import { getRemainingPortCosts } from "./getRemainingPortCosts"
+import type { PortId, RouteId } from "./types"
 
 /**
  * Adds geometric segment distance to the normal dynamic routing cost.
@@ -15,6 +17,9 @@ import { IndexedCandidateHeap } from "./indexed-candidate-heap"
  * queued hop from being expanded later.
  */
 export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
+  private portCostRouteId?: RouteId
+  private remainingPortCosts?: Float64Array
+
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
@@ -62,5 +67,21 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
       f: g,
       prevCandidate: finalCandidate,
     })
+  }
+
+  override computeH(portId: PortId): number {
+    const distanceCost = super.computeH(portId)
+    if (!this.problem.portPenalty) return distanceCost
+
+    const routeId = this.state.currentRouteId!
+    if (this.portCostRouteId !== routeId) {
+      this.remainingPortCosts = getRemainingPortCosts({
+        topology: this.topology,
+        problem: this.problem,
+        routeId,
+      })
+      this.portCostRouteId = routeId
+    }
+    return distanceCost + this.remainingPortCosts![portId]
   }
 }
