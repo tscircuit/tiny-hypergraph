@@ -561,6 +561,7 @@ const createSectionRoutePlans = (
     sectionProblem: {
       routeCount: problem.routeCount,
       portSectionMask: new Int8Array(problem.portSectionMask),
+      routeSegmentFilter: problem.routeSegmentFilter,
       routeMetadata: problem.routeMetadata,
       routeStartPort,
       routeEndPort,
