@@ -6,19 +6,21 @@ import {
   type TinyHyperGraphTopology,
 } from "./core"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
-import { getRemainingPortCosts } from "./getRemainingPortCosts"
+import { createRemainingCostLookup } from "./createRemainingCostLookup"
 import type { PortId, RouteId } from "./types"
 
 /**
  * Adds geometric segment distance to the normal dynamic routing cost.
+ * Remaining-cost bounds use the ports and region costs of the current attempt.
  *
  * Every segment, including the final segment into the goal, uses the same
  * g-cost calculation. The hop-keyed candidate frontier prevents a dominated
  * queued hop from being expanded later.
  */
 export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
-  private portCostRouteId?: RouteId
-  private remainingPortCosts?: Float64Array
+  private remainingCostRouteId?: RouteId
+  private remainingCostAttempt?: number
+  private getRemainingCost?: (portId: PortId) => number
 
   constructor(
     topology: TinyHyperGraphTopology,
@@ -70,18 +72,42 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
   }
 
   override computeH(portId: PortId): number {
-    const distanceCost = super.computeH(portId)
-    if (!this.problem.portPenalty) return distanceCost
-
     const routeId = this.state.currentRouteId!
-    if (this.portCostRouteId !== routeId) {
-      this.remainingPortCosts = getRemainingPortCosts({
+    const attempt = this.routeAttemptCountByRouteId[routeId]
+    if (
+      this.remainingCostRouteId !== routeId ||
+      this.remainingCostAttempt !== attempt
+    ) {
+      // Every hop adds a segment, even when it introduces no new crossings.
+      const regionCosts = Float64Array.from(
+        this.state.regionCongestionCost,
+        (congestionCost, regionId) => {
+          const cache = this.state.regionIntersectionCaches[regionId]
+          return (
+            congestionCost +
+            this.computeRegionCostForRegion(
+              regionId,
+              cache.existingSameLayerIntersections,
+              cache.existingCrossingLayerIntersections,
+              cache.existingEntryExitLayerChanges,
+              cache.existingSegmentCount + 1,
+            ) -
+            cache.existingRegionCost
+          )
+        },
+      )
+      this.getRemainingCost = createRemainingCostLookup({
         topology: this.topology,
         problem: this.problem,
         routeId,
+        distanceToCost: this.DISTANCE_TO_COST,
+        portAssignment: this.state.portAssignment,
+        portReservations: this.problemSetup.portEndpointReservationNetId,
+        regionCosts,
       })
-      this.portCostRouteId = routeId
+      this.remainingCostRouteId = routeId
+      this.remainingCostAttempt = attempt
     }
-    return distanceCost + this.remainingPortCosts![portId]
+    return this.getRemainingCost!(portId)
   }
 }
