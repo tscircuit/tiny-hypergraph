@@ -556,14 +556,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
   private _problemSetup?: TinyHyperGraphProblemSetup
-  private indexedInitialRoutePortReservations?:
-    TinyHyperGraphInitialRoutePortReservation[][]
-  private indexedInitialRoutePortReservationsSource?:
-    TinyHyperGraphInitialRoutePortReservation[]
-  private indexedInitialRoutePortReservationAssignmentsByRoute?:
-    TinyHyperGraphInitialAssignment[][]
-  private indexedInitialRoutePortReservationAssignmentsSource?:
-    TinyHyperGraphInitialAssignment[]
+  private indexedInitialRoutePortReservations?: TinyHyperGraphInitialRoutePortReservation[][]
+  private indexedInitialRoutePortReservationsSource?: TinyHyperGraphInitialRoutePortReservation[]
+  private indexedInitialRoutePortReservationAssignmentsByRoute?: TinyHyperGraphInitialAssignment[][]
+  private indexedInitialRoutePortReservationAssignmentsSource?: TinyHyperGraphInitialAssignment[]
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
   private hCostEndRouteId: RouteId | undefined
@@ -2275,4 +2271,3 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     return currentCandidate.g
   }
 }
-

@@ -1121,4 +1121,3 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     return this.getSolvedSolver().getOutput()
   }
 }
-
