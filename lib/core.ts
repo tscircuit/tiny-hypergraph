@@ -155,6 +155,9 @@ export interface TinyHyperGraphProblem {
   /** regionNetId[regionId] = reserved net id for the region, -1 means freely traversable */
   regionNetId: Int32Array
 
+  /** portNetId[portId] reserves existing copper for one net; -1 is free, -2 blocks every net. */
+  portNetId?: Int32Array
+
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
 
@@ -749,9 +752,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
     const portEndpointNetIds: Array<Set<NetId> | undefined> = []
-    const portEndpointReservationNetId = new Int32Array(
-      topology.portCount,
-    ).fill(-1)
+    const portEndpointReservationNetId =
+      problem.portNetId?.slice() ??
+      new Int32Array(topology.portCount).fill(-1)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
       const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
       endpointNetIds.add(netId)
