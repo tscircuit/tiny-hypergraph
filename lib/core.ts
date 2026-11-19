@@ -138,6 +138,12 @@ export interface TinyHyperGraphTopology {
   portMetadata?: any[]
 }
 
+export interface TinyHyperGraphInitialRoutePortReservation {
+  /** Port kept clear while the owner route retains its initial assignments. */
+  portId: PortId
+  ownerRouteId: RouteId
+}
+
 export interface TinyHyperGraphProblem {
   routeCount: number
 
@@ -164,6 +170,9 @@ export interface TinyHyperGraphProblem {
   /** portPenalty[portId] = extra cost paid when a route traverses the port */
   portPenalty?: Float64Array
 
+  /** Independent immutable copper reservation: -1 is free, -2 blocks every net. */
+  portReservationNetId?: Int32Array
+
   /**
    * Existing serialized region assignments, converted to numeric ids.
    *
@@ -171,6 +180,8 @@ export interface TinyHyperGraphProblem {
    * state and may be ripped and rerouted unless routeIsFixed marks them fixed.
    */
   initialAssignments?: TinyHyperGraphInitialAssignment[]
+  initialRoutePortReservations?: TinyHyperGraphInitialRoutePortReservation[]
+  initialRoutePortReservationAssignments?: TinyHyperGraphInitialAssignment[]
 }
 
 export interface TinyHyperGraphProblemSetup {
@@ -545,6 +556,14 @@ export class TinyHyperGraphSolver extends BaseSolver {
   private regionalHopFrontierBestCostGeneration?: number
   private regionalHopFrontiers = new Map<RegionId, RegionalHopFrontier>()
   private _problemSetup?: TinyHyperGraphProblemSetup
+  private indexedInitialRoutePortReservations?:
+    TinyHyperGraphInitialRoutePortReservation[][]
+  private indexedInitialRoutePortReservationsSource?:
+    TinyHyperGraphInitialRoutePortReservation[]
+  private indexedInitialRoutePortReservationAssignmentsByRoute?:
+    TinyHyperGraphInitialAssignment[][]
+  private indexedInitialRoutePortReservationAssignmentsSource?:
+    TinyHyperGraphInitialAssignment[]
   private readonly hCostByPortId: Float64Array
   private readonly hCostRouteIdByPortId: Int32Array
   private hCostEndRouteId: RouteId | undefined
@@ -755,9 +774,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     const portX = topology.portX as unknown as ArrayLike<number>
     const portY = topology.portY as unknown as ArrayLike<number>
     const portEndpointNetIds: Array<Set<NetId> | undefined> = []
-    const portEndpointReservationNetId = new Int32Array(
-      topology.portCount,
-    ).fill(-1)
+    const portEndpointReservationNetId =
+      problem.portReservationNetId?.slice() ??
+      new Int32Array(topology.portCount).fill(-1)
     const recordEndpointNet = (portId: PortId, netId: NetId) => {
       const endpointNetIds = portEndpointNetIds[portId] ?? new Set<NetId>()
       endpointNetIds.add(netId)
@@ -1265,12 +1284,90 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return this.problem.routeEndPort[routeId]!
   }
 
+  private getInitialRoutePortReservationsByPort() {
+    const reservations = this.problem.initialRoutePortReservations
+    if (
+      this.indexedInitialRoutePortReservationsSource === reservations &&
+      this.indexedInitialRoutePortReservations
+    ) {
+      return this.indexedInitialRoutePortReservations
+    }
+    const reservationsByPort = Array.from(
+      { length: this.topology.portCount },
+      (): TinyHyperGraphInitialRoutePortReservation[] => [],
+    )
+    for (const reservation of reservations ?? []) {
+      reservationsByPort[reservation.portId]?.push(reservation)
+    }
+    this.indexedInitialRoutePortReservationsSource = reservations
+    this.indexedInitialRoutePortReservations = reservationsByPort
+    return reservationsByPort
+  }
+
+  private getInitialRoutePortReservationAssignmentsByRoute() {
+    const assignments =
+      this.problem.initialRoutePortReservationAssignments ??
+      this.problem.initialAssignments
+    if (
+      this.indexedInitialRoutePortReservationAssignmentsSource ===
+        assignments &&
+      this.indexedInitialRoutePortReservationAssignmentsByRoute
+    ) {
+      return this.indexedInitialRoutePortReservationAssignmentsByRoute
+    }
+    const assignmentsByRoute = Array.from(
+      { length: this.problem.routeCount },
+      (): TinyHyperGraphInitialAssignment[] => [],
+    )
+    for (const assignment of assignments ?? []) {
+      assignmentsByRoute[assignment.routeId]?.push(assignment)
+    }
+    this.indexedInitialRoutePortReservationAssignmentsSource = assignments
+    this.indexedInitialRoutePortReservationAssignmentsByRoute =
+      assignmentsByRoute
+    return assignmentsByRoute
+  }
+
+  private doesRouteRetainInitialCopper(routeId: RouteId) {
+    const initialAssignments =
+      this.getInitialRoutePortReservationAssignmentsByRoute()[routeId]
+    if (!initialAssignments || initialAssignments.length === 0) return false
+    return initialAssignments.some(({ regionId, fromPortId, toPortId }) =>
+      this.state.regionSegments[regionId]?.some(
+        ([assignedRouteId, assignedFromPortId, assignedToPortId]) =>
+          assignedRouteId === routeId &&
+          ((assignedFromPortId === fromPortId &&
+            assignedToPortId === toPortId) ||
+            (assignedFromPortId === toPortId &&
+              assignedToPortId === fromPortId)),
+      ),
+    )
+  }
+
   isPortReservedForDifferentNet(portId: PortId): boolean {
-    const reservedNetId =
+    const endpointReservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
-    return (
-      reservedNetId === -2 ||
-      (reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId)
+    if (
+      endpointReservedNetId === -2 ||
+      (endpointReservedNetId !== -1 &&
+        endpointReservedNetId !== this.state.currentRouteNetId)
+    ) {
+      return true
+    }
+    const problemReservedNetId =
+      this.problem.portReservationNetId?.[portId] ?? -1
+    if (
+      problemReservedNetId === -2 ||
+      (problemReservedNetId !== -1 &&
+        problemReservedNetId !== this.state.currentRouteNetId)
+    ) {
+      return true
+    }
+    if (!this.problem.initialRoutePortReservations?.length) return false
+    return (this.getInitialRoutePortReservationsByPort()[portId] ?? []).some(
+      ({ ownerRouteId }) =>
+        this.problem.routeNet[ownerRouteId] !== this.state.currentRouteNetId &&
+        this.doesRouteRetainInitialCopper(ownerRouteId),
     )
   }
 
@@ -2178,3 +2275,4 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     return currentCandidate.g
   }
 }
+
