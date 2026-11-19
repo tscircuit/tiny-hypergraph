@@ -124,6 +124,8 @@ const createProblemWithPortSectionMask = (
   routeNet: new Int32Array(problem.routeNet),
   routeIsFixed: problem.routeIsFixed,
   initialAssignments: problem.initialAssignments,
+  portReservationNetId: problem.portReservationNetId?.slice(),
+  initialRoutePortReservations: problem.initialRoutePortReservations,
   regionNetId: new Int32Array(problem.regionNetId),
   portPenalty:
     problem.portPenalty === undefined
