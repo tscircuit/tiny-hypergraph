@@ -578,6 +578,14 @@ const createSectionRoutePlans = (
         problem.portPenalty === undefined
           ? undefined
           : new Float64Array(problem.portPenalty),
+      portReservationNetId:
+        problem.portReservationNetId === undefined
+          ? undefined
+          : new Int32Array(problem.portReservationNetId),
+      initialRoutePortReservations: problem.initialRoutePortReservations,
+      initialRoutePortReservationAssignments:
+        problem.initialRoutePortReservationAssignments ??
+        problem.initialAssignments,
     },
     routePlans,
     activeRouteIds,
@@ -1113,3 +1121,4 @@ export class TinyHyperGraphSectionSolver extends BaseSolver {
     return this.getSolvedSolver().getOutput()
   }
 }
+
