@@ -11,11 +11,14 @@ import type { PortId, RouteId } from "./types"
 
 type SerializedPort = SerializedHyperGraph["ports"][number]
 type SerializedRegion = SerializedHyperGraph["regions"][number]
+type SerializedRegionId = SerializedRegion["regionId"]
+type LayerBoundaryKey = string
 
 export const DUPLICATE_PORT_PROXIMITY = 0.05
 
 export interface DuplicateCongestedPortSolverOptions {
   duplicatePortProximity?: number
+  minPortSpacing?: number
   routeSolveOptions?: TinyHyperGraphSolverOptions
   /** Ignore serialized port penalties while estimating shared-port use. */
   useSerializedPortPenalties?: boolean
@@ -171,6 +174,34 @@ const getRegionCenter = (region: SerializedRegion | undefined): Point => {
   }
 }
 
+const getSharedBoundaryLength = (
+  source: SerializedPort,
+  regions: Map<SerializedRegionId, SerializedRegion>,
+): number => {
+  const first = getRegionBounds(regions.get(source.region1Id))
+  const second = getRegionBounds(regions.get(source.region2Id))
+  const tolerance = 0.001
+  if (
+    Math.abs(first.maxX - second.minX) <= tolerance ||
+    Math.abs(second.maxX - first.minX) <= tolerance
+  ) {
+    return Math.max(
+      0,
+      Math.min(first.maxY, second.maxY) - Math.max(first.minY, second.minY),
+    )
+  }
+  if (
+    Math.abs(first.maxY - second.minY) <= tolerance ||
+    Math.abs(second.maxY - first.minY) <= tolerance
+  ) {
+    return Math.max(
+      0,
+      Math.min(first.maxX, second.maxX) - Math.max(first.minX, second.minX),
+    )
+  }
+  return 0
+}
+
 const findNearestPortOnSameBoundary = (
   sourcePort: SerializedPort,
   boundaryPorts: SerializedPort[],
@@ -192,10 +223,15 @@ const findNearestPortOnSameBoundary = (
   return nearestPort
 }
 
-const getFallbackBoundaryDirection = (
-  sourcePort: SerializedPort,
-  regionById: Map<string, SerializedRegion>,
-): Point => {
+const getFallbackBoundaryDirection = ({
+  sourcePort,
+  regionById,
+  minPortSpacing,
+}: {
+  sourcePort: SerializedPort
+  regionById: Map<SerializedRegionId, SerializedRegion>
+  minPortSpacing?: number
+}): Point => {
   const region1Center = getRegionCenter(regionById.get(sourcePort.region1Id))
   const region2Center = getRegionCenter(regionById.get(sourcePort.region2Id))
   const perpendicular = normalize({
@@ -203,14 +239,34 @@ const getFallbackBoundaryDirection = (
     y: region2Center.x - region1Center.x,
   })
 
-  return perpendicular ?? { x: 1, y: 0 }
+  if (!perpendicular) return { x: 1, y: 0 }
+  const fixedNetIds = sourcePort.d?._preloadedFixedNetIds
+  if (
+    minPortSpacing === undefined &&
+    (!Array.isArray(fixedNetIds) || fixedNetIds.length === 0)
+  ) {
+    return perpendicular
+  }
+  if (
+    perpendicular.y < -EPSILON ||
+    (Math.abs(perpendicular.y) <= EPSILON && perpendicular.x < 0)
+  ) {
+    return { x: -perpendicular.x, y: -perpendicular.y }
+  }
+  return perpendicular
 }
 
-const getDuplicateDirection = (
-  sourcePort: SerializedPort,
-  nearestBoundaryPort: SerializedPort | undefined,
-  regionById: Map<string, SerializedRegion>,
-): Point => {
+const getDuplicateDirection = ({
+  sourcePort,
+  nearestBoundaryPort,
+  regionById,
+  minPortSpacing,
+}: {
+  sourcePort: SerializedPort
+  nearestBoundaryPort: SerializedPort | undefined
+  regionById: Map<SerializedRegionId, SerializedRegion>
+  minPortSpacing?: number
+}): Point => {
   const sourcePoint = getPortPoint(sourcePort)
 
   if (nearestBoundaryPort) {
@@ -222,7 +278,11 @@ const getDuplicateDirection = (
     if (awayFromNearest) return awayFromNearest
   }
 
-  return getFallbackBoundaryDirection(sourcePort, regionById)
+  return getFallbackBoundaryDirection({
+    sourcePort,
+    regionById,
+    minPortSpacing,
+  })
 }
 
 const createDuplicatePortId = (
@@ -421,6 +481,7 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
     )
     const usedPortIds = new Set(ports.map((port) => port.portId))
     const duplicatedPorts: DuplicatedPortSummary[] = []
+    const portCountByLayerBoundary = new Map<LayerBoundaryKey, number>()
 
     for (const [sourcePortId, useCount] of [...portUseCounts.entries()].sort(
       ([leftPortId], [rightPortId]) => leftPortId.localeCompare(rightPortId),
@@ -430,20 +491,45 @@ export class DuplicateCongestedPortSolver extends BaseSolver {
       const sourcePort = sourcePortById.get(sourcePortId)
       if (!sourcePort) continue
 
-      const duplicateCount = useCount - 1
+      let duplicateCount = useCount - 1
       const boundaryPorts = portsByBoundary.get(getBoundaryKey(sourcePort))
       if (!boundaryPorts) {
         throw new Error(`No boundary ports found for "${sourcePortId}"`)
+      }
+      if (this.options.minPortSpacing !== undefined) {
+        const spacing = this.options.minPortSpacing
+        if (!Number.isFinite(spacing) || spacing <= 0) {
+          throw new Error("minPortSpacing must be finite and greater than zero")
+        }
+        const z = getNumber(sourcePort.d?.z)
+        const layerBoundaryKey: LayerBoundaryKey = `${getBoundaryKey(sourcePort)}:${z}`
+        const existing =
+          portCountByLayerBoundary.get(layerBoundaryKey) ??
+          boundaryPorts.filter((port) => getNumber(port.d?.z) === z).length
+        const capacity = Math.max(
+          1,
+          Math.floor(getSharedBoundaryLength(sourcePort, regionById) / spacing),
+        )
+        duplicateCount = Math.min(
+          duplicateCount,
+          Math.max(0, capacity - existing),
+        )
+        if (duplicateCount === 0) continue
+        portCountByLayerBoundary.set(
+          layerBoundaryKey,
+          existing + duplicateCount,
+        )
       }
       const nearestBoundaryPort = findNearestPortOnSameBoundary(
         sourcePort,
         boundaryPorts,
       )
-      const duplicateDirection = getDuplicateDirection(
+      const duplicateDirection = getDuplicateDirection({
         sourcePort,
         nearestBoundaryPort,
         regionById,
-      )
+        minPortSpacing: this.options.minPortSpacing,
+      })
       const sourcePoint = getPortPoint(sourcePort)
       const duplicatePortIds: string[] = []
 
