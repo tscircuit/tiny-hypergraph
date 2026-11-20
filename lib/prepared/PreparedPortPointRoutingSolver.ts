@@ -24,11 +24,12 @@ class PreparedFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver {
   }
 
   override onOutOfCandidates(): void {
-    super.onOutOfCandidates()
-    if (this.state.ripCount >= this.remainingReripBudget) {
+    if (this.state.ripCount + 1 >= this.remainingReripBudget) {
       this.failed = true
       this.error = "Congestion-aware final routing exhausted its rerip budget"
+      return
     }
+    super.onOutOfCandidates()
   }
 }
 
