@@ -9,7 +9,7 @@ import { PreparedPortPointRoutingSolver } from "lib/prepared/PreparedPortPointRo
 import { SelectiveReripTinyHyperGraphSolver } from "lib/selective-rerip-tiny-hyper-graph-solver"
 import { createPreparedRoutingFixture } from "tests/fixtures/createPreparedRoutingFixture"
 
-test("final rerip stops before clearing routes when the shared budget expires", () => {
+test("final rerip stops before clearing routes when the shared budget expires", async () => {
   const graphics: GraphicsObject[] = []
   for (const Parent of [
     SelectiveReripTinyHyperGraphSolver,
@@ -44,7 +44,7 @@ test("final rerip stops before clearing routes when the shared budget expires", 
     ).toBe(true)
     graphics.push(final.visualize())
   }
-  expect(
+  await expect(
     getSvgFromGraphicsObject(stackGraphicsVertically(graphics), {
       backgroundColor: "white",
     }),

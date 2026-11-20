@@ -34,7 +34,7 @@ function restoreNumericArray(_key: string, encoded: unknown): unknown {
   return constructor.from(encoded.values)
 }
 
-test("IcePi local preserves final routing progress for recovery", () => {
+test("IcePi local preserves final routing progress for recovery", async () => {
   // Exact constructor input from IcePi local's other_signals Pipeline9 stage.
   const fixture = JSON.parse(
     gunzipSync(
@@ -57,7 +57,7 @@ test("IcePi local preserves final routing progress for recovery", () => {
     solver.state.unroutedRoutes.length +
       Number(solver.state.currentRouteId !== undefined),
   ).toBe(61)
-  expect(
+  await expect(
     getSvgFromGraphicsObject(solver.preview(), { backgroundColor: "white" }),
   ).toMatchSvgSnapshot(import.meta.path)
 })
