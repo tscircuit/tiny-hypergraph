@@ -426,6 +426,20 @@ const createSolvedSolverFromSolution = (
   )
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
+    if (problem.routeIsFixed?.[routeId] === 1) {
+      // A fixed assignment may contain connected branches or parallel graph
+      // edges. Its serialized terminal path is only one walk through that
+      // copper, so rebuilding from that walk would silently remove occupancy.
+      const assignments = problem.initialAssignments?.filter(
+        (assignment) => assignment.routeId === routeId,
+      )
+      if (!assignments?.length)
+        throw new Error(`Fixed route ${routeId} requires initial assignments`)
+      for (const { regionId, fromPortId, toPortId } of assignments) {
+        routeSegmentsByRegion[regionId]!.push([routeId, fromPortId, toPortId])
+      }
+      continue
+    }
     const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
       topology,
       problem,
@@ -470,6 +484,21 @@ const createSectionRoutePlans = (
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
     const routePlan = routePlans[routeId]!
+    if (problem.routeIsFixed?.[routeId] === 1) {
+      const assignments = problem.initialAssignments?.filter(
+        (assignment) => assignment.routeId === routeId,
+      )
+      if (!assignments?.length)
+        throw new Error(`Fixed route ${routeId} requires initial assignments`)
+      routePlan.fixedSegments = assignments.map(
+        ({ regionId, fromPortId, toPortId }) => ({
+          regionId,
+          fromPortId,
+          toPortId,
+        }),
+      )
+      continue
+    }
     const { orderedPortIds, orderedRegionIds } = getOrderedRoutePath(
       topology,
       problem,
@@ -501,7 +530,7 @@ const createSectionRoutePlans = (
       })
     }
 
-    if (problem.routeIsFixed?.[routeId] === 1 || maskedRuns.length === 0) {
+    if (maskedRuns.length === 0) {
       for (let portIndex = 1; portIndex < orderedPortIds.length; portIndex++) {
         routePlan.fixedSegments.push({
           regionId: orderedRegionIds[portIndex - 1]!,
