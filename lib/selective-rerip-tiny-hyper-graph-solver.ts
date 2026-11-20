@@ -622,12 +622,12 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
       if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
       if (
-        this.problem.routeSegmentFilter?.(
-          this.state.currentRouteId!,
-          state.nextRegionId,
-          state.portId,
-          neighborPortId,
-        ) === false
+        this.problem.routeSegmentFilter?.({
+          routeId: this.state.currentRouteId!,
+          regionId: state.nextRegionId,
+          fromPortId: state.portId,
+          toPortId: neighborPortId,
+        }) === false
       ) {
         continue
       }

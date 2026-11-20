@@ -5,7 +5,7 @@ import { createPreparedRoutingFixture } from "../fixtures/createPreparedRoutingF
 
 test("prepared routing enforces a segment filter on one route in a shared graph", () => {
   const { topology, problem, options } = createPreparedRoutingFixture()
-  problem.routeSegmentFilter = (routeId, _regionId, fromPortId, toPortId) =>
+  problem.routeSegmentFilter = ({ routeId, fromPortId, toPortId }) =>
     routeId !== 0 ||
     [fromPortId, toPortId].every(
       (portId) =>
@@ -33,7 +33,7 @@ test("prepared routing enforces a segment filter on one route in a shared graph"
 
 test("static reachability fails when the segment filter disconnects a route", () => {
   const { topology, problem, options } = createPreparedRoutingFixture()
-  problem.routeSegmentFilter = (routeId) => routeId !== 0
+  problem.routeSegmentFilter = ({ routeId }) => routeId !== 0
   const solver = new TinyHyperGraphSolver(topology, problem, {
     ...options,
     STATIC_REACHABILITY_PRECHECK: true,

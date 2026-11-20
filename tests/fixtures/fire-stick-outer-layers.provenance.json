@@ -1,0 +1,11 @@
+{
+  "source": "https://tscircuit.com/gokul/fire-stick",
+  "reproduction": "https://github.com/tscircuit/tscircuit-autorouter/pull/4002",
+  "description": "Author-owned four-layer board, C38.pin2 to TP5.1; contributed under the repository MIT license. The connection is restricted to top and bottom.",
+  "capture": "serializedHyperGraph from Pipeline 9 portPointPathingSolver.tinyPipelineSolver.inputProblem, after solving the original fire-stick-outer-layer-bus.json.gz reproduction with cacheProvider:null",
+  "autorouterCommit": "7d02b59197ad46dc6cdef1e2f7eca0b25a66e44c",
+  "tinyHypergraphCommit": "e0717f1c811733404e587f8ea670c102859dcde7",
+  "sourceSrjSha256": "843ce51b954413d565fe6c2482335b039b7d18382fcff159aa2ecfba7c70e3a1",
+  "uncompressedSha256": "c62c9c64734b4041843d599f8b87518c2db4e59fdc70eb4785450f6f4f552c31",
+  "adaptations": "No graph edits. Gzip compresses JSON.stringify(serializedHyperGraph). The test supplies the original outer-layer constraint as routeSegmentFilter because the serialized graph does not encode that callback."
+}

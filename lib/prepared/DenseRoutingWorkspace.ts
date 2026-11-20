@@ -183,12 +183,12 @@ export class DenseRoutingWorkspace {
       previous = at
       const port = neighbors[at]!
       if (
-        p.routeSegmentFilter?.(
-          state.currentRouteId!,
-          region,
-          c.portId,
-          port,
-        ) === false
+        p.routeSegmentFilter?.({
+          routeId: state.currentRouteId!,
+          regionId: region,
+          fromPortId: c.portId,
+          toPortId: port,
+        }) === false
       ) {
         continue
       }

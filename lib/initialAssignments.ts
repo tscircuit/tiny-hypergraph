@@ -157,12 +157,12 @@ export const applyInitialAssignments = ({
       problem.routeIsFixed?.[routeId] !== 1 &&
       routeAssignments.some(
         ({ regionId, fromPortId, toPortId }) =>
-          problem.routeSegmentFilter?.(
+          problem.routeSegmentFilter?.({
             routeId,
             regionId,
             fromPortId,
             toPortId,
-          ) === false,
+          }) === false,
       )
     ) {
       assignmentsByRoute.delete(routeId)
