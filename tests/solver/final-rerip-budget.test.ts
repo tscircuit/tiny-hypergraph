@@ -35,9 +35,10 @@ test("final rerip stops before clearing routes when the shared budget expires", 
       final.step()
     }
     graphics.push(final.visualize())
-    final.state.ripCount = 8
-    final.resetRoutingStateForRerip()
-    expect(final.failed).toBe(false)
+    while (final.state.currentRouteId === undefined) final.step()
+    final.state.ripCount = 7
+    final.onOutOfCandidates()
+    expect(final.failed).toBe(true)
     expect(
       final.state.regionSegments.every((segments) => segments.length === 0),
     ).toBe(true)
