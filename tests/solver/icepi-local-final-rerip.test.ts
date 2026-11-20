@@ -51,12 +51,13 @@ test("IcePi local preserves final routing progress for recovery", async () => {
   )
   expect(solver.problem.routeCount).toBe(355)
   solver.solve()
-  expect(solver.solved).toBe(false)
-  expect(solver.failed).toBe(true)
+  expect(solver.solved).toBe(true)
+  expect(solver.failed).toBe(false)
   expect(
     solver.state.unroutedRoutes.length +
       Number(solver.state.currentRouteId !== undefined),
-  ).toBe(61)
+  ).toBe(0)
+  expect(solver.getOutput().solvedRoutes).toHaveLength(355)
   await expect(
     getSvgFromGraphicsObject(solver.preview(), { backgroundColor: "white" }),
   ).toMatchSvgSnapshot(import.meta.path)

@@ -950,12 +950,13 @@ class CongestionAwareFinalRouteSolver extends SelectiveReripTinyHyperGraphSolver
   remainingReripBudget = 0
 
   override onOutOfCandidates(): void {
-    super.onOutOfCandidates()
     // This completion candidate shares its rerip budget with the parent search.
     // Repeated rearrangements indicate that more of the same search is unhelpful.
-    if (this.state.ripCount >= this.remainingReripBudget) {
+    if (this.state.ripCount + 1 >= this.remainingReripBudget) {
       this.failed = true
       this.error = "Congestion-aware final routing exhausted its rerip budget"
+      return
     }
+    super.onOutOfCandidates()
   }
 }
