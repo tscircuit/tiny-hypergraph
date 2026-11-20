@@ -1,0 +1,696 @@
+<svg width="640" height="640" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g><polyline data-points="-1,-0.6 1,0.20000000000000007" data-type="line" data-label="route: route-0
+region: region-0
+z: 0" points="39.999999999999986,272.4583333333333 71.1111111111111,260.0138888888889" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="-1,0.6 1,-0.6" data-type="line" data-label="route: route-1
+region: region-0
+z: 0" points="39.999999999999986,253.79166666666666 71.1111111111111,272.4583333333333" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="1,0.20000000000000007 3,0.20000000000000007" data-type="line" data-label="route: route-0
+region: region-1
+z: 0" points="71.1111111111111,260.0138888888889 102.2222222222222,260.0138888888889" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="1,-0.6 3,-0.6" data-type="line" data-label="route: route-1
+region: region-1
+z: 0" points="71.1111111111111,272.4583333333333 102.2222222222222,272.4583333333333" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="3,0.20000000000000007 5,0.6" data-type="line" data-label="route: route-0
+region: region-2
+z: 0" points="102.2222222222222,260.0138888888889 133.33333333333331,253.79166666666666" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="3,-0.6 5,-0.6" data-type="line" data-label="route: route-1
+region: region-2
+z: 0" points="102.2222222222222,272.4583333333333 133.33333333333331,272.4583333333333" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="9,-0.6 11,0.20000000000000007" data-type="line" data-label="route: route-2
+region: region-3
+z: 0" points="195.55555555555554,272.4583333333333 226.66666666666666,260.0138888888889" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="11,0.20000000000000007 13,0.20000000000000007" data-type="line" data-label="route: route-2
+region: region-4
+z: 0" points="226.66666666666666,260.0138888888889 257.77777777777777,260.0138888888889" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="13,0.20000000000000007 15,0.6" data-type="line" data-label="route: route-2
+region: region-5
+z: 0" points="257.77777777777777,260.0138888888889 288.8888888888889,253.79166666666666" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="-1,-5.475 1,-4.675" data-type="line" data-label="route: route-0
+region: region-0
+z: 0" points="39.999999999999986,348.29166666666663 71.1111111111111,335.84722222222223" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="-1,-4.275 1,-5.475" data-type="line" data-label="route: route-1
+region: region-0
+z: 0" points="39.999999999999986,329.625 71.1111111111111,348.29166666666663" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="1,-4.675 3,-4.675" data-type="line" data-label="route: route-0
+region: region-1
+z: 0" points="71.1111111111111,335.84722222222223 102.2222222222222,335.84722222222223" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="1,-5.475 3,-5.475" data-type="line" data-label="route: route-1
+region: region-1
+z: 0" points="71.1111111111111,348.29166666666663 102.2222222222222,348.29166666666663" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="3,-4.675 5,-4.275" data-type="line" data-label="route: route-0
+region: region-2
+z: 0" points="102.2222222222222,335.84722222222223 133.33333333333331,329.625" fill="none" stroke="hsla(266, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="3,-5.475 5,-5.475" data-type="line" data-label="route: route-1
+region: region-2
+z: 0" points="102.2222222222222,348.29166666666663 133.33333333333331,348.29166666666663" fill="none" stroke="hsla(28, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="9,-5.475 11,-4.675" data-type="line" data-label="route: route-2
+region: region-3
+z: 0" points="195.55555555555554,348.29166666666663 226.66666666666666,335.84722222222223" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="11,-4.675 13,-4.675" data-type="line" data-label="route: route-2
+region: region-4
+z: 0" points="226.66666666666666,335.84722222222223 257.77777777777777,335.84722222222223" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><polyline data-points="13,-4.675 15,-4.275" data-type="line" data-label="route: route-2
+region: region-5
+z: 0" points="257.77777777777777,335.84722222222223 288.8888888888889,329.625" fill="none" stroke="hsla(86, 70%, 50%, 0.8)" stroke-width="1px"/></g><g><rect data-type="rect" data-label="region: region-0
+net: free
+cost: 0.142
+congestion: 0.000
+same layer X: 1
+trans X: 0
+entry exit X: 0" data-x="0" data-y="0" x="40.38888888888887" y="247.95833333333331" width="30.333333333333336" height="30.333333333333343" fill="rgba(212, 172, 215, 0.23)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-1
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="2" data-y="0" x="71.5" y="247.95833333333331" width="30.33333333333333" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-2
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="4" data-y="0" x="102.6111111111111" y="247.95833333333331" width="30.333333333333343" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="10" data-y="0" x="195.9444444444444" y="247.95833333333331" width="30.333333333333343" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-4
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="12" data-y="0" x="227.05555555555554" y="247.95833333333331" width="30.333333333333314" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-5
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="14" data-y="0" x="258.16666666666663" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-6
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="20" data-y="0" x="351.49999999999994" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-7
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="22" data-y="0" x="382.6111111111111" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-8
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="24" data-y="0" x="413.7222222222222" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-9
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="30" data-y="0" x="507.0555555555555" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-10
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="32" data-y="0" x="538.1666666666665" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-11
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="34" data-y="0" x="569.2777777777778" y="247.95833333333331" width="30.33333333333337" height="30.333333333333343" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-0
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="-2.4375" x="40.38888888888887" y="285.875" width="30.333333333333336" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-1
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="2" data-y="-2.4375" x="71.5" y="285.875" width="30.33333333333333" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-2
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="4" data-y="-2.4375" x="102.6111111111111" y="285.875" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="10" data-y="-2.4375" x="195.9444444444444" y="285.875" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-4
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="12" data-y="-2.4375" x="227.05555555555554" y="285.875" width="30.333333333333314" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-5
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="14" data-y="-2.4375" x="258.16666666666663" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-6
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="20" data-y="-2.4375" x="351.49999999999994" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-7
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="22" data-y="-2.4375" x="382.6111111111111" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-8
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="24" data-y="-2.4375" x="413.7222222222222" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-9
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="30" data-y="-2.4375" x="507.0555555555555" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-10
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="32" data-y="-2.4375" x="538.1666666666665" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-11
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="34" data-y="-2.4375" x="569.2777777777778" y="285.875" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-0
+net: free
+cost: 0.142
+congestion: 0.000
+same layer X: 1
+trans X: 0
+entry exit X: 0" data-x="0" data-y="-4.875" x="40.38888888888887" y="323.79166666666663" width="30.333333333333336" height="30.333333333333314" fill="rgba(212, 172, 215, 0.23)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-1
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="2" data-y="-4.875" x="71.5" y="323.79166666666663" width="30.33333333333333" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-2
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="4" data-y="-4.875" x="102.6111111111111" y="323.79166666666663" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="10" data-y="-4.875" x="195.9444444444444" y="323.79166666666663" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-4
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="12" data-y="-4.875" x="227.05555555555554" y="323.79166666666663" width="30.333333333333314" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-5
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="14" data-y="-4.875" x="258.16666666666663" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-6
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="20" data-y="-4.875" x="351.49999999999994" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-7
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="22" data-y="-4.875" x="382.6111111111111" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-8
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="24" data-y="-4.875" x="413.7222222222222" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-9
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="30" data-y="-4.875" x="507.0555555555555" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-10
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="32" data-y="-4.875" x="538.1666666666665" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-11
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="34" data-y="-4.875" x="569.2777777777778" y="323.79166666666663" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-0
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="0" data-y="-7.312499999999999" x="40.38888888888887" y="361.70833333333337" width="30.333333333333336" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-1
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="2" data-y="-7.312499999999999" x="71.5" y="361.70833333333337" width="30.33333333333333" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-2
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="4" data-y="-7.312499999999999" x="102.6111111111111" y="361.70833333333337" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-3
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="10" data-y="-7.312499999999999" x="195.9444444444444" y="361.70833333333337" width="30.333333333333343" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-4
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="12" data-y="-7.312499999999999" x="227.05555555555554" y="361.70833333333337" width="30.333333333333314" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-5
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="14" data-y="-7.312499999999999" x="258.16666666666663" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-6
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="20" data-y="-7.312499999999999" x="351.49999999999994" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-7
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="22" data-y="-7.312499999999999" x="382.6111111111111" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-8
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="24" data-y="-7.312499999999999" x="413.7222222222222" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-9
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="30" data-y="-7.312499999999999" x="507.0555555555555" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-10
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="32" data-y="-7.312499999999999" x="538.1666666666665" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><rect data-type="rect" data-label="region: region-11
+net: free
+cost: 0.000
+congestion: 0.000
+same layer X: 0
+trans X: 0
+entry exit X: 0" data-x="34" data-y="-7.312499999999999" x="569.2777777777778" y="361.70833333333337" width="30.33333333333337" height="30.333333333333314" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.0642857142857143"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: start
+port: port-0
+z: 0" data-x="-1" data-y="-0.6" cx="39.999999999999986" cy="272.4583333333333" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: end
+port: port-10
+z: 0" data-x="5" data-y="0.6" cx="133.33333333333331" cy="253.79166666666666" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: start
+port: port-1
+z: 0" data-x="-1" data-y="0.6" cx="39.999999999999986" cy="253.79166666666666" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: end
+port: port-11
+z: 0" data-x="5" data-y="-0.6" cx="133.33333333333331" cy="272.4583333333333" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: start
+port: port-12
+z: 0" data-x="9" data-y="-0.6" cx="195.55555555555554" cy="272.4583333333333" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: end
+port: port-22
+z: 0" data-x="15" data-y="0.6" cx="288.8888888888889" cy="253.79166666666666" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: start
+port: port-13
+z: 0" data-x="9" data-y="0.6" cx="195.55555555555554" cy="253.79166666666666" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: end
+port: port-23
+z: 0" data-x="15" data-y="-0.6" cx="288.8888888888889" cy="272.4583333333333" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: start
+port: port-24
+z: 0" data-x="19" data-y="-0.6" cx="351.1111111111111" cy="272.4583333333333" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: end
+port: port-34
+z: 0" data-x="25" data-y="0.6" cx="444.4444444444444" cy="253.79166666666666" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: start
+port: port-25
+z: 0" data-x="19" data-y="0.6" cx="351.1111111111111" cy="253.79166666666666" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: end
+port: port-35
+z: 0" data-x="25" data-y="-0.6" cx="444.4444444444444" cy="272.4583333333333" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: start
+port: port-36
+z: 0" data-x="29" data-y="-0.6" cx="506.66666666666663" cy="272.4583333333333" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: end
+port: port-46
+z: 0" data-x="35" data-y="0.6" cx="600" cy="253.79166666666666" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: start
+port: port-37
+z: 0" data-x="29" data-y="0.6" cx="506.66666666666663" cy="253.79166666666666" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: end
+port: port-47
+z: 0" data-x="35" data-y="-0.6" cx="600" cy="272.4583333333333" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-0
+net: 0
+z: 0" data-x="-1" data-y="-0.6" cx="39.999999999999986" cy="272.4583333333333" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-4
+net: 0
+z: 0" data-x="1" data-y="0.20000000000000007" cx="71.1111111111111" cy="260.0138888888889" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-1
+net: 1
+z: 0" data-x="-1" data-y="0.6" cx="39.999999999999986" cy="253.79166666666666" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-2
+net: 1
+z: 0" data-x="1" data-y="-0.6" cx="71.1111111111111" cy="272.4583333333333" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-8
+net: 0
+z: 0" data-x="3" data-y="0.20000000000000007" cx="102.2222222222222" cy="260.0138888888889" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-6
+net: 1
+z: 0" data-x="3" data-y="-0.6" cx="102.2222222222222" cy="272.4583333333333" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-10
+net: 0
+z: 0" data-x="5" data-y="0.6" cx="133.33333333333331" cy="253.79166666666666" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-11
+net: 1
+z: 0" data-x="5" data-y="-0.6" cx="133.33333333333331" cy="272.4583333333333" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-12
+net: 2
+z: 0" data-x="9" data-y="-0.6" cx="195.55555555555554" cy="272.4583333333333" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-16
+net: 2
+z: 0" data-x="11" data-y="0.20000000000000007" cx="226.66666666666666" cy="260.0138888888889" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-20
+net: 2
+z: 0" data-x="13" data-y="0.20000000000000007" cx="257.77777777777777" cy="260.0138888888889" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-22
+net: 2
+z: 0" data-x="15" data-y="0.6" cx="288.8888888888889" cy="253.79166666666666" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: start
+port: port-0
+z: 0" data-x="-1" data-y="-3.0375" cx="39.999999999999986" cy="310.375" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: end
+port: port-10
+z: 0" data-x="5" data-y="-1.8375" cx="133.33333333333331" cy="291.7083333333333" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: start
+port: port-1
+z: 0" data-x="-1" data-y="-1.8375" cx="39.999999999999986" cy="291.7083333333333" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: end
+port: port-11
+z: 0" data-x="5" data-y="-3.0375" cx="133.33333333333331" cy="310.375" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: start
+port: port-12
+z: 0" data-x="9" data-y="-3.0375" cx="195.55555555555554" cy="310.375" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: end
+port: port-22
+z: 0" data-x="15" data-y="-1.8375" cx="288.8888888888889" cy="291.7083333333333" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: start
+port: port-13
+z: 0" data-x="9" data-y="-1.8375" cx="195.55555555555554" cy="291.7083333333333" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: end
+port: port-23
+z: 0" data-x="15" data-y="-3.0375" cx="288.8888888888889" cy="310.375" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: start
+port: port-24
+z: 0" data-x="19" data-y="-3.0375" cx="351.1111111111111" cy="310.375" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: end
+port: port-34
+z: 0" data-x="25" data-y="-1.8375" cx="444.4444444444444" cy="291.7083333333333" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: start
+port: port-25
+z: 0" data-x="19" data-y="-1.8375" cx="351.1111111111111" cy="291.7083333333333" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: end
+port: port-35
+z: 0" data-x="25" data-y="-3.0375" cx="444.4444444444444" cy="310.375" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: start
+port: port-36
+z: 0" data-x="29" data-y="-3.0375" cx="506.66666666666663" cy="310.375" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: end
+port: port-46
+z: 0" data-x="35" data-y="-1.8375" cx="600" cy="291.7083333333333" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: start
+port: port-37
+z: 0" data-x="29" data-y="-1.8375" cx="506.66666666666663" cy="291.7083333333333" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: end
+port: port-47
+z: 0" data-x="35" data-y="-3.0375" cx="600" cy="310.375" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: start
+port: port-0
+z: 0" data-x="-1" data-y="-5.475" cx="39.999999999999986" cy="348.29166666666663" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: end
+port: port-10
+z: 0" data-x="5" data-y="-4.275" cx="133.33333333333331" cy="329.625" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: start
+port: port-1
+z: 0" data-x="-1" data-y="-4.275" cx="39.999999999999986" cy="329.625" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: end
+port: port-11
+z: 0" data-x="5" data-y="-5.475" cx="133.33333333333331" cy="348.29166666666663" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: start
+port: port-12
+z: 0" data-x="9" data-y="-5.475" cx="195.55555555555554" cy="348.29166666666663" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: end
+port: port-22
+z: 0" data-x="15" data-y="-4.275" cx="288.8888888888889" cy="329.625" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: start
+port: port-13
+z: 0" data-x="9" data-y="-4.275" cx="195.55555555555554" cy="329.625" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: end
+port: port-23
+z: 0" data-x="15" data-y="-5.475" cx="288.8888888888889" cy="348.29166666666663" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: start
+port: port-24
+z: 0" data-x="19" data-y="-5.475" cx="351.1111111111111" cy="348.29166666666663" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: end
+port: port-34
+z: 0" data-x="25" data-y="-4.275" cx="444.4444444444444" cy="329.625" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: start
+port: port-25
+z: 0" data-x="19" data-y="-4.275" cx="351.1111111111111" cy="329.625" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: end
+port: port-35
+z: 0" data-x="25" data-y="-5.475" cx="444.4444444444444" cy="348.29166666666663" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: start
+port: port-36
+z: 0" data-x="29" data-y="-5.475" cx="506.66666666666663" cy="348.29166666666663" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: end
+port: port-46
+z: 0" data-x="35" data-y="-4.275" cx="600" cy="329.625" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: start
+port: port-37
+z: 0" data-x="29" data-y="-4.275" cx="506.66666666666663" cy="329.625" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: end
+port: port-47
+z: 0" data-x="35" data-y="-5.475" cx="600" cy="348.29166666666663" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-0
+net: 0
+z: 0" data-x="-1" data-y="-5.475" cx="39.999999999999986" cy="348.29166666666663" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-4
+net: 0
+z: 0" data-x="1" data-y="-4.675" cx="71.1111111111111" cy="335.84722222222223" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-1
+net: 1
+z: 0" data-x="-1" data-y="-4.275" cx="39.999999999999986" cy="329.625" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-2
+net: 1
+z: 0" data-x="1" data-y="-5.475" cx="71.1111111111111" cy="348.29166666666663" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-8
+net: 0
+z: 0" data-x="3" data-y="-4.675" cx="102.2222222222222" cy="335.84722222222223" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-6
+net: 1
+z: 0" data-x="3" data-y="-5.475" cx="102.2222222222222" cy="348.29166666666663" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+port: port-10
+net: 0
+z: 0" data-x="5" data-y="-4.275" cx="133.33333333333331" cy="329.625" r="3" fill="hsla(266, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-1
+port: port-11
+net: 1
+z: 0" data-x="5" data-y="-5.475" cx="133.33333333333331" cy="348.29166666666663" r="3" fill="hsla(28, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-12
+net: 2
+z: 0" data-x="9" data-y="-5.475" cx="195.55555555555554" cy="348.29166666666663" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-16
+net: 2
+z: 0" data-x="11" data-y="-4.675" cx="226.66666666666666" cy="335.84722222222223" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-20
+net: 2
+z: 0" data-x="13" data-y="-4.675" cx="257.77777777777777" cy="335.84722222222223" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-2
+port: port-22
+net: 2
+z: 0" data-x="15" data-y="-4.275" cx="288.8888888888889" cy="329.625" r="3" fill="hsla(86, 70%, 50%, 1)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: start
+port: port-0
+z: 0" data-x="-1" data-y="-7.912499999999999" cx="39.999999999999986" cy="386.2083333333333" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-0
+net: 0
+endpoint: end
+port: port-10
+z: 0" data-x="5" data-y="-6.7124999999999995" cx="133.33333333333331" cy="367.54166666666663" r="3" fill="hsla(266, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: start
+port: port-1
+z: 0" data-x="-1" data-y="-6.7124999999999995" cx="39.999999999999986" cy="367.54166666666663" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-1
+net: 1
+endpoint: end
+port: port-11
+z: 0" data-x="5" data-y="-7.912499999999999" cx="133.33333333333331" cy="386.2083333333333" r="3" fill="hsla(28, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: start
+port: port-12
+z: 0" data-x="9" data-y="-7.912499999999999" cx="195.55555555555554" cy="386.2083333333333" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-2
+net: 2
+endpoint: end
+port: port-22
+z: 0" data-x="15" data-y="-6.7124999999999995" cx="288.8888888888889" cy="367.54166666666663" r="3" fill="hsla(86, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: start
+port: port-13
+z: 0" data-x="9" data-y="-6.7124999999999995" cx="195.55555555555554" cy="367.54166666666663" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-3
+net: 3
+endpoint: end
+port: port-23
+z: 0" data-x="15" data-y="-7.912499999999999" cx="288.8888888888889" cy="386.2083333333333" r="3" fill="hsla(152, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: start
+port: port-24
+z: 0" data-x="19" data-y="-7.912499999999999" cx="351.1111111111111" cy="386.2083333333333" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-4
+net: 4
+endpoint: end
+port: port-34
+z: 0" data-x="25" data-y="-6.7124999999999995" cx="444.4444444444444" cy="367.54166666666663" r="3" fill="hsla(142, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: start
+port: port-25
+z: 0" data-x="19" data-y="-6.7124999999999995" cx="351.1111111111111" cy="367.54166666666663" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-5
+net: 5
+endpoint: end
+port: port-35
+z: 0" data-x="25" data-y="-7.912499999999999" cx="444.4444444444444" cy="386.2083333333333" r="3" fill="hsla(76, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: start
+port: port-36
+z: 0" data-x="29" data-y="-7.912499999999999" cx="506.66666666666663" cy="386.2083333333333" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-6
+net: 6
+endpoint: end
+port: port-46
+z: 0" data-x="35" data-y="-6.7124999999999995" cx="600" cy="367.54166666666663" r="3" fill="hsla(218, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: start
+port: port-37
+z: 0" data-x="29" data-y="-6.7124999999999995" cx="506.66666666666663" cy="367.54166666666663" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g><circle data-type="point" data-label="route: route-7
+net: 7
+endpoint: end
+port: port-47
+z: 0" data-x="35" data-y="-7.912499999999999" cx="600" cy="386.2083333333333" r="3" fill="hsla(256, 70%, 50%, 0.8)"/></g><g id="crosshair" style="display: none"><line id="crosshair-h" y1="0" y2="640" stroke="#666" stroke-width="0.5"/><line id="crosshair-v" x1="0" x2="640" stroke="#666" stroke-width="0.5"/><text id="coordinates" font-family="monospace" font-size="12" fill="#666"></text></g><script><![CDATA[
+              document.currentScript.parentElement.addEventListener('mousemove', (e) => {
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const crosshair = svg.getElementById('crosshair');
+                const h = svg.getElementById('crosshair-h');
+                const v = svg.getElementById('crosshair-v');
+                const coords = svg.getElementById('coordinates');
+                
+                crosshair.style.display = 'block';
+                h.setAttribute('x1', '0');
+                h.setAttribute('x2', '640');
+                h.setAttribute('y1', y);
+                h.setAttribute('y2', y);
+                v.setAttribute('x1', x);
+                v.setAttribute('x2', x);
+                v.setAttribute('y1', '0');
+                v.setAttribute('y2', '640');
+
+                // Calculate real coordinates using inverse transformation
+                const matrix = {"a":15.555555555555555,"c":0,"e":55.55555555555554,"b":0,"d":-15.555555555555555,"f":263.125};
+                // Manually invert and apply the affine transform
+                // Since we only use translate and scale, we can directly compute:
+                // x' = (x - tx) / sx
+                // y' = (y - ty) / sy
+                const sx = matrix.a;
+                const sy = matrix.d;
+                const tx = matrix.e; 
+                const ty = matrix.f;
+                const realPoint = {
+                  x: (x - tx) / sx,
+                  y: (y - ty) / sy // Flip y back since we used negative scale
+                }
+                
+                coords.textContent = `(${realPoint.x.toFixed(2)}, ${realPoint.y.toFixed(2)})`;
+                coords.setAttribute('x', (x + 5).toString());
+                coords.setAttribute('y', (y - 5).toString());
+              });
+              document.currentScript.parentElement.addEventListener('mouseleave', () => {
+                document.currentScript.parentElement.getElementById('crosshair').style.display = 'none';
+              });
+            ]]></script></svg>
