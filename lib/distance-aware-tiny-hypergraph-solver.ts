@@ -6,6 +6,8 @@ import {
   type TinyHyperGraphTopology,
 } from "./core"
 import { IndexedCandidateHeap } from "./indexed-candidate-heap"
+import { PortPenaltyLowerBound } from "./PortPenaltyLowerBound"
+import type { PortId, RouteId } from "./types"
 
 /**
  * Adds geometric segment distance to the normal dynamic routing cost.
@@ -15,6 +17,8 @@ import { IndexedCandidateHeap } from "./indexed-candidate-heap"
  * queued hop from being expanded later.
  */
 export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
+  private readonly portPenaltyLowerBound?: PortPenaltyLowerBound
+
   constructor(
     topology: TinyHyperGraphTopology,
     problem: TinyHyperGraphProblem,
@@ -22,6 +26,29 @@ export class DistanceAwareTinyHyperGraphSolver extends TinyHyperGraphSolver {
   ) {
     super(topology, problem, options)
     this.ADD_SEGMENT_DISTANCE_TO_G = true
+    if (problem.portPenalty?.some((penalty) => penalty > 0)) {
+      this.portPenaltyLowerBound = new PortPenaltyLowerBound({
+        topology,
+        problem,
+        endpointReservations: this.problemSetup.portEndpointReservationNetId,
+      })
+    }
+  }
+
+  protected override getRouteHeuristic(
+    routeId: RouteId,
+    portId: PortId,
+  ): number {
+    const distance = super.getRouteHeuristic(routeId, portId)
+    if (!this.portPenaltyLowerBound) return distance
+    return (
+      distance +
+      this.portPenaltyLowerBound.getLowerBound({
+        netId: this.problem.routeNet[routeId],
+        endPortId: this.getRouteEndPortId(routeId),
+        portId,
+      })
+    )
   }
 
   override _setup(): void {

@@ -58,7 +58,7 @@ test("full motherboard graph searches across the board for a short STM32 power c
   )
     solver.step()
   expect(solver.failed).toBe(false)
-  expect(solver.iterations).toBe(300_001)
+  expect(solver.iterations).toBe(470)
   const path = solver.state.regionSegments.flatMap((segments, region) =>
     segments.map(([, from, to]) => ({ region, from, to })),
   )
