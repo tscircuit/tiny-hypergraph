@@ -457,7 +457,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
           }
         : undefined,
     }
-    if (!boundedReachabilityGeometry) {
+    if (!boundedReachabilityGeometry || this.problem.routeSegmentFilter) {
       return findDistinctOwnerBlockerPath({
         ...searchOptions,
         checkReachability: true,
@@ -593,6 +593,7 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     // each directed edge still gets its original distance and ordering.
     if (
       !input.buildRegionTemplates &&
+      !this.problem.routeSegmentFilter &&
       !this.isKnownSingleLayerRegion(state.nextRegionId)
     ) {
       const templates = this.getRelaxedSearchHopTemplates(state, context)
@@ -620,6 +621,16 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     ] ?? []) {
       if (neighborPortId === state.portId && !input.buildRegionTemplates)
         continue
+      if (
+        this.problem.routeSegmentFilter?.({
+          routeId: this.state.currentRouteId!,
+          regionId: state.nextRegionId,
+          fromPortId: state.portId,
+          toPortId: neighborPortId,
+        }) === false
+      ) {
+        continue
+      }
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
       if (
         neighborPortId !== goalPortId &&
