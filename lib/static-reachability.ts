@@ -179,6 +179,16 @@ const hasStaticReachabilityPath = (
       currentCandidate.nextRegionId
     ] ?? []) {
       const assignedNetId = portAssignment[neighborPortId]
+      if (
+        problem.routeSegmentFilter?.(
+          routeId,
+          currentCandidate.nextRegionId,
+          currentCandidate.portId,
+          neighborPortId,
+        ) === false
+      ) {
+        continue
+      }
 
       if (
         isPortReservedForStaticReachability(
