@@ -19,9 +19,10 @@ test("checks the final segment across the captured single-layer cell", () => {
     problem.routeEndPort[0] = goal
     const options = { OWNED_REGIONAL_HOP_FRONTIER: mode === "frontier" }
     const parent = new TinyHyperGraphSolver(topology, problem, options)
-    const solver = mode === "greedy"
-      ? parent["createGreedyFinalRouteSolver"](options, 0)
-      : parent
+    const solver =
+      mode === "greedy"
+        ? parent["createGreedyFinalRouteSolver"](options, 0)
+        : parent
 
     // Expand the real entry-to-exit hop directly to isolate goal acceptance.
     solver.state.currentRouteId = 0
@@ -38,17 +39,24 @@ test("checks the final segment across the captured single-layer cell", () => {
       f: 0,
     })
     if (mode === "dense") {
-      const workspace = new DenseRoutingWorkspace(new PreparedRoutingGeometry(topology))
+      const workspace = new DenseRoutingWorkspace(
+        new PreparedRoutingGeometry(topology),
+      )
       expect(workspace.step(solver)).toBe(true)
     } else {
       solver._step()
     }
 
     expect(solver.state.regionSegments[fixed.regionId]).toHaveLength(2)
-    expect(solver.state.regionIntersectionCaches[fixed.regionId].existingSameLayerIntersections).toBe(1)
+    expect(
+      solver.state.regionIntersectionCaches[fixed.regionId]
+        .existingSameLayerIntersections,
+    ).toBe(1)
     if (mode === "core") {
       expect(
-        getSvgFromGraphicsObject(solver.preview(), { backgroundColor: "white" }),
+        getSvgFromGraphicsObject(solver.preview(), {
+          backgroundColor: "white",
+        }),
       ).toMatchSvgSnapshot(import.meta.path)
     }
   }
