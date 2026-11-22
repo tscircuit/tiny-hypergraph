@@ -920,6 +920,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
@@ -1071,6 +1074,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -2266,8 +2272,10 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    return Number.isFinite(super.computeG(currentCandidate, neighborPortId))
+      ? currentCandidate.g
+      : Number.POSITIVE_INFINITY
   }
 }

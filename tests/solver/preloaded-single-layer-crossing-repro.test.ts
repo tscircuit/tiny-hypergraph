@@ -17,7 +17,7 @@ test("replays the greedy route beside preloaded copper from a captured circuit",
       (sum, cache) => sum + cache.existingSameLayerIntersections,
       0,
     ),
-  ).toBe(1)
+  ).toBe(0)
   for (const segment of problem.initialAssignments!) {
     expect(solver.state.regionSegments[segment.regionId]).toContainEqual([
       segment.routeId,
