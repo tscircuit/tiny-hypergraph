@@ -775,45 +775,6 @@ export class SelectiveReripTinyHyperGraphSolver extends OutsideInPartialRipTinyH
     return [...owners]
   }
 
-  private segmentsCrossOnSameLayer(
-    regionId: RegionId,
-    firstFromPortId: PortId,
-    firstToPortId: PortId,
-    secondFromPortId: PortId,
-    secondToPortId: PortId,
-  ): boolean {
-    const first = this.populateSegmentGeometryScratch(
-      regionId,
-      firstFromPortId,
-      firstToPortId,
-    )
-    const firstLesserAngle = first.lesserAngle
-    const firstGreaterAngle = first.greaterAngle
-    const firstLayerMask = first.layerMask
-    const second = this.populateSegmentGeometryScratch(
-      regionId,
-      secondFromPortId,
-      secondToPortId,
-    )
-    if ((firstLayerMask & second.layerMask) === 0) return false
-    if (
-      firstLesserAngle === second.lesserAngle ||
-      firstLesserAngle === second.greaterAngle ||
-      firstGreaterAngle === second.lesserAngle ||
-      firstGreaterAngle === second.greaterAngle
-    ) {
-      return false
-    }
-
-    const secondLesserInsideFirst =
-      firstLesserAngle < second.lesserAngle &&
-      second.lesserAngle < firstGreaterAngle
-    const secondGreaterInsideFirst =
-      firstLesserAngle < second.greaterAngle &&
-      second.greaterAngle < firstGreaterAngle
-    return secondLesserInsideFirst !== secondGreaterInsideFirst
-  }
-
   private rebuildCommittedState(rippedRouteIds: ReadonlySet<RouteId>): void {
     for (const routeId of rippedRouteIds) {
       if (this.problem.routeIsFixed?.[routeId] === 1) {

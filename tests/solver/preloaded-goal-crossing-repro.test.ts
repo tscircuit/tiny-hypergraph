@@ -48,11 +48,11 @@ test("checks the final segment across the captured single-layer cell", () => {
       solver._step()
     }
 
-    expect(solver.state.regionSegments[fixed.regionId]).toHaveLength(2)
+    expect(solver.state.regionSegments[fixed.regionId]).toHaveLength(1)
     expect(
       solver.state.regionIntersectionCaches[fixed.regionId]
         .existingSameLayerIntersections,
-    ).toBe(1)
+    ).toBe(0)
     if (mode === "core") {
       expect(
         getSvgFromGraphicsObject(

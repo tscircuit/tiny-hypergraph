@@ -920,6 +920,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
           continue
         }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
+          continue
+        }
         this.onPathFound(currentCandidate)
         return
       }
@@ -1071,6 +1074,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
         if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+          continue
+        }
+        if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
           continue
         }
         this.onPathFound(currentCandidate)
@@ -1372,6 +1378,45 @@ export class TinyHyperGraphSolver extends BaseSolver {
     return (
       reservedNetId !== -1 && reservedNetId !== this.state.currentRouteNetId
     )
+  }
+
+  protected segmentsCrossOnSameLayer(
+    regionId: RegionId,
+    firstFromPortId: PortId,
+    firstToPortId: PortId,
+    secondFromPortId: PortId,
+    secondToPortId: PortId,
+  ): boolean {
+    const first = this.populateSegmentGeometryScratch(
+      regionId,
+      firstFromPortId,
+      firstToPortId,
+    )
+    const firstLesserAngle = first.lesserAngle
+    const firstGreaterAngle = first.greaterAngle
+    const firstLayerMask = first.layerMask
+    const second = this.populateSegmentGeometryScratch(
+      regionId,
+      secondFromPortId,
+      secondToPortId,
+    )
+    if ((firstLayerMask & second.layerMask) === 0) return false
+    if (
+      firstLesserAngle === second.lesserAngle ||
+      firstLesserAngle === second.greaterAngle ||
+      firstGreaterAngle === second.lesserAngle ||
+      firstGreaterAngle === second.greaterAngle
+    ) {
+      return false
+    }
+
+    const secondLesserInsideFirst =
+      firstLesserAngle < second.lesserAngle &&
+      second.lesserAngle < firstGreaterAngle
+    const secondGreaterInsideFirst =
+      firstLesserAngle < second.greaterAngle &&
+      second.greaterAngle < firstGreaterAngle
+    return secondLesserInsideFirst !== secondGreaterInsideFirst
   }
 
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
@@ -2266,8 +2311,22 @@ export class TinyHyperGraphSolver extends BaseSolver {
 class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
   override computeG(
     currentCandidate: Candidate,
-    _neighborPortId: PortId,
+    neighborPortId: PortId,
   ): number {
-    return currentCandidate.g
+    const regionId = currentCandidate.nextRegionId
+    if (!this.isKnownSingleLayerRegion(regionId)) return currentCandidate.g
+    const crossesFixedCopper = this.state.regionSegments[regionId].some(
+      ([routeId, fromPortId, toPortId]) =>
+        this.problem.routeIsFixed?.[routeId] === 1 &&
+        this.problem.routeNet[routeId] !== this.state.currentRouteNetId &&
+        this.segmentsCrossOnSameLayer(
+          regionId,
+          currentCandidate.portId,
+          neighborPortId,
+          fromPortId,
+          toPortId,
+        ),
+    )
+    return crossesFixedCopper ? Number.POSITIVE_INFINITY : currentCandidate.g
   }
 }
