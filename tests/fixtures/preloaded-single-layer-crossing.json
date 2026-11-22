@@ -690,9 +690,5 @@
       0,
       0
     ]
-  },
-  "goalOnlyRoute": {
-    "startPort": 9,
-    "endPort": 10
   }
 }
