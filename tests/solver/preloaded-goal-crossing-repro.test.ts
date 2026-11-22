@@ -2,6 +2,7 @@ import "bun-match-svg"
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
 import { TinyHyperGraphSolver } from "lib/core"
+import { visualizeTinyGraph } from "lib/visualizeTinyGraph"
 import { IndexedCandidateHeap } from "lib/indexed-candidate-heap"
 import { DenseRoutingWorkspace } from "lib/prepared/DenseRoutingWorkspace"
 import { PreparedRoutingGeometry } from "lib/prepared/PreparedRoutingGeometry"
@@ -54,9 +55,13 @@ test("checks the final segment across the captured single-layer cell", () => {
     ).toBe(1)
     if (mode === "core") {
       expect(
-        getSvgFromGraphicsObject(solver.preview(), {
-          backgroundColor: "white",
-        }),
+        getSvgFromGraphicsObject(
+          visualizeTinyGraph(solver, {
+            showTopology: false,
+            showInitialRouteHints: false,
+          }),
+          { backgroundColor: "white" },
+        ),
       ).toMatchSvgSnapshot(import.meta.path)
     }
   }
