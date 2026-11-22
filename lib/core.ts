@@ -1380,6 +1380,45 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  protected segmentsCrossOnSameLayer(
+    regionId: RegionId,
+    firstFromPortId: PortId,
+    firstToPortId: PortId,
+    secondFromPortId: PortId,
+    secondToPortId: PortId,
+  ): boolean {
+    const first = this.populateSegmentGeometryScratch(
+      regionId,
+      firstFromPortId,
+      firstToPortId,
+    )
+    const firstLesserAngle = first.lesserAngle
+    const firstGreaterAngle = first.greaterAngle
+    const firstLayerMask = first.layerMask
+    const second = this.populateSegmentGeometryScratch(
+      regionId,
+      secondFromPortId,
+      secondToPortId,
+    )
+    if ((firstLayerMask & second.layerMask) === 0) return false
+    if (
+      firstLesserAngle === second.lesserAngle ||
+      firstLesserAngle === second.greaterAngle ||
+      firstGreaterAngle === second.lesserAngle ||
+      firstGreaterAngle === second.greaterAngle
+    ) {
+      return false
+    }
+
+    const secondLesserInsideFirst =
+      firstLesserAngle < second.lesserAngle &&
+      second.lesserAngle < firstGreaterAngle
+    const secondGreaterInsideFirst =
+      firstLesserAngle < second.greaterAngle &&
+      second.greaterAngle < firstGreaterAngle
+    return secondLesserInsideFirst !== secondGreaterInsideFirst
+  }
+
   isKnownSingleLayerRegion(regionId: RegionId): boolean {
     const regionAvailableZMask =
       this.topology.regionAvailableZMask?.[regionId] ?? 0
@@ -2274,8 +2313,20 @@ class GreedyFinalRouteSolver extends TinyHyperGraphSolver {
     currentCandidate: Candidate,
     neighborPortId: PortId,
   ): number {
-    return Number.isFinite(super.computeG(currentCandidate, neighborPortId))
-      ? currentCandidate.g
-      : Number.POSITIVE_INFINITY
+    const regionId = currentCandidate.nextRegionId
+    if (!this.isKnownSingleLayerRegion(regionId)) return currentCandidate.g
+    const crossesFixedCopper = this.state.regionSegments[regionId].some(
+      ([routeId, fromPortId, toPortId]) =>
+        this.problem.routeIsFixed?.[routeId] === 1 &&
+        this.problem.routeNet[routeId] !== this.state.currentRouteNetId &&
+        this.segmentsCrossOnSameLayer(
+          regionId,
+          currentCandidate.portId,
+          neighborPortId,
+          fromPortId,
+          toPortId,
+        ),
+    )
+    return crossesFixedCopper ? Number.POSITIVE_INFINITY : currentCandidate.g
   }
 }
