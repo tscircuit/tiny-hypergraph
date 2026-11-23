@@ -1,4 +1,5 @@
 import type { NetId, PortId, RegionId, RouteId } from "./types"
+import type { TinyHyperGraphProblem } from "./core"
 
 export interface TinyHyperGraphInitialAssignment {
   routeId: RouteId
@@ -13,7 +14,8 @@ interface InitialAssignmentTopology {
   incidentPortRegion: RegionId[][]
 }
 
-interface InitialAssignmentProblem {
+interface InitialAssignmentProblem
+  extends Pick<TinyHyperGraphProblem, "routeSegmentFilter"> {
   routeCount: number
   routeStartPort: Int32Array
   routeEndPort: Int32Array
@@ -151,6 +153,20 @@ export const applyInitialAssignments = ({
 
   for (const [routeId, routeAssignments] of assignmentsByRoute) {
     assertAssignmentsConnectRoute(problem, routeId, routeAssignments)
+    if (
+      problem.routeIsFixed?.[routeId] !== 1 &&
+      routeAssignments.some(
+        ({ regionId, fromPortId, toPortId }) =>
+          problem.routeSegmentFilter?.(
+            routeId,
+            regionId,
+            fromPortId,
+            toPortId,
+          ) === false,
+      )
+    ) {
+      assignmentsByRoute.delete(routeId)
+    }
   }
 
   for (let routeId = 0; routeId < problem.routeCount; routeId++) {
@@ -164,7 +180,10 @@ export const applyInitialAssignments = ({
   if (assignments.length === 0) return
 
   const initiallyRoutedRouteIds = new Set(assignmentsByRoute.keys())
+  let initialAssignmentCount = 0
   for (const { routeId, regionId, fromPortId, toPortId } of assignments) {
+    if (!initiallyRoutedRouteIds.has(routeId)) continue
+    initialAssignmentCount++
     const routeNetId = problem.routeNet[routeId]!
     for (const portId of [fromPortId, toPortId]) {
       const assignedNetId = state.portAssignment[portId]!
@@ -190,7 +209,7 @@ export const applyInitialAssignments = ({
   }
 
   return {
-    initialAssignmentCount: assignments.length,
+    initialAssignmentCount,
     initiallyRoutedRouteCount: initiallyRoutedRouteIds.size,
   }
 }

@@ -153,6 +153,14 @@ export interface TinyHyperGraphProblem {
    **/
   portSectionMask: Int8Array // boolean[], length: portCount
 
+  /** Filters newly routed segments. The answer must be the same in both directions. */
+  routeSegmentFilter?: (
+    routeId: RouteId,
+    regionId: RegionId,
+    fromPortId: PortId,
+    toPortId: PortId,
+  ) => boolean
+
   /** routeMetadata[routeId] = metadata for the route */
   routeMetadata?: any[]
 
@@ -914,6 +922,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
     }
 
     for (const neighborPortId of neighbors) {
+      if (
+        problem.routeSegmentFilter?.(
+          state.currentRouteId!,
+          currentCandidate.nextRegionId,
+          currentCandidate.portId,
+          neighborPortId,
+        ) === false
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
@@ -1070,6 +1088,16 @@ export class TinyHyperGraphSolver extends BaseSolver {
       const previousIndex = previousNeighborIndex
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
+      if (
+        problem.routeSegmentFilter?.(
+          state.currentRouteId!,
+          currentCandidate.nextRegionId,
+          currentCandidate.portId,
+          neighborPortId,
+        ) === false
+      ) {
+        continue
+      }
       if (neighborPortId === state.goalPortId) {
         const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
