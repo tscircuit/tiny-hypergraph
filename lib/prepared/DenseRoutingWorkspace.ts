@@ -182,6 +182,16 @@ export class DenseRoutingWorkspace {
       const before = previous
       previous = at
       const port = neighbors[at]!
+      if (
+        p.routeSegmentFilter?.({
+          routeId: state.currentRouteId!,
+          regionId: region,
+          fromPortId: c.portId,
+          toPortId: port,
+        }) === false
+      ) {
+        continue
+      }
       if (port === state.goalPortId) {
         if (!Number.isFinite(solver.computeG(c, port))) continue
         solver.onPathFound(c)
