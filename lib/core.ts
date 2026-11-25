@@ -580,7 +580,7 @@ export class TinyHyperGraphSolver extends BaseSolver {
     sameLayerIntersectionCount: 0,
     crossingLayerIntersectionCount: 0,
   }
-  protected ADD_SEGMENT_DISTANCE_TO_G = false
+  ADD_SEGMENT_DISTANCE_TO_G = false
   protected costAwareFinalReripBudget = 0
 
   DISTANCE_TO_COST = 0.05 // 50mm = 1 cost unit (1 cost unit ~ 100% chance of failure)
