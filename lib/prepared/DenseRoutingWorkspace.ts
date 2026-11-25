@@ -63,7 +63,6 @@ export class DenseRoutingWorkspace {
     const net = state.currentRouteNetId!
     const goal = state.goalPortId
     const assign = state.portAssignment
-    const reserved = solver.problemSetup.portEndpointReservationNetId
     const regionNet = p.regionNetId
     let frontier = this.frontiers.get(region)
     if (!frontier) {
@@ -75,10 +74,8 @@ export class DenseRoutingWorkspace {
       let previous = -1
       for (let index = 0; index < neighbors.length; index++) {
         const port = neighbors[index]!
-        const reservation = reserved[port]!
         if (
-          reservation === -2 ||
-          (reservation !== -1 && reservation !== net) ||
+          solver.isPortReservedForDifferentNet(port) ||
           (assign[port] !== -1 && assign[port] !== net)
         )
           continue
@@ -197,7 +194,9 @@ export class DenseRoutingWorkspace {
       }
       const old = seen[hop] === generation ? best[hop]! : Infinity
       if (c.g >= old) continue
-      const distanceCost = distances[offset + at]! * solver.DISTANCE_TO_COST
+      const distanceCost = solver.ADD_SEGMENT_DISTANCE_TO_G
+        ? distances[offset + at]! * solver.DISTANCE_TO_COST
+        : 0
       const penalty = p.portPenalty?.[port] ?? 0
       if (base + penalty + distanceCost >= old) continue
       const vz = t.portZ[port]!
