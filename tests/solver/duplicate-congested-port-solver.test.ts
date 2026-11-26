@@ -219,3 +219,117 @@ test("duplicate congested port solver can preserve legacy port-use estimation", 
   expect(penaltyAwareSolver.report.portUseCounts["shared-neighbor"]).toBe(2)
   expect(compatibilitySolver.report.portUseCounts["shared-choke"]).toBe(2)
 })
+
+test("isolated boundary duplicates keep their positions when incident regions are swapped", () => {
+  const graph = createDuplicatePortFixture()
+  graph.ports = graph.ports.filter((port) => port.portId !== "shared-neighbor")
+  for (const region of graph.regions) {
+    region.pointIds = region.pointIds.filter(
+      (portId) => portId !== "shared-neighbor",
+    )
+    if (region.regionId === "left" || region.regionId === "right") {
+      region.d = { ...region.d, width: 2 }
+    }
+  }
+  const reversedGraph = structuredClone(graph)
+  const reversedPort = reversedGraph.ports.find(
+    (port) => port.portId === "shared-choke",
+  )!
+  const originalRegion1Id = reversedPort.region1Id
+  reversedPort.region1Id = reversedPort.region2Id
+  reversedPort.region2Id = originalRegion1Id
+
+  const duplicatePositions = [graph, reversedGraph].map((inputGraph) => {
+    const solver = new DuplicateCongestedPortSolver(inputGraph)
+    solver.solve()
+    expect(solver.solved).toBe(true)
+    const duplicatePort = solver
+      .getOutput()
+      .ports.find((port) => port.portId === "shared-choke::dup1")!
+    expect(duplicatePort).toBeDefined()
+    return { x: duplicatePort.d?.x, y: duplicatePort.d?.y }
+  })
+
+  expect(duplicatePositions[0]).toEqual(duplicatePositions[1])
+})
+
+test.each([
+  ["vertical", 0],
+  ["horizontal", 0],
+  ["vertical", 0.01],
+  ["horizontal", 0.01],
+] as const)(
+  "isolated duplicates stay on a short %s shared edge from tangent position %f",
+  (boundaryOrientation, sourceCoordinate) => {
+    const graph = createDuplicatePortFixture()
+    graph.ports = graph.ports.filter(
+      (port) => port.portId !== "shared-neighbor",
+    )
+    for (const region of graph.regions) {
+      region.pointIds = region.pointIds.filter(
+        (portId) => portId !== "shared-neighbor",
+      )
+    }
+    graph.regions.push(
+      createRegion("c-start", -4, 0.2, 2, 2, ["c-start-port"]),
+      createRegion("c-end", 4, 0.2, 2, 2, ["c-end-port"]),
+    )
+    graph.ports.push(
+      createPort("c-start-port", "c-start", "left", -3, 0.2),
+      createPort("c-end-port", "right", "c-end", 3, 0.2),
+    )
+    graph.connections!.push({
+      connectionId: "connection-c",
+      startRegionId: "c-start",
+      endRegionId: "c-end",
+      mutuallyConnectedNetworkId: "net-c",
+    })
+    const leftRegion = graph.regions.find(
+      (region) => region.regionId === "left",
+    )!
+    const rightRegion = graph.regions.find(
+      (region) => region.regionId === "right",
+    )!
+    leftRegion.pointIds.push("c-start-port")
+    rightRegion.pointIds.push("c-end-port")
+    const normalAxis = boundaryOrientation === "vertical" ? "x" : "y"
+    const tangentAxis = boundaryOrientation === "vertical" ? "y" : "x"
+    const faceGap = 4e-7
+    leftRegion.d = {
+      center: { [normalAxis]: -1, [tangentAxis]: 0 },
+      width: boundaryOrientation === "vertical" ? 2 : 0.02,
+      height: boundaryOrientation === "vertical" ? 0.02 : 2,
+    }
+    rightRegion.d = {
+      center: { [normalAxis]: 1 + faceGap, [tangentAxis]: 0.01 },
+      width: boundaryOrientation === "vertical" ? 2 : 0.04,
+      height: boundaryOrientation === "vertical" ? 0.04 : 2,
+    }
+    const sourcePort = graph.ports.find(
+      (port) => port.portId === "shared-choke",
+    )!
+    sourcePort.d = {
+      z: 0,
+      [normalAxis]: faceGap / 2,
+      [tangentAxis]: sourceCoordinate,
+    }
+    const solver = new DuplicateCongestedPortSolver(graph)
+    solver.solve()
+    expect(solver.solved).toBe(true)
+    const duplicates = solver
+      .getOutput()
+      .ports.filter((port) => port.d?.duplicatedFromPortId === "shared-choke")
+    expect(duplicates).toHaveLength(2)
+    const tangentPositions = duplicates.map((port) =>
+      getNumber(port.d?.[tangentAxis]),
+    )
+    expect(new Set(tangentPositions).size).toBe(2)
+    for (const port of duplicates) {
+      expect(port.d?.[normalAxis]).toBe(sourcePort.d[normalAxis])
+      expect(getNumber(port.d?.[tangentAxis])).toBeGreaterThan(
+        sourceCoordinate === 0 ? 0 : -0.01,
+      )
+      expect(getNumber(port.d?.[tangentAxis])).toBeLessThan(0.01)
+    }
+  },
+)
