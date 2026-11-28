@@ -173,6 +173,9 @@ export interface TinyHyperGraphProblem {
   /** Independent immutable copper reservation: -1 is free, -2 blocks every net. */
   portReservationNetId?: Int32Array
 
+  /** Ports whose capacity cannot be shared by different nets. */
+  portConflicts?: readonly (readonly PortId[])[]
+
   /**
    * Existing serialized region assignments, converted to numeric ids.
    *
@@ -915,9 +918,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
 
     for (const neighborPortId of neighbors) {
       if (neighborPortId === state.goalPortId) {
-        const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (
+          this.isPortAssignedToDifferentNet(
+            neighborPortId,
+            state.currentRouteNetId!,
+          )
+        ) {
           continue
         }
         if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
@@ -944,9 +951,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       if (candidateHopIsClosed === true) {
         continue
       }
-      const assignedNetId = state.portAssignment[neighborPortId]
       if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-      if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+      if (
+        this.isPortAssignedToDifferentNet(
+          neighborPortId,
+          state.currentRouteNetId!,
+        )
+      ) {
         continue
       }
       if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
@@ -1071,9 +1082,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
       previousNeighborIndex = currentNeighborIndex
       const neighborPortId = neighbors[currentNeighborIndex]!
       if (neighborPortId === state.goalPortId) {
-        const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (
+          this.isPortAssignedToDifferentNet(
+            neighborPortId,
+            state.currentRouteNetId!,
+          )
+        ) {
           continue
         }
         if (!Number.isFinite(this.computeG(currentCandidate, neighborPortId))) {
@@ -1112,9 +1127,13 @@ export class TinyHyperGraphSolver extends BaseSolver {
         continue
       }
       if (!prepared[currentNeighborIndex]) {
-        const assignedNetId = state.portAssignment[neighborPortId]
         if (this.isPortReservedForDifferentNet(neighborPortId)) continue
-        if (assignedNetId !== -1 && assignedNetId !== state.currentRouteNetId) {
+        if (
+          this.isPortAssignedToDifferentNet(
+            neighborPortId,
+            state.currentRouteNetId!,
+          )
+        ) {
           continue
         }
         if (this.isRegionReservedForDifferentNet(nextRegionId)) continue
@@ -1346,6 +1365,17 @@ export class TinyHyperGraphSolver extends BaseSolver {
     )
   }
 
+  isPortAssignedToDifferentNet(portId: PortId, netId: NetId): boolean {
+    const assignedNetId = this.state.portAssignment[portId]
+    if (assignedNetId !== -1 && assignedNetId !== netId) return true
+    for (const conflictingPortId of this.problem.portConflicts?.[portId] ??
+      []) {
+      const conflictingNetId = this.state.portAssignment[conflictingPortId]
+      if (conflictingNetId !== -1 && conflictingNetId !== netId) return true
+    }
+    return false
+  }
+
   isPortReservedForDifferentNet(portId: PortId): boolean {
     const endpointReservedNetId =
       this.problemSetup.portEndpointReservationNetId[portId] ?? -1
@@ -1432,6 +1462,12 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
+    // A net's connected terminal copper adds no new crossing or via demand.
+    if (
+      this.problem.regionNetId[regionId] !== -1 &&
+      this.topology.regionMetadata?.[regionId]?._containsTarget === true
+    )
+      return 0
     return computeRegionCost(
       this.topology.regionWidth[regionId],
       this.topology.regionHeight[regionId],

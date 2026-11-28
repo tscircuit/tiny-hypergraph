@@ -62,7 +62,6 @@ export class DenseRoutingWorkspace {
     const region = c.nextRegionId
     const net = state.currentRouteNetId!
     const goal = state.goalPortId
-    const assign = state.portAssignment
     const reserved = solver.problemSetup.portEndpointReservationNetId
     const regionNet = p.regionNetId
     let frontier = this.frontiers.get(region)
@@ -79,7 +78,7 @@ export class DenseRoutingWorkspace {
         if (
           reservation === -2 ||
           (reservation !== -1 && reservation !== net) ||
-          (assign[port] !== -1 && assign[port] !== net)
+          solver.isPortAssignedToDifferentNet(port, net)
         )
           continue
         let nextRegion = region
@@ -134,18 +133,21 @@ export class DenseRoutingWorkspace {
       // new crossings are rejected below, so the same table is exact there too.
       for (let count = 0; count < row.costs.length; count++) {
         row.costs[count] =
-          computeRegionCost(
-            t.regionWidth[region]!,
-            t.regionHeight[region]!,
-            cache.existingSameLayerIntersections,
-            cache.existingCrossingLayerIntersections + count,
-            cache.existingEntryExitLayerChanges,
-            cache.existingSegmentCount + 1,
-            mask,
-            row.via,
-            row.density,
-            t.regionViaAreaFraction?.[region] ?? 1,
-          ) - cache.existingRegionCost
+          p.regionNetId[region] !== -1 &&
+          t.regionMetadata?.[region]?._containsTarget === true
+            ? 0
+            : computeRegionCost(
+                t.regionWidth[region]!,
+                t.regionHeight[region]!,
+                cache.existingSameLayerIntersections,
+                cache.existingCrossingLayerIntersections + count,
+                cache.existingEntryExitLayerChanges,
+                cache.existingSegmentCount + 1,
+                mask,
+                row.via,
+                row.density,
+                t.regionViaAreaFraction?.[region] ?? 1,
+              ) - cache.existingRegionCost
       }
       this.rows[region] = row
     }

@@ -30,7 +30,7 @@ cost: 0.000
 congestion: 0.000
 same layer X: 0
 trans X: 0
-entry exit X: 0" data-x="8.61375" data-y="3.3824999999999985" x="296.68571428571454" y="120.45714285714308" width="51.657142857141935" height="42.97142857142819" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.00546875000000001"/></g><text data-type="text" data-label="Serialization rejects a valid preloaded return path" data-x="8.6" data-y="3.9" x="320" y="47.314285714285575" fill="#334155" font-size="14.628571428571401" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Serialization rejects a valid preloaded return path</text><g><circle data-type="point" data-label="route: __tscircuit_preloaded_trace__:[&quot;source_net_95_mst1_0&quot;,1]
+entry exit X: 0" data-x="8.61375" data-y="3.3824999999999985" x="296.68571428571454" y="120.45714285714308" width="51.657142857141935" height="42.97142857142819" fill="rgba(200, 200, 255, 0.1)" stroke="black" stroke-width="0.00546875000000001"/></g><text data-type="text" data-label="Serialized return path: 5 visits; replay preserved" data-x="8.6" data-y="3.9" x="320" y="47.314285714285575" fill="#334155" font-size="14.628571428571401" font-family="sans-serif" text-anchor="middle" dominant-baseline="central">Serialized return path: 5 visits; replay preserved</text><g><circle data-type="point" data-label="route: __tscircuit_preloaded_trace__:[&quot;source_net_95_mst1_0&quot;,1]
 net: 0
 endpoint: start
 port: ce327613_pp0_z3_cramped::3
