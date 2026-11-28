@@ -1462,14 +1462,8 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
-    // Existing conductive terminals do not need new vias between their layers.
-    const metadata = this.topology.regionMetadata?.[regionId]
-    if (
-      metadata?._tinyTerminal === true ||
-      (metadata?._containsTarget === true &&
-        metadata._containsObstacle === true &&
-        this.problem.regionNetId[regionId]! >= 0)
-    )
+    // Synthetic terminals have no physical routing area or crossings.
+    if (this.topology.regionMetadata?.[regionId]?._tinyTerminal === true)
       return 0
     return computeRegionCost(
       this.topology.regionWidth[regionId],
