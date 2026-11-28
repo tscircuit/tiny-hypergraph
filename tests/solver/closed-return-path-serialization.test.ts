@@ -1,7 +1,11 @@
 import "bun-match-svg"
 import { expect, test } from "bun:test"
 import { getSvgFromGraphicsObject } from "graphics-debug"
-import { loadSerializedHyperGraph, TinyHyperGraphSolver } from "lib/index"
+import {
+  loadSerializedHyperGraph,
+  TinyHyperGraphSolver,
+  TinyHyperGraphSectionSolver,
+} from "lib/index"
 import graph from "../fixtures/h616-closed-return-path.json"
 
 test("serializes a preloaded route that returns through the same ports", (): void => {
@@ -9,7 +13,19 @@ test("serializes a preloaded route that returns through the same ports", (): voi
   const solver = new TinyHyperGraphSolver(loaded.topology, loaded.problem)
   solver.solve()
   expect(solver.solved).toBeTrue()
-  expect(() => solver.getOutput()).toThrow("not a single ordered path")
+  const output = solver.getOutput()
+  expect(output.solvedRoutes![0]!.path.map((point) => point.portId)).toEqual(
+    graph.solvedRoutes[0]!.path.map((point) => point.portId),
+  )
+  const reloaded = loadSerializedHyperGraph(output)
+  const replay = new TinyHyperGraphSectionSolver(
+    reloaded.topology,
+    reloaded.problem,
+    reloaded.solution,
+  )
+  replay.solve()
+  expect(replay.solved).toBeTrue()
+  expect(replay.getOutput().solvedRoutes![0]!.path).toHaveLength(5)
   const graphics = solver.visualize()
   graphics.texts = [
     {
@@ -17,7 +33,7 @@ test("serializes a preloaded route that returns through the same ports", (): voi
       y: 3.9,
       fontSize: 0.08,
       color: "#334155",
-      text: "Serialization rejects a valid preloaded return path",
+      text: `Serialized return path: ${output.solvedRoutes![0]!.path.length} visits; replay preserved`,
     },
   ]
   expect(

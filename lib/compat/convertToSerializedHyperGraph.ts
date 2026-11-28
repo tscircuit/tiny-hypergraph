@@ -1,3 +1,4 @@
+import { orderClosedRouteSegments } from "./orderClosedRouteSegments"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import type { TinyHyperGraphSolver } from "../index"
 import { getAvailableZFromMask, getZLayerLabel } from "../layerLabels"
@@ -198,6 +199,8 @@ const getOrderedRoutePath = (
   const startPortId = solver.problem.routeStartPort[routeId]
   const endPortId = solver.problem.routeEndPort[routeId]
   const isClosedRoute = startPortId === endPortId
+  if (isClosedRoute)
+    return orderClosedRouteSegments(routeId, startPortId, routeSegments)
   const segmentsByPort = new Map<
     PortId,
     Array<RouteSegment & { segmentIndex: number }>

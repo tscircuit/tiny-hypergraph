@@ -2,7 +2,11 @@ import "bun-match-svg"
 import { expect, test } from "bun:test"
 import type { SerializedHyperGraph } from "@tscircuit/hypergraph"
 import { getSvgFromGraphicsObject } from "graphics-debug"
-import { loadSerializedHyperGraph, TinyHyperGraphSolver } from "lib/index"
+import {
+  loadSerializedHyperGraph,
+  TinyHyperGraphSolver,
+  PreparedPortPointRoutingSolver,
+} from "lib/index"
 
 test("routes between layers beside an existing multilayer terminal", () => {
   const graph: SerializedHyperGraph = {
@@ -124,14 +128,30 @@ test("routes between layers beside an existing multilayer terminal", () => {
       },
     ],
   }
-  const loaded = loadSerializedHyperGraph(graph)
-  const solver = new TinyHyperGraphSolver(loaded.topology, loaded.problem)
-  solver.solve()
-  expect(solver.solved).toBeTrue()
-  expect(
-    getSvgFromGraphicsObject(solver.visualize(), {
-      svgWidth: 1000,
-      svgHeight: 650,
-    }),
-  ).toMatchSvgSnapshot(import.meta.path)
+  for (const Solver of [TinyHyperGraphSolver, PreparedPortPointRoutingSolver]) {
+    for (const virtual of [false, true]) {
+      const input = structuredClone(graph)
+      input.regions.find(
+        (region) => region.regionId === "existing-terminal",
+      )!.d._tinyTerminal = virtual
+      const loaded = loadSerializedHyperGraph(input)
+      const solver = new Solver(loaded.topology, loaded.problem)
+      solver.solve()
+      expect(solver.solved).toBeTrue()
+      const path = solver
+        .getOutput()
+        .solvedRoutes![0]!.path.map((point) => point.portId)
+      expect(path.includes("v0")).toBe(virtual)
+      expect(path.includes("v1")).toBe(virtual)
+      expect(path.includes("d0")).toBe(!virtual)
+      if (virtual && Solver === TinyHyperGraphSolver) {
+        expect(
+          getSvgFromGraphicsObject(solver.visualize(), {
+            svgWidth: 1000,
+            svgHeight: 650,
+          }),
+        ).toMatchSvgSnapshot(import.meta.path)
+      }
+    }
+  }
 })

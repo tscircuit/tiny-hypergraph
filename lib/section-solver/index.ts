@@ -1,3 +1,4 @@
+import { orderClosedRouteSegments } from "../compat/orderClosedRouteSegments"
 import { BaseSolver } from "@tscircuit/solver-utils"
 import type { GraphicsObject } from "graphics-debug"
 import { DEFAULT_MIN_VIA_PAD_DIAMETER } from "../computeRegionCost"
@@ -259,6 +260,20 @@ const getOrderedRoutePath = (
     }
 
     throw new Error(`Route ${routeId} does not have an existing solved path`)
+  }
+
+  if (startPortId === endPortId) {
+    return orderClosedRouteSegments(
+      routeId,
+      startPortId,
+      routeSegments.map(([fromPortId, toPortId], index) => ({
+        fromPortId,
+        toPortId,
+        regionId:
+          routeSegmentRegionIds[index] ??
+          getSharedRegionIdForPorts(topology, fromPortId, toPortId),
+      })),
+    )
   }
 
   const segmentsByPort = new Map<
@@ -583,6 +598,7 @@ const createSectionRoutePlans = (
           ? undefined
           : new Int32Array(problem.portReservationNetId),
       initialRoutePortReservations: problem.initialRoutePortReservations,
+      portConflicts: problem.portConflicts,
       initialRoutePortReservationAssignments:
         problem.initialRoutePortReservationAssignments ??
         problem.initialAssignments,
