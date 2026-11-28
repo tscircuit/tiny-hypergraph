@@ -123,12 +123,6 @@ test("routes between layers beside an existing multilayer terminal", () => {
         endRegionId: "end",
       },
     ],
-    solvedRoutes: [
-      {
-        connection: { connectionId: "power" },
-        path: [{ portId: "s" }, { portId: "e" }],
-      },
-    ],
   }
   const loaded = loadSerializedHyperGraph(graph)
   const solver = new TinyHyperGraphSolver(loaded.topology, loaded.problem)
