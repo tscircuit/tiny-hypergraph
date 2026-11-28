@@ -1,0 +1,288 @@
+{
+  "regions": [
+    {
+      "regionId": "topology_merge_80073",
+      "pointIds": ["ce327182_pp0_z3_cramped::3"],
+      "d": {
+        "capacityMeshNodeId": "topology_merge_80073",
+        "center": {
+          "x": 8.469999999999999,
+          "y": 2.026249999999997
+        },
+        "width": 0.6199999999999974,
+        "height": 2.3475000000000055,
+        "availableZ": [1, 2, 3]
+      },
+      "assignments": []
+    },
+    {
+      "regionId": "topology_merge_80229__sub_0_0",
+      "pointIds": ["ce327182_pp0_z3_cramped::3", "ce327604_pp0_z3_cramped::3"],
+      "d": {
+        "capacityMeshNodeId": "topology_merge_80229__sub_0_0",
+        "center": {
+          "x": 8.530625,
+          "y": 3.2199999999999998
+        },
+        "width": 0.1662499999999989,
+        "height": 0.03999999999999959,
+        "availableZ": [1, 2, 3]
+      },
+      "assignments": [
+        {
+          "regionPort1Id": "ce327604_pp0_z3_cramped::3",
+          "regionPort2Id": "ce327182_pp0_z3_cramped::3",
+          "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]"
+        },
+        {
+          "regionPort1Id": "ce327182_pp0_z3_cramped::3",
+          "regionPort2Id": "ce327604_pp0_z3_cramped::3",
+          "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]"
+        }
+      ]
+    },
+    {
+      "regionId": "topology_merge_80229__sub_0_1",
+      "pointIds": ["ce327604_pp0_z3_cramped::3", "ce327613_pp0_z3_cramped::3"],
+      "d": {
+        "capacityMeshNodeId": "topology_merge_80229__sub_0_1",
+        "center": {
+          "x": 8.696875,
+          "y": 3.2199999999999998
+        },
+        "width": 0.1662499999999989,
+        "height": 0.03999999999999959,
+        "availableZ": [1, 2, 3]
+      },
+      "assignments": [
+        {
+          "regionPort1Id": "ce327613_pp0_z3_cramped::3",
+          "regionPort2Id": "ce327604_pp0_z3_cramped::3",
+          "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]"
+        },
+        {
+          "regionPort1Id": "ce327604_pp0_z3_cramped::3",
+          "regionPort2Id": "ce327613_pp0_z3_cramped::3",
+          "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]"
+        }
+      ]
+    },
+    {
+      "regionId": "new-cmn_329-681",
+      "pointIds": ["ce327613_pp0_z3_cramped::3"],
+      "d": {
+        "capacityMeshNodeId": "new-cmn_329-681",
+        "center": {
+          "x": 8.61375,
+          "y": 3.3824999999999985
+        },
+        "width": 0.3324999999999978,
+        "height": 0.28499999999999837,
+        "availableZ": [3]
+      }
+    }
+  ],
+  "ports": [
+    {
+      "portId": "ce327182_pp0_z3_cramped::3",
+      "region1Id": "topology_merge_80073",
+      "region2Id": "topology_merge_80229__sub_0_0",
+      "d": {
+        "portId": "ce327182_pp0_z3_cramped::3",
+        "x": 8.530625,
+        "y": 3.2,
+        "z": 3,
+        "distToCentermostPortOnZ": 0,
+        "tinyHypergraphPortPenalty": 1000,
+        "cramped": true,
+        "_preloadedFixedNetIds": ["connectivity_net59"],
+        "_preloadedCopperNetIds": ["connectivity_net10"],
+        "_preloadedTracePortAssignments": [
+          {
+            "traceId": "source_net_95_mst1_0",
+            "fixedNetId": "connectivity_net59",
+            "routePosition": 29,
+            "tracePoint": {
+              "x": 8.597707039324995,
+              "y": 3.2
+            },
+            "z": 3
+          }
+        ]
+      }
+    },
+    {
+      "portId": "ce327604_pp0_z3_cramped::3",
+      "region1Id": "topology_merge_80229__sub_0_0",
+      "region2Id": "topology_merge_80229__sub_0_1",
+      "d": {
+        "portId": "ce327604_pp0_z3_cramped::3",
+        "x": 8.61375,
+        "y": 3.2199999999999998,
+        "z": 3,
+        "distToCentermostPortOnZ": 0,
+        "tinyHypergraphPortPenalty": 1000,
+        "cramped": true,
+        "_preloadedFixedNetIds": ["connectivity_net59"],
+        "_preloadedTracePortAssignments": [
+          {
+            "traceId": "source_net_95_mst1_0",
+            "fixedNetId": "connectivity_net59",
+            "routePosition": 28,
+            "tracePoint": {
+              "x": 8.615202020202018,
+              "y": 3.2067234848484816
+            },
+            "z": 3
+          },
+          {
+            "traceId": "source_net_95_mst1_0",
+            "fixedNetId": "connectivity_net59",
+            "routePosition": 29.03027753057235,
+            "tracePoint": {
+              "x": 8.618516572953993,
+              "y": 3.2108999110060457
+            },
+            "z": 3
+          }
+        ]
+      }
+    },
+    {
+      "portId": "ce327613_pp0_z3_cramped::3",
+      "region1Id": "topology_merge_80229__sub_0_1",
+      "region2Id": "new-cmn_329-681",
+      "d": {
+        "portId": "ce327613_pp0_z3_cramped::3",
+        "x": 8.696874999999999,
+        "y": 3.2399999999999993,
+        "z": 3,
+        "distToCentermostPortOnZ": 0,
+        "tinyHypergraphPortPenalty": 1000,
+        "cramped": true,
+        "_preloadedFixedNetIds": ["connectivity_net59"],
+        "_preloadedTracePortAssignments": [
+          {
+            "traceId": "source_net_95_mst1_0",
+            "fixedNetId": "connectivity_net59",
+            "routePosition": 19,
+            "tracePoint": {
+              "x": 8.724657264481152,
+              "y": 3.2316088684811284
+            },
+            "z": 3
+          },
+          {
+            "traceId": "source_net_95_mst1_0",
+            "fixedNetId": "connectivity_net59",
+            "routePosition": 29.137145073629267,
+            "tracePoint": {
+              "x": 8.691965883021645,
+              "y": 3.2493722265065346
+            },
+            "z": 3
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]",
+      "mutuallyConnectedNetworkId": "connectivity_net59",
+      "startRegionId": "new-cmn_329-681",
+      "endRegionId": "new-cmn_329-681",
+      "preloadedTraceSection": {
+        "traceId": "source_net_95_mst1_0",
+        "startRoutePosition": 19,
+        "endRoutePosition": 29.137145073629267,
+        "startPoint": {
+          "x": 8.724657264481152,
+          "y": 3.2316088684811284,
+          "z": 3
+        },
+        "endPoint": {
+          "x": 8.691965883021645,
+          "y": 3.2493722265065346,
+          "z": 3
+        }
+      }
+    }
+  ],
+  "solvedRoutes": [
+    {
+      "requiredRip": false,
+      "connection": {
+        "connectionId": "__tscircuit_preloaded_trace__:[\"source_net_95_mst1_0\",1]",
+        "mutuallyConnectedNetworkId": "connectivity_net59",
+        "startRegionId": "new-cmn_329-681",
+        "endRegionId": "new-cmn_329-681",
+        "preloadedTraceSection": {
+          "traceId": "source_net_95_mst1_0",
+          "startRoutePosition": 19,
+          "endRoutePosition": 29.137145073629267,
+          "startPoint": {
+            "x": 8.724657264481152,
+            "y": 3.2316088684811284,
+            "z": 3
+          },
+          "endPoint": {
+            "x": 8.691965883021645,
+            "y": 3.2493722265065346,
+            "z": 3
+          }
+        }
+      },
+      "path": [
+        {
+          "portId": "ce327613_pp0_z3_cramped::3",
+          "g": 0,
+          "h": 0,
+          "f": 0,
+          "hops": 0,
+          "ripRequired": false,
+          "nextRegionId": "topology_merge_80229__sub_0_1"
+        },
+        {
+          "portId": "ce327604_pp0_z3_cramped::3",
+          "g": 0,
+          "h": 0,
+          "f": 0,
+          "hops": 0,
+          "ripRequired": false,
+          "lastRegionId": "topology_merge_80229__sub_0_1",
+          "nextRegionId": "topology_merge_80229__sub_0_0"
+        },
+        {
+          "portId": "ce327182_pp0_z3_cramped::3",
+          "g": 0,
+          "h": 0,
+          "f": 0,
+          "hops": 0,
+          "ripRequired": false,
+          "lastRegionId": "topology_merge_80229__sub_0_0",
+          "nextRegionId": "topology_merge_80229__sub_0_0"
+        },
+        {
+          "portId": "ce327604_pp0_z3_cramped::3",
+          "g": 0,
+          "h": 0,
+          "f": 0,
+          "hops": 0,
+          "ripRequired": false,
+          "lastRegionId": "topology_merge_80229__sub_0_0",
+          "nextRegionId": "topology_merge_80229__sub_0_1"
+        },
+        {
+          "portId": "ce327613_pp0_z3_cramped::3",
+          "g": 0,
+          "h": 0,
+          "f": 0,
+          "hops": 0,
+          "ripRequired": false,
+          "lastRegionId": "topology_merge_80229__sub_0_1"
+        }
+      ]
+    }
+  ]
+}
