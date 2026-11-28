@@ -1462,6 +1462,9 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
+    // Synthetic terminals have no physical routing area or crossings.
+    if (this.topology.regionMetadata?.[regionId]?._tinyTerminal === true)
+      return 0
     return computeRegionCost(
       this.topology.regionWidth[regionId],
       this.topology.regionHeight[regionId],
