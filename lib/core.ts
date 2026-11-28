@@ -1462,13 +1462,6 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
-    // Virtual terminals identify endpoints rather than additional routing area.
-    if (
-      this.problem.regionNetId[regionId] !== -1 &&
-      this.topology.regionMetadata?.[regionId]?._containsTarget === true &&
-      this.topology.regionMetadata?.[regionId]?._containsObstacle !== true
-    )
-      return 0
     return computeRegionCost(
       this.topology.regionWidth[regionId],
       this.topology.regionHeight[regionId],

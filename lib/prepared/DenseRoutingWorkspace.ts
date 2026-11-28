@@ -133,22 +133,18 @@ export class DenseRoutingWorkspace {
       // new crossings are rejected below, so the same table is exact there too.
       for (let count = 0; count < row.costs.length; count++) {
         row.costs[count] =
-          p.regionNetId[region] !== -1 &&
-          t.regionMetadata?.[region]?._containsTarget === true &&
-          t.regionMetadata?.[region]?._containsObstacle !== true
-            ? 0
-            : computeRegionCost(
-                t.regionWidth[region]!,
-                t.regionHeight[region]!,
-                cache.existingSameLayerIntersections,
-                cache.existingCrossingLayerIntersections + count,
-                cache.existingEntryExitLayerChanges,
-                cache.existingSegmentCount + 1,
-                mask,
-                row.via,
-                row.density,
-                t.regionViaAreaFraction?.[region] ?? 1,
-              ) - cache.existingRegionCost
+          computeRegionCost(
+            t.regionWidth[region]!,
+            t.regionHeight[region]!,
+            cache.existingSameLayerIntersections,
+            cache.existingCrossingLayerIntersections + count,
+            cache.existingEntryExitLayerChanges,
+            cache.existingSegmentCount + 1,
+            mask,
+            row.via,
+            row.density,
+            t.regionViaAreaFraction?.[region] ?? 1,
+          ) - cache.existingRegionCost
       }
       this.rows[region] = row
     }
