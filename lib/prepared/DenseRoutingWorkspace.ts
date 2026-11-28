@@ -134,7 +134,8 @@ export class DenseRoutingWorkspace {
       for (let count = 0; count < row.costs.length; count++) {
         row.costs[count] =
           p.regionNetId[region] !== -1 &&
-          t.regionMetadata?.[region]?._containsTarget === true
+          t.regionMetadata?.[region]?._containsTarget === true &&
+          t.regionMetadata?.[region]?._containsObstacle !== true
             ? 0
             : computeRegionCost(
                 t.regionWidth[region]!,

@@ -1462,10 +1462,11 @@ export class TinyHyperGraphSolver extends BaseSolver {
     numEntryExitChanges: number,
     traceCount: number,
   ): number {
-    // A net's connected terminal copper adds no new crossing or via demand.
+    // Virtual terminals identify endpoints rather than additional routing area.
     if (
       this.problem.regionNetId[regionId] !== -1 &&
-      this.topology.regionMetadata?.[regionId]?._containsTarget === true
+      this.topology.regionMetadata?.[regionId]?._containsTarget === true &&
+      this.topology.regionMetadata?.[regionId]?._containsObstacle !== true
     )
       return 0
     return computeRegionCost(
