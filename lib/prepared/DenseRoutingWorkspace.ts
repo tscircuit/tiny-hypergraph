@@ -133,7 +133,10 @@ export class DenseRoutingWorkspace {
       // new crossings are rejected below, so the same table is exact there too.
       for (let count = 0; count < row.costs.length; count++) {
         row.costs[count] =
-          t.regionMetadata?.[region]?._tinyTerminal === true
+          t.regionMetadata?.[region]?._tinyTerminal === true ||
+          (t.regionMetadata?.[region]?._containsTarget === true &&
+            t.regionMetadata?.[region]?._containsObstacle === true &&
+            p.regionNetId[region]! >= 0)
             ? 0
             : computeRegionCost(
                 t.regionWidth[region]!,

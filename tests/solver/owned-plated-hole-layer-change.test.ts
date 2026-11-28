@@ -129,15 +129,41 @@ test("reuses an owned plated hole when changing layers", () => {
       },
     ],
   }
-  const loaded = loadSerializedHyperGraph(graph)
-  const solver = new TinyHyperGraphSolver(loaded.topology, loaded.problem)
-  solver.solve()
-  expect(solver.solved).toBeTrue()
-  expect(
-    getSvgFromGraphicsObject(solver.visualize(), {
-      backgroundColor: "white",
-      svgWidth: 1000,
-      svgHeight: 650,
-    }),
-  ).toMatchSvgSnapshot(import.meta.path)
+  const cases = [
+    { target: true, obstacle: true, owner: 0, reuse: true },
+    { target: true, obstacle: false, owner: 0, reuse: false },
+    { target: false, obstacle: true, owner: 0, reuse: false },
+    { target: true, obstacle: true, owner: -1, reuse: false },
+    { target: true, obstacle: true, owner: 1, reuse: false },
+  ]
+  for (const Solver of [TinyHyperGraphSolver, PreparedPortPointRoutingSolver]) {
+    for (const { target, obstacle, owner, reuse } of cases) {
+      const input = structuredClone(graph)
+      const terminal = input.regions.find(
+        (region) => region.regionId === "plated-hole",
+      )!
+      terminal.d._containsTarget = target
+      terminal.d._containsObstacle = obstacle
+      terminal.d.netId = owner
+      const loaded = loadSerializedHyperGraph(input)
+      const solver = new Solver(loaded.topology, loaded.problem)
+      solver.solve()
+      expect(solver.solved).toBeTrue()
+      const path = solver
+        .getOutput()
+        .solvedRoutes![0]!.path.map((point) => point.portId)
+      expect(path.includes("v0")).toBe(reuse)
+      expect(path.includes("v1")).toBe(reuse)
+      expect(path.includes("d0")).toBe(!reuse)
+      if (reuse && Solver === TinyHyperGraphSolver) {
+        expect(
+          getSvgFromGraphicsObject(solver.visualize(), {
+            backgroundColor: "white",
+            svgWidth: 1000,
+            svgHeight: 650,
+          }),
+        ).toMatchSvgSnapshot(import.meta.path)
+      }
+    }
+  }
 })
